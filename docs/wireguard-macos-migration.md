@@ -34,7 +34,7 @@ gateway; no provider is inferred from a name. After importing the profile,
 enable forwarding if that supported method applies:
 
 ```sh
-mynou vpn --action enable-forwarding --config ./mynou.json
+mynou vpn --action enable-forwarding
 ```
 
 The protected generation requests and renews its lease through virtual UDP.
@@ -81,9 +81,10 @@ Keep the old deployment available for rollback and leave its configuration,
 volumes and VPN credentials unchanged.
 
 Stop the old downloader before taking a consistent private backup. Preserve
-`mynou.json`, its `.env`, the complete `store_dir`, download transfer state,
-download output, library folders and the old executable. The default stores are
-`state/jobs` and `state/torrents`; use your configured paths if different. Retain
+the data directory (its `.env` and the complete `state/jobs`, which holds the
+settings), download transfer state, download output, library folders and the
+old executable. The default transfer state is `state/torrents`; use your
+configured path if different. Retain
 file selection, user pauses and priorities. Never delete or rebuild transfer
 state to enable the VPN. Do not import SQLite data from the former Go release;
 there is no supported importer.
@@ -100,9 +101,9 @@ with no symlink components or `..`. Its regular file must have mode 0400 or
 history, issues or logs. Import while the new service is stopped:
 
 ```sh
-mynou doctor --config ./mynou.json
-mynou vpn --action import --profile /private/path/tunnel.conf --config ./mynou.json
-mynou vpn --config ./mynou.json
+mynou doctor
+mynou vpn --action import --profile /private/path/tunnel.conf
+mynou vpn
 ```
 
 Replace the placeholder with your trusted physical profile path. Import
@@ -115,15 +116,15 @@ missing profile as permission to start unprotected.
 ## Start and verify
 
 ```sh
-mynou serve --config ./mynou.json
+mynou serve
 ```
 
 In another terminal using the same configuration:
 
 ```sh
-mynou vpn --config ./mynou.json
-mynou healthcheck --config ./mynou.json
-mynou status --config ./mynou.json
+mynou vpn
+mynou healthcheck
+mynou status
 ```
 
 The service exposes local management while torrent work waits for a protected
@@ -141,9 +142,9 @@ not replace attempted-I/O observation or establish universal provider behavior.
 Test an explicit revoke during that controlled workload:
 
 ```sh
-mynou vpn --action revoke --config ./mynou.json
-mynou vpn --config ./mynou.json
-mynou vpn --action reconnect --config ./mynou.json
+mynou vpn --action revoke
+mynou vpn
+mynou vpn --action reconnect
 ```
 
 Revocation persists blocked intent and never requests Direct. Confirm protected

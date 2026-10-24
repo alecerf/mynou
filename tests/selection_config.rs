@@ -69,9 +69,7 @@ fn legacy_configuration_without_selection_loads_default_profiles() {
         panic!("configuration object");
     };
     fields.remove("selection");
-    let file = directory.0.join("mynou.json");
-    fs::write(&file, json::stringify(&value)).unwrap();
-    let configuration = config::load(&file).unwrap();
+    let configuration = config::from_json(&value, &directory.0).unwrap();
     assert_eq!(configuration.selection.to_json(), selection());
     assert_eq!(configuration.store_dir, directory.0.join("state/jobs"));
 }

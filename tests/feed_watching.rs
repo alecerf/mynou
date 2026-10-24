@@ -1,6 +1,7 @@
 //! Feed watching uses synthetic loopback feeds and local jobs. No real source,
 //! tracker or media is contacted.
 mod api_support;
+mod home_support;
 mod irc_routing_support;
 mod irc_support;
 mod library_support;
@@ -193,15 +194,14 @@ fn source(id: &str, feed: &Feed, kind: &str) -> Value {
     s.insert("watch", watch);
     s
 }
-fn configuration(dir: &Directory, sources: Vec<Value>) -> Value {
+fn configuration(sources: Vec<Value>) -> Value {
     let mut v = config::default_json();
     v.insert("listen", "127.0.0.1:0");
-    v.insert("store_dir", dir.0.join("jobs").to_str().unwrap());
     v.insert("indexers", Value::Array(sources));
     v
 }
 fn open(dir: &Directory, sources: Vec<Value>) -> Arc<Engine> {
-    Engine::open_for_management(config::from_json(&configuration(dir, sources), &dir.0).unwrap())
+    Engine::open_for_management(config::from_json(&configuration(sources), &dir.0).unwrap())
         .unwrap()
 }
 fn submit(engine: &Engine, request: Request) -> Job {
@@ -213,7 +213,7 @@ fn submit(engine: &Engine, request: Request) -> Job {
         .remove(0)
 }
 fn state_dir(dir: &Directory) -> PathBuf {
-    dir.0.join("jobs")
+    dir.0.join("state/jobs")
 }
 fn stored(engine: &Engine, id: &str) -> Job {
     lock(&engine.store).unwrap().get(id).unwrap().unwrap()
@@ -335,7 +335,7 @@ fn first_poll_baselines_and_later_polls_route_only_new_entries_to_existing_deman
 fn title_profiles_select_distinct_feed_releases_after_restart() {
     let dir = Directory::new();
     let feed = Feed::open(rss(&[]));
-    let mut value = configuration(&dir, vec![source("feed-a", &feed, "rss")]);
+    let mut value = configuration(vec![source("feed-a", &feed, "rss")]);
     value.insert(
         "selection",
         json::parse(
@@ -616,7 +616,7 @@ fn watch_configuration_is_strict_and_routing_needs_downloads() {
     let build = |edit: &dyn Fn(&mut Value)| {
         let mut s = source("feed-a", &feed, "rss");
         edit(&mut s);
-        config::from_json(&configuration(&dir, vec![s]), &dir.0)
+        config::from_json(&configuration(vec![s]), &dir.0)
     };
     assert!(build(&|_| {}).is_ok());
     assert!(build(&|s| s.insert("kind", "json")).is_ok());
@@ -630,7 +630,7 @@ fn watch_configuration_is_strict_and_routing_needs_downloads() {
     );
     assert!(build(&|s| s.get_mut("watch").unwrap().insert("extra", true)).is_err());
     assert!(build(&|s| s.get_mut("watch").unwrap().insert("enabled", "yes")).is_err());
-    let mut v = configuration(&dir, vec![source("feed-a", &feed, "rss")]);
+    let mut v = configuration(vec![source("feed-a", &feed, "rss")]);
     v.get_mut("downloads").unwrap().insert("enabled", false);
     let engine = Engine::open_for_management(config::from_json(&v, &dir.0).unwrap()).unwrap();
     assert!(engine.feeds_poll(None, true).is_err());
@@ -804,7 +804,6 @@ fn irc_and_feed_share_one_selection_and_the_later_path_cannot_replace_it() {
     let dir = Directory::new();
     let feed = Feed::open(rss(&[item("Fixture.Movie.2024.1080p.WEB-DL", 1, 5)]));
     let mut v = transfer_support::configuration();
-    v.insert("store_dir", dir.0.join("jobs").to_str().unwrap());
     let mut settings = irc_support::settings("irc://127.0.0.1:1");
     let Value::Array(sources) = settings.get_mut("sources").unwrap() else {
         panic!()
@@ -894,7 +893,7 @@ fn monitored_owned_media_takes_a_strictly_better_new_entry_once() {
 fn protected_status_and_offline_cli_expose_only_redacted_freshness() {
     let dir = Directory::new();
     let feed = Feed::open(rss(&[item("Fixture.Movie.2024.1080p.WEB-DL", 1, 5)]));
-    let mut v = configuration(&dir, vec![source("feed-a", &feed, "rss")]);
+    let mut v = configuration(vec![source("feed-a", &feed, "rss")]);
     v.get_mut("downloads").unwrap().insert("enabled", false);
     let server = Server::open(config::from_json(&v, &dir.0).unwrap());
     assert_eq!(server.call("GET", "/api/feeds", &[], "").status, 401);
@@ -926,14 +925,12 @@ fn protected_status_and_offline_cli_expose_only_redacted_freshness() {
     no_private(&retained);
     assert_eq!(text(&retained, "total"), "1");
     assert_eq!(retained.get("next"), Some(&Value::Null));
-    v.insert("listen", server.authority.clone());
     drop(server);
-    let path = dir.0.join("mynou.json");
-    fs::write(&path, json::stringify(&v)).unwrap();
+    home_support::save_settings(&dir.0, &v);
     let out = Command::new(env!("CARGO_BIN_EXE_mynou"))
         .env_remove("MYNOU_API_TOKEN")
-        .args(["feeds", "--config"])
-        .arg(&path)
+        .args(["feeds", "--dir"])
+        .arg(&dir.0)
         .output()
         .unwrap();
     assert!(
@@ -944,8 +941,8 @@ fn protected_status_and_offline_cli_expose_only_redacted_freshness() {
     no_private(&json::parse(std::str::from_utf8(&out.stdout).unwrap()).unwrap());
     let out = Command::new(env!("CARGO_BIN_EXE_mynou"))
         .env_remove("MYNOU_API_TOKEN")
-        .args(["feeds", "--retained", "--limit", "1", "--config"])
-        .arg(&path)
+        .args(["feeds", "--retained", "--limit", "1", "--dir"])
+        .arg(&dir.0)
         .output()
         .unwrap();
     assert!(

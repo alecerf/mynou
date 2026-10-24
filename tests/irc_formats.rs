@@ -1,5 +1,6 @@
 //! Original fixed-format text fixtures, protected previews and native import.
 mod api_support;
+mod home_support;
 mod irc_routing_support;
 mod irc_support;
 mod library_support;
@@ -47,8 +48,8 @@ fn source(v: &mut Value) -> &mut Value {
     };
     &mut s[0]
 }
-fn settings(root: &Directory, url: &str) -> Value {
-    let mut v = irc_support::value(&root.0, url);
+fn settings(url: &str) -> Value {
+    let mut v = irc_support::value(url);
     source(&mut v).insert("announcement_format", format(false));
     v
 }
@@ -64,7 +65,7 @@ fn claim() -> String {
 #[test]
 fn text_claims_map_exact_fields_and_reject_missing_ambiguous_or_secret_identity() {
     let dir = Directory::new();
-    let cfg = config::from_json(&settings(&dir, "irc://127.0.0.1:1"), &dir.0).unwrap();
+    let cfg = config::from_json(&settings("irc://127.0.0.1:1"), &dir.0).unwrap();
     let preview = irc::preview_text(&cfg, "local", &claim()).unwrap();
     assert_eq!(
         preview.get("announcement").unwrap(),
@@ -93,8 +94,8 @@ fn text_claims_map_exact_fields_and_reject_missing_ambiguous_or_secret_identity(
         let error = irc::preview_text(&cfg, "local", &bad).unwrap_err();
         assert!(!error.contains("private") && !error.contains("source.invalid"));
     }
-    assert!(!dir.0.join("jobs").exists());
-    let mut v = settings(&dir, "irc://127.0.0.1:1");
+    assert!(!dir.0.join("state/jobs").exists());
+    let mut v = settings("irc://127.0.0.1:1");
     source(&mut v).insert("announcement_format", format(true));
     let cfg = config::from_json(&v, &dir.0).unwrap();
     let episode = claim()
@@ -116,7 +117,7 @@ fn text_claims_map_exact_fields_and_reject_missing_ambiguous_or_secret_identity(
 #[test]
 fn colour_stripping_is_bounded_and_cannot_format_protocol_headers_or_ping_tokens() {
     let dir = Directory::new();
-    let cfg = config::from_json(&settings(&dir, "irc://127.0.0.1:1"), &dir.0).unwrap();
+    let cfg = config::from_json(&settings("irc://127.0.0.1:1"), &dir.0).unwrap();
     let expected = irc::preview_text(&cfg, "local", &claim()).unwrap();
     for style in [
         "\u{2}",
@@ -160,7 +161,7 @@ fn colour_stripping_is_bounded_and_cannot_format_protocol_headers_or_ping_tokens
 #[test]
 fn legacy_json_bindings_and_pending_fingerprints_survive_an_explicit_default_format() {
     let dir = Directory::new();
-    let mut v = irc_support::value(&dir.0, "irc://127.0.0.1:1");
+    let mut v = irc_support::value("irc://127.0.0.1:1");
     let cfg = config::from_json(&v, &dir.0).unwrap();
     let binding = cfg.irc.sources[0].binding();
     let engine = Engine::open(cfg.clone()).unwrap();
@@ -190,7 +191,7 @@ fn legacy_json_bindings_and_pending_fingerprints_survive_an_explicit_default_for
 #[test]
 fn library_delivery_preserves_first_claim_and_never_creates_unsolicited_jobs() {
     let dir = Directory::new();
-    let cfg = config::from_json(&settings(&dir, "irc://127.0.0.1:1"), &dir.0).unwrap();
+    let cfg = config::from_json(&settings("irc://127.0.0.1:1"), &dir.0).unwrap();
     let engine = Engine::open(cfg.clone()).unwrap();
     let before = irc_support::bytes(&cfg.store_dir);
     assert!(
@@ -242,7 +243,7 @@ fn library_delivery_preserves_first_claim_and_never_creates_unsolicited_jobs() {
 fn live_fragmented_text_requires_membership_and_exact_sender_before_receipts() {
     let dir = Directory::new();
     let (listener, url) = irc_support::listener();
-    let cfg = config::from_json(&settings(&dir, &url), &dir.0).unwrap();
+    let cfg = config::from_json(&settings(&url), &dir.0).unwrap();
     let peer = thread::spawn(move || {
         let mut s = irc_support::accept(&listener);
         assert_eq!(irc_support::line(&mut s), "NICK mynou");
@@ -320,7 +321,7 @@ fn a_text_candidate_enters_the_existing_verified_native_import_path() {
     let mut cfg =
         irc_routing_support::configuration(&dir.0.join("engine"), seed.client.listen_port());
     cfg.irc.sources[0].announcement_format =
-        config::from_json(&settings(&dir, "irc://127.0.0.1:1"), &dir.0)
+        config::from_json(&settings("irc://127.0.0.1:1"), &dir.0)
             .unwrap()
             .irc
             .sources[0]
@@ -378,7 +379,7 @@ fn format_configuration_is_bounded_complete_and_has_no_url_or_pattern_fields() {
         ("url", Value::from("https://source.invalid/?token=private")),
         ("fields", Value::Array(vec![Value::from("title"); 6])),
     ] {
-        let mut v = settings(&dir, "irc://127.0.0.1:1");
+        let mut v = settings("irc://127.0.0.1:1");
         source(&mut v)
             .get_mut("announcement_format")
             .unwrap()
@@ -405,7 +406,7 @@ fn format_configuration_is_bounded_complete_and_has_no_url_or_pattern_fields() {
             "episode",
         ],
     ] {
-        let mut v = settings(&dir, "irc://127.0.0.1:1");
+        let mut v = settings("irc://127.0.0.1:1");
         source(&mut v)
             .get_mut("announcement_format")
             .unwrap()
@@ -415,23 +416,23 @@ fn format_configuration_is_bounded_complete_and_has_no_url_or_pattern_fields() {
             );
         assert!(config::from_json(&v, &dir.0).is_err());
     }
-    assert!(!dir.0.join("jobs").exists());
+    assert!(!dir.0.join("state/jobs").exists());
 }
 
 #[test]
 fn protected_api_and_offline_cli_share_pure_text_previews_without_storage_writes() {
     let dir = Directory::new();
-    let v = settings(&dir, "irc://127.0.0.1:1");
+    let v = settings("irc://127.0.0.1:1");
     let cfg = config::from_json(&v, &dir.0).unwrap();
-    let path = dir.0.join("mynou.json");
     let file = dir.0.join("announce.txt");
-    fs::write(&path, json::stringify(&v)).unwrap();
+    home_support::save_settings(&dir.0, &v);
+    let saved = irc_support::bytes(&cfg.store_dir);
     fs::write(&file, claim()).unwrap();
     let out = Command::new(env!("CARGO_BIN_EXE_mynou"))
         .args(["irc-preview", "local", "--text"])
         .arg(&file)
-        .arg("--config")
-        .arg(&path)
+        .arg("--dir")
+        .arg(&dir.0)
         .output()
         .unwrap();
     assert!(
@@ -439,7 +440,7 @@ fn protected_api_and_offline_cli_share_pure_text_previews_without_storage_writes
         "{}",
         String::from_utf8_lossy(&out.stderr)
     );
-    assert!(!cfg.store_dir.exists());
+    assert_eq!(irc_support::bytes(&cfg.store_dir), saved);
     let report = json::parse(std::str::from_utf8(&out.stdout).unwrap().trim()).unwrap();
     let server = Server::open(cfg);
     let before = irc_support::bytes(&server.engine.config.store_dir);

@@ -46,7 +46,8 @@ impl Settings {
     }
     pub(crate) fn commands(&self) -> Result<Vec<String>> {
         let read = |name: &str| {
-            std::env::var(name).map_err(|_| "IRC: SASL credential is unavailable".to_string())
+            crate::config::lookup(name)
+                .ok_or_else(|| "IRC: SASL credential is unavailable".to_string())
         };
         let username = read(&self.username_env)?;
         let password = read(&self.password_env)?;

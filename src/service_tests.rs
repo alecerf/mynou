@@ -42,7 +42,7 @@ fn environment_is_literal_bounded_and_errors_never_echo_secrets() {
 #[test]
 fn plist_keeps_secrets_in_private_environment_and_confines_process_arguments() {
     let env = environment("MYNOU_API_TOKEN=SECRET<&\"\n").unwrap();
-    let config = Path::new("/fixture/a&b/mynou.json");
+    let config = Path::new("/fixture/a&b/data");
     let document = plist(
         "org.mynou.fixture",
         Path::new("/fixture/mynou"),
@@ -52,14 +52,7 @@ fn plist_keeps_secrets_in_private_environment_and_confines_process_arguments() {
     )
     .unwrap();
     assert!(owns(&document, "org.mynou.fixture", config).unwrap());
-    assert!(
-        !owns(
-            &document,
-            "org.mynou.fixture",
-            Path::new("/other/mynou.json")
-        )
-        .unwrap()
-    );
+    assert!(!owns(&document, "org.mynou.fixture", Path::new("/other/data")).unwrap());
     assert!(!owns(&document, "org.mynou.other", config).unwrap());
     let args = document
         .split("<key>ProgramArguments</key>")
@@ -98,8 +91,7 @@ fn plist_keeps_secrets_in_private_environment_and_confines_process_arguments() {
 #[test]
 fn fixed_code_logs_rotate_and_refuse_links_without_touching_the_target() {
     let dir = Directory::new();
-    let config = dir.0.join("mynou.json");
-    create(&config, b"{}").unwrap();
+    let config = dir.0.clone();
     log(&config, "starting").unwrap();
     let root = dir.0.join(".mynou-service");
     let path = root.join("events.log");
@@ -128,11 +120,10 @@ fn fixed_code_logs_rotate_and_refuse_links_without_touching_the_target() {
 #[test]
 fn a_missing_volume_prevents_storage_creation_and_reports_a_fixed_code() {
     let dir = Directory::new();
-    let path = dir.0.join("mynou.json");
-    create(&path, b"{}").unwrap();
+    create(&dir.0.join(".env"), b"MYNOU_API_TOKEN=x\n").unwrap();
     let config = crate::config::from_json(&crate::config::default_json(), &dir.0).unwrap();
     assert!(
-        preflight(&path, &config)
+        preflight(&dir.0, &config)
             .unwrap_err()
             .contains("media_volume_unavailable")
     );

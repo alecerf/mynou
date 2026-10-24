@@ -1,4 +1,5 @@
 //! Synthetic loopback proofs for manual seed-only reuse; no public media.
+mod home_support;
 #[allow(dead_code)]
 mod transfer_support;
 use mynou::{
@@ -876,9 +877,7 @@ fn api_authorization_and_cli_register_only_the_selected_readonly_seed() {
     wait(|| engine.transfer(&source.id).unwrap().get("ready") == Some(&Value::Bool(true)));
     let api = Api::bind(engine.clone(), TOKEN.into()).unwrap();
     let origin = format!("http://{}", api.address().unwrap());
-    settings.insert("listen", api.address().unwrap().to_string());
-    let config_path = scratch.0.join("mynou.json");
-    fs::write(&config_path, json::stringify(&settings)).unwrap();
+    home_support::serve_here(&scratch.0, &api.address().unwrap().to_string());
     let _server = ApiGuard {
         engine: engine.clone(),
         worker: Some(thread::spawn(move || api.run())),
@@ -920,10 +919,10 @@ fn api_authorization_and_cli_register_only_the_selected_readonly_seed() {
             &source.id,
             "--torrent",
             target.path.to_str().unwrap(),
-            "--config",
-            config_path.to_str().unwrap(),
+            "--dir",
+            scratch.0.to_str().unwrap(),
         ])
-        .env(&cfg.api_token_env, TOKEN)
+        .env(mynou::config::API_TOKEN_ENV, TOKEN)
         .output()
         .unwrap();
     assert!(

@@ -1,5 +1,6 @@
 //! Automatic cross-seed discovery against a synthetic loopback Torznab source.
 //! No real indexer, tracker or media is contacted.
+mod home_support;
 #[allow(dead_code)]
 mod transfer_support;
 use mynou::{
@@ -243,7 +244,6 @@ fn number(report: &Value, key: &str) -> u64 {
 
 struct Fixture {
     scratch: Scratch,
-    settings: Value,
     cfg: config::Config,
     source: String,
     video: Vec<u8>,
@@ -323,7 +323,6 @@ fn fixture_with(indexer: &Indexer, json_source: bool) -> Fixture {
     .unwrap();
     Fixture {
         scratch,
-        settings,
         cfg,
         source: source.id,
         video,
@@ -529,10 +528,7 @@ fn status_and_run_are_served_to_the_operator_cli() {
     let engine = open(&f);
     let api = Api::bind(engine.clone(), TOKEN.into()).unwrap();
     let origin = format!("http://{}", api.address().unwrap());
-    let mut settings = f.settings.clone();
-    settings.insert("listen", api.address().unwrap().to_string());
-    let config_path = f.scratch.0.join("mynou.json");
-    fs::write(&config_path, json::stringify(&settings)).unwrap();
+    home_support::serve_here(&f.scratch.0, &api.address().unwrap().to_string());
     let worker = {
         let api = api;
         thread::spawn(move || api.run())
@@ -560,8 +556,8 @@ fn status_and_run_are_served_to_the_operator_cli() {
     let cli = |args: &[&str]| {
         let output = Command::new(env!("CARGO_BIN_EXE_mynou"))
             .args(args)
-            .args(["--config", config_path.to_str().unwrap()])
-            .env(&f.cfg.api_token_env, TOKEN)
+            .args(["--dir", f.scratch.0.to_str().unwrap()])
+            .env(mynou::config::API_TOKEN_ENV, TOKEN)
             .output()
             .unwrap();
         assert!(

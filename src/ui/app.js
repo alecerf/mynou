@@ -10,6 +10,7 @@ const VIEWS = [
   ['library', 'Library'],
   ['series', 'Series'],
   ['sources', 'Sources'],
+  ['settings', 'Settings'],
 ];
 const TERMINAL_STATES = new Set(['ready', 'failed', 'cancelled']);
 const TOKEN_KEY = 'mynou.token';
@@ -633,6 +634,243 @@ views.sources = {
   },
 };
 
+// The settings document keeps every field; the guided groups edit the common
+// ones in place and the JSON editor the rest. Saving sends the whole document,
+// which the service validates and applies by restarting its engine.
+const SETTING_GROUPS = [
+  ['Library', [
+    ['library.movies_root', 'Movies folder', 'text'],
+    ['library.series_root', 'Series folder', 'text'],
+  ]],
+  ['Downloads', [
+    ['downloads.enabled', 'Download with the built-in client', 'check'],
+    ['downloads.data_dir', 'Download folder', 'text'],
+    ['downloads.listen_port', 'Torrent port', 'number'],
+    ['downloads.max_active', 'Simultaneous downloads', 'number'],
+    ['downloads.download_limit_bps', 'Download limit (bytes/s, 0 = none)', 'number'],
+    ['downloads.upload_limit_bps', 'Upload limit (bytes/s, 0 = none)', 'number'],
+    ['downloads.seed', 'Seed after download', 'check'],
+  ]],
+  ['Plex', [
+    ['plex.enabled', 'Use Plex and its watchlist', 'check'],
+    ['plex.url', 'Plex server URL', 'text'],
+    ['plex.movies_section', 'Movies library section', 'text'],
+    ['plex.series_section', 'Series library section', 'text'],
+    ['plex.token_env', 'Plex token', 'secret'],
+  ]],
+  ['TMDB catalog', [
+    ['catalog.enabled', 'Use TMDB (needed for series)', 'check'],
+    ['catalog.token_env', 'TMDB read access token', 'secret'],
+  ]],
+  ['Automation', [
+    ['monitoring.enabled', 'Monitor the library for upgrades', 'check'],
+    ['monitoring.interval_secs', 'Check interval (seconds)', 'number'],
+    ['series_packs.enabled', 'Use season packs', 'check'],
+    ['workers', 'Workers', 'number'],
+  ]],
+  ['Web interface', [
+    ['listen', 'Listen address (applies at the next start)', 'text'],
+  ]],
+];
+const INDEXER_KINDS = ['torznab', 'json', 'rss'];
+const settings = { report: null, document: null, secrets: [], loading: false };
+
+const getPath = (object, path) => path.split('.').reduce((value, key) => value?.[key], object);
+function setPath(object, path, value) {
+  const keys = path.split('.');
+  const last = keys.pop();
+  let target = object;
+  for (const key of keys) {
+    if (typeof target[key] !== 'object' || target[key] === null) target[key] = {};
+    target = target[key];
+  }
+  target[last] = value;
+}
+const secretSource = (name) => settings.secrets.find((s) => s.name === name)?.source ?? 'missing';
+const SOURCE_LABELS = { stored: 'Saved', environment: 'From the environment', missing: 'Not set' };
+
+const secretInput = (name) =>
+  h('input', { type: 'password', autocomplete: 'new-password', spellcheck: false, maxLength: 4096, placeholder: SOURCE_LABELS[secretSource(name)], dataset: { secret: name } });
+
+function settingField([path, label, type]) {
+  const value = getPath(settings.document, path) ?? getPath(settings.report?.defaults, path);
+  if (type === 'check') {
+    return h('label', { class: 'field check' }, h('input', { type: 'checkbox', checked: Boolean(value), dataset: { path, type } }), label);
+  }
+  if (type === 'secret') {
+    const name = String(value ?? '');
+    const source = secretSource(name);
+    return h('label', { class: 'field grow' }, `${label} · ${SOURCE_LABELS[source]}`, secretInput(name));
+  }
+  return h('label', { class: 'field grow' }, label,
+    h('input', { type, value: value ?? '', inputMode: type === 'number' ? 'numeric' : undefined, min: type === 'number' ? 0 : undefined, spellcheck: false, dataset: { path, type } }));
+}
+
+function indexerRow(indexer) {
+  const keyName = indexer.api_key_env ?? 'MYNOU_INDEXER_API_KEY';
+  const row = h('li', { class: 'card' },
+    h('div', { class: 'form' },
+      h('label', { class: 'field grow' }, 'Name', h('input', { value: indexer.name ?? '', maxLength: 200, dataset: { field: 'name' }, spellcheck: false })),
+      h('label', { class: 'field' }, 'Kind', h('select', { dataset: { field: 'kind' } },
+        INDEXER_KINDS.map((kind) => h('option', { value: kind, selected: (indexer.kind ?? 'json') === kind }, kind)))),
+      h('label', { class: 'field check' }, h('input', { type: 'checkbox', checked: indexer.enabled !== false, dataset: { field: 'enabled' } }), 'Enabled')),
+    h('div', { class: 'form' },
+      h('label', { class: 'field grow' }, 'URL', h('input', { type: 'url', value: indexer.url ?? '', required: true, spellcheck: false, dataset: { field: 'url' } })),
+      h('label', { class: 'field grow' }, `API key · ${SOURCE_LABELS[secretSource(keyName)]}`, secretInput(keyName)),
+      h('div', { class: 'actions' }, h('button', { type: 'button', class: 'danger', dataset: { act: 'remove' } }, 'Remove'))));
+  row._indexer = indexer;
+  return row;
+}
+
+function readSettingsForm() {
+  const document = structuredClone(settings.document);
+  for (const input of $('#settings-groups').querySelectorAll('[data-path]')) {
+    const { path, type } = input.dataset;
+    const before = getPath(document, path);
+    let value;
+    if (type === 'check') value = input.checked;
+    else if (type === 'number') {
+      if (input.value === '' && before === undefined) continue;
+      value = Number(input.value);
+      if (!Number.isInteger(value) || value < 0) throw new Error(`${input.closest('label').textContent.trim()} must be a whole number`);
+    } else {
+      value = input.value.trim();
+      if (!value && before === undefined) continue;
+    }
+    // A field left at its default stays out of a document that omits it.
+    if (before === undefined && value === getPath(settings.report?.defaults, path)) continue;
+    setPath(document, path, value);
+  }
+  document.indexers = [...$('#settings-indexers').children].map((row) => {
+    const indexer = { ...row._indexer };
+    for (const input of row.querySelectorAll('[data-field]')) {
+      indexer[input.dataset.field] = input.type === 'checkbox' ? input.checked : input.value.trim();
+    }
+    if (!indexer.name) delete indexer.name;
+    return indexer;
+  });
+  return document;
+}
+
+/** Secrets typed in the form; empty inputs keep the saved value. */
+function typedSecrets() {
+  const typed = new Map();
+  for (const input of $('#view-settings').querySelectorAll('[data-secret]')) {
+    if (input.value) typed.set(input.dataset.secret, input.value);
+  }
+  return typed;
+}
+
+async function loadSettings() {
+  const [report, secrets] = await Promise.all([link.call('GET', '/api/settings'), link.call('GET', '/api/secrets')]);
+  settings.report = report;
+  settings.document = report.settings;
+  settings.secrets = itemsOf(secrets.secrets);
+  views.settings.paint();
+}
+
+async function saveSettings(document) {
+  const reply = await link.call('POST', '/api/settings', { settings: document });
+  if (reply.state === 'applying') {
+    $('#settings-state').textContent = 'Applying the new settings…';
+    // The service restarts its engine; wait until the change has landed.
+    for (let i = 0; i < 60; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      const report = await link.call('GET', '/api/settings').catch(() => null);
+      if (report && !report.applying) {
+        if (report.error) throw new Error(report.error);
+        break;
+      }
+    }
+  }
+  await loadSettings();
+  toast(reply.restart_required ? 'Settings saved; restart Mynou to apply them' : 'Settings applied');
+}
+
+views.settings = {
+  init() {
+    const form = $('#settings-form');
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      act($('button[type="submit"]', form), async () => {
+        const document = readSettingsForm();
+        for (const [name, value] of typedSecrets()) await link.call('POST', '/api/secrets', { name, value });
+        await saveSettings(document);
+      });
+    });
+    $('#indexer-add').addEventListener('click', () => {
+      $('#settings-indexers').append(indexerRow({ kind: 'torznab', enabled: true }));
+    });
+    $('#settings-indexers').addEventListener('click', (event) => {
+      if (event.target.closest('[data-act="remove"]')) { event.target.closest('li').remove(); }
+    });
+    $('#settings-json-save').addEventListener('click', (event) =>
+      act(event.currentTarget, async () => {
+        let document;
+        try { document = JSON.parse($('#settings-json').value); } catch { throw new Error('The JSON is not valid'); }
+        await saveSettings(document);
+      }));
+    $('#settings-json-reset').addEventListener('click', (event) => act(event.currentTarget, loadSettings));
+    $('#settings-secrets').addEventListener('click', (event) => {
+      const button = event.target.closest('button[data-act]');
+      const row = event.target.closest('li');
+      if (!button || !row) return;
+      const name = row.dataset.key;
+      const input = $('input', row);
+      if (button.dataset.act === 'save' && !input.value) { toast('Type a value first', 'bad'); return; }
+      act(button, async () => {
+        const reply = await link.call('POST', '/api/secrets', { name, value: button.dataset.act === 'save' ? input.value : null });
+        settings.secrets = itemsOf(reply.secrets);
+        views.settings.paintSecrets();
+      }, button.dataset.act === 'save' ? 'Secret saved' : 'Secret removed');
+    });
+    $('#secret-form').addEventListener('submit', (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      act($('button', form), async () => {
+        const reply = await link.call('POST', '/api/secrets', { name: form.elements.name.value.trim(), value: form.elements.value.value });
+        form.reset();
+        settings.secrets = itemsOf(reply.secrets);
+        views.settings.paintSecrets();
+      }, 'Secret saved');
+    });
+  },
+  render() {
+    // Live updates never overwrite fields being edited.
+    if (!settings.report && link.state === 'open' && !settings.loading) {
+      settings.loading = true;
+      loadSettings().catch((e) => { $('#settings-state').textContent = e.message; }).finally(() => { settings.loading = false; });
+    }
+  },
+  paint() {
+    const report = settings.report;
+    const notes = [`Data directory: ${report.data_dir}`];
+    if (report.applying) notes.push('A change is being applied.');
+    if (report.restart_required) notes.push('The listen address changes at the next start.');
+    $('#settings-state').textContent = notes.join(' · ');
+    if (report.error) toast(report.error, 'bad');
+    $('#settings-groups').replaceChildren(...SETTING_GROUPS.map(([title, fields]) =>
+      h('article', { class: 'card' }, h('h3', {}, title), h('div', { class: 'form' }, fields.map(settingField)))));
+    $('#settings-indexers').replaceChildren(...itemsOf(settings.document.indexers).map(indexerRow));
+    $('#settings-json').value = JSON.stringify(settings.document, null, 2);
+    this.paintSecrets();
+  },
+  paintSecrets() {
+    reconcile($('#settings-secrets'), settings.secrets, (s) => s.name,
+      () => h('li', { class: 'row' },
+        h('label', { class: 'field grow' }, h('span', { class: 'title' }), h('input', { type: 'password', autocomplete: 'new-password', maxLength: 4096, spellcheck: false })),
+        h('div', { class: 'buttons' }, h('span', { class: 'badge' }), h('button', { type: 'button', dataset: { act: 'save' } }, 'Save'),
+          h('button', { type: 'button', class: 'danger', dataset: { act: 'remove' } }, 'Remove'))),
+      (el, secret) => {
+        $('.title', el).textContent = secret.name;
+        const badge = $('.badge', el);
+        badge.textContent = SOURCE_LABELS[secret.source] ?? secret.source;
+        badge.dataset.tone = secret.source === 'missing' ? 'warn' : 'ok';
+        $('[data-act="remove"]', el).hidden = secret.source !== 'stored';
+      });
+  },
+};
+
 views.requests = {
   init() {
     const form = $('#request-form');
@@ -777,7 +1015,7 @@ function setupPalette() {
   document.addEventListener('keydown', (event) => {
     const typing = event.target.closest?.('input, select, textarea, dialog[open]');
     if ((event.key === 'k' && (event.metaKey || event.ctrlKey)) || (event.key === '/' && !typing)) { event.preventDefault(); open(); }
-    else if (!typing && !event.metaKey && !event.ctrlKey && !event.altKey && /^[1-7]$/.test(event.key)) location.hash = `#${VIEWS[Number(event.key) - 1][0]}`;
+    else if (!typing && !event.metaKey && !event.ctrlKey && !event.altKey && /^[1-8]$/.test(event.key)) location.hash = `#${VIEWS[Number(event.key) - 1][0]}`;
   });
 }
 

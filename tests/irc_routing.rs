@@ -75,7 +75,7 @@ fn strict_templates_are_pure_bounded_and_grabs_require_explicit_discovery() {
             .and_then(Value::as_bool),
         Some(false)
     );
-    assert!(!dir.0.join("jobs").exists());
+    assert!(!dir.0.join("state/jobs").exists());
 }
 
 #[test]

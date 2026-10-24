@@ -1,7 +1,6 @@
 /target/
 /bin/
 /.env
-/mynou.json
 /mynou-demo/
 /data/
 /state/

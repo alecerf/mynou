@@ -1,5 +1,6 @@
 //! Original protected API and pure/offline CLI reviews.
 mod api_support;
+mod home_support;
 mod irc_support;
 mod library_support;
 use api_support::{Server, TOKEN};
@@ -83,17 +84,16 @@ fn api_requires_authentication_strict_fields_and_current_guards() {
 #[test]
 fn cli_preview_is_pure_and_offline_apply_requires_the_running_service() {
     let dir = Directory::new();
-    let config_file = dir.0.join("mynou.json");
-    let mut v = value(&dir.0, "irc://127.0.0.1:1");
-    v.insert("listen", "127.0.0.1:1");
-    fs::write(&config_file, json::stringify(&v)).unwrap();
+    let v = value("irc://127.0.0.1:1");
+    home_support::save_settings(&dir.0, &v);
+    let saved = bytes(&dir.0.join("state/jobs"));
     let payload = dir.0.join("announcement.json");
     fs::write(&payload, json::stringify(&announcement(7))).unwrap();
     let out = Command::new(env!("CARGO_BIN_EXE_mynou"))
         .args(["irc-preview", "local", "--announcement"])
         .arg(&payload)
-        .arg("--config")
-        .arg(&config_file)
+        .arg("--dir")
+        .arg(&dir.0)
         .output()
         .unwrap();
     assert!(
@@ -101,7 +101,7 @@ fn cli_preview_is_pure_and_offline_apply_requires_the_running_service() {
         "{}",
         String::from_utf8_lossy(&out.stderr)
     );
-    assert!(!dir.0.join("jobs").exists());
+    assert_eq!(bytes(&dir.0.join("state/jobs")), saved);
     let cfg = config::from_json(&v, &dir.0).unwrap();
     let engine = Engine::open_for_management(cfg.clone()).unwrap();
     let row = receive(&engine, 7);
@@ -117,8 +117,8 @@ fn cli_preview_is_pure_and_offline_apply_requires_the_running_service() {
     drop(engine);
     let before = bytes(&cfg.store_dir);
     let out = Command::new(env!("CARGO_BIN_EXE_mynou"))
-        .args(["irc-control", &id, "--action", "dismiss", "--config"])
-        .arg(&config_file)
+        .args(["irc-control", &id, "--action", "dismiss", "--dir"])
+        .arg(&dir.0)
         .output()
         .unwrap();
     assert!(
@@ -144,9 +144,9 @@ fn cli_preview_is_pure_and_offline_apply_requires_the_running_service() {
             "--apply",
             "--plan-id",
             &plan,
-            "--config",
+            "--dir",
         ])
-        .arg(&config_file)
+        .arg(&dir.0)
         .output()
         .unwrap();
     assert!(!out.status.success());
@@ -155,8 +155,7 @@ fn cli_preview_is_pure_and_offline_apply_requires_the_running_service() {
     let mut cfg = cfg;
     cfg.listen = "127.0.0.1:0".into();
     let server = Server::open(cfg);
-    v.insert("listen", server.authority.clone());
-    fs::write(&config_file, json::stringify(&v)).unwrap();
+    home_support::serve_here(&dir.0, &server.authority);
     let out = Command::new(env!("CARGO_BIN_EXE_mynou"))
         .env("MYNOU_API_TOKEN", TOKEN)
         .args([
@@ -167,9 +166,9 @@ fn cli_preview_is_pure_and_offline_apply_requires_the_running_service() {
             "--apply",
             "--plan-id",
             &plan,
-            "--config",
+            "--dir",
         ])
-        .arg(&config_file)
+        .arg(&dir.0)
         .output()
         .unwrap();
     assert!(
@@ -226,21 +225,11 @@ fn protected_api_and_offline_cli_follow_the_same_chronological_cursor() {
     );
     assert_eq!(get("/api/irc/announcements?after=broken").status, 400);
     drop(server);
-    let path = dir.0.join("mynou.json");
-    let mut v = value(&dir.0, "irc://127.0.0.1:1");
-    v.insert("listen", "127.0.0.1:1");
-    fs::write(&path, json::stringify(&v)).unwrap();
+    home_support::save_settings(&dir.0, &value("irc://127.0.0.1:1"));
     let before = bytes(&cfg.store_dir);
     let out = Command::new(env!("CARGO_BIN_EXE_mynou"))
-        .args([
-            "announcements",
-            "--after",
-            &cursor,
-            "--limit",
-            "1",
-            "--config",
-        ])
-        .arg(&path)
+        .args(["announcements", "--after", &cursor, "--limit", "1", "--dir"])
+        .arg(&dir.0)
         .output()
         .unwrap();
     assert!(

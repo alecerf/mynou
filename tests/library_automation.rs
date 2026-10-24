@@ -1,4 +1,5 @@
 //! Library upgrades use synthetic releases, media and native local torrent peers.
+mod home_support;
 mod library_support;
 
 use library_support::*;
@@ -129,12 +130,13 @@ fn seed_count_alone_never_upgrades_and_a_lower_preference_never_replaces_a_bette
     // A configured rejection is not evidence that the current file is worse.
     let cfg = engine.config.clone();
     drop(engine);
-    let mut value = configuration(
+    let value = configuration(
         Some(&indexer),
         r#"{"resolutions":[1080],"languages":["en"]}"#,
     );
-    value.insert("store_dir", cfg.store_dir.to_str().unwrap());
-    let engine = Engine::open(config::from_json(&value, &directory.0).unwrap()).unwrap();
+    let mut rejecting = config::from_json(&value, &directory.0).unwrap();
+    rejecting.store_dir = cfg.store_dir.clone();
+    let engine = Engine::open(rejecting).unwrap();
     assert_eq!(queued(&engine.check_upgrades(true).unwrap()), 0);
     indexer.replace(Value::Array(vec![release(
         BETTER,
@@ -758,9 +760,9 @@ fn plex_must_confirm_the_mapped_new_version_before_an_upgrade_becomes_current() 
         format!("{}/watchlist", plex.url).into(),
     );
     plex_config.insert("path_mappings".into(), Value::Array(vec![mapping]));
-    let config_path = nested.join("mynou.json");
-    fs::write(&config_path, mynou::json::stringify(&value)).unwrap();
-    let mut cfg = config::load(&config_path).unwrap();
+    // Relative settings resolve against the data directory they are saved in.
+    home_support::save_settings(&nested, &value);
+    let mut cfg = config::load(&nested).unwrap();
     cfg.plex.token_override = Some("synthetic-plex-library-token".into());
     assert!(cfg.movies_root.is_absolute());
     let engine = Engine::open(cfg).unwrap();

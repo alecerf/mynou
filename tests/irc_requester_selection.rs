@@ -27,8 +27,8 @@ fn rule(v: &mut Value) -> &mut Value {
     };
     &mut r[0]
 }
-fn configured_json(dir: &Directory) -> Value {
-    let mut v = irc_support::value(&dir.0, "irc://127.0.0.1:1");
+fn configured_json() -> Value {
+    let mut v = irc_support::value("irc://127.0.0.1:1");
     v.insert("requesters", json::parse(r#"{"accounts":[{"id":"alice","expected_user_id":"101","token_env":"MYNOU_TEST_ALICE"}]}"#).unwrap());
     v
 }
@@ -72,7 +72,7 @@ fn shared(engine: &Engine, accounts: &Accounts) -> String {
 #[test]
 fn selectors_are_strict_configured_aliases_and_null_retains_original_rule_serialization() {
     let dir = Directory::new();
-    let mut v = configured_json(&dir);
+    let mut v = configured_json();
     let original = config::from_json(&v, &dir.0).unwrap();
     rule(&mut v).insert("requester", Value::Null);
     assert_eq!(
@@ -101,13 +101,13 @@ fn selectors_are_strict_configured_aliases_and_null_retains_original_rule_serial
             .as_str(),
         Some("alice")
     );
-    assert!(!dir.0.join("jobs").exists());
+    assert!(!dir.0.join("state/jobs").exists());
 }
 
 #[test]
 fn an_explicit_default_selector_preserves_pending_legacy_reviews_and_storage() {
     let dir = Directory::new();
-    let mut v = configured_json(&dir);
+    let mut v = configured_json();
     let cfg = config::from_json(&v, &dir.0).unwrap();
     let e = Engine::open(cfg.clone()).unwrap();
     let row = irc_support::receive(&e, 7);
@@ -295,7 +295,7 @@ fn selector_edits_invalidate_pending_grabs_and_review_guards_without_reinterpret
 #[test]
 fn protected_source_reports_and_rules_show_only_requester_aliases() {
     let dir = Directory::new();
-    let mut v = configured_json(&dir);
+    let mut v = configured_json();
     rule(&mut v).insert("requester", "alice");
     let cfg = config::from_json(&v, &dir.0).unwrap();
     let server = Server::open(cfg.clone());

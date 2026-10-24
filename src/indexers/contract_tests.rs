@@ -139,7 +139,6 @@ impl Fixture {
 fn configuration(alias: &str, family: Family, url: &str, dir: &Directory) -> Config {
     let mut v = config::default_json();
     v.insert("listen", "127.0.0.1:0");
-    v.insert("store_dir", dir.0.join("jobs").to_str().unwrap());
     v.get_mut("downloads").unwrap().insert("enabled", false);
     let mut source = Value::object();
     source.insert("id", alias);

@@ -101,8 +101,8 @@ fn format_json() -> Value {
     v.insert("categories", categories);
     v
 }
-fn settings(dir: &Directory, http: &str) -> Value {
-    let mut v = irc_support::value(&dir.0, "irc://127.0.0.1:1");
+fn settings(http: &str) -> Value {
+    let mut v = irc_support::value("irc://127.0.0.1:1");
     let Value::Array(sources) = v.get_mut("irc").unwrap().get_mut("sources").unwrap() else {
         panic!()
     };
@@ -123,7 +123,7 @@ fn settings(dir: &Directory, http: &str) -> Value {
 fn setup() -> (Directory, Fixture, Config, std::sync::Arc<Engine>) {
     let dir = Directory::new();
     let fixture = Fixture::new();
-    let cfg = config::from_json(&settings(&dir, &fixture.url), &dir.0).unwrap();
+    let cfg = config::from_json(&settings(&fixture.url), &dir.0).unwrap();
     let engine = Engine::open(cfg.clone()).unwrap();
     (dir, fixture, cfg, engine)
 }
@@ -229,7 +229,7 @@ fn a_bracketed_candidate_resolves_through_the_exact_details_page_and_catalog() {
     receive(&engine, &line("Films", name, 468190)).unwrap();
     assert_eq!(resolve(&engine).0, "duplicate");
     assert_eq!(history(&engine).len(), 1);
-    assert!(!dir.0.join("jobs").join("downloads").exists());
+    assert!(!dir.0.join("state/jobs").join("downloads").exists());
 }
 
 #[test]
@@ -343,7 +343,7 @@ fn episodes_need_one_explicit_number_and_other_categories_are_rejected() {
 #[test]
 fn the_lookup_must_name_a_configured_torznab_indexer() {
     let dir = Directory::new();
-    let mut v = settings(&dir, "http://127.0.0.1:1");
+    let mut v = settings("http://127.0.0.1:1");
     let Value::Array(indexers) = v.get_mut("indexers").unwrap() else {
         panic!()
     };
@@ -355,7 +355,7 @@ fn the_lookup_must_name_a_configured_torznab_indexer() {
         ("details_prefix", "https://tracker.example/t/?a=1/"),
         ("lookup_indexer", "Unknown Indexer"),
     ] {
-        let mut v = settings(&dir, "http://127.0.0.1:1");
+        let mut v = settings("http://127.0.0.1:1");
         let Value::Array(sources) = v.get_mut("irc").unwrap().get_mut("sources").unwrap() else {
             panic!()
         };

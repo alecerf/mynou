@@ -2367,7 +2367,6 @@ fn captured_feed_routes_reach_jobs_and_library_beyond_the_former_prefix() {
         assert!(prefix.jobs.iter().all(|row| row.id != target.id));
         drop(store);
         let mut value = crate::config::default_json();
-        value.insert("store_dir", directory.0.to_str().unwrap());
         value.insert("indexers",Value::Array(vec![crate::json::parse(r#"{"id":"capture","name":"Synthetic","kind":"rss","url":"http://127.0.0.1:9/feed","api_key_env":"MYNOU_ABSENT_FEED_FIXTURE_KEY_110","watch":{"enabled":true,"interval_secs":60}}"#).unwrap()]));
         value.insert(
             "monitoring",
@@ -2384,7 +2383,8 @@ fn captured_feed_routes_reach_jobs_and_library_beyond_the_former_prefix() {
             )
             .unwrap(),
         );
-        let config = crate::config::from_json(&value, &directory.0).unwrap();
+        let mut config = crate::config::from_json(&value, &directory.0).unwrap();
+        config.store_dir = directory.0.clone();
         let engine = Engine::open_for_management(config).unwrap();
         let revision = lock(&engine.indexer_store)
             .unwrap()
@@ -2638,9 +2638,9 @@ fn management_preflight_rejects_missing_irc_reservations_before_migration_writes
     write_legacy(&directory.0, &[job], &[], 4);
     private(&directory.0.join(".lock"), b"");
     let mut value = crate::config::default_json();
-    value.insert("store_dir", directory.0.to_str().unwrap().to_owned());
     value.get_mut("downloads").unwrap().insert("enabled", false);
-    let config = crate::config::from_json(&value, &directory.0).unwrap();
+    let mut config = crate::config::from_json(&value, &directory.0).unwrap();
+    config.store_dir = directory.0.clone();
     let before = contents(&directory.0);
     let error = Store::prepare(&directory.0, &config).err().unwrap();
     assert!(
@@ -2967,9 +2967,9 @@ fn imported_child_upgrade_resumes_from_a_mid_upgrade_cursor() {
 fn status_reports_held_and_failed_stores_without_waiting_or_failing() {
     use crate::engine::{Engine, lock};
     let directory = Directory::new();
-    let mut value = crate::config::default_json();
-    value.insert("store_dir", directory.0.to_str().unwrap());
-    let config = crate::config::from_json(&value, &directory.0).unwrap();
+    let value = crate::config::default_json();
+    let mut config = crate::config::from_json(&value, &directory.0).unwrap();
+    config.store_dir = directory.0.clone();
     let engine = Engine::open_for_management(config).unwrap();
     engine.submit(request("Kept")).unwrap();
     let state = |status: &Value, store: &str| {

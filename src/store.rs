@@ -1472,6 +1472,64 @@ impl Store {
         })
     }
 
+    /// The saved settings document. Absent until first saved, and in a store
+    /// that still needs migration.
+    pub fn settings(&mut self) -> Result<Option<Value>> {
+        self.record(layout::SETTINGS_KEY)
+    }
+
+    pub fn save_settings(&mut self, document: &Value) -> Result<()> {
+        self.save_record(layout::SETTINGS_KEY, document)
+    }
+
+    /// Saved secret values by name; never part of a report.
+    pub fn secrets(&mut self) -> Result<BTreeMap<String, String>> {
+        let Some(value) = self.record(layout::SECRETS_KEY)? else {
+            return Ok(BTreeMap::new());
+        };
+        fields(&value)?
+            .iter()
+            .map(|(name, value)| {
+                value
+                    .as_str()
+                    .map(|text| (name.clone(), text.to_owned()))
+                    .ok_or_else(|| "Stored secrets are invalid".to_owned())
+            })
+            .collect()
+    }
+
+    pub fn save_secrets(&mut self, secrets: &BTreeMap<String, String>) -> Result<()> {
+        let value = Value::Object(
+            secrets
+                .iter()
+                .map(|(name, value)| (name.clone(), Value::String(value.clone())))
+                .collect(),
+        );
+        self.save_record(layout::SECRETS_KEY, &value)
+    }
+
+    fn record(&mut self, key: Key) -> Result<Option<Value>> {
+        let Backend::Ready(index) = &mut self.backend else {
+            return Ok(None);
+        };
+        index
+            .get(&key)?
+            .map(|bytes| {
+                std::str::from_utf8(&bytes)
+                    .map_err(|_| "Stored settings are not valid UTF-8".to_owned())
+                    .and_then(crate::json::parse)
+            })
+            .transpose()
+    }
+
+    fn save_record(&mut self, key: Key, value: &Value) -> Result<()> {
+        let bytes = crate::json::stringify(value).into_bytes();
+        if bytes.len() > crate::inventory::MAX_VALUE_BYTES {
+            return Err("Settings are too large (maximum 1 MiB)".into());
+        }
+        self.mutate(|db| db.0.commit(vec![Change::Put(key, bytes)]).map(|_| ()))
+    }
+
     /// Identifies the stored state for stale-plan fences; changes on every commit.
     pub fn sequence(&mut self) -> Result<u64> {
         match &mut self.backend {

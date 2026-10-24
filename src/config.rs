@@ -1,10 +1,18 @@
 use crate::{
     Result,
-    json::{self, Value},
+    json::Value,
     torrent::{DownloadConfig, TransferPolicy},
 };
-use std::fs;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Component, Path, PathBuf};
+use std::sync::RwLock;
+
+/// The API token authenticates the interface, so it stays outside the
+/// settings, in the data directory's private `.env` or the environment.
+pub const API_TOKEN_ENV: &str = "MYNOU_API_TOKEN";
+/// Secret values in one store record, and the size of each.
+pub const MAX_SECRETS: usize = 256;
+pub const MAX_SECRET_BYTES: usize = 4096;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Monitoring {
@@ -57,9 +65,12 @@ pub struct Source {
 }
 #[derive(Clone, Debug)]
 pub struct Config {
+    /// Holds `.env` and `state/`; relative settings paths resolve against it.
+    pub data_dir: PathBuf,
+    /// The settings document this configuration was validated from.
+    pub document: Value,
     pub store_dir: PathBuf,
     pub listen: String,
-    pub api_token_env: String,
     pub movies_root: PathBuf,
     pub series_root: PathBuf,
     pub downloads: DownloadConfig,
@@ -89,9 +100,7 @@ fn n(v: u64) -> Value {
 pub fn default_json() -> Value {
     object(vec![
         ("schema_version", n(1)),
-        ("store_dir", "state/jobs".into()),
         ("listen", "127.0.0.1:8787".into()),
-        ("api_token_env", "MYNOU_API_TOKEN".into()),
         ("poll_interval_ms", n(500)),
         ("lease_duration_secs", n(60)),
         ("workers", n(2)),
@@ -326,27 +335,54 @@ fn download_policy(downloads: &Value) -> Result<TransferPolicy> {
     TransferPolicy::from_json(&policy).map_err(|error| format!("Configuration: downloads: {error}"))
 }
 
-pub fn load(file: &Path) -> Result<Config> {
-    use std::io::Read;
-    let mut data = String::new();
-    fs::File::open(file)
-        .and_then(|f| f.take(1_048_577).read_to_string(&mut data))
-        .map_err(|e| format!("Configuration: {e}"))?;
-    if data.len() > 1_048_576 {
-        return Err("Configuration is too large (maximum 1 MiB)".into());
-    }
-    let v = json::parse(&data)?;
-    let base = file.parent().unwrap_or(Path::new("."));
-    from_json(&v, base)
+/// The data directory: `--dir`, else `MYNOU_HOME`, else the account's
+/// `~/Library/Application Support/Mynou`.
+pub fn data_dir(option: Option<&str>) -> Result<PathBuf> {
+    let path = match option {
+        Some(path) if !path.trim().is_empty() => PathBuf::from(path),
+        Some(_) => return Err("--dir requires a directory".into()),
+        None => match std::env::var_os("MYNOU_HOME").filter(|v| !v.is_empty()) {
+            Some(path) => PathBuf::from(path),
+            None => PathBuf::from(std::env::var_os("HOME").ok_or(
+                "Set --dir or MYNOU_HOME: HOME is missing for the default data directory",
+            )?)
+            .join("Library/Application Support/Mynou"),
+        },
+    };
+    absolute_path(&path)
+}
+
+/// The job store, which also holds the settings and secrets.
+pub fn store_dir(data_dir: &Path) -> PathBuf {
+    data_dir.join("state/jobs")
+}
+
+/// Loads the saved settings and secrets of a stopped installation; without
+/// saved settings, the defaults apply. A running service holds the store.
+pub fn load(data_dir: &Path) -> Result<Config> {
+    let data_dir = absolute_path(data_dir)?;
+    let store = store_dir(&data_dir);
+    let (document, secrets) = if crate::store::Store::directory_exists(&store)? {
+        let mut store = crate::store::Store::open_read_only(&store).map_err(|error| {
+            if error.contains("already open") {
+                format!("{error}; a running Mynou is reached with its API token ({API_TOKEN_ENV})")
+            } else {
+                error
+            }
+        })?;
+        (store.settings()?, store.secrets()?)
+    } else {
+        (None, BTreeMap::new())
+    };
+    install_secrets(secrets);
+    from_json(&document.unwrap_or_else(default_json), &data_dir)
 }
 pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
     keys(
         v,
         &[
             "schema_version",
-            "store_dir",
             "listen",
-            "api_token_env",
             "poll_interval_ms",
             "lease_duration_secs",
             "workers",
@@ -521,9 +557,10 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
         }
     }
     Ok(Config {
-        store_dir: path(&base, text(v, "store_dir", "state/jobs")?)?,
+        store_dir: store_dir(&base),
+        data_dir: base.clone(),
+        document: v.clone(),
         listen,
-        api_token_env: text(v, "api_token_env", "MYNOU_API_TOKEN")?,
         movies_root: path(&base, text(library, "movies_root", "library/movies")?)?,
         series_root: path(&base, text(library, "series_root", "library/series")?)?,
         downloads: DownloadConfig {
@@ -572,8 +609,30 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
         irc,
     })
 }
+/// Secrets saved in the store, installed when settings load and whenever one
+/// is saved, so that a change applies without a restart.
+static STORED: RwLock<BTreeMap<String, String>> = RwLock::new(BTreeMap::new());
+
+pub fn install_secrets(secrets: BTreeMap<String, String>) {
+    *STORED.write().unwrap_or_else(|e| e.into_inner()) = secrets;
+}
+
+fn stored(name: &str) -> Option<String> {
+    STORED
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .get(name)
+        .cloned()
+}
+
+/// The raw saved secret, else the environment variable of the same name.
+pub fn lookup(name: &str) -> Option<String> {
+    stored(name).or_else(|| std::env::var(name).ok())
+}
+
+/// A saved secret, else the environment variable of the same name.
 pub fn secret(name: &str) -> Result<String> {
-    let value = std::env::var(name).unwrap_or_default().trim().to_owned();
+    let value = lookup(name).unwrap_or_default().trim().to_owned();
     if value.is_empty() {
         Err(format!("Missing secret {name}"))
     } else if value.contains(['\r', '\n', '\0']) {
@@ -581,4 +640,84 @@ pub fn secret(name: &str) -> Result<String> {
     } else {
         Ok(value)
     }
+}
+
+/// Like `secret`, but an unset secret is `None` instead of an error.
+pub fn optional_secret(name: &str) -> Result<Option<String>> {
+    match source(name) {
+        "missing" => Ok(None),
+        _ => secret(name).map(Some),
+    }
+}
+
+/// Where a secret comes from: `stored`, `environment` or `missing`.
+pub fn source(name: &str) -> &'static str {
+    if stored(name).is_some_and(|v| !v.trim().is_empty()) {
+        "stored"
+    } else if std::env::var(name).is_ok_and(|v| !v.trim().is_empty()) {
+        "environment"
+    } else {
+        "missing"
+    }
+}
+
+/// Secret names are environment-variable names; the API token is not one.
+pub fn check_secret_name(name: &str) -> Result<()> {
+    if name.is_empty()
+        || name.len() > 128
+        || !name
+            .bytes()
+            .enumerate()
+            .all(|(i, b)| b == b'_' || b.is_ascii_uppercase() || i > 0 && b.is_ascii_digit())
+    {
+        return Err("Secret names use 1 to 128 uppercase letters, digits and underscores".into());
+    }
+    if name == API_TOKEN_ENV {
+        return Err("The API token stays in the data directory's .env file".into());
+    }
+    Ok(())
+}
+
+pub fn check_secret_value(value: &str) -> Result<()> {
+    if value.trim().is_empty()
+        || value.len() > MAX_SECRET_BYTES
+        || value.chars().any(char::is_control)
+    {
+        return Err("Secret values use 1 to 4096 bytes without control characters".into());
+    }
+    Ok(())
+}
+
+/// Every secret a settings document names (fields ending in `_env`), with
+/// the usual ones, so that the interface can offer to set them.
+pub fn secret_names(document: &Value) -> BTreeSet<String> {
+    fn walk(value: &Value, names: &mut BTreeSet<String>) {
+        match value {
+            Value::Object(map) => {
+                for (key, value) in map {
+                    match value {
+                        Value::String(name) if key.ends_with("_env") => {
+                            if check_secret_name(name).is_ok() {
+                                names.insert(name.clone());
+                            }
+                        }
+                        _ => walk(value, names),
+                    }
+                }
+            }
+            Value::Array(items) => items.iter().for_each(|item| walk(item, names)),
+            _ => {}
+        }
+    }
+    let mut names: BTreeSet<String> = [
+        "MYNOU_PLEX_TOKEN",
+        "MYNOU_TMDB_TOKEN",
+        "MYNOU_TMDB_API_KEY",
+        "MYNOU_INDEXER_API_KEY",
+    ]
+    .into_iter()
+    .map(String::from)
+    .collect();
+    walk(document, &mut names);
+    names
 }

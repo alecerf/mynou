@@ -23,7 +23,7 @@ fn irc_is_opt_in_strict_bounded_and_requires_verified_remote_transport() {
     let engine = Engine::open_for_management(legacy.clone()).unwrap();
     assert!(!legacy.store_dir.join("announcements.bin").exists());
     drop(engine);
-    let mut v = value(&dir.0, "irc://127.0.0.1:1");
+    let mut v = value("irc://127.0.0.1:1");
     let mut irc = settings("ircs://irc.example.test:6697");
     let Value::Array(s) = irc.get_mut("sources").unwrap() else {
         panic!()
@@ -43,7 +43,7 @@ fn irc_is_opt_in_strict_bounded_and_requires_verified_remote_transport() {
         "ircs://example.test:0",
         "ircs://example.test:6697?password=secret",
     ] {
-        let mut v = value(&dir.0, url);
+        let mut v = value(url);
         assert!(config::from_json(&v, &dir.0).is_err());
         v.insert("irc", Value::Null);
         assert!(config::from_json(&v, &dir.0).is_err());
@@ -56,7 +56,7 @@ fn irc_is_opt_in_strict_bounded_and_requires_verified_remote_transport() {
         ("password_env", Value::from("lowercase")),
         ("idle_timeout_secs", Value::from(601_u32)),
     ] {
-        let mut v = value(&dir.0, "irc://127.0.0.1:1");
+        let mut v = value("irc://127.0.0.1:1");
         let Value::Array(s) = v.get_mut("irc").unwrap().get_mut("sources").unwrap() else {
             panic!()
         };
@@ -64,7 +64,7 @@ fn irc_is_opt_in_strict_bounded_and_requires_verified_remote_transport() {
         assert!(config::from_json(&v, &dir.0).is_err());
     }
     for key in ["source", "profile", "action"] {
-        let mut v = value(&dir.0, "irc://127.0.0.1:1");
+        let mut v = value("irc://127.0.0.1:1");
         let Value::Array(r) = v.get_mut("irc").unwrap().get_mut("rules").unwrap() else {
             panic!()
         };
@@ -440,9 +440,8 @@ fn offline_reviews_do_not_initialize_repair_or_change_storage() {
     );
     assert_eq!(bytes(&cfg.store_dir), before);
     drop(preview);
-    let mut legacy = config::default_json();
-    legacy.insert("store_dir", cfg.store_dir.to_str().unwrap());
-    let legacy = config::from_json(&legacy, Path::new(".")).unwrap();
+    let mut legacy = config::from_json(&config::default_json(), Path::new(".")).unwrap();
+    legacy.store_dir = cfg.store_dir.clone();
     let existing = cfg.store_dir.join("announcements.bin");
     fs::remove_file(existing).unwrap();
     let before = bytes(&cfg.store_dir);

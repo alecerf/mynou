@@ -33,53 +33,51 @@ enabled globally.
 
 ## Configure and start
 
-Create a directory you own, outside Downloads:
+Create the data directory and start the service:
 
 ```sh
-mkdir -p "$HOME/Library/Application Support/Mynou" &&
-  cd "$HOME/Library/Application Support/Mynou" &&
-  "$HOME/.local/bin/mynou" init --config ./mynou.json &&
-  "$HOME/.local/bin/mynou" doctor --config ./mynou.json
+"$HOME/.local/bin/mynou" init &&
+  "$HOME/.local/bin/mynou" serve
 ```
 
-`init` writes `mynou.json` and a private `.env` with a random API token; Plex
-and TMDB start disabled. Set your library folders, sources, Plex and catalog as
-described in [Configure Mynou](#configure-mynou). Use ordinary folders you own
-rather than paths through symbolic links: imports never overwrite files and
-refuse symbolic links.
+`init` creates `~/Library/Application Support/Mynou` with a private `.env`
+holding a random API token. Open <http://127.0.0.1:8787/>, paste the
+`MYNOU_API_TOKEN` value from that `.env` file, and set Mynou up in the
+**Settings** view: library folders, downloads, Plex, TMDB, sources and their
+tokens. Plex and TMDB start disabled. Use ordinary folders you own rather than
+paths through symbolic links: imports never overwrite files and refuse
+symbolic links.
 
-Foreground `serve` reads only `MYNOU_API_TOKEN` from the `.env` file beside
-the configuration. Export the other configured secrets (Plex, TMDB, sources)
-in the shell that starts `serve`, using your shell's quoting rules. Treat `.env`
-as data: sourcing it interprets its contents as shell code. For example, replace
-the placeholders below with shell-quoted values:
-
-```sh
-export MYNOU_PLEX_TOKEN='replace-with-your-Plex-token'
-export MYNOU_TMDB_TOKEN='replace-with-your-TMDB-token'
-"$HOME/.local/bin/mynou" serve --config ./mynou.json
-```
-
-The API listens on `http://127.0.0.1:8787` and takes the API token as a Bearer
-token. Run Mynou as the user that owns its configuration, data and library.
-For unattended operation, the [native launchd service](macos-service.md) starts
-at account login, restarts after crashes and injects the configured secrets
-from a private snapshot of the adjacent `.env` file.
+Every command takes `--dir DIR` to use another data directory; `MYNOU_HOME`
+sets the default. Run Mynou as the user that owns its data directory and
+library. For unattended operation, the [native launchd service](macos-service.md)
+starts at account login and restarts after crashes.
 
 ## Configure Mynou
 
-Settings live in `mynou.json`; secrets live in the environment of the process
-that runs `mynou serve`. Relative paths resolve against the configuration file's
-directory. Unknown fields are rejected, and `mynou doctor` reports whether the
-file is valid. Restart the service after any change.
+Mynou keeps its settings and secrets in its own storage, in `state/jobs` of the
+data directory. Change them from the
+**Settings** view of the web interface, from the API (`GET` and `POST
+/api/settings`, `GET` and `POST /api/secrets`) or from the command line:
+
+```sh
+mynou settings                            # every setting, as JSON
+mynou settings --save < settings.json     # validate and save a whole document
+printf '%s' "$TOKEN" | mynou secrets --set MYNOU_PLEX_TOKEN
+mynou secrets                             # which secrets are set, never their values
+```
+
+Settings are validated before they are saved: unknown fields are rejected, so a
+typo is reported instead of ignored, and an invalid document leaves the saved
+one unchanged. The running service applies saved settings by restarting its
+engine; a new `listen` address applies at the next start. Relative paths
+resolve against the data directory.
 
 | Setting | Default | Purpose |
 | --- | --- | --- |
 | `library.movies_root`, `library.series_root` | `library/movies`, `library/series` | Where imports go |
 | `downloads` | enabled, `downloads`, `state/torrents`, port 6881, seeding, DHT and PEX on | BitTorrent client; see [transfers](transfers.md) |
-| `store_dir` | `state/jobs` | Request journal and snapshots |
-| `listen` | `127.0.0.1:8787` | API listener |
-| `api_token_env` | `MYNOU_API_TOKEN` | Variable holding the API token |
+| `listen` | `127.0.0.1:8787` | API and web interface listener |
 | `workers` | `2` (1 to 32) | Requests processed at the same time |
 | `max_attempts` | `10` (up to 1,000) | Automatic retries of a failed request, with growing delays |
 | `minimum_seeders` | `1` | Candidates with fewer seeders are rejected |
@@ -92,28 +90,32 @@ file is valid. Restart the service after any change.
 | `series_packs` | disabled | [Automatic packs](packs.md#prefer-packs-during-monitoring) |
 | `irc`, `requesters` | absent | [IRC announcements](sources.md#irc-announcements), [requester accounts](requesters.md) |
 
-Each integration names the environment variable that holds its secret:
+Each integration names the secret that holds its credential (the `*_env`
+settings). Save it in the **Settings** view or with `mynou secrets --set`; a
+saved secret is kept in the store, is never returned by the API, and takes
+precedence over an environment variable of the same name, which remains a
+fallback:
 
-| Variable | Used for |
+| Secret | Used for |
 | --- | --- |
-| `MYNOU_API_TOKEN` | API Bearer token (generated in `.env`) |
+| `MYNOU_API_TOKEN` | API Bearer token; always in `.env` or the environment, never in the store |
 | `MYNOU_PLEX_TOKEN` | Plex server and its watchlist |
 | `MYNOU_TMDB_TOKEN` or `MYNOU_TMDB_API_KEY` | TMDB catalog |
-| `MYNOU_INDEXER_API_KEY` | Default API key variable for sources |
+| `MYNOU_INDEXER_API_KEY` | Default API key of sources |
 
 Enable the catalog with `catalog.enabled`, and describe each source as shown in
 [sources](sources.md). Mynou talks to these services itself; the installation
 runs no other media manager. Then check a search:
 
 ```sh
-mynou search --title "Example Movie" --year 2026 --config ./mynou.json
+mynou search --title "Example Movie" --year 2026
 ```
 
 ## Connect Plex
 
 Set `plex.enabled`, `plex.url` and the movie and series section IDs
-(`plex.movies_section`, `plex.series_section`), and export the token as
-`MYNOU_PLEX_TOKEN`. The default URL `http://127.0.0.1:32400` reaches Plex on the
+(`plex.movies_section`, `plex.series_section`), and save the token as the
+`MYNOU_PLEX_TOKEN` secret. The default URL `http://127.0.0.1:32400` reaches Plex on the
 same Mac; use the server's address for Plex elsewhere. `plex.watchlist_url` only
 needs changing for a different watchlist service.
 
@@ -134,11 +136,11 @@ comparison only: they do not move files or change mounts. They match whole
 path components (`/Volumes/Media` does not match `/Volumes/Media-extra`), the
 longest prefix wins, and without a mapping the paths must be identical.
 
-After changing the configuration, restart the service and synchronize:
+Once the settings are applied, synchronize:
 
 ```sh
-mynou sync --config ./mynou.json
-mynou jobs --config ./mynou.json
+mynou sync
+mynou jobs
 ```
 
 ## Everyday use
@@ -147,8 +149,7 @@ The API listens on `127.0.0.1:8787`. `/healthz` reports liveness. While
 Mynou validates its storage after a start, `/readyz` answers 503 `starting`
 (`failed` if validation found an inconsistency), only reads are served and
 `startup` in `/api/status` shows the stage and rows checked; requests, workers
-and transfers begin once it is `ready`. `mynou healthcheck --config
-./mynou.json` exits with an error unless the running service answers `/readyz`
+and transfers begin once it is `ready`. `mynou healthcheck` exits with an error unless the running service answers `/readyz`
 (it bypasses any proxy). `/api` routes need
 `Authorization: Bearer` with the API token. For remote access, put a TLS reverse
 proxy in front and keep the plain listener private.
@@ -156,15 +157,15 @@ proxy in front and keep the plain listener private.
 Port 6881/TCP accepts BitTorrent peers; whether peers can reach it depends on
 your firewall and router. DHT and UDP trackers use outgoing connections only.
 
-Run any CLI command with the same configuration file:
+CLI commands use the running service's API for the same data directory, or
+the storage directly when it is stopped:
 
 ```sh
-mynou submit --title "Movie" --year 2026 --url 'magnet:?xt=urn:btih:...' \
-  --config ./mynou.json
-mynou status --config ./mynou.json
-mynou events ID --config ./mynou.json
-mynou retry ID --config ./mynou.json
-mynou cancel ID --config ./mynou.json
+mynou submit --title "Movie" --year 2026 --url 'magnet:?xt=urn:btih:...'
+mynou status
+mynou events ID
+mynou retry ID
+mynou cancel ID
 ```
 
 For a local file, pass its path with `--path`. Cancelling a request never
@@ -184,15 +185,15 @@ For unattended account-login startup, crash recovery and explicit graceful
 stop/start/uninstall commands, see the [native launchd service](macos-service.md).
 Its upgrade instructions also explain refreshing the private credential snapshot.
 
-Keep `mynou.json`, `.env`, the `state/` and `downloads/` folders and the library
-folders. For a consistent backup, stop the service before copying `state/`. The
+Keep the data directory (its `.env`, `state/` and `downloads/` folders, which
+hold every setting and saved secret) and the library folders. For a consistent backup, stop the service before copying `state/`. The
 journal confirms each transaction on disk, and an interrupted final write is
 recovered at the next start. `POST /api/shutdown` lets running work finish;
 stopping the process instead relies on that recovery.
 
 To upgrade, read the new release notes, back up, stop the service, download the
 next release's executable, verify it as above and install it at the same path.
-Keep the configuration, `.env`, journal, downloads and library folders. Published
+Keep the data directory and library folders. Published
 releases never change; each update is a new version. To roll back, reinstall the
 previous executable with compatible data: some versions change storage formats
 that older versions refuse (see [limits](limits.md#persistence-and-platform)).

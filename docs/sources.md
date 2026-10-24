@@ -13,7 +13,8 @@ and validate each provider's contract.
 
 ## Indexers
 
-Add each source to the `indexers` array of `mynou.json`:
+Add each source in the **Indexers** part of the **Settings** view, or to the
+`indexers` array of the settings document (`mynou settings --save`):
 
 ```json
 {
@@ -44,8 +45,9 @@ Add each source to the `indexers` array of `mynou.json`:
 - `id` is an optional stable identifier of 1 to 64 lowercase letters, digits,
   underscores or hyphens. It binds the name, kind, URL, API key variable,
   interval and authentication: changing any of them needs a new ID.
-- Credential values always come from environment variables, never from
-  `mynou.json`.
+- Credential values are secrets, saved from the **Settings** view or
+  `mynou secrets --set NAME`, or read from environment variables of the same
+  name; they are never part of the settings document.
 
 ### Authentication
 
@@ -126,8 +128,8 @@ A `mapping` is a section of a `json` source. Every key is optional:
   checked against the request. `kind_values` replaces the value sent for
   `movie`, `episode` and `series`, for indexers that expect a category.
 - `fixed_params` adds up to eight constant parameters, such as a category or a
-  page size. They are written in `mynou.json` in clear: never put a credential
-  there. Credentials stay in environment variables (`api_key_env` and
+  page size. They are part of the settings document in clear: never put a
+  credential there. Credentials stay in secrets (`api_key_env` and
   [authentication](#authentication)), and the API key is sent as a query
   parameter named by `params.api_key`.
 - `download_params` adds up to four constant parameters to every mapped HTTP(S)
@@ -151,10 +153,10 @@ Mynou: check it with `mynou indexer-control SOURCE --action probe`.
 ### Health, pause and probe
 
 ```sh
-mynou indexers --config ./mynou.json
-mynou indexer-control movies-source --action pause --config ./mynou.json
+mynou indexers
+mynou indexer-control movies-source --action pause
 mynou indexer-control movies-source --action pause --apply \
-  --plan-id PLAN_ID --config ./mynou.json
+  --plan-id PLAN_ID
 ```
 
 `mynou indexers` and `GET /api/indexers` show
@@ -170,7 +172,7 @@ sources are never searched or probed. The API equivalent is
 `POST /api/indexers/SOURCE_ID/control` with `action` and, to apply,
 `"apply": true` and `"plan_id"`. The enabled state is read from the configuration
 once and then kept in a private `indexers.bin` file, so a later `enabled`
-change in `mynou.json` does not override a pause.
+change in the settings does not override a pause.
 
 A source that answers `429` is rested for its `Retry-After` delay (60 seconds
 when absent, clamped to 1 to 3,600) and is never retried immediately. A second
@@ -239,7 +241,7 @@ of the per-title search:
   (the rest stay new for the next poll) and 32 jobs and 32 upgrades are routed.
 
 ```sh
-mynou feeds --config ./mynou.json
+mynou feeds
 ```
 
 `mynou feeds` and `GET /api/feeds` report, for every RSS or Torznab source and
@@ -432,7 +434,7 @@ searches the indexer for the release name and keeps the single item whose
 address. That item must carry one `tmdbid` and one `infohash` (the mapped
 `tmdb_id` and `info_hash`), either 40 or 64 hexadecimal digits or their
 hexadecimal ASCII encoding, as some aggregators return them. The
-TMDB catalog (`catalog` in `mynou.json`) then supplies the canonical title and year. Only then does
+TMDB catalog (`catalog` in the settings) then supplies the canonical title and year. Only then does
 the announcement enter the history, with the same duplicate detection, rules,
 profiles, admitted demand and metadata checks as any other. GUIDs and
 download links, which carry a passkey, are never read.
@@ -461,8 +463,8 @@ routes nothing.
 Test a format without storage, network or acquisition:
 
 ```sh
-mynou irc-preview SOURCE_ID --text announcement.txt --config ./mynou.json
-mynou irc-preview SOURCE_ID --announcement claim.json --config ./mynou.json
+mynou irc-preview SOURCE_ID --text announcement.txt
+mynou irc-preview SOURCE_ID --announcement claim.json
 ```
 
 The text file holds the message body without line endings. The API equivalent
@@ -524,12 +526,12 @@ for later pages. Each page holds at most 200 rows; `--offset` remains available
 up to 1,000 rows. See [migration and downgrade](inventory-storage.md#irc-announcement-storage).
 
 ```sh
-mynou irc --config ./mynou.json
-mynou announcements --limit 50 --config ./mynou.json
-mynou announcement ANNOUNCEMENT_ID --config ./mynou.json
-mynou irc-control ANNOUNCEMENT_ID --action dismiss --config ./mynou.json
+mynou irc
+mynou announcements --limit 50
+mynou announcement ANNOUNCEMENT_ID
+mynou irc-control ANNOUNCEMENT_ID --action dismiss
 mynou irc-control ANNOUNCEMENT_ID --action dismiss --apply \
-  --plan-id PLAN_ID --config ./mynou.json
+  --plan-id PLAN_ID
 ```
 
 Actions are `acknowledge`, `dismiss` and `request`. Each is previewed first; the

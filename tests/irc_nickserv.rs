@@ -1,4 +1,5 @@
 //! Original service-authentication fixtures run only against local synthetic peers.
+mod home_support;
 mod irc_support;
 mod library_support;
 use irc_support::*;
@@ -28,14 +29,14 @@ fn source(v: &mut Value) -> &mut Value {
 fn nickserv() -> Value {
     json::parse(r#"{"account":"fixture","password_env":"PWD","service":"NickServ","sender":"NickServ!service@fixture","success_notice":"Identified as {account}","failure_notices":["Invalid password","Account unavailable"]}"#).unwrap()
 }
-fn configured(dir: &Directory, url: &str) -> Value {
-    let mut v = value(&dir.0, url);
+fn configured(url: &str) -> Value {
+    let mut v = value(url);
     source(&mut v).insert("nickserv", nickserv());
     v
 }
 fn protocol() -> Protocol {
     let dir = Directory::new();
-    let cfg = config::from_json(&configured(&dir, "irc://127.0.0.1:1"), &dir.0).unwrap();
+    let cfg = config::from_json(&configured("irc://127.0.0.1:1"), &dir.0).unwrap();
     Protocol::new(cfg.irc.sources[0].clone())
 }
 fn event(p: &mut Protocol, line: &str) -> Event {
@@ -89,7 +90,7 @@ fn confirm(stream: &mut TcpStream) {
 #[test]
 fn service_configuration_is_strict_and_legacy_source_bindings_are_unchanged() {
     let dir = Directory::new();
-    let mut old = value(&dir.0, "irc://127.0.0.1:1");
+    let mut old = value("irc://127.0.0.1:1");
     let cfg = config::from_json(&old, &dir.0).unwrap();
     source(&mut old).insert("nickserv", Value::Null);
     assert_eq!(
@@ -128,12 +129,12 @@ fn service_configuration_is_strict_and_legacy_source_bindings_are_unchanged() {
         ),
         ("password", Value::from("private-value")),
     ] {
-        let mut v = configured(&dir, "irc://127.0.0.1:1");
+        let mut v = configured("irc://127.0.0.1:1");
         source(&mut v).get_mut("nickserv").unwrap().insert(key, bad);
         let error = config::from_json(&v, &dir.0).unwrap_err();
         assert!(!error.contains("private-value"));
     }
-    let mut both = configured(&dir, "irc://127.0.0.1:1");
+    let mut both = configured("irc://127.0.0.1:1");
     source(&mut both).insert(
         "sasl",
         json::parse(r#"{"mechanism":"PLAIN","username_env":"PWD","password_env":"PWD"}"#).unwrap(),
@@ -144,8 +145,7 @@ fn service_configuration_is_strict_and_legacy_source_bindings_are_unchanged() {
     drop(e);
     let before = bytes(&cfg.store_dir);
     assert!(
-        Engine::open(config::from_json(&configured(&dir, "irc://127.0.0.1:1"), &dir.0).unwrap())
-            .is_err()
+        Engine::open(config::from_json(&configured("irc://127.0.0.1:1"), &dir.0).unwrap()).is_err()
     );
     assert_eq!(bytes(&cfg.store_dir), before);
 }
@@ -248,7 +248,7 @@ fn premature_confirmation_rejection_and_lost_identification_invalidate_the_conne
 fn live_reconnect_and_restart_repeat_identification_and_retain_first_receipts() {
     let dir = Directory::new();
     let (listener, url) = listener();
-    let cfg = config::from_json(&configured(&dir, &url), &dir.0).unwrap();
+    let cfg = config::from_json(&configured(&url), &dir.0).unwrap();
     let peer = thread::spawn(move || {
         for pass in 0..3 {
             let mut stream = accept(&listener);
@@ -302,7 +302,7 @@ fn live_reconnect_and_restart_repeat_identification_and_retain_first_receipts() 
 fn rejected_service_notices_are_redacted_and_shutdown_interrupts_identification() {
     let dir = Directory::new();
     let (listener, url) = listener();
-    let cfg = config::from_json(&configured(&dir, &url), &dir.0).unwrap();
+    let cfg = config::from_json(&configured(&url), &dir.0).unwrap();
     let (tx, rx) = std::sync::mpsc::channel();
     let peer = thread::spawn(move || {
         let mut stream = accept(&listener);
@@ -341,7 +341,7 @@ fn rejected_service_notices_are_redacted_and_shutdown_interrupts_identification(
 fn unavailable_service_credentials_fail_before_opening_a_socket() {
     let dir = Directory::new();
     let (listener, url) = listener();
-    let mut v = configured(&dir, &url);
+    let mut v = configured(&url);
     let absent = format!("MYNOU_NICKSERV_ABSENT_{}", std::process::id());
     assert!(std::env::var_os(&absent).is_none());
     source(&mut v)
@@ -372,20 +372,19 @@ impl Drop for ChildGuard {
 fn native_cli_sends_a_maximum_password_once_without_recording_or_logging_it() {
     let dir = Directory::new();
     let (listener, url) = listener();
-    let mut v = configured(&dir, &url);
+    let mut v = configured(&url);
     source(&mut v)
         .get_mut("nickserv")
         .unwrap()
         .insert("password_env", "MYNOU_NICKSERV_TEST_PASSWORD");
-    let path = dir.0.join("mynou.json");
-    fs::write(&path, json::stringify(&v)).unwrap();
+    home_support::save_settings(&dir.0, &v);
     let cfg = config::from_json(&v, &dir.0).unwrap();
     let log_path = dir.0.join("process.log");
     let log = fs::File::create(&log_path).unwrap();
     let password = "p".repeat(256);
     let child = ChildGuard(
         Command::new(env!("CARGO_BIN_EXE_mynou"))
-            .args(["serve", "--config", path.to_str().unwrap()])
+            .args(["serve", "--dir", dir.0.to_str().unwrap()])
             .env("MYNOU_API_TOKEN", "0123456789abcdef0123456789abcdef")
             .env("MYNOU_NICKSERV_TEST_PASSWORD", &password)
             .stdout(Stdio::from(log.try_clone().unwrap()))
@@ -429,7 +428,7 @@ fn native_cli_sends_a_maximum_password_once_without_recording_or_logging_it() {
 fn service_identification_deadline_cannot_be_renewed_by_ping_traffic() {
     let dir = Directory::new();
     let (listener, url) = listener();
-    let cfg = config::from_json(&configured(&dir, &url), &dir.0).unwrap();
+    let cfg = config::from_json(&configured(&url), &dir.0).unwrap();
     let peer = thread::spawn(move || {
         let mut stream = accept(&listener);
         identify(&mut stream);

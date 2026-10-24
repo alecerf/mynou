@@ -21,7 +21,6 @@ fn key(table: u8, id: Option<&str>) -> Key {
 }
 fn config(directory: &Directory, id: &str) -> config::Config {
     let mut value = config::default_json();
-    value.insert("store_dir", directory.0.join("jobs").to_str().unwrap());
     value.get_mut("downloads").unwrap().insert("enabled", false);
     let mut source = Value::object();
     source.insert("id", id);

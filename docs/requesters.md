@@ -11,7 +11,8 @@ the server token still confirms and refreshes the library.
 
 ## Bind accounts
 
-Add an optional `requesters` section to `mynou.json`:
+Add an optional `requesters` section to the settings (the JSON editor of the
+**Settings** view, or `mynou settings --save`):
 
 ```json
 {
@@ -38,10 +39,10 @@ Add an optional `requesters` section to `mynou.json`:
   (default `https://discover.provider.plex.tv/library/sections/watchlist/all`)
   are optional.
 - The destination `default` is the main library roots. Named destinations
-  resolve relative paths against the configuration file. Make them visible to
+  resolve relative paths against the data directory. Make them visible to
   Plex; Plex sections and [path mappings](macos.md#connect-plex) still apply.
 
-Keep tokens in the environment; they never appear in controls or reports.
+Save tokens as secrets; they never appear in controls or reports.
 
 ## Enable an account
 
@@ -68,13 +69,13 @@ admitted requests keep their captured policy. Disabling an account stops new
 admissions; use `remove` to withdraw existing demand.
 
 ```sh
-mynou requesters --config ./mynou.json
-mynou requester alice --limit 100 --config ./mynou.json
-mynou requester alice --after CURSOR --limit 100 --config ./mynou.json
-mynou requester-sync --config ./mynou.json
-mynou requester-control alice --mapping policy.json --config ./mynou.json
+mynou requesters
+mynou requester alice --limit 100
+mynou requester alice --after CURSOR --limit 100
+mynou requester-sync
+mynou requester-control alice --mapping policy.json
 mynou requester-control alice --mapping policy.json --apply \
-  --plan-id PLAN_ID --config ./mynou.json
+  --plan-id PLAN_ID
 ```
 
 A control file contains `action` and either `policy` or a `demand_id`:

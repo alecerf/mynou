@@ -157,7 +157,6 @@ pub fn run(directory: &Path) -> Result<Value> {
     });
     let result = (|| {
         let mut value = config::default_json();
-        value.insert("store_dir", "jobs");
         value.insert("listen", "127.0.0.1:0");
         value.insert("plex",json::parse(&format!(r#"{{"enabled":true,"url":"{origin}","watchlist_url":"{origin}/watchlist","token_env":"MYNOU_DEMO_TOKEN","movies_section":"1","series_section":"2"}}"#))?);
         if let Some(Value::Object(d)) = value.get_mut("downloads") {

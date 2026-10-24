@@ -108,61 +108,56 @@ The directory must not exist yet. Delete it whenever you like.
 
 ## Set up your library
 
-**1. Create the configuration** in a folder you own, outside Downloads:
+Mynou keeps its settings in its own storage and you set it up from the web
+interface.
+
+**1. Create the data directory and start Mynou:**
 
 ```sh
-mkdir -p "$HOME/Library/Application Support/Mynou" &&
-  cd "$HOME/Library/Application Support/Mynou" &&
-  mynou init &&
-  mynou doctor
+mynou init && mynou serve
 ```
 
-`init` writes `mynou.json` and a private `.env` holding a random API token.
-`doctor` tells you whether the configuration is valid and what is reachable.
+`init` creates `~/Library/Application Support/Mynou` (use `--dir DIR` or
+`MYNOU_HOME` for another place) with a private `.env` holding a random API
+token.
 
-**2. Edit `mynou.json`.** Plex and TMDB start disabled; turn on what you use:
+**2. Open <http://127.0.0.1:8787/>** and paste the token: it is the
+`MYNOU_API_TOKEN` value in that `.env` file.
 
-| To set up | Settings in `mynou.json` | Secret (environment variable) |
+**3. Open the Settings view** and turn on what you use. Plex and TMDB start
+disabled:
+
+| To set up | In the Settings view | Secret |
 | --- | --- | --- |
-| Library folders | `library.movies_root`, `library.series_root` | |
-| Downloads | `downloads` (folders, port 6881, peers, limits) | |
-| Plex server and watchlist | `plex.enabled`, `plex.url`, `plex.movies_section`, `plex.series_section` | `MYNOU_PLEX_TOKEN` |
-| TMDB catalog, needed for series | `catalog.enabled` | `MYNOU_TMDB_TOKEN` or `MYNOU_TMDB_API_KEY` |
-| Sources to search | `indexers` | `MYNOU_INDEXER_API_KEY`, or one per source |
+| Library folders | Library | |
+| Downloads | Downloads (folders, port 6881, limits, seeding) | |
+| Plex server and watchlist | Plex | Plex token |
+| TMDB catalog, needed for series | TMDB catalog | TMDB token |
+| Sources to search | Indexers | API key of each source |
 
-Relative paths resolve against the folder of `mynou.json`. Unknown settings are
-rejected, so a typo is reported instead of ignored. The
-[configuration reference](docs/macos.md#configure-mynou) lists every setting
-and the [sources guide](docs/sources.md) shows how to describe an indexer.
-
-**3. Start the service** with your secrets exported in the same shell:
-
-```sh
-export MYNOU_PLEX_TOKEN='replace-with-your-Plex-token'
-export MYNOU_TMDB_TOKEN='replace-with-your-TMDB-token'
-mynou serve
-```
-
-**4. Open <http://127.0.0.1:8787/>** and paste the API token: it is the
-`MYNOU_API_TOKEN` value in the `.env` file next to `mynou.json`.
+Saving validates the settings and applies them at once; an invalid change is
+refused and leaves the saved settings untouched. Tokens are kept in Mynou's
+storage and never shown again. Every setting, including release profiles,
+requester accounts and IRC, is also available as JSON in the same view, through
+`GET` and `POST /api/settings`, and with `mynou settings` and
+`mynou secrets`. The [configuration reference](docs/macos.md#configure-mynou)
+lists every setting and the [sources guide](docs/sources.md) shows how to
+describe an indexer.
 
 > [!NOTE]
-> Foreground `serve` reads only `MYNOU_API_TOKEN` from `.env`; every other secret
-> comes from its environment. For unattended account-login startup, use the
-> [native launchd service](docs/macos-service.md), which injects a private snapshot
-> of the adjacent `.env`. Restart after configuration changes; reinstall the
-> registration after changing that secret snapshot.
+> For unattended account-login startup, use the
+> [native launchd service](docs/macos-service.md).
 
 ## Web interface
 
 The interface is served by Mynou itself at `http://127.0.0.1:8787/`: plain
 HTML, CSS and JavaScript embedded in the executable, with no build step.
 
-- **Seven views**: dashboard, requests, jobs, transfers, library, series and
-  sources, updated live.
+- **Eight views**: dashboard, requests, jobs, transfers, library, series,
+  sources and settings, updated live.
 - **Preview before you commit**: search a title, read why each release was
   kept or rejected, then submit it explicitly.
-- **Keyboard first**: `/` or `Ctrl+K` opens the command palette, `1`–`7`
+- **Keyboard first**: `/` or `Ctrl+K` opens the command palette, `1`–`8`
   switch views.
 
 The token stays in the browser tab and the interface accepts same-origin pages
@@ -171,7 +166,7 @@ a reverse proxy with TLS that you trust in front of it.
 
 ## Everyday commands
 
-Run these from the folder that holds `mynou.json`, or add `--config PATH`.
+Commands use the default data directory, or add `--dir DIR`.
 
 | I want to… | Command |
 | --- | --- |
@@ -188,6 +183,7 @@ Run these from the folder that holds `mynou.json`, or add `--config PATH`.
 | Watch downloads | `mynou torrents` |
 | See my library and available upgrades | `mynou library`, `mynou upgrades` |
 | Check that everything is healthy | `mynou status`, `mynou doctor` |
+| Read or replace my settings | `mynou settings`, `mynou settings --save` (document on standard input) |
 
 `mynou help` lists every command. Commands talk to the running service when
 there is one and otherwise read the local journal; series, calendar and
@@ -258,15 +254,15 @@ the previous demo directory.
 <details>
 <summary><strong>Where is my API token?</strong></summary>
 
-In the `.env` file that `mynou init` created next to `mynou.json`, as
-`MYNOU_API_TOKEN`. Treat that file as data: do not `source` it.
+In the `.env` file that `mynou init` created in the data directory
+(`~/Library/Application Support/Mynou` by default), as `MYNOU_API_TOKEN`. Treat that file as data: do not `source` it.
 </details>
 
 <details>
 <summary><strong>A search finds nothing</strong></summary>
 
 Run `mynou doctor`, then `mynou indexers` to see the state of each source. Series
-also need the TMDB catalog (`catalog.enabled` and its token). The
+also need the TMDB catalog (enabled in Settings, with its token). The
 [sources guide](docs/sources.md#health-pause-and-probe) explains source health.
 </details>
 
@@ -281,8 +277,8 @@ another prefix, add a path mapping as described in
 <details>
 <summary><strong>How do I upgrade or back up?</strong></summary>
 
-Stop the service, back up `mynou.json`, `.env`, the `state/` and `downloads/`
-folders and your library, then verify and install the new executable at the
+Stop the service, back up the data directory (its `.env`, `state/` and
+`downloads/` folders, which also hold your settings) and your library, then verify and install the new executable at the
 same path. The details, including rolling back, are in
 [Back up and upgrade](docs/macos.md#back-up-and-upgrade).
 </details>

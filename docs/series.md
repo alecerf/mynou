@@ -14,18 +14,16 @@ watchlists can create series records, but Plex is optional for manual tracking.
 These commands need the running service:
 
 ```sh
-mynou track-series --title "Example Series" --year 2026 --tmdb-id 123 \
-  --config ./mynou.json
-mynou series --config ./mynou.json
-mynou series --limit 50 --after ID --config ./mynou.json
-mynou series ID --config ./mynou.json
-mynou series-unmonitor ID --config ./mynou.json
-mynou series-monitor ID --config ./mynou.json
-mynou episode-unmonitor ID --season 1 --episode 2 --config ./mynou.json
-mynou episode-monitor ID --season 1 --episode 2 --config ./mynou.json
-mynou series-refresh ID --config ./mynou.json
-mynou calendar --from 2026-10-01 --to 2026-10-31 --series-id ID \
-  --config ./mynou.json
+mynou track-series --title "Example Series" --year 2026 --tmdb-id 123
+mynou series
+mynou series --limit 50 --after ID
+mynou series ID
+mynou series-unmonitor ID
+mynou series-monitor ID
+mynou episode-unmonitor ID --season 1 --episode 2
+mynou episode-monitor ID --season 1 --episode 2
+mynou series-refresh ID
+mynou calendar --from 2026-10-01 --to 2026-10-31 --series-id ID
 ```
 
 `mynou series` prints one page object, `{"series": [...], "next": ID or null,
@@ -164,7 +162,7 @@ captured when they were created, through retries and upgrades.
 Preview the current comparison (this works offline, read-only):
 
 ```sh
-mynou series-numbering SERIES_ID --config ./mynou.json
+mynou series-numbering SERIES_ID
 ```
 
 The report shows each known ID's `canonical`, `catalog` and `source` labels,
@@ -195,9 +193,9 @@ original library number. To restore a source label, choose the original
 season and episode explicitly. Then preview and apply with a running service:
 
 ```sh
-mynou series-numbering SERIES_ID --mapping numbering.json --config ./mynou.json
+mynou series-numbering SERIES_ID --mapping numbering.json
 mynou series-numbering SERIES_ID --mapping numbering.json --apply \
-  --plan-id PLAN_ID_FROM_PREVIEW --config ./mynou.json
+  --plan-id PLAN_ID_FROM_PREVIEW
 ```
 
 Apply fetches the catalog again and refuses changed metadata, settings or

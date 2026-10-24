@@ -86,6 +86,10 @@
   .field.narrow { inline-size: 6.5rem; }
   .actions { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-block: 0.5rem; }
   .form[data-kind="movie"] [data-for="episode"], .form[data-kind="series"] [data-for="episode"] { display: none; }
+  #view-settings .grid, #view-settings > .card, #view-settings form > .card { margin-block: var(--gap); }
+  .card .form + .form { margin-block-start: 0.75rem; }
+  .field.check { display: flex; align-items: center; gap: 0.5rem; color: var(--text); }
+  .field.check input { inline-size: auto; min-block-size: 0; }
 }
 
 @layer components {
@@ -98,6 +102,12 @@
     transition: background 0.15s var(--ease), border-color 0.15s var(--ease), transform 0.1s var(--ease);
   }
   input { color: var(--text); inline-size: 100%; }
+  textarea {
+    inline-size: 100%; color: var(--text); background: var(--surface);
+    border: 1px solid var(--line); border-radius: 10px; padding: 0.6rem 0.8rem;
+    font: 0.8rem/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  summary { cursor: pointer; font-weight: 600; }
   button { cursor: pointer; }
   button:hover { background: var(--raised); }
   button:active { transform: scale(0.97); }

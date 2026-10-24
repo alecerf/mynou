@@ -1,4 +1,5 @@
 //! Read-only selection previews through the CLI and authenticated local API.
+mod home_support;
 use mynou::config::{self, Config};
 use mynou::engine::{Engine, lock};
 use mynou::json::{self, Value};
@@ -253,6 +254,7 @@ fn preferred_indexer() -> Indexer {
 fn command(directory: &Path, args: &[&str]) -> Output {
     let mut child = Command::new(env!("CARGO_BIN_EXE_mynou"))
         .current_dir(directory)
+        .env("MYNOU_HOME", directory)
         .env_remove("MYNOU_API_TOKEN")
         .env_remove("MYNOU_DEMO_TOKEN")
         .env_remove("MYNOU_PLEX_TOKEN")
@@ -391,19 +393,10 @@ fn files(directory: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
 }
 
 #[test]
-fn offline_cli_preview_uses_explicit_config_without_opening_or_changing_the_journal() {
+fn offline_cli_preview_uses_saved_settings_without_changing_storage() {
     let directory = Directory::new();
     let indexer = preferred_indexer();
-    let configuration = configuration(&[&indexer]);
-    fs::write(
-        directory.0.join("preview.json"),
-        json::stringify(&configuration),
-    )
-    .unwrap();
-    let journal = directory.0.join("state/jobs/journal.bin");
-    fs::create_dir_all(journal.parent().unwrap()).unwrap();
-    // Opening this journal as a Store would fail. A preview must leave it alone.
-    fs::write(journal, b"deliberately invalid existing journal").unwrap();
+    home_support::save_settings(&directory.0, &configuration(&[&indexer]));
     let before = files(&directory.0);
     let args = [
         "search",
@@ -415,8 +408,6 @@ fn offline_cli_preview_uses_explicit_config_without_opening_or_changing_the_jour
         "2024",
         "--tmdb-id",
         "42",
-        "--config",
-        "preview.json",
     ];
     let first = successful(command(&directory.0, &args));
     assert_preferred(&first, 1, 0);
@@ -430,11 +421,6 @@ fn offline_cli_preview_uses_explicit_config_without_opening_or_changing_the_jour
 fn cli_preview_rejects_invalid_options_without_indexer_requests_or_state_creation() {
     let directory = Directory::new();
     let indexer = preferred_indexer();
-    fs::write(
-        directory.0.join("mynou.json"),
-        json::stringify(&configuration(&[&indexer])),
-    )
-    .unwrap();
     let before = files(&directory.0);
     let cases: &[&[&str]] = &[
         &["search"],
@@ -485,10 +471,9 @@ fn authenticated_api_and_online_cli_preview_work_while_the_engine_journal_is_loc
     let directory = Directory::new();
     let indexer = preferred_indexer();
     let failed = Indexer::open(|_| (503, "unavailable".into()));
-    let mut value = configuration(&[&indexer, &failed]);
+    let value = configuration(&[&indexer, &failed]);
     let server = Server::open(config::from_json(&value, &directory.0).unwrap());
-    value.insert("listen", server.origin.strip_prefix("http://").unwrap());
-    fs::write(directory.0.join("mynou.json"), json::stringify(&value)).unwrap();
+    home_support::serve_here(&directory.0, server.origin.strip_prefix("http://").unwrap());
     fs::write(
         directory.0.join(".env"),
         format!("MYNOU_API_TOKEN={TOKEN}\n"),
@@ -626,11 +611,7 @@ fn episode_cli_preview_uses_the_episode_profile_and_returns_rejection_reasons() 
             {"title":"Fixture.Series.S02E04.1080p.WEB-DL.EN","seeders":10,"url":"magnet:?xt=urn:btih:synthetic-wrong-episode"}
         ]}"#.into())
     });
-    fs::write(
-        directory.0.join("mynou.json"),
-        json::stringify(&configuration(&[&indexer])),
-    )
-    .unwrap();
+    home_support::save_settings(&directory.0, &configuration(&[&indexer]));
     let before = files(&directory.0);
     let report = successful(command(
         &directory.0,

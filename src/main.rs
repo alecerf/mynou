@@ -21,72 +21,77 @@ use std::{
 const HELP: &str = "Mynou — media automation using Rust std only
 
   vpn [--action status|import|enable|disable|revoke|reconnect|enable-forwarding|disable-forwarding]
-      [--profile PRIVATE.conf | --settings PRIVATE.json] [--config FILE]
+      [--profile PRIVATE.conf | --settings PRIVATE.json] [--dir DIR]
 
-  init [--config mynou.json]
+  init [--dir DIR]
+  settings [--save] [--dir DIR]   (--save reads the settings document from standard input)
+  secrets [--set NAME | --delete NAME] [--dir DIR]   (--set reads the value from standard input)
   analyze FILE [--json]
-  doctor [--config mynou.json]
-  serve [--config mynou.json]
-  service --action install|status|start|stop|uninstall --config /absolute/mynou.json
+  doctor [--dir DIR]
+  serve [--dir DIR]
+  service --action install|status|start|stop|uninstall --dir /absolute/data-directory
           [--label org.mynou.automation]
   submit --title TITLE [--kind movie|episode|series|file] [--year YEAR]
          [--season N --episode N] [--path FILE | --url MAGNET_OR_TORRENT]
-         [--tmdb-id N] [--source-numbering JSON] [--config mynou.json]
+         [--tmdb-id N] [--source-numbering JSON] [--dir DIR]
   search --title TITLE [--kind movie|episode] [--year YEAR]
          [--season N --episode N] [--tmdb-id N] [--source-numbering JSON]
-         [--limit N --after CURSOR] [--config mynou.json]   (a page of 100 candidates by default)
+         [--limit N --after CURSOR] [--dir DIR]   (a page of 100 candidates by default)
   track-series --title TITLE [--year YEAR --tmdb-id N --season N]
-               [--future-only] [--include-specials] [--unmonitored] [--config mynou.json]
-  series-pack ID --url MAGNET_OR_TORRENT --mapping FILE [--config mynou.json]
+               [--future-only] [--include-specials] [--unmonitored] [--dir DIR]
+  series-pack ID --url MAGNET_OR_TORRENT --mapping FILE [--dir DIR]
   series-shared-file ID --url MAGNET_OR_TORRENT --mapping FILE
-      [--apply --plan-id ID] [--config mynou.json]
-  library-group ID --mapping FILE [--apply --plan-id ID] [--config mynou.json]
+      [--apply --plan-id ID] [--dir DIR]
+  library-group ID --mapping FILE [--apply --plan-id ID] [--dir DIR]
   series-pack-search ID --season N [--apply] [--candidate-id ID --scope-id ID]
-                     [--config mynou.json]
-  pack-remap JOB_ID --file-path PATH [--config mynou.json]
-  series [ID | --limit N --after SERIES_ID] [--config mynou.json]   (a page of 50 by default)
-  series-numbering ID [--mapping FILE] [--apply --plan-id ID] [--config mynou.json]
-  series-monitor | series-unmonitor | series-refresh ID [--config mynou.json]
-  episode-monitor | episode-unmonitor ID --season N --episode N [--config mynou.json]
+                     [--dir DIR]
+  pack-remap JOB_ID --file-path PATH [--dir DIR]
+  series [ID | --limit N --after SERIES_ID] [--dir DIR]   (a page of 50 by default)
+  series-numbering ID [--mapping FILE] [--apply --plan-id ID] [--dir DIR]
+  series-monitor | series-unmonitor | series-refresh ID [--dir DIR]
+  episode-monitor | episode-unmonitor ID --season N --episode N [--dir DIR]
   calendar [--from YYYY-MM-DD --to YYYY-MM-DD --series-id ID]
-           [--offset N | --after CURSOR] [--limit N] [--config mynou.json]
-  library [--limit N --after CURSOR] [--query TEXT --state STATE] [--config mynou.json]
+           [--offset N | --after CURSOR] [--limit N] [--dir DIR]
+  library [--limit N --after CURSOR] [--query TEXT --state STATE] [--dir DIR]
       (a page of 50 by default; a filtered page examines at most 1,000 entries)
-  upgrades [--apply] [--config mynou.json]
-  monitor | unmonitor ID [--config mynou.json]
-  baseline ID --release-title TITLE [--config mynou.json]
-  torrents [--limit N --after CURSOR] [--config mynou.json]   (a page of 50 by default)
-  torrent ID [--config mynou.json]
-  cross-seed SOURCE_ID --torrent FILE [--mapping '[0,2]'] [--config mynou.json]
-  cross-seed-discovery [--run [--dry-run] [--force] [--indexer ID] [--transfer ID]] [--config mynou.json]
-  pause | resume ID [--config mynou.json]
-  torrent-priority ID --priority N [--config mynou.json]
-  file-priority ID --file N --priority low|normal|high [--config mynou.json]
-  torrent-select ID --selection '{\"indices\":[0,2]}' [--config mynou.json]
-  torrent-policy ID --policy JSON_OR_NULL [--config mynou.json]
-  requesters [--config mynou.json]
-  requester ACCOUNT_ID [--offset N | --after CURSOR] [--limit N] [--config mynou.json]
-  requester-control ACCOUNT_ID --mapping FILE [--apply --plan-id ID] [--config mynou.json]
-  requester-sync [--config mynou.json]
-  title-profiles [--limit N --after CURSOR] [--config mynou.json]   (a page of 100 by default)
+  upgrades [--apply] [--dir DIR]
+  monitor | unmonitor ID [--dir DIR]
+  baseline ID --release-title TITLE [--dir DIR]
+  torrents [--limit N --after CURSOR] [--dir DIR]   (a page of 50 by default)
+  torrent ID [--dir DIR]
+  cross-seed SOURCE_ID --torrent FILE [--mapping '[0,2]'] [--dir DIR]
+  cross-seed-discovery [--run [--dry-run] [--force] [--indexer ID] [--transfer ID]] [--dir DIR]
+  pause | resume ID [--dir DIR]
+  torrent-priority ID --priority N [--dir DIR]
+  file-priority ID --file N --priority low|normal|high [--dir DIR]
+  torrent-select ID --selection '{\"indices\":[0,2]}' [--dir DIR]
+  torrent-policy ID --policy JSON_OR_NULL [--dir DIR]
+  requesters [--dir DIR]
+  requester ACCOUNT_ID [--offset N | --after CURSOR] [--limit N] [--dir DIR]
+  requester-control ACCOUNT_ID --mapping FILE [--apply --plan-id ID] [--dir DIR]
+  requester-sync [--dir DIR]
+  title-profiles [--limit N --after CURSOR] [--dir DIR]   (a page of 100 by default)
   title-profile --kind movie|series --tmdb-id N (--profile NAME | --clear)
-                [--apply --plan-id ID] [--config mynou.json]
-  indexers [--config mynou.json]
-  indexer-control SOURCE_ID --action enable|pause|reset_session|probe [--apply --plan-id ID] [--config mynou.json]
-  feeds [--retained --limit N --after CURSOR] [--config mynou.json]
-  irc [--config mynou.json]
-  announcements [--offset N | --after CURSOR] [--limit N] [--config mynou.json]
-  announcement ANNOUNCEMENT_ID [--config mynou.json]
-  irc-preview SOURCE_ID --announcement FILE | --text FILE [--config mynou.json]
-  irc-control ANNOUNCEMENT_ID --action acknowledge|dismiss|request [--apply --plan-id ID] [--config mynou.json]
-  jobs [--limit N --after CURSOR] [--query TEXT --state STATE] [--config mynou.json]
+                [--apply --plan-id ID] [--dir DIR]
+  indexers [--dir DIR]
+  indexer-control SOURCE_ID --action enable|pause|reset_session|probe [--apply --plan-id ID] [--dir DIR]
+  feeds [--retained --limit N --after CURSOR] [--dir DIR]
+  irc [--dir DIR]
+  announcements [--offset N | --after CURSOR] [--limit N] [--dir DIR]
+  announcement ANNOUNCEMENT_ID [--dir DIR]
+  irc-preview SOURCE_ID --announcement FILE | --text FILE [--dir DIR]
+  irc-control ANNOUNCEMENT_ID --action acknowledge|dismiss|request [--apply --plan-id ID] [--dir DIR]
+  jobs [--limit N --after CURSOR] [--query TEXT --state STATE] [--dir DIR]
       (a page of 50, newest first; a filtered page examines at most 1,000 jobs)
-  status | sync [--config mynou.json]
-  show | events | retry | cancel ID [--config mynou.json]
-  healthcheck [--config mynou.json]
+  status | sync [--dir DIR]
+  show | events | retry | cancel ID [--dir DIR]
+  healthcheck [--dir DIR]
   demo [--dir mynou-demo]
   version
 
+DIR is the data directory: --dir, else MYNOU_HOME, else ~/Library/Application Support/Mynou.
+It holds the API token (.env) and the storage, which keeps every setting and saved secret:
+configure Mynou from the web interface, the API or `mynou settings`.
 Search previews profile decisions without submitting or downloading media.
 Management commands use the API while the service is running, otherwise the local journal.
 The demo uses only synthetic media and local services.
@@ -116,6 +121,7 @@ impl Args {
                     "run",
                     "dry-run",
                     "force",
+                    "save",
                 ]
                 .contains(&key)
                 {
@@ -133,39 +139,39 @@ impl Args {
             }
         }
         let allowed: &[&str] = match command.as_str() {
-            "service" => &["config", "help", "action", "label"],
+            "service" => &["dir", "help", "action", "label"],
             "init" | "doctor" | "serve" | "service-run" | "status" | "sync" | "show" | "events"
-            | "retry" | "cancel" | "healthcheck" | "monitor" | "unmonitor" => &["config", "help"],
-            "jobs" | "library" => &["config", "help", "after", "limit", "query", "state"],
-            "requesters" | "requester-sync" => &["config", "help"],
-            "vpn" => &["config", "help", "action", "profile", "settings"],
-            "indexers" => &["config", "help"],
-            "feeds" => &["config", "help", "retained", "after", "limit"],
-            "indexer-control" => &["config", "help", "action", "apply", "plan-id"],
-            "irc" | "announcement" => &["config", "help"],
-            "announcements" => &["config", "help", "offset", "after", "limit"],
-            "irc-preview" => &["config", "help", "announcement", "text"],
-            "irc-control" => &["config", "help", "action", "apply", "plan-id"],
-            "requester" => &["config", "help", "offset", "after", "limit"],
-            "requester-control" => &["config", "help", "mapping", "apply", "plan-id"],
-            "title-profiles" => &["config", "help", "after", "limit"],
+            | "retry" | "cancel" | "healthcheck" | "monitor" | "unmonitor" => &["dir", "help"],
+            "jobs" | "library" => &["dir", "help", "after", "limit", "query", "state"],
+            "requesters" | "requester-sync" => &["dir", "help"],
+            "vpn" => &["dir", "help", "action", "profile", "settings"],
+            "indexers" => &["dir", "help"],
+            "feeds" => &["dir", "help", "retained", "after", "limit"],
+            "indexer-control" => &["dir", "help", "action", "apply", "plan-id"],
+            "irc" | "announcement" => &["dir", "help"],
+            "announcements" => &["dir", "help", "offset", "after", "limit"],
+            "irc-preview" => &["dir", "help", "announcement", "text"],
+            "irc-control" => &["dir", "help", "action", "apply", "plan-id"],
+            "requester" => &["dir", "help", "offset", "after", "limit"],
+            "requester-control" => &["dir", "help", "mapping", "apply", "plan-id"],
+            "title-profiles" => &["dir", "help", "after", "limit"],
             "title-profile" => &[
-                "config", "help", "kind", "tmdb-id", "profile", "clear", "apply", "plan-id",
+                "dir", "help", "kind", "tmdb-id", "profile", "clear", "apply", "plan-id",
             ],
-            "torrents" => &["config", "help", "limit", "after"],
-            "torrent" | "pause" | "resume" => &["config", "help"],
-            "torrent-priority" => &["config", "help", "priority"],
-            "file-priority" => &["config", "help", "file", "priority"],
-            "torrent-policy" => &["config", "help", "policy"],
-            "torrent-select" => &["config", "help", "selection"],
-            "cross-seed" => &["config", "help", "torrent", "mapping"],
+            "torrents" => &["dir", "help", "limit", "after"],
+            "torrent" | "pause" | "resume" => &["dir", "help"],
+            "torrent-priority" => &["dir", "help", "priority"],
+            "file-priority" => &["dir", "help", "file", "priority"],
+            "torrent-policy" => &["dir", "help", "policy"],
+            "torrent-select" => &["dir", "help", "selection"],
+            "cross-seed" => &["dir", "help", "torrent", "mapping"],
             "cross-seed-discovery" => &[
-                "config", "help", "run", "dry-run", "force", "indexer", "transfer",
+                "dir", "help", "run", "dry-run", "force", "indexer", "transfer",
             ],
-            "upgrades" => &["config", "help", "apply"],
-            "baseline" => &["config", "help", "release-title"],
+            "upgrades" => &["dir", "help", "apply"],
+            "baseline" => &["dir", "help", "release-title"],
             "submit" => &[
-                "config",
+                "dir",
                 "title",
                 "kind",
                 "year",
@@ -178,7 +184,7 @@ impl Args {
                 "source-numbering",
             ],
             "search" => &[
-                "config",
+                "dir",
                 "after",
                 "limit",
                 "title",
@@ -191,7 +197,7 @@ impl Args {
                 "source-numbering",
             ],
             "track-series" => &[
-                "config",
+                "dir",
                 "help",
                 "title",
                 "year",
@@ -202,24 +208,17 @@ impl Args {
                 "include-specials",
                 "unmonitored",
             ],
-            "series-pack" => &["config", "help", "url", "mapping"],
-            "series-shared-file" => &["config", "help", "url", "mapping", "apply", "plan-id"],
-            "library-group" => &["config", "help", "mapping", "apply", "plan-id"],
-            "series-numbering" => &["config", "help", "mapping", "apply", "plan-id"],
-            "series-pack-search" => &[
-                "config",
-                "help",
-                "season",
-                "apply",
-                "candidate-id",
-                "scope-id",
-            ],
-            "pack-remap" => &["config", "help", "file-path"],
-            "series" => &["config", "help", "after", "limit"],
-            "series-monitor" | "series-unmonitor" | "series-refresh" => &["config", "help"],
-            "episode-monitor" | "episode-unmonitor" => &["config", "help", "season", "episode"],
+            "series-pack" => &["dir", "help", "url", "mapping"],
+            "series-shared-file" => &["dir", "help", "url", "mapping", "apply", "plan-id"],
+            "library-group" => &["dir", "help", "mapping", "apply", "plan-id"],
+            "series-numbering" => &["dir", "help", "mapping", "apply", "plan-id"],
+            "series-pack-search" => &["dir", "help", "season", "apply", "candidate-id", "scope-id"],
+            "pack-remap" => &["dir", "help", "file-path"],
+            "series" => &["dir", "help", "after", "limit"],
+            "series-monitor" | "series-unmonitor" | "series-refresh" => &["dir", "help"],
+            "episode-monitor" | "episode-unmonitor" => &["dir", "help", "season", "episode"],
             "calendar" => &[
-                "config",
+                "dir",
                 "help",
                 "from",
                 "to",
@@ -228,6 +227,8 @@ impl Args {
                 "limit",
                 "after",
             ],
+            "settings" => &["dir", "help", "save"],
+            "secrets" => &["dir", "help", "set", "delete"],
             "analyze" => &["json", "help"],
             "demo" => &["dir", "help"],
             "help" | "--help" | "version" | "--version" => &[],
@@ -299,8 +300,8 @@ impl Args {
             .parse()
             .map_err(|_| format!("--{key} requires a nonnegative integer"))
     }
-    fn config_path(&self) -> PathBuf {
-        PathBuf::from(self.value("config", "mynou.json"))
+    fn data_dir(&self) -> Result<PathBuf> {
+        config::data_dir(self.options.get("dir").map(String::as_str))
     }
 }
 fn output(value: &Value) {
@@ -328,11 +329,12 @@ fn random_token() -> Result<String> {
         .map(|v| format!("{v:02x}"))
         .collect())
 }
-fn api_token(config: &Config, path: &Path) -> Result<String> {
-    if std::env::var_os(&config.api_token_env).is_some_and(|v| !v.is_empty()) {
-        return config::secret(&config.api_token_env);
+/// The API token: the environment, else `.env` in the data directory.
+fn api_token(path: &Path) -> Result<String> {
+    if std::env::var_os(config::API_TOKEN_ENV).is_some_and(|v| !v.is_empty()) {
+        return config::secret(config::API_TOKEN_ENV);
     }
-    let file = path.parent().unwrap_or(Path::new(".")).join(".env");
+    let file = path.join(".env");
     use std::io::Read;
     let mut data = String::new();
     fs::File::open(file)
@@ -340,7 +342,7 @@ fn api_token(config: &Config, path: &Path) -> Result<String> {
         .map_err(|_| {
             format!(
                 "Missing secret {}; set the environment variable or run init",
-                config.api_token_env
+                config::API_TOKEN_ENV
             )
         })?;
     if data.len() > 65_536 {
@@ -348,7 +350,7 @@ fn api_token(config: &Config, path: &Path) -> Result<String> {
     }
     for line in data.lines() {
         if let Some((key, value)) = line.split_once('=')
-            && key == config.api_token_env
+            && key == config::API_TOKEN_ENV
             && value.len() >= 32
             && value.len() <= 4096
             && value.bytes().all(|b| b.is_ascii_graphic())
@@ -356,7 +358,7 @@ fn api_token(config: &Config, path: &Path) -> Result<String> {
             return Ok(value.into());
         }
     }
-    Err(format!("Missing secret {}", config.api_token_env))
+    Err(format!("Missing secret {}", config::API_TOKEN_ENV))
 }
 fn endpoint(config: &Config) -> Result<String> {
     let addr = config
@@ -376,17 +378,58 @@ fn endpoint(config: &Config) -> Result<String> {
     };
     Ok(format!("http://{host}:{}", addr.port()))
 }
-fn running(config: &Config) -> bool {
-    endpoint(config)
+/// Where a running service records the address it listens on. Commands find
+/// the service there, since its settings are inside the storage it holds.
+fn endpoint_file(path: &Path) -> PathBuf {
+    path.join("state/endpoint")
+}
+fn record_endpoint(path: &Path, address: std::net::SocketAddr) -> Result<()> {
+    let file = endpoint_file(path);
+    let _ = fs::remove_file(&file);
+    if let Some(parent) = file.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("Cannot create {}: {e}", parent.display()))?;
+    }
+    private_write(&file, format!("{address}\n").as_bytes())
+}
+/// The address and settings of the service running for this data directory.
+/// A stale address, another service or a refused token count as none.
+fn served(path: &Path) -> Option<(String, Value)> {
+    let mut text = String::new();
+    fs::File::open(endpoint_file(path))
+        .and_then(|f| f.take(256).read_to_string(&mut text))
+        .ok()?;
+    let address = text
+        .trim()
+        .parse::<std::net::SocketAddr>()
+        .ok()?
+        .to_string();
+    let mut probe = config::from_json(&config::default_json(), path).ok()?;
+    probe.listen = address.clone();
+    let url = endpoint(&probe).ok()?;
+    HttpClient::new()
+        .without_proxy()
+        .with_timeout(Duration::from_millis(300))
+        .get(&format!("{url}/healthz"))
         .ok()
-        .and_then(|url| {
-            HttpClient::new()
-                .without_proxy()
-                .with_timeout(Duration::from_millis(300))
-                .get(&format!("{url}/healthz"))
-                .ok()
-        })
-        .is_some_and(|r| r.status == 200)
+        .filter(|r| r.status == 200)?;
+    let reply = call(&probe, path, "GET", "/api/settings", None).ok()?;
+    (reply.get("data_dir").and_then(Value::as_str) == path.to_str()).then_some((address, reply))
+}
+/// The settings the running service uses, else the saved ones, and whether
+/// commands should go through the service's API.
+fn context(path: &Path) -> Result<(Config, bool)> {
+    let Some((address, reply)) = served(path) else {
+        return Ok((config::load(path)?, false));
+    };
+    let mut config = config::from_json(
+        reply
+            .get("active")
+            .ok_or("The service reported no settings")?,
+        path,
+    )?;
+    config.listen = address;
+    Ok((config, true))
 }
 fn call(
     config: &Config,
@@ -395,7 +438,7 @@ fn call(
     route: &str,
     body: Option<&Value>,
 ) -> Result<Value> {
-    let token = api_token(config, path)?;
+    let token = api_token(path)?;
     let url = format!("{}{route}", endpoint(config)?);
     let bytes = body.map_or_else(Vec::new, |v| json::stringify(v).into_bytes());
     let response = HttpClient::new()
@@ -468,21 +511,49 @@ fn request(args: &Args) -> Result<Request> {
     request.validate()?;
     Ok(request)
 }
-fn init(path: &Path, value: &Value) -> Result<()> {
-    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
-        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+/// Creates the data directory and its private `.env` with a new API token.
+/// Settings start as the defaults and are changed from the interface.
+fn init(path: &Path) -> Result<()> {
+    let mut builder = fs::DirBuilder::new();
+    builder.recursive(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        builder.mode(0o700);
     }
-    let env = path.parent().unwrap_or(Path::new(".")).join(".env");
-    if path.exists() || env.exists() {
-        return Err("Configuration or .env already exists; refusing to overwrite".into());
+    builder
+        .create(path)
+        .map_err(|e| format!("Cannot create {}: {e}", path.display()))?;
+    let env = path.join(".env");
+    if env.exists() {
+        return Err(".env already exists; refusing to overwrite".into());
     }
-    let token = random_token()?;
-    private_write(&env,format!("MYNOU_API_TOKEN={token}\nMYNOU_PLEX_TOKEN=\nMYNOU_TMDB_TOKEN=\nMYNOU_TMDB_API_KEY=\nMYNOU_INDEXER_API_KEY=\n").as_bytes())?;
-    if let Err(e) = private_write(path, format!("{}\n", json::stringify(value)).as_bytes()) {
-        let _ = fs::remove_file(&env);
-        return Err(e);
+    private_write(
+        &env,
+        format!("{}={}\n", config::API_TOKEN_ENV, random_token()?).as_bytes(),
+    )
+}
+/// A settings document from standard input, for `mynou settings --save`.
+fn read_document() -> Result<Value> {
+    let mut data = String::new();
+    std::io::stdin()
+        .take(1_048_577)
+        .read_to_string(&mut data)
+        .map_err(|_| "Cannot read the settings from standard input")?;
+    if data.len() > 1_048_576 {
+        return Err("Settings are too large (maximum 1 MiB)".into());
     }
-    Ok(())
+    json::parse(&data)
+}
+/// A secret value from standard input, without its final line break.
+fn read_secret() -> Result<String> {
+    let mut data = String::new();
+    std::io::stdin()
+        .take(mynou::config::MAX_SECRET_BYTES as u64 + 2)
+        .read_to_string(&mut data)
+        .map_err(|_| "Cannot read the secret from standard input")?;
+    let value = data.strip_suffix('\n').unwrap_or(&data);
+    Ok(value.strip_suffix('\r').unwrap_or(value).to_owned())
 }
 fn execute(args: Args) -> Result<()> {
     if args.options.contains_key("help") {
@@ -545,22 +616,96 @@ fn execute(args: Args) -> Result<()> {
             return Ok(());
         }
         "init" => {
-            init(&args.config_path(), &config::default_json())?;
+            let path = args.data_dir()?;
+            init(&path)?;
             println!(
-                "Created configuration and .env. Run: mynou serve --config {}",
-                args.config_path().display()
+                "Created {} with the API token in its .env file.\nRun `mynou serve`, open http://127.0.0.1:8787/ and paste the MYNOU_API_TOKEN value to set up Mynou.",
+                path.display()
             );
             return Ok(());
         }
         _ => {}
     }
-    let path = args.config_path();
+    let path = args.data_dir()?;
     let supervised = args.command == "service-run";
     if supervised {
         mynou::service::log(&path, "starting")?;
         mynou::service::report_progress(&path);
     }
-    let config = config::load(&path)?;
+    let (config, online) = if args.command == "serve" || supervised {
+        (config::load(&path)?, false)
+    } else {
+        context(&path)?
+    };
+    if args.command == "settings" {
+        if args.options.contains_key("save") {
+            let document = read_document()?;
+            if online {
+                let mut body = Value::object();
+                body.insert("settings", document);
+                output(&call(&config, &path, "POST", "/api/settings", Some(&body))?);
+            } else {
+                config::from_json(&document, &path)?;
+                Store::open_for_management(&config)?.save_settings(&document)?;
+                let mut reply = Value::object();
+                reply.insert("state", "saved");
+                output(&reply);
+            }
+        } else if online {
+            let reply = call(&config, &path, "GET", "/api/settings", None)?;
+            output(reply.get("settings").unwrap_or(&Value::Null));
+        } else {
+            output(&config.document);
+        }
+        return Ok(());
+    }
+    if args.command == "secrets" {
+        let update = match (args.options.get("set"), args.options.get("delete")) {
+            (Some(_), Some(_)) => return Err("Use either --set or --delete".into()),
+            (Some(name), None) => {
+                config::check_secret_name(name)?;
+                let mut body = Value::object();
+                body.insert("name", name.as_str());
+                body.insert("value", read_secret()?);
+                Some(body)
+            }
+            (None, Some(name)) => {
+                let mut body = Value::object();
+                body.insert("name", name.as_str());
+                body.insert("value", Value::Null);
+                Some(body)
+            }
+            (None, None) => None,
+        };
+        if online {
+            output(&match &update {
+                Some(body) => call(&config, &path, "POST", "/api/secrets", Some(body))?,
+                None => call(&config, &path, "GET", "/api/secrets", None)?,
+            });
+        } else {
+            let mut store = if update.is_some() {
+                Store::open_for_management(&config)?
+            } else if Store::directory_exists(&config.store_dir)? {
+                Store::open_read_only(&config.store_dir)?
+            } else {
+                output(&mynou::settings::secrets_report(
+                    &[&config.document],
+                    &BTreeMap::new(),
+                ));
+                return Ok(());
+            };
+            let mut secrets = store.secrets()?;
+            if let Some(body) = &update {
+                mynou::settings::apply_secret(&mut secrets, body)?;
+                store.save_secrets(&secrets)?;
+            }
+            output(&mynou::settings::secrets_report(
+                &[&config.document],
+                &secrets,
+            ));
+        }
+        return Ok(());
+    }
     if args.command == "service" {
         output(&mynou::service::manage(
             args.value("label", "org.mynou.automation"),
@@ -592,20 +737,14 @@ fn execute(args: Args) -> Result<()> {
         v.insert("configuration", "valid");
         v.insert(
             "api_token",
-            if api_token(&config, &path).is_ok() {
+            if api_token(&path).is_ok() {
                 "present"
             } else {
                 "absent"
             },
         );
-        v.insert(
-            "service",
-            if running(&config) {
-                "running"
-            } else {
-                "stopped"
-            },
-        );
+        v.insert("data_dir", path.to_string_lossy().into_owned());
+        v.insert("service", if online { "running" } else { "stopped" });
         v.insert("plex_enabled", config.plex.enabled);
         v.insert("indexers", config.sources.len() as u32);
         v.insert("movie_profile", config.selection.movie_profile.clone());
@@ -625,25 +764,28 @@ fn execute(args: Args) -> Result<()> {
         if supervised {
             mynou::service::preflight(&path, &config)?;
         }
-        let token = api_token(&config, &path)?;
+        let token = api_token(&path)?;
         // The listener answers health and migration progress while storage opens.
         let startup = mynou::server::Startup::bind(&config, token)?;
+        record_endpoint(&path, startup.address()?)?;
         if !supervised {
             eprintln!(
-                "mynou {} — API http://{}",
+                "mynou {} — {} — API http://{}",
                 env!("CARGO_PKG_VERSION"),
+                path.display(),
                 startup.address()?
             );
         }
         let engine = Engine::open_serving(config)?;
         let api = startup.serve(engine)?;
         let result = api.run_supervised();
+        let _ = fs::remove_file(endpoint_file(&path));
         if supervised && result.is_ok() {
             mynou::service::log(&path, "stopped_cleanly")?;
         }
         return result;
     }
-    let online = args.command != "irc-preview" && running(&config);
+    let online = args.command != "irc-preview" && online;
     if args.command == "vpn" {
         let action = args.value("action", "status");
         if action != "import"
@@ -1838,7 +1980,7 @@ fn main() {
         .as_ref()
         .ok()
         .filter(|a| a.command == "service-run")
-        .map(Args::config_path);
+        .and_then(|args| args.data_dir().ok());
     if let Err(error) = args.and_then(execute) {
         if let Some(path) = service_path {
             let _ = mynou::service::log(&path, "runtime_failed");

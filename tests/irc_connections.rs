@@ -31,7 +31,7 @@ fn received(engine: &Engine, n: u64) -> bool {
 fn live_registration_fragments_ping_and_allowlists_precede_durable_receipts() {
     let dir = Directory::new();
     let (listener, url) = listener();
-    let mut v = value(&dir.0, &url);
+    let mut v = value(&url);
     let Value::Array(s) = v.get_mut("irc").unwrap().get_mut("sources").unwrap() else {
         panic!()
     };
@@ -104,7 +104,7 @@ fn live_registration_fragments_ping_and_allowlists_precede_durable_receipts() {
 fn reconnect_and_process_restart_retain_the_original_duplicate_identity() {
     let dir = Directory::new();
     let (listener, url) = listener();
-    let cfg = config::from_json(&value(&dir.0, &url), &dir.0).unwrap();
+    let cfg = config::from_json(&value(&url), &dir.0).unwrap();
     let peer = thread::spawn(move || {
         for pass in 0..3 {
             let mut stream = accept(&listener);
@@ -153,7 +153,7 @@ fn reconnect_and_process_restart_retain_the_original_duplicate_identity() {
 fn failures_redact_server_text_and_shutdown_interrupts_an_unfinished_line() {
     let dir = Directory::new();
     let (listener, url) = listener();
-    let cfg = config::from_json(&value(&dir.0, &url), &dir.0).unwrap();
+    let cfg = config::from_json(&value(&url), &dir.0).unwrap();
     let (ready_tx, ready_rx) = std::sync::mpsc::channel();
     let peer = thread::spawn(move || {
         let mut stream = accept(&listener);
@@ -201,7 +201,7 @@ fn failures_redact_server_text_and_shutdown_interrupts_an_unfinished_line() {
 fn an_invalid_remote_tls_record_never_reaches_irc_registration() {
     let dir = Directory::new();
     let (listener, url) = listener();
-    let cfg = config::from_json(&value(&dir.0, &url.replace("irc://", "ircs://")), &dir.0).unwrap();
+    let cfg = config::from_json(&value(&url.replace("irc://", "ircs://")), &dir.0).unwrap();
     let peer = thread::spawn(move || {
         let mut stream = accept(&listener);
         let mut first = [0; 5];
@@ -297,7 +297,7 @@ const MARKER: &str = "private-marker";
 fn malformed_then_valid(format: Option<Value>, malformed: &str, valid: &str, fragmented: bool) {
     let dir = Directory::new();
     let (listener, url) = listener();
-    let mut v = value(&dir.0, &url);
+    let mut v = value(&url);
     if let Some(format) = format {
         let Value::Array(s) = v.get_mut("irc").unwrap().get_mut("sources").unwrap() else {
             panic!()

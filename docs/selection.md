@@ -8,7 +8,8 @@ same profiles to compare a recorded release with new candidates; see
 
 ## Configure profiles
 
-Add an optional `selection` object to `mynou.json`:
+Add an optional `selection` object to the settings (the JSON editor of the
+**Settings** view, or `mynou settings --save`):
 
 ```json
 {
@@ -68,11 +69,10 @@ profile and the TMDB ID of the movie or series; a series binding applies to all
 its episodes and season packs.
 
 ```sh
-mynou title-profile --kind movie --tmdb-id 603 --profile uhd --config ./mynou.json
-mynou title-profile --kind movie --tmdb-id 603 --profile uhd --apply --plan-id PLAN_ID \
-  --config ./mynou.json
-mynou title-profile --kind series --tmdb-id 1399 --clear --config ./mynou.json
-mynou title-profiles --config ./mynou.json
+mynou title-profile --kind movie --tmdb-id 603 --profile uhd
+mynou title-profile --kind movie --tmdb-id 603 --profile uhd --apply --plan-id PLAN_ID
+mynou title-profile --kind series --tmdb-id 1399 --clear
+mynou title-profiles
 ```
 
 Every change is reviewed: without `--apply` the command previews it and prints a
@@ -95,7 +95,7 @@ The profile used for a movie or an episode is, in order:
 The binding applies to search previews, initial searches, monitored missing
 episodes, feed and IRC routing, season-pack searches and library upgrades,
 including cutoffs. A binding stores only the profile name: editing that profile
-in `mynou.json` changes the bound titles too. If the profile is removed, the
+in the settings changes the bound titles too. If the profile is removed, the
 title's searches fail with `unknown profile` until you rebind or clear it; Mynou
 never falls back to the global profile. This also applies when a requester
 captured an older definition under the same name; its captured destination is
@@ -152,9 +152,8 @@ own choice: profiles apply only to automatic searches.
 ## Preview a search
 
 ```sh
-mynou search --title "Example Movie" --year 2026 --config ./mynou.json
-mynou search --title "Example Series" --kind episode --season 1 --episode 2 \
-  --config ./mynou.json
+mynou search --title "Example Movie" --year 2026
+mynou search --title "Example Series" --kind episode --season 1 --episode 2
 ```
 
 A preview contacts your sources but records no request, writes nothing to the
