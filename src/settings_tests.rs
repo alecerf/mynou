@@ -33,8 +33,10 @@ fn open(dir: &Directory) -> std::sync::Arc<Engine> {
 }
 
 fn call(engine: &std::sync::Arc<Engine>, method: &str, path: &str, body: &str) -> json::Value {
-    let (status, value) = route(engine, method, path, body.as_bytes()).unwrap();
-    assert!((200..300).contains(&status), "{status}");
+    // Reports may carry secret names: keep them out of panic messages.
+    let Ok((200..=299, value)) = route(engine, method, path, body.as_bytes()) else {
+        panic!("{method} {path} failed");
+    };
     value
 }
 
