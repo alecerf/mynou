@@ -108,6 +108,14 @@ pub struct Engine {
     pub last_sync_error: Mutex<Option<String>>,
     pub last_upgrade_error: Mutex<Option<String>>,
     pub last_series_error: Mutex<Option<String>>,
+    /// The saved settings document, so that reading it never waits for storage.
+    pub(crate) saved_settings: Mutex<Option<crate::json::Value>>,
+    /// Validated settings the supervised service applies next.
+    pub(crate) pending_settings: Mutex<Option<Config>>,
+    /// Why the last saved settings could not be applied.
+    pub(crate) settings_error: Mutex<Option<String>>,
+    /// A supervised service replaces generations to apply settings.
+    pub(crate) supervised: AtomicBool,
 }
 
 pub fn lock<T>(mutex: &Mutex<T>) -> Result<MutexGuard<'_, T>> {
@@ -208,7 +216,7 @@ impl Engine {
 
     fn from_store(
         mut config: Config,
-        store: Store,
+        mut store: Store,
         start_downloads: bool,
         read_only: bool,
         defer: bool,
@@ -230,6 +238,7 @@ impl Engine {
             crate::requesters::RequesterStore::open(&config.store_dir, &config, read_only)?;
         let irc_store =
             crate::irc::AnnouncementStore::open(&config.store_dir, &config.irc, read_only)?;
+        let saved_settings = store.settings()?;
         let store = Arc::new(Mutex::new(store));
         let irc_runtime = crate::irc::client::Runtime::new(&config.irc.sources);
         let (vpn, vpn_gate) = operator.map_or((None, None), |(operator, gate)| {
@@ -271,6 +280,10 @@ impl Engine {
             last_sync_error: Mutex::new(None),
             last_upgrade_error: Mutex::new(None),
             last_series_error: Mutex::new(None),
+            saved_settings: Mutex::new(saved_settings),
+            pending_settings: Mutex::new(None),
+            settings_error: Mutex::new(None),
+            supervised: AtomicBool::new(false),
         });
         if !defer {
             engine.finish_startup()?;

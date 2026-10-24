@@ -1,4 +1,5 @@
 //! Authenticated library controls and CLI routing; all services are synthetic and local.
+mod home_support;
 mod jobs_state;
 mod library_support;
 
@@ -61,13 +62,8 @@ impl Server {
         )
     }
 
-    fn write_cli_config(&self, directory: &Path, mut configuration: Value) {
-        configuration.insert("listen", self.origin.strip_prefix("http://").unwrap());
-        fs::write(
-            directory.join("mynou.json"),
-            json::stringify(&configuration),
-        )
-        .unwrap();
+    fn record_endpoint(&self, directory: &Path) {
+        home_support::serve_here(directory, self.origin.strip_prefix("http://").unwrap());
         fs::write(directory.join(".env"), format!("MYNOU_API_TOKEN={TOKEN}\n")).unwrap();
     }
 }
@@ -105,6 +101,7 @@ fn object(key: &str, value: impl Into<Value>) -> Value {
 fn command(directory: &Path, args: &[&str]) -> Output {
     let mut child = Command::new(env!("CARGO_BIN_EXE_mynou"))
         .current_dir(directory)
+        .env("MYNOU_HOME", directory)
         .env_remove("MYNOU_API_TOKEN")
         .env_remove("MYNOU_PLEX_TOKEN")
         .env_remove("MYNOU_DEMO_TOKEN")
@@ -331,7 +328,7 @@ fn online_cli_uses_the_api_while_the_engine_owns_the_journal_lock() {
     let configuration = configuration(Some(&indexer), HD);
     let server = Server::open(&directory.0, &configuration);
     let original = local_import(&server.engine, &directory.0, "Fixture Movie");
-    server.write_cli_config(&directory.0, configuration);
+    server.record_endpoint(&directory.0);
     let before = files(&directory.0);
     let library = successful(command(&directory.0, &["library"]));
     assert_eq!(library, server.engine.library(None, 200).unwrap(),);
@@ -380,15 +377,11 @@ fn offline_cli_controls_persist_and_previews_leave_the_job_index_unchanged() {
     let directory = Directory::new();
     let indexer = candidate_indexer();
     let configuration = configuration(Some(&indexer), HD);
-    fs::write(
-        directory.0.join("mynou.json"),
-        json::stringify(&configuration),
-    )
-    .unwrap();
     let engine = Engine::open(config::from_json(&configuration, &directory.0).unwrap()).unwrap();
     let original = local_import(&engine, &directory.0, "Fixture Movie");
     let store = engine.config.store_dir.clone();
     drop(engine);
+    home_support::save_settings(&directory.0, &configuration);
     let before = jobs_state::fingerprint(&store);
     let library = successful(command(&directory.0, &["library"]));
     assert_eq!(library.get("library").unwrap().as_array().unwrap().len(), 1);
@@ -425,7 +418,7 @@ fn invalid_cli_controls_fail_before_searching_or_changing_state() {
     let configuration = configuration(Some(&indexer), HD);
     let server = Server::open(&directory.0, &configuration);
     let original = local_import(&server.engine, &directory.0, "Fixture Movie");
-    server.write_cli_config(&directory.0, configuration);
+    server.record_endpoint(&directory.0);
     let before = files(&directory.0);
     for args in [
         vec!["library", "unexpected"],
@@ -456,12 +449,8 @@ fn invalid_cli_controls_fail_before_searching_or_changing_state() {
 #[test]
 fn offline_previews_of_a_missing_store_create_no_files_or_directories() {
     let directory = Directory::new();
+    // Without storage, the default settings apply and nothing is created.
     let indexer = candidate_indexer();
-    fs::write(
-        directory.0.join("mynou.json"),
-        json::stringify(&configuration(Some(&indexer), HD)),
-    )
-    .unwrap();
     let before = files(&directory.0);
     let library = successful(command(&directory.0, &["library"]));
     assert!(
@@ -498,11 +487,6 @@ fn offline_previews_refuse_an_unmigrated_store_without_changing_existing_bytes()
     let directory = Directory::new();
     let indexer = candidate_indexer();
     let configuration = configuration(Some(&indexer), HD);
-    fs::write(
-        directory.0.join("mynou.json"),
-        json::stringify(&configuration),
-    )
-    .unwrap();
     let engine = Engine::open(config::from_json(&configuration, &directory.0).unwrap()).unwrap();
     let original = local_import(&engine, &directory.0, "Fixture Movie");
     engine.set_baseline(&original.id, BASELINE).unwrap();
@@ -529,21 +513,18 @@ fn offline_previews_refuse_an_unmigrated_store_without_changing_existing_bytes()
 }
 
 #[test]
-fn relative_nested_config_keeps_library_controls_and_preview_on_the_same_store() {
+fn a_relative_data_directory_keeps_library_controls_and_preview_on_the_same_store() {
     let directory = Directory::new();
     let nested = directory.0.join("nested");
     fs::create_dir(&nested).unwrap();
     let indexer = candidate_indexer();
     let configuration = configuration(Some(&indexer), HD);
-    fs::write(nested.join("mynou.json"), json::stringify(&configuration)).unwrap();
     let engine = Engine::open(config::from_json(&configuration, &nested).unwrap()).unwrap();
     let original = local_import(&engine, &nested, "Fixture Movie");
     let store = engine.config.store_dir.clone();
     drop(engine);
-    let library = successful(command(
-        &directory.0,
-        &["library", "--config", "nested/mynou.json"],
-    ));
+    home_support::save_settings(&nested, &configuration);
+    let library = successful(command(&directory.0, &["library", "--dir", "nested"]));
     assert_eq!(
         library.get("library").unwrap().as_array().unwrap()[0]
             .get("id")
@@ -557,15 +538,12 @@ fn relative_nested_config_keeps_library_controls_and_preview_on_the_same_store()
             &original.id,
             "--release-title",
             BASELINE,
-            "--config",
-            "nested/mynou.json",
+            "--dir",
+            "nested",
         ],
     ));
     let before = jobs_state::fingerprint(&store);
-    let preview = successful(command(
-        &directory.0,
-        &["upgrades", "--config", "nested/mynou.json"],
-    ));
+    let preview = successful(command(&directory.0, &["upgrades", "--dir", "nested"]));
     assert_eq!(
         preview.get("entries").unwrap().as_array().unwrap()[0]
             .get("action")

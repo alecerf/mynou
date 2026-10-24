@@ -1,4 +1,5 @@
 //! Original local SASL journeys; credentials never authorize unauthenticated work.
+mod home_support;
 mod irc_support;
 mod library_support;
 use irc_support::*;
@@ -31,14 +32,14 @@ fn sasl() -> Value {
     v.insert("password_env", "PWD");
     v
 }
-fn configured(dir: &Directory, url: &str) -> Value {
-    let mut v = value(&dir.0, url);
+fn configured(url: &str) -> Value {
+    let mut v = value(url);
     source(&mut v).insert("sasl", sasl());
     v
 }
 fn protocol() -> Protocol {
     let dir = Directory::new();
-    let cfg = config::from_json(&configured(&dir, "irc://127.0.0.1:1"), &dir.0).unwrap();
+    let cfg = config::from_json(&configured("irc://127.0.0.1:1"), &dir.0).unwrap();
     Protocol::new(cfg.irc.sources[0].clone())
 }
 fn event(p: &mut Protocol, line: &str) -> Event {
@@ -143,7 +144,7 @@ fn welcome(stream: &mut TcpStream) {
 #[test]
 fn settings_are_strict_and_authentication_policy_changes_require_a_new_source_identity() {
     let dir = Directory::new();
-    let mut old = value(&dir.0, "irc://127.0.0.1:1");
+    let mut old = value("irc://127.0.0.1:1");
     let old_cfg = config::from_json(&old, &dir.0).unwrap();
     let binding = old_cfg.irc.sources[0].binding();
     source(&mut old).insert("sasl", Value::Null);
@@ -167,7 +168,7 @@ fn settings_are_strict_and_authentication_policy_changes_require_a_new_source_id
     receive(&engine, 7);
     drop(engine);
     let before = bytes(&old_cfg.store_dir);
-    let mut v = configured(&dir, "irc://127.0.0.1:1");
+    let mut v = configured("irc://127.0.0.1:1");
     let changed = config::from_json(&v, &dir.0).unwrap();
     assert_ne!(changed.irc.sources[0].binding(), binding);
     assert!(Engine::open(changed).is_err());
@@ -181,7 +182,7 @@ fn settings_are_strict_and_authentication_policy_changes_require_a_new_source_id
     assert_eq!(rows(&engine).len(), 1);
     no_secrets(&engine.irc_sources().unwrap());
     no_jobs(&engine);
-    let mut remote = configured(&dir, "irc://example.test:6667");
+    let mut remote = configured("irc://example.test:6667");
     assert!(config::from_json(&remote, &dir.0).is_err());
     source(&mut remote).insert("url", "ircs://example.test:6697");
     assert!(config::from_json(&remote, &dir.0).is_ok());
@@ -368,7 +369,7 @@ fn capability_lists_are_bounded_and_ambiguous_or_unsupported_offers_are_rejected
 fn live_authentication_reconnect_and_restart_repeat_the_handshake_before_duplicate_receipts() {
     let dir = Directory::new();
     let (listener, url) = listener();
-    let cfg = config::from_json(&configured(&dir, &url), &dir.0).unwrap();
+    let cfg = config::from_json(&configured(&url), &dir.0).unwrap();
     let peer = thread::spawn(move || {
         for pass in 0..3 {
             let mut stream = accept(&listener);
@@ -429,7 +430,7 @@ fn live_authentication_reconnect_and_restart_repeat_the_handshake_before_duplica
 fn rejected_authentication_redacts_server_text_and_shutdown_interrupts_a_new_challenge() {
     let dir = Directory::new();
     let (listener, url) = listener();
-    let cfg = config::from_json(&configured(&dir, &url), &dir.0).unwrap();
+    let cfg = config::from_json(&configured(&url), &dir.0).unwrap();
     let (ready_tx, ready_rx) = std::sync::mpsc::channel();
     let peer = thread::spawn(move || {
         let mut stream = accept(&listener);
@@ -472,7 +473,7 @@ fn rejected_authentication_redacts_server_text_and_shutdown_interrupts_a_new_cha
 fn missing_credentials_stop_before_opening_an_irc_socket() {
     let dir = Directory::new();
     let (listener, url) = listener();
-    let mut v = configured(&dir, &url);
+    let mut v = configured(&url);
     let absent = format!("MYNOU_IRC_SASL_UNAVAILABLE_{}", std::process::id());
     assert!(std::env::var_os(&absent).is_none());
     source(&mut v)
@@ -503,12 +504,11 @@ impl Drop for ChildGuard {
 fn the_native_cli_sends_an_exact_400_byte_response_and_its_required_terminator() {
     let dir = Directory::new();
     let (listener, url) = listener();
-    let mut v = configured(&dir, &url);
+    let mut v = configured(&url);
     let auth = source(&mut v).get_mut("sasl").unwrap();
     auth.insert("username_env", "MYNOU_IRC_TEST_USERNAME");
     auth.insert("password_env", "MYNOU_IRC_TEST_PASSWORD");
-    let path = dir.0.join("mynou.json");
-    fs::write(&path, json::stringify(&v)).unwrap();
+    home_support::save_settings(&dir.0, &v);
     let cfg = config::from_json(&v, &dir.0).unwrap();
     let log_path = dir.0.join("process.log");
     let log = fs::File::create(&log_path).unwrap();
@@ -516,7 +516,7 @@ fn the_native_cli_sends_an_exact_400_byte_response_and_its_required_terminator()
     let password = "p".repeat(198);
     let process = ChildGuard(
         Command::new(env!("CARGO_BIN_EXE_mynou"))
-            .args(["serve", "--config", path.to_str().unwrap()])
+            .args(["serve", "--dir", dir.0.to_str().unwrap()])
             .env("MYNOU_API_TOKEN", "0123456789abcdef0123456789abcdef")
             .env("MYNOU_IRC_TEST_USERNAME", &username)
             .env("MYNOU_IRC_TEST_PASSWORD", &password)
@@ -559,7 +559,7 @@ fn the_native_cli_sends_an_exact_400_byte_response_and_its_required_terminator()
 fn ping_traffic_cannot_extend_the_overall_registration_deadline() {
     let dir = Directory::new();
     let (listener, url) = listener();
-    let cfg = config::from_json(&configured(&dir, &url), &dir.0).unwrap();
+    let cfg = config::from_json(&configured(&url), &dir.0).unwrap();
     let peer = thread::spawn(move || {
         let mut stream = accept(&listener);
         start(&mut stream);

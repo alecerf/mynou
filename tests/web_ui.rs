@@ -1,5 +1,6 @@
 //! The embedded web interface and its WebSocket transport, over loopback only.
 mod api_support;
+mod home_support;
 mod jobs_state;
 mod series_support;
 
@@ -21,7 +22,6 @@ fn server(name: &str) -> (Server, PathBuf) {
     }
     let mut value = config::default_json();
     value.insert("listen", "127.0.0.1:0");
-    value.insert("store_dir", root.join("store").to_str().unwrap().to_owned());
     let library = value.get_mut("library").unwrap();
     library.insert(
         "movies_root",
@@ -32,7 +32,8 @@ fn server(name: &str) -> (Server, PathBuf) {
         root.join("series").to_str().unwrap().to_owned(),
     );
     value.get_mut("downloads").unwrap().insert("enabled", false);
-    let cfg = config::from_json(&value, &root).unwrap();
+    let mut cfg = config::from_json(&value, &root).unwrap();
+    cfg.store_dir = root.join("store");
     (Server::open(cfg), root)
 }
 
@@ -315,9 +316,9 @@ fn series_beyond_two_hundred_reach_the_socket_in_pages() {
         .collect();
     let mut value = config::default_json();
     value.insert("listen", "127.0.0.1:0");
-    value.insert("store_dir", store.to_str().unwrap().to_owned());
     value.get_mut("downloads").unwrap().insert("enabled", false);
-    let cfg = config::from_json(&value, &root).unwrap();
+    let mut cfg = config::from_json(&value, &root).unwrap();
+    cfg.store_dir = store.clone();
     // A store written by 0.23: create it, then leave only the old snapshot.
     drop(mynou::engine::Engine::open_for_management(cfg.clone()).unwrap());
     series_support::restore_legacy(&store, &legacy_snapshot(&records, 2));
@@ -401,7 +402,6 @@ fn jobs_above_the_old_total_cap_reach_http_websocket_and_cli_pages() {
     let store_dir = root.join("store");
     let mut value = config::default_json();
     value.insert("listen", "127.0.0.1:0");
-    value.insert("store_dir", store_dir.to_str().unwrap().to_owned());
     value.get_mut("downloads").unwrap().insert("enabled", false);
     let mut store = Store::open(&store_dir).unwrap();
     let prototype = store
@@ -447,11 +447,10 @@ fn jobs_above_the_old_total_cap_reach_http_websocket_and_cli_pages() {
         &store_dir.join("snapshot.bin"),
         &jobs_state::snapshot(&jobs, &events, 10_001, &[0; 32], b"MYNOUS01"),
     );
-    let cfg = config::from_json(&value, &root).unwrap();
+    let mut cfg = config::from_json(&value, &root).unwrap();
+    cfg.store_dir = store_dir.clone();
     let server = Server::open(cfg);
-    value.insert("listen", server.authority.clone());
-    let config_path = root.join("mynou.json");
-    jobs_state::write_private(&config_path, json::stringify(&value).as_bytes());
+    home_support::serve_here(&root, &server.authority);
     let auth = format!("Bearer {TOKEN}");
     let mut socket = open_when_free(&server);
     send(&mut socket, r#"{"subscribe":["jobs"]}"#);
@@ -500,13 +499,7 @@ fn jobs_above_the_old_total_cap_reach_http_websocket_and_cli_pages() {
                     command
                         .current_dir(&root)
                         .env("MYNOU_API_TOKEN", TOKEN)
-                        .args([
-                            "jobs",
-                            "--config",
-                            config_path.to_str().unwrap(),
-                            "--limit",
-                            "200",
-                        ]);
+                        .args(["jobs", "--dir", root.to_str().unwrap(), "--limit", "200"]);
                     if let Some(cursor) = &after {
                         command.args(["--after", cursor]);
                     }
@@ -565,7 +558,7 @@ fn jobs_above_the_old_total_cap_reach_http_websocket_and_cli_pages() {
                 command
                     .current_dir(&root)
                     .env("MYNOU_API_TOKEN", TOKEN)
-                    .args(["jobs", "--config", config_path.to_str().unwrap()])
+                    .args(["jobs", "--dir", root.to_str().unwrap()])
                     .args(["--query", &needle.to_uppercase(), "--state", "queued"]);
                 if let Some(cursor) = &after {
                     command.args(["--after", cursor]);

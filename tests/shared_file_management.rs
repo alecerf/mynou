@@ -1,6 +1,7 @@
 //! Protected shared-file previews and guarded application through HTTP, forms and CLI.
 mod api_support;
 mod automatic_pack_support;
+mod home_support;
 mod library_support;
 mod series_support;
 #[allow(dead_code)]
@@ -120,7 +121,6 @@ fn bearer_routes_reject_invalid_controls_before_io_and_apply_only_the_reviewed_b
 fn config_value(cfg: &Config) -> Value {
     let mut value = mynou::config::default_json();
     value.insert("listen", cfg.listen.clone());
-    value.insert("store_dir", cfg.store_dir.to_str().unwrap());
     value
         .get_mut("library")
         .unwrap()
@@ -133,9 +133,10 @@ fn config_value(cfg: &Config) -> Value {
     catalog.insert("api_key_env", cfg.catalog.api_key_env.clone());
     value
 }
-fn command(directory: &Directory, arguments: &[&str]) -> Output {
+fn command(directory: &Directory, home: &std::path::Path, arguments: &[&str]) -> Output {
     let mut child = Command::new(env!("CARGO_BIN_EXE_mynou"))
         .current_dir(&directory.0)
+        .env("MYNOU_HOME", home)
         .env_remove("MYNOU_API_TOKEN")
         .env_remove("MYNOU_PLEX_TOKEN")
         .args(arguments)
@@ -172,15 +173,12 @@ fn cli_offline_preview_preserves_storage_and_online_apply_requires_its_guard() {
     let directory = Directory::new();
     let provider = Provider::open();
     let (catalog, _cfg, source) = setup(&directory, &provider);
-    let mut cfg = catalog.config(&directory.0.join("engine"));
+    let cfg = catalog.config(&directory.0.join("engine"));
     let engine = Engine::open_for_management(cfg.clone()).unwrap();
     let series = tracked(&engine);
     drop(engine);
-    fs::write(
-        directory.0.join("mynou.json"),
-        json::stringify(&config_value(&cfg)),
-    )
-    .unwrap();
+    let home = cfg.data_dir.clone();
+    home_support::save_settings(&home, &config_value(&cfg));
     fs::write(
         directory.0.join("shared.json"),
         r#"{"file_path":"Pack/shared.mp4","season":1,"episodes":[1,2]}"#,
@@ -189,6 +187,7 @@ fn cli_offline_preview_preserves_storage_and_online_apply_requires_its_guard() {
     let before = snapshot(&cfg.store_dir);
     let report = success(command(
         &directory,
+        &home,
         &[
             "series-shared-file",
             &series,
@@ -204,6 +203,7 @@ fn cli_offline_preview_preserves_storage_and_online_apply_requires_its_guard() {
     assert!(
         !command(
             &directory,
+            &home,
             &[
                 "series-shared-file",
                 &series,
@@ -242,23 +242,15 @@ fn cli_offline_preview_preserves_storage_and_online_apply_requires_its_guard() {
             "invalid",
         ],
     ] {
-        assert!(!command(&directory, &arguments).status.success());
+        assert!(!command(&directory, &home, &arguments).status.success());
     }
     assert_eq!(provider.calls.lock().unwrap().len(), calls);
     let server = Server::open(cfg.clone());
-    cfg.listen = server.authority.clone();
-    fs::write(
-        directory.0.join("mynou.json"),
-        json::stringify(&config_value(&cfg)),
-    )
-    .unwrap();
-    fs::write(
-        directory.0.join(".env"),
-        format!("MYNOU_API_TOKEN={TOKEN}\n"),
-    )
-    .unwrap();
+    home_support::serve_here(&home, &server.authority);
+    fs::write(home.join(".env"), format!("MYNOU_API_TOKEN={TOKEN}\n")).unwrap();
     let applied = success(command(
         &directory,
+        &home,
         &[
             "series-shared-file",
             &series,

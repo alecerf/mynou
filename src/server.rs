@@ -193,10 +193,12 @@ impl Api {
     }
 
     fn run_inner(mut self, supervised: bool) -> Result<()> {
+        self.engine.supervised.store(supervised, Ordering::Release);
         let mut workers = supervised.then(|| self.engine.start());
         let mut threads: Vec<JoinHandle<()>> = Vec::new();
         while !self.engine.stopped.load(Ordering::Acquire) {
-            if supervised && self.engine.vpn_needs_reload() {
+            if supervised && (self.engine.vpn_needs_reload() || self.engine.settings_need_reload())
+            {
                 // Close admission, finish API work and worker shutdown, then
                 // drop the old client/listener before constructing its successor.
                 self.engine.retire_vpn_generation();
@@ -205,12 +207,41 @@ impl Api {
                     let _ = handle.join();
                 }
                 drop(workers.take());
-                let config = self.engine.config.clone();
+                let previous = self.engine.config.clone();
+                let settings = self.engine.take_pending_settings().map(|mut config| {
+                    // The listener stays bound until the next start.
+                    config.listen = previous.listen.clone();
+                    config
+                });
                 let operator = self.engine.vpn.as_ref().filter(|v| !v.changed()).cloned();
                 // Destroy the old Arc before reopening storage and its
                 // exclusive process lock.
                 drop(self.engine);
-                self.engine = Engine::open_operator(config, true, false, true, operator)?;
+                self.engine = match settings {
+                    None => Engine::open_operator(previous, true, false, true, operator)?,
+                    Some(config) => {
+                        let document = config.document.clone();
+                        let opened =
+                            Engine::open_operator(config, true, false, true, operator.clone())
+                                .and_then(|engine| {
+                                    engine.save_settings(&document)?;
+                                    Ok(engine)
+                                });
+                        match opened {
+                            Ok(engine) => engine,
+                            Err(reason) => {
+                                // Keep serving the settings that worked; the
+                                // failed document is not saved.
+                                let engine =
+                                    Engine::open_operator(previous, true, false, true, operator)?;
+                                *lock(&engine.settings_error)? =
+                                    Some(format!("Settings were not applied: {reason}"));
+                                engine
+                            }
+                        }
+                    }
+                };
+                self.engine.supervised.store(true, Ordering::Release);
                 workers = Some(self.engine.start());
                 continue;
             }
@@ -425,7 +456,10 @@ pub(crate) fn route(
     if method != "GET"
         && !matches!(
             (method, path),
-            ("POST", "/api/shutdown" | "/api/vpn/control")
+            (
+                "POST",
+                "/api/shutdown" | "/api/vpn/control" | "/api/settings" | "/api/secrets"
+            )
         )
         && engine.starting.load(Ordering::Acquire)
     {
@@ -437,6 +471,28 @@ pub(crate) fn route(
     match (method, path) {
         ("GET", "/api/status") => Ok((200, engine.status()?)),
         ("GET", "/api/vpn") => Ok((200, engine.vpn_status())),
+        ("GET", "/api/settings") => Ok((200, engine.settings()?)),
+        ("POST", "/api/settings") => {
+            let text = std::str::from_utf8(body).map_err(|_| "Invalid settings encoding")?;
+            let value = json::parse(text)?;
+            let reply = engine.update_settings(&value)?;
+            Ok((
+                if engine.supervised.load(Ordering::Acquire) {
+                    202
+                } else {
+                    200
+                },
+                reply,
+            ))
+        }
+        ("GET", "/api/secrets") => Ok((200, engine.secrets()?)),
+        ("POST", "/api/secrets") => {
+            if body.len() > 16_384 {
+                return Err("Secret update exceeds size limit".into());
+            }
+            let text = std::str::from_utf8(body).map_err(|_| "Invalid secret encoding")?;
+            Ok((200, engine.update_secret(&json::parse(text)?)?))
+        }
         ("POST", "/api/vpn/control") => {
             if body.len() > 32_768 {
                 return Err("VPN control exceeds size limit".into());
@@ -1224,8 +1280,8 @@ mod tests {
         let root = std::env::temp_dir().join(format!("mynou-startup-{}", std::process::id()));
         let mut value = crate::config::default_json();
         value.insert("listen", "127.0.0.1:0");
-        value.insert("store_dir", root.join("store").to_str().unwrap().to_owned());
-        let config = crate::config::from_json(&value, &root).unwrap();
+        let mut config = crate::config::from_json(&value, &root).unwrap();
+        config.store_dir = root.join("store");
         let token = "s".repeat(32);
         let startup = Startup::bind(&config, token.clone()).unwrap();
         let address = startup.address().unwrap();

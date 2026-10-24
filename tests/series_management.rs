@@ -1,5 +1,6 @@
 //! API and CLI against synthetic catalog data. CI only.
 mod api_support;
+mod home_support;
 mod library_support;
 mod series_support;
 use api_support::{Reply, Server, TOKEN};
@@ -102,6 +103,7 @@ fn series_api_requires_bearer_and_validates_settings_before_changing_records() {
 fn command(directory: &Directory, args: &[&str]) -> std::process::Output {
     let mut child = Command::new(env!("CARGO_BIN_EXE_mynou"))
         .current_dir(&directory.0)
+        .env("MYNOU_HOME", &directory.0)
         .env_remove("MYNOU_API_TOKEN")
         .args(args)
         .stdout(Stdio::piped())
@@ -129,9 +131,7 @@ fn cli_routes_series_creation_controls_and_calendar_to_the_running_service() {
         episode(1, 2, Some("2024-01-01"), "Pack episode"),
     ]);
     let server = Server::open(catalog.config(&directory.0));
-    let mut value = mynou::config::default_json();
-    value.insert("listen", server.authority.clone());
-    fs::write(directory.0.join("mynou.json"), json::stringify(&value)).unwrap();
+    home_support::serve_here(&directory.0, &server.authority);
     fs::write(
         directory.0.join(".env"),
         format!("MYNOU_API_TOKEN={TOKEN}\n"),

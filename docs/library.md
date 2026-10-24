@@ -12,7 +12,7 @@ video file are upgraded as a whole group; see
 ## Inspect the owned library
 
 ```sh
-mynou library --config ./mynou.json
+mynou library
 ```
 
 The API equivalent is `GET /api/library`. Both return a page envelope with
@@ -38,8 +38,7 @@ submissions and older jobs may not have one. Mynou never guesses it from a file
 name. If you know the release, record it once:
 
 ```sh
-mynou baseline ID --release-title "Example.Movie.2026.720p.WEB-DL.H264.English" \
-  --config ./mynou.json
+mynou baseline ID --release-title "Example.Movie.2026.720p.WEB-DL.H264.English"
 ```
 
 The API equivalent is `POST /api/library/ID/baseline` with
@@ -52,10 +51,10 @@ quality, and it may fall outside today's profile.
 ## Preview and apply upgrades
 
 ```sh
-mynou upgrades --config ./mynou.json
-mynou upgrades --apply --config ./mynou.json
-mynou monitor ID --config ./mynou.json
-mynou unmonitor ID --config ./mynou.json
+mynou upgrades
+mynou upgrades --apply
+mynou monitor ID
+mynou unmonitor ID
 ```
 
 `upgrades` previews decisions for monitored entries. It contacts your sources
@@ -178,9 +177,9 @@ To replace the video, create `replacement.json`:
 Preview, then apply the reviewed plan with a running service:
 
 ```sh
-mynou library-group OWNER_ID --mapping replacement.json --config ./mynou.json
+mynou library-group OWNER_ID --mapping replacement.json
 mynou library-group OWNER_ID --mapping replacement.json --apply \
-  --plan-id REVIEWED_PLAN_ID --config ./mynou.json
+  --plan-id REVIEWED_PLAN_ID
 ```
 
 A replacement requires every owner to be monitored and a consistent group

@@ -70,13 +70,13 @@ known.
 ## Inspect, pause and prioritize
 
 ```sh
-mynou torrents --limit 50 --config ./mynou.json
-mynou torrents --limit 50 --after CURSOR --config ./mynou.json
-mynou torrent ID --config ./mynou.json
-mynou pause ID --config ./mynou.json
-mynou resume ID --config ./mynou.json
-mynou torrent-priority ID --priority 100 --config ./mynou.json
-mynou file-priority ID --file 0 --priority high --config ./mynou.json
+mynou torrents --limit 50
+mynou torrents --limit 50 --after CURSOR
+mynou torrent ID
+mynou pause ID
+mynou resume ID
+mynou torrent-priority ID --priority 100
+mynou file-priority ID --file 0 --priority high
 ```
 
 | CLI | API (Bearer token) |
@@ -122,8 +122,8 @@ request for the same torrent, **Download all files** or `torrent-select`
 expands them, and cancellation never removes interests or bytes.
 
 ```sh
-mynou torrent-select ID --selection '{"indices":[0,2]}' --config ./mynou.json
-mynou torrent-select ID --selection '{"all":true}' --config ./mynou.json
+mynou torrent-select ID --selection '{"indices":[0,2]}'
+mynou torrent-select ID --selection '{"all":true}'
 ```
 
 Choose exactly one of `indices` (original non-padding metadata indices) or
@@ -160,8 +160,8 @@ Enable `downloads.seed`, then explicitly supply a v1 torrent and the ID of a
 fully verified ordinary native transfer:
 
 ```sh
-mynou cross-seed SOURCE_ID --torrent ./candidate.torrent --config ./mynou.json
-mynou torrent CANDIDATE_ID --config ./mynou.json
+mynou cross-seed SOURCE_ID --torrent ./candidate.torrent
+mynou torrent CANDIDATE_ID
 ```
 
 Every candidate piece must verify from the existing bytes before any announce
@@ -276,9 +276,9 @@ per source. Deleting the store makes discovery start over; registered
 cross-seeds are kept.
 
 ```sh
-mynou cross-seed-discovery --config ./mynou.json
-mynou cross-seed-discovery --run --dry-run --config ./mynou.json
-mynou cross-seed-discovery --run --indexer tracker-b --transfer ID --config ./mynou.json
+mynou cross-seed-discovery
+mynou cross-seed-discovery --run --dry-run
+mynou cross-seed-discovery --run --indexer tracker-b --transfer ID
 ```
 
 | CLI | API (Bearer token) |
@@ -333,8 +333,8 @@ always apply, even under a per-transfer policy.
 To override the seeding defaults or add tighter rates for one transfer:
 
 ```sh
-mynou torrent-policy ID --policy '{"upload_limit_bps": 1048576}' --config ./mynou.json
-mynou torrent-policy ID --policy 'null' --config ./mynou.json
+mynou torrent-policy ID --policy '{"upload_limit_bps": 1048576}'
+mynou torrent-policy ID --policy 'null'
 ```
 
 The API body is `{"policy": {...}}` or `{"policy": null}`. A policy is a

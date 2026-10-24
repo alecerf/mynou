@@ -1,5 +1,6 @@
 //! Original Bearer API and CLI requester scenarios.
 mod api_support;
+mod home_support;
 mod library_support;
 mod requester_support;
 use api_support::{Server, TOKEN};
@@ -113,10 +114,9 @@ fn requester_api_requires_authentication_strict_scopes_and_current_guards() {
     assert_eq!(listing.status, 200);
     no_credentials(&json::parse(&listing.body).unwrap());
 }
-fn config_file(cfg: &mynou::config::Config, file: &std::path::Path) {
+fn config_value(cfg: &mynou::config::Config) -> Value {
     let mut value = config::default_json();
     value.insert("listen", cfg.listen.clone());
-    value.insert("store_dir", cfg.store_dir.to_str().unwrap());
     value.get_mut("downloads").unwrap().insert("enabled", false);
     value
         .get_mut("library")
@@ -162,7 +162,7 @@ fn config_file(cfg: &mynou::config::Config, file: &std::path::Path) {
         ),
     );
     value.insert("requesters", requesters);
-    fs::write(file, json::stringify(&value)).unwrap();
+    value
 }
 #[test]
 fn cli_offline_preview_is_read_only_and_online_apply_uses_the_same_guard() {
@@ -175,8 +175,7 @@ fn cli_offline_preview_is_read_only_and_online_apply_uses_the_same_guard() {
     p.enabled = true;
     let q = policy_query(p);
     drop(engine);
-    let config_path = directory.0.join("mynou.json");
-    config_file(&cfg, &config_path);
+    home_support::save_settings(&directory.0, &config_value(&cfg));
     let mapping = directory.0.join("policy.json");
     let mut v = q.to_json();
     if let Value::Object(m) = &mut v {
@@ -186,8 +185,8 @@ fn cli_offline_preview_is_read_only_and_online_apply_uses_the_same_guard() {
     let command = |args: &[&str]| {
         Command::new(env!("CARGO_BIN_EXE_mynou"))
             .args(args)
-            .arg("--config")
-            .arg(&config_path)
+            .arg("--dir")
+            .arg(&directory.0)
             .env("MYNOU_API_TOKEN", TOKEN)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -224,9 +223,7 @@ fn cli_offline_preview_is_read_only_and_online_apply_uses_the_same_guard() {
     );
     assert_eq!(snapshot(&cfg.store_dir), before);
     let server = Server::open(cfg);
-    let mut online_cfg = server.engine.config.clone();
-    online_cfg.listen = server.authority.clone();
-    config_file(&online_cfg, &config_path);
+    home_support::serve_here(&directory.0, &server.authority);
     let online = authenticated(&server, "/api/requesters/alice/control", &q.to_json());
     assert_eq!(
         json::parse(&online.body).unwrap().get("plan_id"),

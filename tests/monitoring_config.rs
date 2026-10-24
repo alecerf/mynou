@@ -55,13 +55,9 @@ fn mapping(mynou_prefix: &str, plex_prefix: &str) -> Value {
 }
 
 #[test]
-fn loading_relative_config_resolves_every_filesystem_root_without_creating_it() {
+fn loading_a_relative_data_directory_resolves_every_filesystem_root_without_creating_it() {
     let directory = Directory::new();
-    let file = directory.0.join("mynou.json");
-    fs::write(&file, json::stringify(&config::default_json())).unwrap();
-    let relative = Path::new(".")
-        .join(directory.0.file_name().unwrap())
-        .join("mynou.json");
+    let relative = Path::new(".").join(directory.0.file_name().unwrap());
     let configuration = config::load(&relative).unwrap();
     for (actual, suffix) in [
         (&configuration.store_dir, "state/jobs"),
@@ -84,7 +80,6 @@ fn config_base_and_root_dots_are_normalized_without_changing_existing_paths() {
     let directory = Directory::new();
     fs::create_dir(directory.0.join("nested")).unwrap();
     let mut value = config::default_json();
-    value.insert("store_dir", "./state//jobs");
     value
         .get_mut("library")
         .unwrap()
@@ -93,11 +88,10 @@ fn config_base_and_root_dots_are_normalized_without_changing_existing_paths() {
         "series_root",
         directory.0.join("absolute-series").to_str().unwrap(),
     );
-    fs::write(directory.0.join("mynou.json"), json::stringify(&value)).unwrap();
     let relative = Path::new(".")
         .join(directory.0.file_name().unwrap())
-        .join("nested/../mynou.json");
-    let configuration = config::load(&relative).unwrap();
+        .join("nested/..");
+    let configuration = config::from_json(&value, &relative).unwrap();
     assert_eq!(configuration.store_dir, directory.0.join("state/jobs"));
     assert_eq!(
         configuration.movies_root,
@@ -143,7 +137,10 @@ fn normalization_keeps_symlink_guards_and_rejects_parent_collapse_across_links()
     assert!(!target.join("state").exists());
     assert!(config::from_json(&value, &directory.0.join("link/..")).is_err());
     let mut value = value;
-    value.insert("store_dir", "link/../state/jobs");
+    value
+        .get_mut("library")
+        .unwrap()
+        .insert("movies_root", "link/../movies");
     assert!(config::from_json(&value, &directory.0).is_err());
     assert!(!directory.0.join("state").exists());
 }

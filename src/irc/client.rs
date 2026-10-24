@@ -267,7 +267,8 @@ fn credential(variable: &Option<String>) -> Result<Option<String>> {
     variable
         .as_ref()
         .map(|name| {
-            let v = std::env::var(name).map_err(|_| "IRC: configured credential is unavailable")?;
+            let v =
+                crate::config::lookup(name).ok_or("IRC: configured credential is unavailable")?;
             if v.is_empty() || v.len() > 256 || v.bytes().any(|b| b <= 32 || b == 127) {
                 return Err("IRC: configured credential is invalid".into());
             }

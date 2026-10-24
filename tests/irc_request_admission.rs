@@ -1,5 +1,6 @@
 //! Original local catalog, guarded demand, crash and native import fixtures. CI only.
 mod api_support;
+mod home_support;
 mod irc_routing_support;
 mod irc_support;
 mod library_support;
@@ -37,8 +38,8 @@ fn details(id: u32) -> Value {
     v.insert("release_date", "2024-01-01");
     v
 }
-fn value(dir: &Directory, catalog: &Catalog, accounts: &Accounts, peer: u16) -> Value {
-    let mut v = irc_support::value(&dir.0, "irc://127.0.0.1:1");
+fn value(catalog: &Catalog, accounts: &Accounts, peer: u16) -> Value {
+    let mut v = irc_support::value("irc://127.0.0.1:1");
     let irc = v.get_mut("irc").unwrap();
     let Value::Array(sources) = irc.get_mut("sources").unwrap() else {
         panic!()
@@ -85,7 +86,7 @@ fn value(dir: &Directory, catalog: &Catalog, accounts: &Accounts, peer: u16) -> 
     v
 }
 fn configured(dir: &Directory, c: &Catalog, a: &Accounts) -> config::Config {
-    config::from_json(&value(dir, c, a, 0), &dir.0).unwrap()
+    config::from_json(&value(c, a, 0), &dir.0).unwrap()
 }
 fn request(engine: &Engine, row: &Value) -> Value {
     let id = irc_support::record_id(row);
@@ -119,7 +120,7 @@ fn request_rules_require_explicit_known_accounts_and_pinned_sources() {
     let dir = Directory::new();
     let c = catalog();
     let a = Accounts::open();
-    let original = value(&dir, &c, &a, 0);
+    let original = value(&c, &a, 0);
     assert!(config::from_json(&original, &dir.0).is_ok());
     for selector in [Value::Null, "".into(), "retired".into(), "Alice".into()] {
         let mut v = original.clone();
@@ -407,7 +408,7 @@ fn reviewed_new_demand_reaches_one_verified_native_import_and_survives_restart()
         include_bytes!("../examples/demo.mp4").to_vec(),
     );
     let seed = Seeder::open(&dir.0.join("seed"), &[&torrent]);
-    let cfg = config::from_json(&value(&dir, &c, &a, seed.client.listen_port()), &dir.0).unwrap();
+    let cfg = config::from_json(&value(&c, &a, seed.client.listen_port()), &dir.0).unwrap();
     let e = Engine::open(cfg.clone()).unwrap();
     enable(&e, "alice");
     let row = irc_routing_support::receive(&e, &torrent.id, 7);
@@ -735,14 +736,11 @@ fn protected_api_and_cli_reviews_bind_the_request_action() {
     response.no_secrets();
     let review = json::parse(&response.body).unwrap();
     no_private(&review);
-    let mut v = value(&dir, &c, &a, 0);
-    v.insert("listen", server.authority.clone());
-    let path = dir.0.join("mynou.json");
-    fs::write(&path, json::stringify(&v)).unwrap();
+    home_support::serve_here(&dir.0, &server.authority);
     let output = Command::new(env!("CARGO_BIN_EXE_mynou"))
         .env("MYNOU_API_TOKEN", TOKEN)
-        .args(["irc-control", id, "--action", "request", "--config"])
-        .arg(&path)
+        .args(["irc-control", id, "--action", "request", "--dir"])
+        .arg(&dir.0)
         .output()
         .unwrap();
     assert!(
@@ -786,9 +784,8 @@ fn offline_cli_catalog_review_is_read_only_and_application_requires_the_service(
     let e = Engine::open(cfg.clone()).unwrap();
     enable(&e, "alice");
     let row = irc_support::receive(&e, 7);
-    let path = dir.0.join("mynou.json");
-    fs::write(&path, json::stringify(&value(&dir, &c, &a, 0))).unwrap();
     drop(e);
+    home_support::save_settings(&dir.0, &value(&c, &a, 0));
     let before = irc_support::bytes(&cfg.store_dir);
     let output = Command::new(env!("CARGO_BIN_EXE_mynou"))
         .args([
@@ -796,9 +793,9 @@ fn offline_cli_catalog_review_is_read_only_and_application_requires_the_service(
             irc_support::record_id(&row),
             "--action",
             "request",
-            "--config",
+            "--dir",
         ])
-        .arg(&path)
+        .arg(&dir.0)
         .output()
         .unwrap();
     assert!(
@@ -819,8 +816,8 @@ fn offline_cli_catalog_review_is_read_only_and_application_requires_the_service(
             "--plan-id",
         ])
         .arg(report.get("plan_id").unwrap().as_str().unwrap())
-        .arg("--config")
-        .arg(&path)
+        .arg("--dir")
+        .arg(&dir.0)
         .output()
         .unwrap();
     assert!(!output.status.success());

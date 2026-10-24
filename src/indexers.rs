@@ -353,7 +353,7 @@ fn remaining(deadline: Instant) -> Result<Duration> {
         .ok_or_else(|| "Indexer: request budget expired".into())
 }
 fn secret(name: &str) -> Result<String> {
-    let s = std::env::var(name).map_err(|_| "Indexer: authentication unavailable")?;
+    let s = crate::config::lookup(name).ok_or("Indexer: authentication unavailable")?;
     if s.is_empty() || s.len() > 4096 || s.chars().any(char::is_control) {
         return Err("Indexer: authentication unavailable".into());
     }

@@ -181,7 +181,6 @@ fn write_checked(path: &Path, bytes: &[u8]) -> mynou::Result<()> {
     let path = match path.file_name().and_then(|name| name.to_str()) {
         Some("snapshot.bin") => root.join("snapshot.bin"),
         Some("journal.bin") => root.join("journal.bin"),
-        Some("mynou.json") => root.join("mynou.json"),
         _ => return Err("Unsupported fixture file name".into()),
     };
     if let Ok(metadata) = fs::symlink_metadata(&path)

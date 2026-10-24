@@ -1,5 +1,6 @@
 //! Original native HTTP source protocol fixtures. Never public trackers or torrents.
 mod api_support;
+mod home_support;
 mod library_support;
 use api_support::{Server, TOKEN};
 use library_support::Directory;
@@ -263,10 +264,9 @@ fn auth(provider: &Provider, mode: &str) -> Value {
     }
     a
 }
-fn value(dir: &Directory, p: &Provider, mode: &str) -> Value {
+fn value(p: &Provider, mode: &str) -> Value {
     let mut v = config::default_json();
     v.insert("listen", "127.0.0.1:0");
-    v.insert("store_dir", dir.0.join("jobs").to_str().unwrap());
     v.get_mut("downloads").unwrap().insert("enabled", false);
     let mut s = Value::object();
     s.insert("name", "fixture");
@@ -279,7 +279,7 @@ fn value(dir: &Directory, p: &Provider, mode: &str) -> Value {
 }
 fn cfg(dir: &Directory, p: &Provider, mode: &str) -> config::Config {
     *p.mode.lock().unwrap() = mode.into();
-    config::from_json(&value(dir, p, mode), &dir.0).unwrap()
+    config::from_json(&value(p, mode), &dir.0).unwrap()
 }
 fn source_mut(v: &mut Value) -> &mut Value {
     let Value::Array(s) = v.get_mut("indexers").unwrap() else {
@@ -378,7 +378,7 @@ fn invalid_cookie_claims_stop_before_any_authenticated_search() {
 fn native_session_expiry_requires_a_new_login_before_the_next_fetch() {
     let d = Directory::new();
     let p = Provider::open();
-    let mut v = value(&d, &p, "form");
+    let mut v = value(&p, "form");
     source_mut(&mut v)
         .get_mut("authentication")
         .unwrap()
@@ -395,7 +395,7 @@ fn native_session_expiry_requires_a_new_login_before_the_next_fetch() {
 fn strict_source_authentication_configuration_rejects_remote_plaintext_and_invalid_scope() {
     let d = Directory::new();
     let p = Provider::open();
-    let original = value(&d, &p, "form");
+    let original = value(&p, "form");
     for (key, val) in [
         ("login_url", Value::from("http://127.0.0.1:2/login")),
         ("login_url", format!("{}/login?token=private", p.url).into()),
@@ -413,10 +413,10 @@ fn strict_source_authentication_configuration_rejects_remote_plaintext_and_inval
             .insert(key, val);
         assert!(config::from_json(&v, &d.0).is_err());
     }
-    let mut v = value(&d, &p, "basic");
+    let mut v = value(&p, "basic");
     source_mut(&mut v).insert("url", "http://example.test/feed");
     assert!(config::from_json(&v, &d.0).is_err());
-    let mut v = value(&d, &p, "none");
+    let mut v = value(&p, "none");
     source_mut(&mut v).insert("min_interval_ms", 60001_u32);
     assert!(config::from_json(&v, &d.0).is_err());
 }
@@ -424,7 +424,7 @@ fn strict_source_authentication_configuration_rejects_remote_plaintext_and_inval
 fn rate_limits_and_disabled_sources_reject_without_repeated_network_calls() {
     let d = Directory::new();
     let p = Provider::open();
-    let mut v = value(&d, &p, "none");
+    let mut v = value(&p, "none");
     source_mut(&mut v).insert("min_interval_ms", 60_000_u32);
     let c = config::from_json(&v, &d.0).unwrap();
     integrations::search(&c, &movie()).unwrap();
@@ -434,7 +434,7 @@ fn rate_limits_and_disabled_sources_reject_without_repeated_network_calls() {
         health(&c).get("last_error").unwrap().as_str(),
         Some("rate_limited")
     );
-    let mut v = value(&d, &p, "none");
+    let mut v = value(&p, "none");
     source_mut(&mut v).insert("enabled", false);
     let c = config::from_json(&v, &d.0).unwrap();
     assert!(integrations::search(&c, &movie()).is_err());
@@ -478,7 +478,7 @@ fn redirects_and_missing_or_invalid_credentials_never_reach_another_origin() {
     assert_eq!(other.searches.load(Ordering::Acquire), 0);
     redacted(&health(&c));
     for env in ["MYNOU_ABSENT_NATIVE_AUTH_FIXTURE_7853", "PATH"] {
-        let mut v = value(&d, &p, "bearer");
+        let mut v = value(&p, "bearer");
         source_mut(&mut v)
             .get_mut("authentication")
             .unwrap()
@@ -517,7 +517,7 @@ fn native_rss_and_torznab_parsers_use_authenticated_fetch_and_report_parse_failu
         let d = Directory::new();
         let p = Provider::open();
         p.feed.lock().unwrap().body=r#"<rss xmlns:torznab="urn:original"><channel><item><title>Fixture.Movie.2024.1080p</title><torznab:attr name="seeders" value="5"/><torznab:attr name="magneturl" value="magnet:?xt=urn:btih:original-fixture"/></item></channel></rss>"#.into();
-        let mut v = value(&d, &p, "basic");
+        let mut v = value(&p, "basic");
         source_mut(&mut v).insert("kind", kind);
         *p.mode.lock().unwrap() = "basic".into();
         let c = config::from_json(&v, &d.0).unwrap();
@@ -613,7 +613,7 @@ fn guarded_pause_enable_persists_and_previews_do_not_search_or_write() {
 fn guards_cover_other_source_changes_and_cannot_be_replayed() {
     let d = Directory::new();
     let p = Provider::open();
-    let mut v = value(&d, &p, "none");
+    let mut v = value(&p, "none");
     source_mut(&mut v).insert("id", "primary");
     let mut second = source_mut(&mut v).clone();
     second.insert("id", "secondary");
@@ -743,7 +743,7 @@ fn probes_require_review_make_one_source_search_and_never_queue_media() {
 fn stable_source_bindings_cannot_change_and_removed_sources_keep_policy() {
     let d = Directory::new();
     let p = Provider::open();
-    let mut v = value(&d, &p, "none");
+    let mut v = value(&p, "none");
     source_mut(&mut v).insert("id", "primary");
     let c = config::from_json(&v, &d.0).unwrap();
     let engine = mynou::engine::Engine::open_for_management(c.clone()).unwrap();
@@ -789,7 +789,7 @@ fn stable_source_bindings_cannot_change_and_removed_sources_keep_policy() {
 fn duplicate_ids_and_corrupt_source_snapshots_fail_closed_before_mutation() {
     let d = Directory::new();
     let p = Provider::open();
-    let mut v = value(&d, &p, "none");
+    let mut v = value(&p, "none");
     source_mut(&mut v).insert("id", "primary");
     let c = config::from_json(&v, &d.0).unwrap();
     let engine = mynou::engine::Engine::open_for_management(c.clone()).unwrap();
@@ -860,15 +860,12 @@ fn cli_source_control_uses_online_guard_and_offline_persisted_policy() {
     let p = Provider::open();
     let server = Server::open(cfg(&d, &p, "none"));
     let id = policy_id(&server.engine);
-    let mut v = value(&d, &p, "none");
-    v.insert("listen", server.authority.clone());
-    let path = d.0.join("mynou.json");
-    fs::write(&path, json::stringify(&v)).unwrap();
+    home_support::serve_here(&d.0, &server.authority);
     let run = |extra: &[&str]| {
         Command::new(env!("CARGO_BIN_EXE_mynou"))
             .env("MYNOU_API_TOKEN", TOKEN)
-            .args(["indexer-control", &id, "--action", "pause", "--config"])
-            .arg(&path)
+            .args(["indexer-control", &id, "--action", "pause", "--dir"])
+            .arg(&d.0)
             .args(extra)
             .output()
             .unwrap()
@@ -885,10 +882,11 @@ fn cli_source_control_uses_online_guard_and_offline_persisted_policy() {
     assert!(run(&["--apply", "--plan-id", guard]).status.success());
     assert!(!run(&["--apply", "--plan-id", guard]).status.success());
     drop(server);
+    home_support::save_settings(&d.0, &value(&p, "none"));
     let out = Command::new(env!("CARGO_BIN_EXE_mynou"))
         .env_remove("MYNOU_API_TOKEN")
-        .args(["indexers", "--config"])
-        .arg(&path)
+        .args(["indexers", "--dir"])
+        .arg(&d.0)
         .output()
         .unwrap();
     assert!(
@@ -920,14 +918,11 @@ fn protected_source_health_api_and_cli_expose_only_safe_aliases() {
     assert_eq!(reply.status, 200);
     reply.no_secrets();
     redacted(&json::parse(&reply.body).unwrap());
-    let mut v = value(&d, &p, "form");
-    v.insert("listen", server.authority.clone());
-    let path = d.0.join("mynou.json");
-    fs::write(&path, json::stringify(&v)).unwrap();
+    home_support::serve_here(&d.0, &server.authority);
     let out = Command::new(env!("CARGO_BIN_EXE_mynou"))
         .env("MYNOU_API_TOKEN", TOKEN)
-        .args(["indexers", "--config"])
-        .arg(&path)
+        .args(["indexers", "--dir"])
+        .arg(&d.0)
         .output()
         .unwrap();
     assert!(

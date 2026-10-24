@@ -17,8 +17,8 @@ The reader never changes the source. Use a physical absolute path on macOS.
 Do not put credentials in command arguments or logs.
 
 ```sh
-mynou vpn --action import --profile /private/path/tunnel.conf --config mynou.json
-mynou vpn --config mynou.json
+mynou vpn --action import --profile /private/path/tunnel.conf
+mynou vpn
 ```
 
 Import atomically stores a canonical private copy in `store_dir/vpn.conf` and
@@ -71,9 +71,9 @@ publication; filesystem stalls and the Direct system resolver can delay it.
 The successor is not activated while old work remains.
 
 ```sh
-mynou vpn --action revoke --config mynou.json
-mynou vpn --action reconnect --config mynou.json
-mynou vpn --action disable --config mynou.json
+mynou vpn --action revoke
+mynou vpn --action reconnect
+mynou vpn --action disable
 ```
 
 `revoke` persists a blocked intent while retaining the private imported profile;
@@ -105,8 +105,8 @@ the WireGuard profile for a P2P server with "NAT-PMP (port forwarding)" enabled,
 import it, then opt in:
 
 ```sh
-mynou vpn --action enable-forwarding --config mynou.json
-mynou vpn --action disable-forwarding --config mynou.json
+mynou vpn --action enable-forwarding
+mynou vpn --action disable-forwarding
 ```
 
 The API equivalent is `{"action":"enable-forwarding"}` (or

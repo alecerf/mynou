@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Opt-in native launchd fixture: synthetic state, isolated HOME and unique label.
 
-Never points at a real configuration or installs the default service label.
+Never points at a real data directory or installs the default service label.
 Run manually on a logged-in macOS account, passing a built Mynou binary.
 """
 import argparse
@@ -37,10 +37,8 @@ def main():
         (home / "Library" / "LaunchAgents").mkdir(parents=True)
         env = {**os.environ, "HOME": str(home)}
         env.pop("MYNOU_API_TOKEN", None)
-        config = root / "mynou.json"
-
-        def cli(*words, ok=True):
-            output = subprocess.run([str(binary), *words, "--config", str(config)], env=env,
+        def cli(*words, ok=True, stdin=None):
+            output = subprocess.run([str(binary), *words, "--dir", str(root)], env=env, input=stdin,
                                     cwd=root, capture_output=True, text=True, timeout=150)
             if ok:
                 assert output.returncode == 0, output.stderr
@@ -68,12 +66,11 @@ def main():
             raise AssertionError("fixture condition timed out")
 
         cli("init")
-        value = json.loads(config.read_text())
+        value = json.loads(cli("settings").stdout)
         with socket.socket() as bound:
             bound.bind(("127.0.0.1", 0))
             address = f"127.0.0.1:{bound.getsockname()[1]}"
         value["listen"] = address
-        value["store_dir"] = str(root / "state" / "jobs")
         value["library"]["movies_root"] = str(root / "movies")
         value["library"]["series_root"] = str(root / "series")
         value["downloads"]["data_dir"] = str(root / "downloads")
@@ -82,7 +79,7 @@ def main():
         value["downloads"]["dht"] = False
         value["downloads"]["pex"] = False
         value["downloads"]["listen_port"] = 0
-        config.write_text(json.dumps(value))
+        cli("settings", "--save", stdin=json.dumps(value))
         (root / ".env").write_text(f"MYNOU_API_TOKEN={token}\n")
         for name in ("state/jobs", "state/transfers", "movies", "series", "downloads"):
             (root / name).mkdir(parents=True, exist_ok=True)
@@ -142,7 +139,7 @@ def main():
             service("uninstall")
             assert not registration.exists()
             assert sentinel.read_bytes() == b"preserved synthetic payload"
-            assert config.exists() and (root / "state/jobs").is_dir()
+            assert json.loads(cli("settings").stdout)["listen"] == address
             shutil.rmtree(root / "state")
             shutil.copytree(root / "backup-state", root / "state")
             service("install")

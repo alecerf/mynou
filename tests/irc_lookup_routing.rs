@@ -128,7 +128,6 @@ fn json_results(hash: &str, enclosure: &str) -> Vec<u8> {
 const JSON_MAPPING: &str = r#"{"results":"data","title":"attributes.name","url":"attributes.download_link","details":"attributes.details_link","tmdb_id":"attributes.tmdb_id","info_hash":"attributes.info_hash","params":{"query":"name","kind":"","year":"","season":"seasonNumber","episode":"episodeNumber","absolute":"","api_key":"","tmdb_id":"tmdbId"},"fixed_params":{"perPage":"100"}}"#;
 fn configuration_with(root: &Path, http: &str, json_source: bool) -> Config {
     let mut v = transfer_support::configuration();
-    v.insert("store_dir", root.join("jobs").to_str().unwrap());
     let mut settings = irc_support::settings("irc://127.0.0.1:1");
     let Value::Array(sources) = settings.get_mut("sources").unwrap() else {
         panic!()
@@ -283,7 +282,6 @@ fn a_json_indexer_mapping_details_resolves_and_downloads_the_release() {
 fn a_json_lookup_indexer_needs_details_identity_and_hash_paths() {
     let dir = Directory::new();
     let mut v = transfer_support::configuration();
-    v.insert("store_dir", dir.0.join("jobs").to_str().unwrap());
     let mut settings = irc_support::settings("irc://127.0.0.1:1");
     let Value::Array(sources) = settings.get_mut("sources").unwrap() else {
         panic!()

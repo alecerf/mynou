@@ -22,7 +22,6 @@ use std::{
 
 pub fn configuration(root: &Path, peer: u16) -> Config {
     let mut v = crate::transfer_support::configuration();
-    v.insert("store_dir", root.join("jobs").to_str().unwrap());
     let mut settings = crate::irc_support::settings("irc://127.0.0.1:1");
     let Value::Array(sources) = settings.get_mut("sources").unwrap() else {
         panic!()

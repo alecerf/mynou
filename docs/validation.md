@@ -222,10 +222,11 @@ are needed for routine development. Build and start locally with:
 
 ```sh
 cargo run --offline --locked -- --help
-cargo run --offline --locked -- serve --config ./mynou.json
+cargo run --offline --locked -- serve
 ```
 
-Use your existing configuration for `serve`; do not overwrite it. For a quick
+`serve` uses your existing data directory and its saved settings; pass
+`--dir` with a scratch folder to try a change without touching them. For a quick
 check after a tooling or documentation change:
 
 ```sh

@@ -39,7 +39,7 @@ details or in the torrent metadata. Absolute or anime-style names such as
 
 ```sh
 mynou series-pack ID --url 'magnet:?xt=urn:btih:...' \
-  --mapping ./episodes.json --config ./mynou.json
+  --mapping ./episodes.json
 ```
 
 The source can be a magnet, an HTTP or HTTPS torrent URL or a `.torrent` path
@@ -64,7 +64,7 @@ same mapping again reuses the recorded jobs and adds the rest.
 Let the job fail or cancel it before anything is imported, then remap it:
 
 ```sh
-mynou pack-remap JOB_ID --file-path Pack/corrected.mp4 --config ./mynou.json
+mynou pack-remap JOB_ID --file-path Pack/corrected.mp4
 ```
 
 The API equivalent is `POST /api/jobs/JOB_ID/pack-mapping` with
@@ -76,9 +76,9 @@ requeues the job, reusing bytes that were already verified.
 ## Search for a pack automatically
 
 ```sh
-mynou series-pack-search ID --season 1 --config ./mynou.json
+mynou series-pack-search ID --season 1
 mynou series-pack-search ID --season 1 --apply \
-  --scope-id SCOPE_ID --candidate-id CANDIDATE_ID --config ./mynou.json
+  --scope-id SCOPE_ID --candidate-id CANDIDATE_ID
 ```
 
 The preview searches your sources, ranks pack titles under the episode profile
@@ -147,11 +147,10 @@ Preview, then apply with a running service:
 
 ```sh
 mynou series-shared-file SERIES_ID \
-  --url 'magnet:?xt=urn:btih:TORRENT_HASH' --mapping shared.json \
-  --config ./mynou.json
+  --url 'magnet:?xt=urn:btih:TORRENT_HASH' --mapping shared.json
 mynou series-shared-file SERIES_ID \
   --url 'magnet:?xt=urn:btih:TORRENT_HASH' --mapping shared.json \
-  --apply --plan-id REVIEWED_PLAN_ID --config ./mynou.json
+  --apply --plan-id REVIEWED_PLAN_ID
 ```
 
 The preview authenticates the metadata and requires exactly one non-empty video

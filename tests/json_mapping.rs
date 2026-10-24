@@ -70,10 +70,9 @@ fn movie() -> Request {
     }
 }
 
-fn configuration(directory: &Directory, url: &str, mapping: Option<&str>) -> Value {
+fn configuration(url: &str, mapping: Option<&str>) -> Value {
     let mut v = config::default_json();
     v.insert("listen", "127.0.0.1:0");
-    v.insert("store_dir", directory.0.join("jobs").to_str().unwrap());
     v.get_mut("downloads").unwrap().insert("enabled", false);
     let mut source = Value::object();
     source.insert("name", "mapped");
@@ -103,11 +102,7 @@ const MAPPED_BODY: &str = r#"{"data":{"torrents":[{"meta":{"name":"Fixture.Movie
 fn mapping_renames_parameters_and_reads_nested_fields_without_leaking_the_key() {
     let directory = Directory::new();
     let (url, server) = serve(MAPPED_BODY);
-    let c = config::from_json(
-        &configuration(&directory, &url, Some(MAPPING)),
-        &directory.0,
-    )
-    .unwrap();
+    let c = config::from_json(&configuration(&url, Some(MAPPING)), &directory.0).unwrap();
     let report = json::stringify(&integrations::search_report(&c, &movie()).unwrap());
     let line = server.join().unwrap();
     assert!(
@@ -128,7 +123,7 @@ fn a_source_without_mapping_keeps_the_built_in_names() {
     let (url, server) = serve(
         r#"[{"title":"Fixture.Movie.2024.1080p","seeders":5,"url":"magnet:?xt=urn:btih:0123456789012345678901234567890123456789"}]"#,
     );
-    let mut v = configuration(&directory, &url, None);
+    let mut v = configuration(&url, None);
     let Value::Array(sources) = v.get_mut("indexers").unwrap() else {
         panic!()
     };
@@ -146,11 +141,7 @@ fn a_source_without_mapping_keeps_the_built_in_names() {
 fn a_response_that_does_not_match_the_mapping_is_a_parse_failure() {
     let directory = Directory::new();
     let (url, server) = serve(r#"{"results":[{"title":"Fixture.Movie.2024.1080p"}]}"#);
-    let c = config::from_json(
-        &configuration(&directory, &url, Some(MAPPING)),
-        &directory.0,
-    )
-    .unwrap();
+    let c = config::from_json(&configuration(&url, Some(MAPPING)), &directory.0).unwrap();
     let _ = integrations::search_report(&c, &movie());
     server.join().unwrap();
     let health = mynou::indexers::report(&c.sources);
@@ -167,10 +158,10 @@ fn invalid_mappings_are_rejected_by_configuration() {
         r#"{"params":{"query":"same","year":"same"}}"#,
         r#"{"fixed_params":{"q":"x"}}"#,
     ] {
-        let v = configuration(&directory, "http://127.0.0.1:9/api", Some(mapping));
+        let v = configuration("http://127.0.0.1:9/api", Some(mapping));
         assert!(config::from_json(&v, &directory.0).is_err(), "{mapping}");
     }
-    let mut v = configuration(&directory, "http://127.0.0.1:9/api", Some("{}"));
+    let mut v = configuration("http://127.0.0.1:9/api", Some("{}"));
     let Value::Array(sources) = v.get_mut("indexers").unwrap() else {
         panic!()
     };
@@ -179,7 +170,7 @@ fn invalid_mappings_are_rejected_by_configuration() {
 }
 
 fn sources(directory: &Directory, source: &mut dyn FnMut(&mut Value)) -> config::Config {
-    let mut v = configuration(directory, "http://127.0.0.1:9/api", None);
+    let mut v = configuration("http://127.0.0.1:9/api", None);
     let Value::Array(list) = v.get_mut("indexers").unwrap() else {
         panic!()
     };
@@ -201,7 +192,7 @@ fn identity(c: &config::Config) -> String {
 fn the_default_key_name_carries_a_real_key_last() {
     let directory = Directory::new();
     let (url, server) = serve("[]");
-    let c = config::from_json(&configuration(&directory, &url, None), &directory.0).unwrap();
+    let c = config::from_json(&configuration(&url, None), &directory.0).unwrap();
     let _ = integrations::search_report(&c, &movie());
     let line = server.join().unwrap();
     assert!(
@@ -216,7 +207,6 @@ fn absolute_numbering_uses_the_mapped_names() {
     let directory = Directory::new();
     let (url, server) = serve("[]");
     let mut v = configuration(
-        &directory,
         &url,
         Some(r#"{"params":{"query":"search","absolute":"abs"},"fixed_params":{"limit":"50"}}"#),
     );
@@ -240,7 +230,6 @@ fn absolute_numbering_uses_the_mapped_names() {
 
 fn catalog_source(directory: &Directory, url: &str) -> config::Config {
     let mut v = configuration(
-        directory,
         url,
         Some(
             r#"{"params":{"query":"name","kind":"","year":"","season":"seasonNumber","episode":"episodeNumber","absolute":"","api_key":"","tmdb_id":"tmdbId"},"fixed_params":{"perPage":"100"}}"#,
@@ -304,11 +293,7 @@ fn download_parameters_extend_http_links_but_not_magnets() {
         ),
     ] {
         let (url, server) = serve(body);
-        let mut v = configuration(
-            &directory,
-            &url,
-            Some(r#"{"download_params":{"use_token":"1"}}"#),
-        );
+        let mut v = configuration(&url, Some(r#"{"download_params":{"use_token":"1"}}"#));
         let Value::Array(list) = v.get_mut("indexers").unwrap() else {
             panic!()
         };

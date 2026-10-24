@@ -1,5 +1,6 @@
 //! Original protected API and CLI numbering workflows. CI only.
 mod api_support;
+mod home_support;
 mod library_support;
 mod series_support;
 use api_support::{Reply, Server, TOKEN};
@@ -86,6 +87,7 @@ fn numbering_api_requires_authentication_and_the_reviewed_plan() {
 fn command(directory: &Directory, args: &[&str]) -> std::process::Output {
     let mut child = Command::new(env!("CARGO_BIN_EXE_mynou"))
         .current_dir(&directory.0)
+        .env("MYNOU_HOME", &directory.0)
         .env_remove("MYNOU_API_TOKEN")
         .args(args)
         .stdout(Stdio::piped())
@@ -125,9 +127,7 @@ fn cli_numbering_previews_applies_and_rejects_stale_or_unreviewed_changes() {
         .track_series_with_policy(&request(), false, false, false)
         .unwrap();
     let id = id(&record);
-    let mut cfg = mynou::config::default_json();
-    cfg.insert("listen", server.authority.clone());
-    fs::write(directory.0.join("mynou.json"), json::stringify(&cfg)).unwrap();
+    home_support::serve_here(&directory.0, &server.authority);
     fs::write(
         directory.0.join(".env"),
         format!("MYNOU_API_TOKEN={TOKEN}\n"),
@@ -206,7 +206,7 @@ fn offline_cli_numbering_preview_never_changes_old_storage_or_creates_new_storag
     catalog_config.insert("url", format!("{}/3", catalog.url));
     catalog_config.insert("token_env", "PATH");
     catalog_config.insert("api_key_env", "MYNOU_NUMBERING_ABSENT_CATALOG_919");
-    fs::write(directory.0.join("mynou.json"), json::stringify(&value)).unwrap();
+    home_support::save_settings(&directory.0, &value);
     fs::write(directory.0.join("numbering.json"), json::stringify(&body())).unwrap();
     let before = library_support::files(&cfg.store_dir);
     let report = parse_output(&command(
@@ -234,7 +234,6 @@ fn offline_cli_numbering_preview_never_changes_old_storage_or_creates_new_storag
     );
     assert_eq!(library_support::files(&cfg.store_dir), before);
     let fresh = Directory::new();
-    fs::write(fresh.0.join("mynou.json"), json::stringify(&value)).unwrap();
     assert!(!command(&fresh, &["series-numbering", &id]).status.success());
     assert!(!fresh.0.join("state").exists());
 }

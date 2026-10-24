@@ -10,31 +10,32 @@ The service has that account's filesystem permissions; it does not run as root.
 
 Install the [checksum-verified release](macos.md#download-and-verify) at a
 stable absolute path, for example `~/.local/bin/mynou`. Keep the binary and
-configuration outside Desktop, Documents and Downloads: macOS privacy controls
+data directory outside Desktop, Documents and Downloads: macOS privacy controls
 can suspend a launchd process before it reaches Mynou code when its executable
 or inputs are in protected folders. Grant any necessary volume/privacy access
 to the deployed executable yourself in System Settings. Do not disable macOS
 privacy controls or give the service root privileges.
 
-For a new configuration, create a private directory first:
+For a new installation, create the data directory, then set Mynou up from the
+web interface of a foreground `mynou serve` (see [Configure Mynou](macos.md#configure-mynou)):
 
 ```sh
-mkdir -p "$HOME/.config/mynou"
-chmod 700 "$HOME/.config/mynou"
-mynou init --config "$HOME/.config/mynou/mynou.json"
+mynou init
 ```
 
-Configure the library, downloads and stores before installation. Every path
-must resolve to an existing absolute directory without symlinks; relative
-configuration values resolve against the absolute configuration directory.
+Configure the library and downloads before installation. Every path must
+resolve to an existing absolute directory without symlinks; relative settings
+resolve against the absolute data directory.
 Provision your chosen directories explicitly with the owning account and mount
 media volumes first. Installation and supervised startup refuse missing roots
 instead of creating local replacements for absent volumes. Do not copy the
 owner's real inventory or credentials into an example configuration.
 
-The configuration and its adjacent `.env` must be regular mode-0600 files,
-owned by the account, without hardlinks or symlinked path components. Put all
-required credentials in `.env`, including the configured API token. Its syntax
+The data directory's `.env` must be a regular mode-0600 file, owned by the
+account, without hardlinks or symlinked path components, and must hold the API
+token. Other credentials are best saved in Mynou's storage from the Settings
+view or `mynou secrets --set`; entries added to `.env` are injected as
+environment variables, which saved secrets take precedence over. Its syntax
 is **literal unquoted `NAME=value`**, one entry per line, uppercase names, at
 most 64 KiB total and 4096 bytes per value. Blank lines and `#` comments are
 accepted. Quotes, dollars and backticks are literal; nothing is evaluated.
@@ -45,12 +46,12 @@ are not copied into the service.
 ## Install and inspect
 
 ```sh
-mynou doctor --config "$HOME/.config/mynou/mynou.json"
-mynou service --action install --config "$HOME/.config/mynou/mynou.json"
-mynou service --action status --config "$HOME/.config/mynou/mynou.json"
-mynou healthcheck --config "$HOME/.config/mynou/mynou.json"
-mynou status --config "$HOME/.config/mynou/mynou.json"
-mynou vpn --action status --config "$HOME/.config/mynou/mynou.json"
+mynou doctor
+mynou service --action install
+mynou service --action status
+mynou healthcheck
+mynou status
+mynou vpn --action status
 ```
 
 The default label is `org.mynou.automation`; `--label org.mynou.NAME` selects a
@@ -63,18 +64,19 @@ installation, upgrades, crashes and volume changes.
 
 Installation writes only the account's
 `~/Library/LaunchAgents/org.mynou.automation.plist` and a private
-`.mynou-service/` directory adjacent to the configuration. It refuses to replace
-a different registration or operate on another configuration's job. Repeating
+`.mynou-service/` directory in the data directory. It refuses to replace a
+different registration or operate on another data directory's job. Repeating
 an identical install does not restart an already running process. An unavailable
 login session is an error, distinct from an absent job.
 
 The **private plist contains a snapshot of `.env` credentials** in its launchd
 environment; its arguments contain only the binary, internal `service-run`
-command and configuration path. Never publish the plist, `.env` or raw
+command and data directory. Never publish the plist, `.env` or raw
 `launchctl print` output: the latter includes the environment. Management
-commands return fixed fields and suppress that raw output. Changing secrets
-requires stopping, uninstalling and reinstalling the registration, so the
-snapshot is refreshed; uninstall does not delete `.env`.
+commands return fixed fields and suppress that raw output. Settings and saved
+secrets apply while the service runs. Changing `.env` requires stopping,
+uninstalling and reinstalling the registration, so the snapshot is refreshed;
+uninstall does not delete `.env`.
 
 Persisted protected VPN intent is handled by the existing native startup gate.
 Installing a service neither enables nor disables that protection. Import and
@@ -86,9 +88,9 @@ extend the delivered torrent protection boundary.
 ## Stop, restart and uninstall
 
 ```sh
-mynou service --action stop --config "$HOME/.config/mynou/mynou.json"
-mynou service --action start --config "$HOME/.config/mynou/mynou.json"
-mynou service --action uninstall --config "$HOME/.config/mynou/mynou.json"
+mynou service --action stop
+mynou service --action start
+mynou service --action uninstall
 ```
 
 Stop sends an authenticated shutdown fenced to the PID reported by launchd,
@@ -102,7 +104,7 @@ launchd restarts unsuccessful exits, throttled to at most one launch per
 60 seconds. A clean API shutdown exits successfully and does not trigger a
 restart. `start` loads an unloaded registration or starts a stopped loaded job;
 it does not restart a live process. Stop and uninstall are repeatable. Uninstall
-stops and removes **only the plist**: configuration, credentials, stores, logs,
+stops and removes **only the plist**: settings, credentials, stores, logs,
 downloads, media and backups remain. An account login will load a still-installed
 plist again, so uninstall it to disable future login startup.
 
@@ -116,11 +118,11 @@ private paths and raw error strings do not enter these logs.
 | Code or symptom | Next action |
 | --- | --- |
 | `media_volume_unavailable` / `download_volume_unavailable` | Mount the configured volume; check the account's directory access, then start again. |
-| `state_directory_unavailable` | Restore the configured store directory and account access; do not initialize an empty substitute for missing state. |
+| `state_directory_unavailable` | Restore the data directory's `state/` and account access; do not initialize an empty substitute for missing state. |
 | `runtime_failed` | Check `doctor`, the authenticated status API and filesystem permissions. After a graceful stop, run `serve` interactively if fuller local diagnostics are needed. Keep that output private. |
 | `storage_migration` | Inspect startup progress with `status`; leave the process running while it migrates. |
 | `stopped_cleanly` | Work drained and the supervisor returned successfully. |
-| Loaded process but no log or API | Check binary/config paths and macOS privacy permissions; a process blocked by the OS before main cannot write a Mynou diagnostic. |
+| Loaded process but no log or API | Check the binary and data directory paths and macOS privacy permissions; a process blocked by the OS before main cannot write a Mynou diagnostic. |
 
 Volume checks run at startup, before storage opens. Runtime import/transfer
 errors remain visible through the existing API; a service registration does
@@ -128,7 +130,7 @@ not make detached disks reliable. Remount the same volume and inspect state
 before resuming. Do not create replacement directories at a missing mount.
 
 For a coherent backup: stop, verify `service status` is unloaded, then back up
-the configuration, `.env`, all stores (including VPN policy/profile material),
+the data directory (`.env` and all stores, including settings, secrets and VPN policy/profile material),
 downloads and media according to your retention policy. Keep credentials and
 backups private. Uninstall before changing the binary path or `.env` snapshot.
 Download and checksum-verify the new binary, preserve the previous executable,

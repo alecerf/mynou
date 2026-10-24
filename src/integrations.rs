@@ -191,14 +191,6 @@ fn integer(v: &Value, key: &str) -> Option<u64> {
     value.as_u64().or_else(|| value.as_str()?.parse().ok())
 }
 
-fn optional_secret(name: &str) -> Result<Option<String>> {
-    match std::env::var(name) {
-        Ok(value) if !value.trim().is_empty() => config::secret(name).map(Some),
-        Ok(_) | Err(std::env::VarError::NotPresent) => Ok(None),
-        Err(_) => Err(format!("Invalid secret {name}")),
-    }
-}
-
 fn plex_headers(config: &Config) -> Result<Vec<(String, String)>> {
     Ok(vec![
         ("Accept".into(), "application/json".into()),
@@ -648,9 +640,9 @@ fn catalog_json(config: &Config, path: &str, pairs: &[(&str, String)]) -> Result
     }
     let mut headers = vec![("Accept".into(), "application/json".into())];
     let mut pairs = pairs.to_vec();
-    if let Some(token) = optional_secret(&config.catalog.token_env)? {
+    if let Some(token) = config::optional_secret(&config.catalog.token_env)? {
         headers.push(("Authorization".into(), format!("Bearer {token}")));
-    } else if let Some(key) = optional_secret(&config.catalog.api_key_env)? {
+    } else if let Some(key) = config::optional_secret(&config.catalog.api_key_env)? {
         pairs.push(("api_key", key));
     } else {
         return Err("TMDB catalog: missing token or API key".into());
@@ -980,9 +972,9 @@ fn fresh_catalog(
     }
     let mut headers = vec![("Accept".into(), "application/json".into())];
     let mut pairs = pairs.to_vec();
-    if let Some(token) = optional_secret(&config.catalog.token_env)? {
+    if let Some(token) = config::optional_secret(&config.catalog.token_env)? {
         headers.push(("Authorization".into(), format!("Bearer {token}")));
-    } else if let Some(key) = optional_secret(&config.catalog.api_key_env)? {
+    } else if let Some(key) = config::optional_secret(&config.catalog.api_key_env)? {
         pairs.push(("api_key", key));
     } else {
         return Err("TMDB catalog: missing token or API key".into());
@@ -1113,7 +1105,7 @@ fn json_text_search(source: &Source, text: Option<&str>, deadline: Instant) -> R
     }
     pairs.extend(mapping.fixed().iter().map(|(n, v)| (n.as_str(), v.clone())));
     if let Some(name) = mapping.parameter("api_key")
-        && let Some(key) = optional_secret(&source.api_key_env)
+        && let Some(key) = config::optional_secret(&source.api_key_env)
             .map_err(|_| "Indexer: authentication unavailable")?
     {
         pairs.push((name, key));
@@ -1130,7 +1122,7 @@ fn torznab_details_before(
     deadline: Instant,
 ) -> Result<Vec<DetailsEntry>> {
     let mut pairs = vec![("t", "search".to_owned()), ("q", text.to_owned())];
-    if let Some(key) = optional_secret(&source.api_key_env)? {
+    if let Some(key) = config::optional_secret(&source.api_key_env)? {
         pairs.push(("apikey", key));
     }
     let url = query(&source.url, &pairs)?;
@@ -1575,7 +1567,7 @@ fn source_releases(source: &Source, request: &Request, deadline: Instant) -> Res
         }
         pairs.extend(mapping.fixed().iter().map(|(n, v)| (n.as_str(), v.clone())));
     }
-    if let Some(key) = optional_secret(&source.api_key_env)? {
+    if let Some(key) = config::optional_secret(&source.api_key_env)? {
         let name = if source.kind == "json" {
             source.options.mapping.parameter("api_key")
         } else {
@@ -2728,7 +2720,9 @@ fn feed_response(source: &Source, deadline: Instant) -> std::result::Result<Vec<
         "rss" => {}
         _ => return Err("unsupported_format"),
     }
-    if let Some(key) = optional_secret(&source.api_key_env).map_err(|_| "authentication_failed")? {
+    if let Some(key) =
+        config::optional_secret(&source.api_key_env).map_err(|_| "authentication_failed")?
+    {
         pairs.push(("apikey", key));
     }
     let url = query(&source.url, &pairs).map_err(|_| "request_failed")?;
@@ -2773,7 +2767,9 @@ pub(crate) fn offers_before(
     if let Some(text) = text {
         pairs.push(("q", text.to_owned()));
     }
-    if let Some(key) = optional_secret(&source.api_key_env).map_err(|_| "authentication_failed")? {
+    if let Some(key) =
+        config::optional_secret(&source.api_key_env).map_err(|_| "authentication_failed")?
+    {
         pairs.push(("apikey", key));
     }
     let url = query(&source.url, &pairs).map_err(|_| "request_failed")?;

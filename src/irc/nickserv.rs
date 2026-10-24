@@ -108,8 +108,8 @@ impl Settings {
         v
     }
     pub(crate) fn command(&self) -> Result<String> {
-        let password = std::env::var(&self.password_env)
-            .map_err(|_| "IRC: NickServ credential is unavailable")?;
+        let password = crate::config::lookup(&self.password_env)
+            .ok_or("IRC: NickServ credential is unavailable")?;
         self.command_for(&password)
     }
     fn command_for(&self, password: &str) -> Result<String> {

@@ -12,13 +12,13 @@ use std::{
 };
 
 const MAX_LOG: u64 = 65_536;
-static LOG_CONFIG: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+static LOG_DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
 
 /// Replace the foreground migration reporter with secret-free service events.
-pub fn report_progress(config: &Path) {
-    let _ = LOG_CONFIG.set(config.to_owned());
+pub fn report_progress(data_dir: &Path) {
+    let _ = LOG_DIR.set(data_dir.to_owned());
     crate::progress::set_reporter(|_| {
-        if let Some(path) = LOG_CONFIG.get() {
+        if let Some(path) = LOG_DIR.get() {
             let _ = log(path, "storage_migration");
         }
     });
@@ -125,7 +125,7 @@ fn environment(text: &str) -> Result<BTreeMap<String, String>> {
 fn plist(
     label: &str,
     binary: &Path,
-    config: &Path,
+    data_dir: &Path,
     home: &Path,
     values: &BTreeMap<String, String>,
 ) -> Result<String> {
@@ -143,7 +143,7 @@ fn plist(
         <!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n\
         <plist version=\"1.0\"><dict>\n\
         <key>Label</key><string>{label}</string>\n\
-        <key>ProgramArguments</key><array><string>{}</string><string>service-run</string><string>--config</string><string>{}</string></array>\n\
+        <key>ProgramArguments</key><array><string>{}</string><string>service-run</string><string>--dir</string><string>{}</string></array>\n\
         <key>WorkingDirectory</key><string>{}</string>\n\
         <key>EnvironmentVariables</key><dict><key>HOME</key><string>{}</string>{env}</dict>\n\
         <key>RunAtLoad</key><true/>\n\
@@ -155,20 +155,16 @@ fn plist(
         <key>StandardErrorPath</key><string>/dev/null</string>\n\
         </dict></plist>\n",
         text(binary)?,
-        text(config)?,
-        text(
-            config
-                .parent()
-                .ok_or("Service: missing configuration directory")?
-        )?,
+        text(data_dir)?,
+        text(data_dir)?,
         text(home)?
     ))
 }
 
 /// Refuse missing volumes before any engine opens or creates storage. Missing
 /// mounts must never become newly created local directories under /Volumes.
-pub fn preflight(path: &Path, config: &Config) -> Result<()> {
-    private(path)?;
+pub fn preflight(data_dir: &Path, config: &Config) -> Result<()> {
+    private(&data_dir.join(".env"))?;
     for (code, root) in [
         ("media_volume_unavailable", &config.movies_root),
         ("media_volume_unavailable", &config.series_root),
@@ -177,7 +173,7 @@ pub fn preflight(path: &Path, config: &Config) -> Result<()> {
         ("state_directory_unavailable", &config.downloads.state_dir),
     ] {
         if absolute(root).is_err() || !root.is_dir() {
-            let _ = log(path, code);
+            let _ = log(data_dir, code);
             return Err(format!(
                 "Service: {code}; mount the configured volumes and check account permissions"
             ));
@@ -188,14 +184,11 @@ pub fn preflight(path: &Path, config: &Config) -> Result<()> {
 
 /// A fixed-code operational journal, at most two 64 KiB files. Raw error text,
 /// paths, credentials and provider responses never enter this journal.
-pub fn log(config: &Path, code: &str) -> Result<()> {
+pub fn log(data_dir: &Path, code: &str) -> Result<()> {
     if !code.bytes().all(|b| b.is_ascii_lowercase() || b == b'_') {
         return Err("Service: invalid log code".into());
     }
-    let root = config
-        .parent()
-        .ok_or("Service: missing configuration directory")?
-        .join(".mynou-service");
+    let root = data_dir.join(".mynou-service");
     directory(&root)?;
     let path = root.join("events.log");
     let mut file = match fs::symlink_metadata(&path) {
@@ -276,7 +269,7 @@ fn pid(report: &str) -> Option<u32> {
         .find_map(|l| l.trim().strip_prefix("pid = ").and_then(|s| s.parse().ok()))
 }
 
-fn owns(document: &str, label: &str, config: &Path) -> Result<bool> {
+fn owns(document: &str, label: &str, data_dir: &Path) -> Result<bool> {
     let text = document
         .lines()
         .filter(|l| !l.starts_with("<!DOCTYPE"))
@@ -295,8 +288,8 @@ fn owns(document: &str, label: &str, config: &Path) -> Result<bool> {
         && args.children.len() == 4
         && args.children.iter().all(|e| e.local() == "string")
         && args.children[1].text == "service-run"
-        && args.children[2].text == "--config"
-        && Some(args.children[3].text.as_str()) == config.to_str())
+        && args.children[2].text == "--dir"
+        && Some(args.children[3].text.as_str()) == data_dir.to_str())
 }
 
 /// Registration commands run only in the owning account's GUI domain. They
@@ -304,7 +297,7 @@ fn owns(document: &str, label: &str, config: &Path) -> Result<bool> {
 pub fn manage(
     label: &str,
     action: &str,
-    path: &Path,
+    data_dir: &Path,
     config: &Config,
     stop: impl Fn(u32) -> Result<()>,
 ) -> Result<Value> {
@@ -325,7 +318,9 @@ pub fn manage(
     {
         return Err("Service: label must start with org.mynou. and contain only letters, digits, dots and hyphens".into());
     }
-    private(path)?;
+    // The private .env identifies the installation and its owner.
+    let identity = data_dir.join(".env");
+    private(&identity)?;
     let home = PathBuf::from(std::env::var_os("HOME").ok_or("Service: HOME is missing")?);
     absolute(&home)?;
     let agents = home.join("Library/LaunchAgents");
@@ -338,12 +333,9 @@ pub fn manage(
             .map_err(|_| "Service: cannot create LaunchAgents")?;
     }
     let registration = agents.join(format!("{label}.plist"));
-    // The configuration must belong to the account that owns HOME. A temporary
+    // The installation must belong to the account that owns HOME. A temporary
     // create_new file yields our effective UID without unsafe code or id(1).
-    let root = path
-        .parent()
-        .ok_or("Service: missing configuration directory")?
-        .join(".mynou-service");
+    let root = data_dir.join(".mynou-service");
     directory(&root)?;
     let probe = root.join(format!(
         "owner-{}-{}",
@@ -358,13 +350,13 @@ pub fn manage(
         .map_err(|_| "Service: cannot inspect account")?
         .uid();
     fs::remove_file(&probe).map_err(|_| "Service: cannot remove account probe")?;
-    if private(path)?.uid() != uid
+    if private(&identity)?.uid() != uid
         || fs::metadata(&home)
             .map_err(|_| "Service: HOME unavailable")?
             .uid()
             != uid
     {
-        return Err("Service: configuration and HOME must belong to the current account".into());
+        return Err("Service: data directory and HOME must belong to the current account".into());
     }
     let domain = format!("gui/{uid}");
     let target = format!("{domain}/{label}");
@@ -378,10 +370,10 @@ pub fn manage(
     };
     let mut loaded = inspect(&target)?;
     if registered
-        && (!owns(&read(&registration, 524_288)?, label, path)?
+        && (!owns(&read(&registration, 524_288)?, label, data_dir)?
             || private(&registration)?.uid() != uid)
     {
-        return Err("Service: this registration belongs to another configuration".into());
+        return Err("Service: this registration belongs to another data directory".into());
     }
     if let Some(report) = &loaded {
         let expected = registration
@@ -396,23 +388,16 @@ pub fn manage(
         }
     }
     if action == "install" {
-        preflight(path, config)?;
-        let env_path = path
-            .parent()
-            .ok_or("Service: missing configuration directory")?
-            .join(".env");
-        if private(&env_path)?.uid() != uid {
-            return Err("Service: .env belongs to another account".into());
-        }
-        let values = environment(&read(&env_path, 65_536)?)?;
-        if !values.get(&config.api_token_env).is_some_and(|v| {
+        preflight(data_dir, config)?;
+        let values = environment(&read(&identity, 65_536)?)?;
+        if !values.get(crate::config::API_TOKEN_ENV).is_some_and(|v| {
             (32..=4096).contains(&v.len()) && v.bytes().all(|b| b.is_ascii_graphic())
         }) {
             return Err("Service: .env must contain the API token (32–4096 graphic bytes)".into());
         }
         let binary = std::env::current_exe().map_err(|_| "Service: executable unavailable")?;
         absolute(&binary)?;
-        let document = plist(label, &binary, path, &home, &values)?;
+        let document = plist(label, &binary, data_dir, &home, &values)?;
         if registered {
             if read(&registration, 524_288)? != document {
                 return Err("Service: existing registration differs; stop and uninstall it before reinstalling".into());
@@ -428,7 +413,7 @@ pub fn manage(
         if action == "start" && !registered {
             return Err("Service: install the registration first".into());
         }
-        preflight(path, config)?;
+        preflight(data_dir, config)?;
         if loaded.is_none() {
             let file = registration.to_str().ok_or("Service: non-UTF-8 path")?;
             if !launch(&["bootstrap", &domain, file])?.status.success() {

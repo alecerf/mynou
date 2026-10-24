@@ -38,12 +38,34 @@ impl Drop for Directory {
 fn command(directory: &Path, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_mynou"))
         .current_dir(directory)
+        .env("MYNOU_HOME", directory)
         .env_remove("MYNOU_API_TOKEN")
         .env_remove("MYNOU_DEMO_TOKEN")
         .env_remove("MYNOU_PLEX_TOKEN")
         .args(args)
         .output()
         .unwrap()
+}
+/// A command given a secret on standard input.
+fn with_input(directory: &Path, args: &[&str], value: &str) -> Output {
+    use std::io::Write;
+    let mut child = Command::new(env!("CARGO_BIN_EXE_mynou"))
+        .current_dir(directory)
+        .env("MYNOU_HOME", directory)
+        .env_remove("MYNOU_API_TOKEN")
+        .args(args)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(value.as_bytes())
+        .unwrap();
+    child.wait_with_output().unwrap()
 }
 fn success(output: Output) -> String {
     assert!(
@@ -64,28 +86,14 @@ fn cli_init_analyze_offline_management_and_no_overwrite() {
     let version = success(command(&directory.0, &["version"]));
     assert!(version.contains(env!("CARGO_PKG_VERSION")) && version.contains("0 dependencies"));
     success(command(&directory.0, &["init"]));
-    assert!(directory.0.join("mynou.json").is_file());
     let env = fs::read(directory.0.join(".env")).unwrap();
     assert!(!command(&directory.0, &["init"]).status.success());
     assert_eq!(fs::read(directory.0.join(".env")).unwrap(), env);
-    // The offline journal test must not contact a service running on the host.
-    let path = directory.0.join("mynou.json");
-    let mut value = json::parse(&fs::read_to_string(&path).unwrap()).unwrap();
-    value.insert("listen", "127.0.0.1:0");
-    fs::write(path, json::stringify(&value)).unwrap();
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         assert_eq!(
             fs::metadata(directory.0.join(".env"))
-                .unwrap()
-                .permissions()
-                .mode()
-                & 0o777,
-            0o600
-        );
-        assert_eq!(
-            fs::metadata(directory.0.join("mynou.json"))
                 .unwrap()
                 .permissions()
                 .mode()
@@ -176,6 +184,68 @@ fn cli_init_analyze_offline_management_and_no_overwrite() {
 }
 
 #[test]
+fn cli_saves_settings_and_secrets_in_storage() {
+    let directory = Directory::new();
+    success(command(&directory.0, &["init"]));
+    assert_eq!(
+        parse(command(&directory.0, &["settings"])),
+        config::default_json()
+    );
+    let mut document = config::default_json();
+    document.insert("unknown", "field");
+    let refused = with_input(
+        &directory.0,
+        &["settings", "--save"],
+        &json::stringify(&document),
+    );
+    assert!(!refused.status.success());
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("unknown"));
+    assert_eq!(
+        parse(command(&directory.0, &["settings"])),
+        config::default_json()
+    );
+    let mut document = config::default_json();
+    document.insert("minimum_seeders", 3_u32);
+    document.insert(
+        "library",
+        json::parse(r#"{"movies_root":"films","series_root":"tv"}"#).unwrap(),
+    );
+    parse(with_input(
+        &directory.0,
+        &["settings", "--save"],
+        &json::stringify(&document),
+    ));
+    assert_eq!(parse(command(&directory.0, &["settings"])), document);
+    let doctor = parse(command(&directory.0, &["doctor"]));
+    assert_eq!(
+        doctor.get("data_dir").and_then(Value::as_str),
+        directory.0.to_str()
+    );
+    let saved = success(with_input(
+        &directory.0,
+        &["secrets", "--set", "MYNOU_PLEX_TOKEN"],
+        "plex-value-kept-private\n",
+    ));
+    assert!(saved.contains("\"stored\"") && !saved.contains("plex-value"));
+    let listed = success(command(&directory.0, &["secrets"]));
+    assert!(listed.contains("MYNOU_PLEX_TOKEN") && !listed.contains("plex-value"));
+    success(command(
+        &directory.0,
+        &["secrets", "--delete", "MYNOU_PLEX_TOKEN"],
+    ));
+    assert!(!success(command(&directory.0, &["secrets"])).contains("\"stored\""));
+    // Another data directory has its own settings.
+    let other = Directory::new();
+    assert_eq!(
+        parse(command(
+            &directory.0,
+            &["settings", "--dir", other.0.to_str().unwrap()]
+        )),
+        config::default_json()
+    );
+}
+
+#[test]
 fn cli_routes_to_running_api_while_store_is_locked() {
     let directory = Directory::new();
     let mut value = config::default_json();
@@ -189,8 +259,12 @@ fn cli_routes_to_running_api_while_store_is_locked() {
     downloads.insert("pex".into(), false.into());
     let engine = Engine::open(config::from_json(&value, &directory.0).unwrap()).unwrap();
     let api = Api::bind(engine.clone(), TOKEN.into()).unwrap();
-    value.insert("listen", api.address().unwrap().to_string());
-    fs::write(directory.0.join("mynou.json"), json::stringify(&value)).unwrap();
+    // A running service records where it listens; commands find it there.
+    fs::write(
+        directory.0.join("state/endpoint"),
+        api.address().unwrap().to_string(),
+    )
+    .unwrap();
     fs::write(
         directory.0.join(".env"),
         format!("MYNOU_API_TOKEN={TOKEN}\n"),
@@ -236,6 +310,26 @@ fn cli_routes_to_running_api_while_store_is_locked() {
                 .and_then(Value::as_str),
             Some("cancelled")
         );
+        // Settings and secrets go through the running service.
+        let mut document = value.clone();
+        document.insert("workers", 4_u32);
+        parse(with_input(
+            &directory.0,
+            &["settings", "--save"],
+            &json::stringify(&document),
+        ));
+        assert_eq!(parse(command(&directory.0, &["settings"])), document);
+        assert!(
+            !with_input(&directory.0, &["secrets", "--set", "MYNOU_API_TOKEN"], "x")
+                .status
+                .success()
+        );
+        let saved = success(with_input(
+            &directory.0,
+            &["secrets", "--set", "MYNOU_ONLINE_TEST"],
+            "online-value\n",
+        ));
+        assert!(saved.contains("MYNOU_ONLINE_TEST") && !saved.contains("online-value"));
     });
     engine.stopped.store(true, Ordering::Release);
     server.join().unwrap().unwrap();
@@ -284,10 +378,6 @@ fn private_vpn_import_and_explicit_controls_survive_offline_cli_restart_with_red
     use std::os::unix::fs::PermissionsExt;
     let directory = Directory::new();
     success(command(&directory.0, &["init"]));
-    let config_path = directory.0.join("mynou.json");
-    let mut value = json::parse(&fs::read_to_string(&config_path).unwrap()).unwrap();
-    value.insert("listen", "127.0.0.1:0");
-    fs::write(&config_path, json::stringify(&value)).unwrap();
     let profile = directory.0.join("private.conf");
     fs::write(&profile, "[Interface]\nPrivateKey = AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=\nAddress = 10.23.0.2/24\nDNS = 10.23.0.1\n[Peer]\nPublicKey = CQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAllowedIPs = 0.0.0.0/0\nEndpoint = 192.0.2.10:51820\n").unwrap();
     fs::set_permissions(&profile, fs::Permissions::from_mode(0o600)).unwrap();

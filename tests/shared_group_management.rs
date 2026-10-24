@@ -1,6 +1,7 @@
 //! CI-only protected whole-group JSON, form and CLI controls.
 mod api_support;
 mod automatic_pack_support;
+mod home_support;
 mod library_support;
 mod series_support;
 mod shared_group_support;
@@ -126,7 +127,6 @@ fn authenticated_group_routes_require_complete_scope_and_guarded_quality_decisio
 fn config_value(cfg: &Config) -> Value {
     let mut value = config::default_json();
     value.insert("listen", cfg.listen.clone());
-    value.insert("store_dir", cfg.store_dir.to_str().unwrap().to_owned());
     let library = value.get_mut("library").unwrap();
     library.insert("movies_root", cfg.movies_root.to_str().unwrap().to_owned());
     library.insert("series_root", cfg.series_root.to_str().unwrap().to_owned());
@@ -134,9 +134,10 @@ fn config_value(cfg: &Config) -> Value {
     value.insert("selection", cfg.selection.to_json());
     value
 }
-fn command(directory: &Directory, args: &[&str]) -> Output {
+fn command(directory: &Directory, home: &std::path::Path, args: &[&str]) -> Output {
     let mut child = Command::new(env!("CARGO_BIN_EXE_mynou"))
         .current_dir(&directory.0)
+        .env("MYNOU_HOME", home)
         .env_remove("MYNOU_API_TOKEN")
         .env_remove("MYNOU_PLEX_TOKEN")
         .args(args)
@@ -176,13 +177,10 @@ fn cli_offline_preview_preserves_state_and_service_apply_uses_the_same_guard() {
     let parents = fixture.parents(&engine);
     baseline(&engine, &parents[0].id);
     let mapping = fixture.replacement_query().to_json();
-    let before = snapshot(&fixture.cfg.store_dir);
     drop(engine);
-    fs::write(
-        directory.0.join("mynou.json"),
-        json::stringify(&config_value(&fixture.cfg)),
-    )
-    .unwrap();
+    let home = fixture.cfg.data_dir.clone();
+    home_support::save_settings(&home, &config_value(&fixture.cfg));
+    let before = snapshot(&fixture.cfg.store_dir);
     let Value::Object(mut mapping) = mapping else {
         panic!("group query");
     };
@@ -195,6 +193,7 @@ fn cli_offline_preview_preserves_state_and_service_apply_uses_the_same_guard() {
     let owner = parents[0].id.as_str();
     let preview = success(command(
         &directory,
+        &home,
         &["library-group", owner, "--mapping", "group.json"],
     ));
     no_sources(&preview);
@@ -203,6 +202,7 @@ fn cli_offline_preview_preserves_state_and_service_apply_uses_the_same_guard() {
     assert!(
         !command(
             &directory,
+            &home,
             &[
                 "library-group",
                 owner,
@@ -220,26 +220,18 @@ fn cli_offline_preview_preserves_state_and_service_apply_uses_the_same_guard() {
     assert!(
         !command(
             &directory,
+            &home,
             &["library-group", owner, "--mapping", "group.json", "--apply"]
         )
         .status
         .success()
     );
     let server = Server::open(fixture.cfg.clone());
-    let mut cfg = fixture.cfg.clone();
-    cfg.listen = server.authority.clone();
-    fs::write(
-        directory.0.join("mynou.json"),
-        json::stringify(&config_value(&cfg)),
-    )
-    .unwrap();
-    fs::write(
-        directory.0.join(".env"),
-        format!("MYNOU_API_TOKEN={TOKEN}\n"),
-    )
-    .unwrap();
+    home_support::serve_here(&home, &server.authority);
+    fs::write(home.join(".env"), format!("MYNOU_API_TOKEN={TOKEN}\n")).unwrap();
     let created = success(command(
         &directory,
+        &home,
         &[
             "library-group",
             owner,

@@ -39,10 +39,9 @@ pub fn settings(url: &str) -> Value {
     v.insert("rules", Value::Array(vec![rule]));
     v
 }
-pub fn value(root: &Path, url: &str) -> Value {
+pub fn value(url: &str) -> Value {
     let mut v = config::default_json();
     v.insert("listen", "127.0.0.1:0");
-    v.insert("store_dir", root.join("jobs").to_str().unwrap());
     let d = v.get_mut("downloads").unwrap();
     d.insert("enabled", false);
     d.insert("dht", false);
@@ -52,7 +51,7 @@ pub fn value(root: &Path, url: &str) -> Value {
     v
 }
 pub fn config(root: &Path) -> Config {
-    config::from_json(&value(root, "irc://127.0.0.1:1"), root).unwrap()
+    config::from_json(&value("irc://127.0.0.1:1"), root).unwrap()
 }
 pub fn announcement(id: u64) -> Value {
     let mut v = Value::object();

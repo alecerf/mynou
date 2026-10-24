@@ -1,6 +1,7 @@
 //! Protected automatic pack previews and acquisition through native HTTP/forms/CLI.
 mod api_support;
 mod automatic_pack_support;
+mod home_support;
 mod library_support;
 mod series_support;
 #[allow(dead_code)]
@@ -115,7 +116,6 @@ fn bearer_pack_routes_validate_before_network_io_and_keep_origin_private_data_re
 fn cli_config(config: &Config) -> Value {
     let mut value = mynou::config::default_json();
     value.insert("listen", config.listen.clone());
-    value.insert("store_dir", config.store_dir.to_str().unwrap());
     value.insert("selection", config.selection.to_json());
     value.get_mut("downloads").unwrap().insert("enabled", false);
     let catalog = value.get_mut("catalog").unwrap();
@@ -146,6 +146,7 @@ fn cli_config(config: &Config) -> Value {
 fn command(directory: &Path, arguments: &[&str]) -> Output {
     let mut child = Command::new(env!("CARGO_BIN_EXE_mynou"))
         .current_dir(directory)
+        .env("MYNOU_HOME", directory)
         .env_remove("MYNOU_API_TOKEN")
         .env_remove("MYNOU_PLEX_TOKEN")
         .env_remove("MYNOU_DEMO_TOKEN")
@@ -183,47 +184,25 @@ fn success(output: Output) -> Value {
 fn offline_cli_preview_is_read_only_and_online_guarded_apply_uses_the_live_service() {
     let directory = Directory::new();
     let provider = Provider::open();
-    let (_catalog, mut cfg) = setup(&directory, &provider);
+    let (_catalog, cfg) = setup(&directory, &provider);
+    // Commands use the engine's data directory.
+    let home = cfg.data_dir.clone();
     let engine = Engine::open_for_management(cfg.clone()).unwrap();
     let series = tracked(&engine);
     drop(engine);
-    let config_path = directory.0.join("mynou.json");
-    fs::write(&config_path, json::stringify(&cli_config(&cfg))).unwrap();
-    let file = config_path.to_str().unwrap();
+    home_support::save_settings(&home, &cli_config(&cfg));
     let before = snapshot(&cfg.store_dir);
     let report = success(command(
-        &directory.0,
-        &[
-            "series-pack-search",
-            &series,
-            "--season",
-            "1",
-            "--config",
-            file,
-        ],
+        &home,
+        &["series-pack-search", &series, "--season", "1"],
     ));
     no_sources(&report);
     assert_eq!(snapshot(&cfg.store_dir), before);
     let calls = provider.calls.lock().unwrap().len();
     for arguments in [
-        vec!["series-pack-search", &series, "--config", file],
-        vec![
-            "series-pack-search",
-            &series,
-            "--season",
-            "1.5",
-            "--config",
-            file,
-        ],
-        vec![
-            "series-pack-search",
-            &series,
-            "--season",
-            "1",
-            "--apply",
-            "--config",
-            file,
-        ],
+        vec!["series-pack-search", &series],
+        vec!["series-pack-search", &series, "--season", "1.5"],
+        vec!["series-pack-search", &series, "--season", "1", "--apply"],
         vec![
             "series-pack-search",
             &series,
@@ -231,32 +210,22 @@ fn offline_cli_preview_is_read_only_and_online_guarded_apply_uses_the_live_servi
             "1",
             "--candidate-id",
             "abc",
-            "--config",
-            file,
         ],
     ] {
-        assert!(!command(&directory.0, &arguments).status.success());
+        assert!(!command(&home, &arguments).status.success());
     }
     assert_eq!(provider.calls.lock().unwrap().len(), calls);
     assert_eq!(snapshot(&cfg.store_dir), before);
     let server = Server::open(cfg.clone());
-    cfg.listen = server.authority.clone();
-    fs::write(&config_path, json::stringify(&cli_config(&cfg))).unwrap();
+    home_support::serve_here(&home, &server.authority);
     fs::write(
-        directory.0.join(".env"),
-        format!("{}={TOKEN}\n", cfg.api_token_env),
+        home.join(".env"),
+        format!("{}={TOKEN}\n", mynou::config::API_TOKEN_ENV),
     )
     .unwrap();
     let online = success(command(
-        &directory.0,
-        &[
-            "series-pack-search",
-            &series,
-            "--season",
-            "1",
-            "--config",
-            file,
-        ],
+        &home,
+        &["series-pack-search", &series, "--season", "1"],
     ));
     assert_eq!(
         online.get("selected_candidate_id"),
@@ -269,7 +238,7 @@ fn offline_cli_preview_is_read_only_and_online_guarded_apply_uses_the_live_servi
         .as_str()
         .unwrap();
     let applied = success(command(
-        &directory.0,
+        &home,
         &[
             "series-pack-search",
             &series,
@@ -280,8 +249,6 @@ fn offline_cli_preview_is_read_only_and_online_guarded_apply_uses_the_live_servi
             scope,
             "--candidate-id",
             candidate,
-            "--config",
-            file,
         ],
     ));
     no_sources(&applied);

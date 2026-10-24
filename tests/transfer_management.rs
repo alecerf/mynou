@@ -1,4 +1,5 @@
 //! Durable transfer controls use native local peers and synthetic payloads only.
+mod home_support;
 mod transfer_support;
 
 use mynou::config;
@@ -1294,6 +1295,7 @@ fn shared_requests_expose_one_transfer_and_apply_controls_to_both_requests() {
 fn command(directory: &Path, args: &[&str]) -> Output {
     let mut child = Command::new(env!("CARGO_BIN_EXE_mynou"))
         .current_dir(directory)
+        .env("MYNOU_HOME", directory)
         .env_remove("MYNOU_API_TOKEN")
         .env_remove("MYNOU_PLEX_TOKEN")
         .env_remove("MYNOU_DEMO_TOKEN")
@@ -1342,9 +1344,7 @@ fn online_cli_controls_the_existing_native_service_and_validates_file_priorities
         .unwrap()
         .remove(0);
     server.engine.tick().unwrap();
-    let mut value = configuration();
-    value.insert("listen", server.origin.strip_prefix("http://").unwrap());
-    fs::write(engine_root.join("mynou.json"), json::stringify(&value)).unwrap();
+    home_support::serve_here(&engine_root, server.origin.strip_prefix("http://").unwrap());
     fs::write(
         engine_root.join(".env"),
         format!("MYNOU_API_TOKEN={TOKEN}\n"),
@@ -1482,9 +1482,6 @@ fn online_cli_controls_the_existing_native_service_and_validates_file_priorities
 #[test]
 fn transfer_cli_requires_a_running_service_without_creating_local_state() {
     let scratch = Scratch::new();
-    let cfg = scratch.0.join("mynou.json");
-    fs::write(&cfg, json::stringify(&configuration())).unwrap();
-    let before = fs::read(&cfg).unwrap();
     for args in [
         vec!["torrents"],
         vec!["torrent", "ffffffffffffffffffffffffffffffffffffffff"],
@@ -1493,11 +1490,11 @@ fn transfer_cli_requires_a_running_service_without_creating_local_state() {
         let output = command(&scratch.0, &args);
         assert!(!output.status.success());
         assert!(String::from_utf8_lossy(&output.stderr).contains("running Mynou service"));
-        assert_eq!(fs::read(&cfg).unwrap(), before);
-        assert_eq!(fs::read_dir(&scratch.0).unwrap().count(), 1);
+        assert_eq!(fs::read_dir(&scratch.0).unwrap().count(), 0);
     }
-    // Parsing a valid policy does not change the read-only configuration either.
-    assert!(config::load(&cfg).unwrap().downloads_enabled);
+    // Loading the default settings creates nothing either.
+    assert!(config::load(&scratch.0).unwrap().downloads_enabled);
+    assert_eq!(fs::read_dir(&scratch.0).unwrap().count(), 0);
 }
 
 #[test]
@@ -1604,9 +1601,7 @@ fn retained_transfer_pages_and_point_controls_reach_beyond_the_resident_window()
         Some(false)
     );
 
-    let mut config = configuration();
-    config.insert("listen", server.origin.strip_prefix("http://").unwrap());
-    fs::write(root.join("mynou.json"), json::stringify(&config)).unwrap();
+    home_support::serve_here(&root, server.origin.strip_prefix("http://").unwrap());
     fs::write(root.join(".env"), format!("MYNOU_API_TOKEN={TOKEN}\n")).unwrap();
     // Fresh first-page cursor after the priority mutation.
     let (_, first) = server.call("GET", "/api/transfers?limit=7", Some(TOKEN), None);

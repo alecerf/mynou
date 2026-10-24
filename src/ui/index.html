@@ -96,6 +96,38 @@
       <div class="actions"><button type="button" id="sync-now">Sync now</button></div>
       <div id="sources" class="grid"></div>
     </section>
+
+    <section id="view-settings" class="view" aria-labelledby="t-settings" hidden>
+      <h1 id="t-settings">Settings</h1>
+      <p id="settings-state" class="muted" role="status"></p>
+      <form id="settings-form" autocomplete="off">
+        <div id="settings-groups" class="grid"></div>
+        <article class="card">
+          <h3>Indexers</h3>
+          <ol id="settings-indexers" class="list"></ol>
+          <div class="actions"><button type="button" id="indexer-add">Add an indexer</button></div>
+        </article>
+        <div class="actions"><button type="submit" class="primary">Save settings</button></div>
+      </form>
+      <h2>Secrets</h2>
+      <p class="muted">Tokens and API keys are kept in Mynou's storage and are never shown again. A saved secret takes precedence over the environment variable of the same name.</p>
+      <ol id="settings-secrets" class="list"></ol>
+      <form id="secret-form" class="card form" autocomplete="off">
+        <label class="field grow">Other secret name
+          <input name="name" required maxlength="128" pattern="[A-Z_][A-Z0-9_]*" placeholder="MYNOU_EXAMPLE_KEY" spellcheck="false">
+        </label>
+        <label class="field grow">Value
+          <input name="value" type="password" required maxlength="4096" autocomplete="new-password" spellcheck="false">
+        </label>
+        <div class="actions"><button type="submit">Save secret</button></div>
+      </form>
+      <details class="card">
+        <summary>All settings as JSON</summary>
+        <p class="muted">Every setting, including release profiles, requester accounts, IRC and indexer authentication. Unknown fields are rejected, so a typo is reported instead of ignored.</p>
+        <textarea id="settings-json" rows="18" spellcheck="false" aria-label="Settings JSON"></textarea>
+        <div class="actions"><button type="button" id="settings-json-save">Save JSON</button><button type="button" id="settings-json-reset" class="ghost">Reload</button></div>
+      </details>
+    </section>
   </main>
 
   <dialog id="login" aria-labelledby="login-title">

@@ -77,6 +77,10 @@ pub(super) const OWNERSHIP_CURSOR_KEY: Key = single(T_META, 9);
 pub(super) const LIBRARY_LAST_PASS_KEY: Key = single(T_META, 10);
 pub(super) const JOB_BACKLOG_CURSOR_KEY: Key = single(T_META, 11);
 pub(super) const JOB_LAST_PASS_KEY: Key = single(T_META, 12);
+/// The settings document saved from the API or `mynou settings --save`.
+pub(super) const SETTINGS_KEY: Key = single(T_META, 13);
+/// Write-only secrets saved from the API or `mynou secrets --set`.
+pub(super) const SECRETS_KEY: Key = single(T_META, 14);
 pub(super) const MIGRATION_SOURCE_KEY: Key = single(T_MIGRATION, 0);
 pub(super) const MIGRATION_CURSOR_KEY: Key = single(T_MIGRATION, 1);
 
