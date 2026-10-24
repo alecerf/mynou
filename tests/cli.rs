@@ -35,11 +35,25 @@ impl Drop for Directory {
     }
 }
 
+/// Every file below `root`.
+fn files(root: &Path) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    for entry in fs::read_dir(root).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            found.extend(files(&path));
+        } else {
+            found.push(path);
+        }
+    }
+    found
+}
+
 fn command(directory: &Path, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_mynou"))
         .current_dir(directory)
         .env("MYNOU_HOME", directory)
-        .env_remove("MYNOU_API_TOKEN")
+        .env("MYNOU_API_TOKEN", TOKEN)
         .env_remove("MYNOU_DEMO_TOKEN")
         .env_remove("MYNOU_PLEX_TOKEN")
         .args(args)
@@ -52,7 +66,7 @@ fn with_input(directory: &Path, args: &[&str], value: &str) -> Output {
     let mut child = Command::new(env!("CARGO_BIN_EXE_mynou"))
         .current_dir(directory)
         .env("MYNOU_HOME", directory)
-        .env_remove("MYNOU_API_TOKEN")
+        .env("MYNOU_API_TOKEN", TOKEN)
         .args(args)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -81,26 +95,43 @@ fn parse(output: Output) -> Value {
 }
 
 #[test]
-fn cli_init_analyze_offline_management_and_no_overwrite() {
+fn cli_token_reset_analyze_and_offline_management() {
     let directory = Directory::new();
     let version = success(command(&directory.0, &["version"]));
     assert!(version.contains(env!("CARGO_PKG_VERSION")) && version.contains("0 dependencies"));
-    success(command(&directory.0, &["init"]));
-    let env = fs::read(directory.0.join(".env")).unwrap();
-    assert!(!command(&directory.0, &["init"]).status.success());
-    assert_eq!(fs::read(directory.0.join(".env")).unwrap(), env);
+    // A token reset creates a private data directory and prints a new token,
+    // whose digest alone is stored.
+    let home = directory.0.join("home");
+    let reset = |dir: &Path| {
+        let text = success(command(
+            &directory.0,
+            &["token", "--reset", "--dir", dir.to_str().unwrap()],
+        ));
+        text.lines().next().unwrap().to_owned()
+    };
+    let first = reset(&home);
+    assert_eq!(first.len(), 64);
+    let second = reset(&home);
+    assert_ne!(first, second);
+    let digest = mynou::access::stored(&config::store_dir(&home)).unwrap();
+    assert_eq!(digest, Some(mynou::crypto::sha256(second.as_bytes())));
+    for file in files(&home) {
+        let bytes = fs::read(file).unwrap();
+        assert!(
+            !bytes
+                .windows(64)
+                .any(|w| w == first.as_bytes() || w == second.as_bytes())
+        );
+    }
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         assert_eq!(
-            fs::metadata(directory.0.join(".env"))
-                .unwrap()
-                .permissions()
-                .mode()
-                & 0o777,
-            0o600
+            fs::metadata(&home).unwrap().permissions().mode() & 0o777,
+            0o700
         );
     }
+    assert!(!command(&directory.0, &["token"]).status.success());
     let source = directory.0.join("source.mp4");
     fs::write(&source, include_bytes!("../examples/demo.mp4")).unwrap();
     let analysis = parse(command(
@@ -186,7 +217,6 @@ fn cli_init_analyze_offline_management_and_no_overwrite() {
 #[test]
 fn cli_saves_settings_and_secrets_in_storage() {
     let directory = Directory::new();
-    success(command(&directory.0, &["init"]));
     assert_eq!(
         parse(command(&directory.0, &["settings"])),
         config::default_json()
@@ -265,13 +295,20 @@ fn cli_routes_to_running_api_while_store_is_locked() {
         api.address().unwrap().to_string(),
     )
     .unwrap();
-    fs::write(
-        directory.0.join(".env"),
-        format!("MYNOU_API_TOKEN={TOKEN}\n"),
-    )
-    .unwrap();
     let server = thread::spawn(move || api.run());
     let result = std::panic::catch_unwind(|| {
+        // Without the token, commands explain how to reach the service.
+        let anonymous = Command::new(env!("CARGO_BIN_EXE_mynou"))
+            .env("MYNOU_HOME", &directory.0)
+            .env_remove("MYNOU_API_TOKEN")
+            .arg("jobs")
+            .output()
+            .unwrap();
+        assert!(!anonymous.status.success());
+        assert!(String::from_utf8_lossy(&anonymous.stderr).contains("set MYNOU_API_TOKEN"));
+        let reset = command(&directory.0, &["token", "--reset"]);
+        assert!(!reset.status.success());
+        assert!(String::from_utf8_lossy(&reset.stderr).contains("Stop Mynou"));
         let source = directory.0.join("source.mp4");
         fs::write(&source, include_bytes!("../examples/demo.mp4")).unwrap();
         let submitted = parse(command(
@@ -377,7 +414,6 @@ fn cli_demo_completes_with_native_torrent_and_local_plex_fixture() {
 fn private_vpn_import_and_explicit_controls_survive_offline_cli_restart_with_redacted_output() {
     use std::os::unix::fs::PermissionsExt;
     let directory = Directory::new();
-    success(command(&directory.0, &["init"]));
     let profile = directory.0.join("private.conf");
     fs::write(&profile, "[Interface]\nPrivateKey = AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=\nAddress = 10.23.0.2/24\nDNS = 10.23.0.1\n[Peer]\nPublicKey = CQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAllowedIPs = 0.0.0.0/0\nEndpoint = 192.0.2.10:51820\n").unwrap();
     fs::set_permissions(&profile, fs::Permissions::from_mode(0o600)).unwrap();

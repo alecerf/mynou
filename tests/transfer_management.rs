@@ -1296,7 +1296,7 @@ fn command(directory: &Path, args: &[&str]) -> Output {
     let mut child = Command::new(env!("CARGO_BIN_EXE_mynou"))
         .current_dir(directory)
         .env("MYNOU_HOME", directory)
-        .env_remove("MYNOU_API_TOKEN")
+        .env("MYNOU_API_TOKEN", TOKEN)
         .env_remove("MYNOU_PLEX_TOKEN")
         .env_remove("MYNOU_DEMO_TOKEN")
         .args(args)
@@ -1345,11 +1345,6 @@ fn online_cli_controls_the_existing_native_service_and_validates_file_priorities
         .remove(0);
     server.engine.tick().unwrap();
     home_support::serve_here(&engine_root, server.origin.strip_prefix("http://").unwrap());
-    fs::write(
-        engine_root.join(".env"),
-        format!("MYNOU_API_TOKEN={TOKEN}\n"),
-    )
-    .unwrap();
     let transfers = successful(command(&engine_root, &["torrents"]));
     assert_eq!(
         transfers
@@ -1602,7 +1597,6 @@ fn retained_transfer_pages_and_point_controls_reach_beyond_the_resident_window()
     );
 
     home_support::serve_here(&root, server.origin.strip_prefix("http://").unwrap());
-    fs::write(root.join(".env"), format!("MYNOU_API_TOKEN={TOKEN}\n")).unwrap();
     // Fresh first-page cursor after the priority mutation.
     let (_, first) = server.call("GET", "/api/transfers?limit=7", Some(TOKEN), None);
     let cursor = first.get("next").unwrap().as_str().unwrap();

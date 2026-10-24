@@ -23,32 +23,13 @@ impl Drop for Directory {
 }
 
 #[test]
-fn environment_is_literal_bounded_and_errors_never_echo_secrets() {
-    let values = environment("# comment\nMYNOU_API_TOKEN=a&<>'\"$(`literal`)\nEMPTY=\n").unwrap();
-    assert_eq!(values["MYNOU_API_TOKEN"], "a&<>'\"$(`literal`)");
-    for bad in [
-        "export KEY=SECRET",
-        "DYLD_INSERT_LIBRARIES=SECRET",
-        "LD_PRELOAD=SECRET",
-        "HOME=SECRET",
-        "A=SECRET\nA=SECRET",
-        "A=SECRET\0",
-        "9KEY=SECRET",
-    ] {
-        assert!(!environment(bad).unwrap_err().contains("SECRET"));
-    }
-}
-
-#[test]
-fn plist_keeps_secrets_in_private_environment_and_confines_process_arguments() {
-    let env = environment("MYNOU_API_TOKEN=SECRET<&\"\n").unwrap();
+fn plist_escapes_paths_and_confines_process_arguments() {
     let config = Path::new("/fixture/a&b/data");
     let document = plist(
         "org.mynou.fixture",
         Path::new("/fixture/mynou"),
         config,
         Path::new("/fixture/home"),
-        &env,
     )
     .unwrap();
     assert!(owns(&document, "org.mynou.fixture", config).unwrap());
@@ -61,8 +42,10 @@ fn plist_keeps_secrets_in_private_environment_and_confines_process_arguments() {
         .split("</array>")
         .next()
         .unwrap();
-    assert!(!args.contains("SECRET") && !args.contains("/bin/sh"));
-    assert!(document.contains("SECRET&lt;&amp;&quot;"));
+    assert!(!args.contains("/bin/sh"));
+    assert!(args.contains("/fixture/a&amp;b/data"));
+    // Secrets live in the store, never in the registration.
+    assert!(!document.contains("MYNOU_API_TOKEN"));
     #[cfg(target_os = "macos")]
     {
         use std::process::Stdio;
@@ -120,7 +103,7 @@ fn fixed_code_logs_rotate_and_refuse_links_without_touching_the_target() {
 #[test]
 fn a_missing_volume_prevents_storage_creation_and_reports_a_fixed_code() {
     let dir = Directory::new();
-    create(&dir.0.join(".env"), b"MYNOU_API_TOKEN=x\n").unwrap();
+    fs::set_permissions(&dir.0, fs::Permissions::from_mode(0o700)).unwrap();
     let config = crate::config::from_json(&crate::config::default_json(), &dir.0).unwrap();
     assert!(
         preflight(&dir.0, &config)

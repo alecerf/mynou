@@ -7,8 +7,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Component, Path, PathBuf};
 use std::sync::RwLock;
 
-/// The API token authenticates the interface, so it stays outside the
-/// settings, in the data directory's private `.env` or the environment.
+/// The variable commands read the access token from; Mynou itself keeps only
+/// the token's digest, never a saved secret of this name.
 pub const API_TOKEN_ENV: &str = "MYNOU_API_TOKEN";
 /// Secret values in one store record, and the size of each.
 pub const MAX_SECRETS: usize = 256;
@@ -65,7 +65,7 @@ pub struct Source {
 }
 #[derive(Clone, Debug)]
 pub struct Config {
-    /// Holds `.env` and `state/`; relative settings paths resolve against it.
+    /// Holds `state/`; relative settings paths resolve against it.
     pub data_dir: PathBuf,
     /// The settings document this configuration was validated from.
     pub document: Value,
@@ -365,7 +365,9 @@ pub fn load(data_dir: &Path) -> Result<Config> {
     let (document, secrets) = if crate::store::Store::directory_exists(&store)? {
         let mut store = crate::store::Store::open_read_only(&store).map_err(|error| {
             if error.contains("already open") {
-                format!("{error}; a running Mynou is reached with its API token ({API_TOKEN_ENV})")
+                format!(
+                    "{error}; Mynou is running: set {API_TOKEN_ENV} to its access token to reach it"
+                )
             } else {
                 error
             }
@@ -673,7 +675,9 @@ pub fn check_secret_name(name: &str) -> Result<()> {
         return Err("Secret names use 1 to 128 uppercase letters, digits and underscores".into());
     }
     if name == API_TOKEN_ENV {
-        return Err("The API token stays in the data directory's .env file".into());
+        return Err(
+            "The access token is not a saved secret; `mynou token --reset` replaces it".into(),
+        );
     }
     Ok(())
 }

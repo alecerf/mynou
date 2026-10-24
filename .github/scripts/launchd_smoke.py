@@ -26,7 +26,7 @@ def main():
     label = f"org.mynou.fixture.{os.getpid()}"
     domain = f"gui/{os.getuid()}"
     subprocess.run(["/bin/launchctl", "print", domain], check=True, stdout=subprocess.DEVNULL)
-    token = "fixture-only-api-token-01234567890123456789"
+    token = None
     with tempfile.TemporaryDirectory(prefix="mynou-launchd-", dir="/private/tmp") as temporary:
         root = Path(temporary)
         # launchd cannot read a developer checkout in Documents without macOS
@@ -44,7 +44,8 @@ def main():
                 assert output.returncode == 0, output.stderr
             else:
                 assert output.returncode != 0
-            assert token not in output.stdout + output.stderr
+            if token and words[0] != "token":
+                assert token not in output.stdout + output.stderr
             return output
 
         def service(action, ok=True):
@@ -65,7 +66,6 @@ def main():
                 time.sleep(0.1)
             raise AssertionError("fixture condition timed out")
 
-        cli("init")
         value = json.loads(cli("settings").stdout)
         with socket.socket() as bound:
             bound.bind(("127.0.0.1", 0))
@@ -80,7 +80,8 @@ def main():
         value["downloads"]["pex"] = False
         value["downloads"]["listen_port"] = 0
         cli("settings", "--save", stdin=json.dumps(value))
-        (root / ".env").write_text(f"MYNOU_API_TOKEN={token}\n")
+        token = cli("token", "--reset").stdout.splitlines()[0]
+        env["MYNOU_API_TOKEN"] = token
         for name in ("state/jobs", "state/transfers", "movies", "series", "downloads"):
             (root / name).mkdir(parents=True, exist_ok=True)
         sentinel = root / "downloads" / "keep.bin"

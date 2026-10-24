@@ -1028,6 +1028,53 @@ function askToken(message = '') {
   $('input', dialog).focus();
 }
 
+/** The first visit of a new installation creates its access token here. */
+function firstStart() {
+  const dialog = $('#first-start');
+  dialog.addEventListener('cancel', (event) => event.preventDefault());
+  $('#first-start-button').addEventListener('click', async () => {
+    $('#first-start-error').textContent = '';
+    try {
+      const response = await fetch('/api/setup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(10000) });
+      const body = await response.json();
+      if (!response.ok || !body.token) throw new Error(body.error ?? 'The access token could not be created');
+      $('#first-start-token').value = body.token;
+      $('#first-start-create').hidden = true;
+      $('#first-start-created').hidden = false;
+      $('#first-start-token').select();
+    } catch (error) {
+      $('#first-start-error').textContent = error.message;
+    }
+  });
+  $('#first-start-saved').addEventListener('change', (event) => { $('#first-start-continue').disabled = !event.currentTarget.checked; });
+  $('#first-start-copy').addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText($('#first-start-token').value); toast('Access token copied'); } catch { $('#first-start-token').select(); }
+  });
+  $('#first-start-form').addEventListener('submit', () => {
+    const token = $('#first-start-token').value;
+    $('#first-start-token').value = '';
+    try { sessionStorage.setItem(TOKEN_KEY, token); } catch { /* storage unavailable: the token lives for this page only */ }
+    link.connect(token);
+  });
+}
+
+/** Asks for the token, unless this installation has none yet. */
+async function connectOrSetUp() {
+  for (;;) {
+    try {
+      const response = await fetch('/api/setup', { signal: AbortSignal.timeout(5000) });
+      if (response.status === 503) { await new Promise((resolve) => setTimeout(resolve, 1000)); continue; }
+      const report = await response.json();
+      if (report.available) { $('#first-start').showModal(); return; }
+      askToken(report.token_set ? '' : 'This installation has no access token yet: run `mynou token --reset` on the machine running Mynou while it is stopped, then paste the token here.');
+      return;
+    } catch {
+      askToken();
+      return;
+    }
+  }
+}
+
 function setup() {
   $('#nav').replaceChildren(...VIEWS.map(([id, label]) => h('button', { type: 'button', dataset: { view: id }, onclick: () => { location.hash = `#${id}`; } }, label)));
   for (const view of Object.values(views)) view.init?.();
@@ -1041,6 +1088,7 @@ function setup() {
     link.connect(token);
   });
   setupPalette();
+  firstStart();
 
   const pill = $('#link');
   link.addEventListener('state', ({ detail }) => {
@@ -1076,7 +1124,7 @@ function setup() {
 
   let token = '';
   try { token = sessionStorage.getItem(TOKEN_KEY) ?? ''; } catch { /* ignore */ }
-  if (token) link.connect(token); else askToken();
+  if (token) link.connect(token); else connectOrSetUp();
 }
 
 setup();

@@ -81,6 +81,8 @@ pub(super) const JOB_LAST_PASS_KEY: Key = single(T_META, 12);
 pub(super) const SETTINGS_KEY: Key = single(T_META, 13);
 /// Write-only secrets saved from the API or `mynou secrets --set`.
 pub(super) const SECRETS_KEY: Key = single(T_META, 14);
+/// The SHA-256 digest of the API access token; the token itself is never kept.
+pub(super) const ACCESS_KEY: Key = single(T_META, 15);
 pub(super) const MIGRATION_SOURCE_KEY: Key = single(T_MIGRATION, 0);
 pub(super) const MIGRATION_CURSOR_KEY: Key = single(T_MIGRATION, 1);
 

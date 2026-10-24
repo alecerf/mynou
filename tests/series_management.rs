@@ -104,7 +104,7 @@ fn command(directory: &Directory, args: &[&str]) -> std::process::Output {
     let mut child = Command::new(env!("CARGO_BIN_EXE_mynou"))
         .current_dir(&directory.0)
         .env("MYNOU_HOME", &directory.0)
-        .env_remove("MYNOU_API_TOKEN")
+        .env("MYNOU_API_TOKEN", TOKEN)
         .args(args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -132,11 +132,6 @@ fn cli_routes_series_creation_controls_and_calendar_to_the_running_service() {
     ]);
     let server = Server::open(catalog.config(&directory.0));
     home_support::serve_here(&directory.0, &server.authority);
-    fs::write(
-        directory.0.join(".env"),
-        format!("MYNOU_API_TOKEN={TOKEN}\n"),
-    )
-    .unwrap();
     let result = command(
         &directory,
         &[

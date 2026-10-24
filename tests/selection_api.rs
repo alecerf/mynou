@@ -255,7 +255,7 @@ fn command(directory: &Path, args: &[&str]) -> Output {
     let mut child = Command::new(env!("CARGO_BIN_EXE_mynou"))
         .current_dir(directory)
         .env("MYNOU_HOME", directory)
-        .env_remove("MYNOU_API_TOKEN")
+        .env("MYNOU_API_TOKEN", TOKEN)
         .env_remove("MYNOU_DEMO_TOKEN")
         .env_remove("MYNOU_PLEX_TOKEN")
         .env_remove("MYNOU_SELECTION_ABSENT_FIXTURE_KEY_239104")
@@ -474,11 +474,6 @@ fn authenticated_api_and_online_cli_preview_work_while_the_engine_journal_is_loc
     let value = configuration(&[&indexer, &failed]);
     let server = Server::open(config::from_json(&value, &directory.0).unwrap());
     home_support::serve_here(&directory.0, server.origin.strip_prefix("http://").unwrap());
-    fs::write(
-        directory.0.join(".env"),
-        format!("MYNOU_API_TOKEN={TOKEN}\n"),
-    )
-    .unwrap();
     let before = files(&directory.0);
     let mut store = lock(&server.engine.store).unwrap();
     let (status, profiles) = server.call("GET", "/api/profiles", Some(TOKEN), None);
