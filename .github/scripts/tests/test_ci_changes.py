@@ -85,7 +85,6 @@ class SelectionTests(unittest.TestCase):
 
     def test_event_outputs_for_tags_dispatch_schedule_and_push(self):
         cases = [
-            ("push", "tag", {}, True),
             ("workflow_dispatch", "branch", {}, True),
             ("schedule", "branch", {}, True),
             ("push", "branch", {"before": "before", "after": "after"}, False),
@@ -114,6 +113,60 @@ class SelectionTests(unittest.TestCase):
                         self.assertIn("after", args)
                     else:
                         self.assertIn("base...head", args)
+
+    def test_a_version_tag_only_builds_and_publishes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "event").write_text("{}")
+            env = dict(GITHUB_EVENT_NAME="push", GITHUB_REF_TYPE="tag",
+                       GITHUB_EVENT_PATH=str(root / "event"), GITHUB_OUTPUT=str(root / "output"),
+                       GITHUB_STEP_SUMMARY=str(root / "summary"))
+            with patch.dict(os.environ, env), patch.object(ci.subprocess, "check_output") as diff:
+                ci.main()
+            diff.assert_not_called()
+            output = (root / "output").read_text()
+            for line in ("tests=false", "build=true", "tooling=false", "release=true", 'languages=[]'):
+                self.assertIn(line, output)
+
+    def test_only_a_version_bump_is_a_release(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            def git(*args):
+                return subprocess.check_output(["git", "-C", directory, *args], stderr=subprocess.DEVNULL).decode().strip()
+            git("init")
+            git("config", "user.email", "fixture@example.invalid")
+            git("config", "user.name", "CI fixture")
+            git("config", "commit.gpgsign", "false")
+            manifest = '[package]\nname = "mynou"\nversion = "0.24.0"\nedition = "2024"\n'
+            (root / "Cargo.toml").write_text(manifest)
+            (root / "Cargo.lock").write_text('[[package]]\nname = "mynou"\nversion = "0.24.0"\n')
+            (root / "docs/releases").mkdir(parents=True)
+            (root / "docs/releases/unreleased.md").write_text("## Added: thing\n")
+            git("add", ".")
+            git("commit", "-m", "base")
+            base = git("rev-parse", "HEAD")
+            def commit(manifest_text, lock_text, notes=False):
+                git("checkout", "-q", "--detach", base)
+                (root / "Cargo.toml").write_text(manifest_text)
+                (root / "Cargo.lock").write_text(lock_text)
+                if notes:
+                    (root / "docs/releases/unreleased.md").unlink()
+                git("add", "-A")
+                git("commit", "-q", "-m", "change")
+                return git("rev-parse", "HEAD")
+            original = subprocess.check_output
+            def released(head):
+                with patch.object(ci.subprocess, "check_output", side_effect=lambda args: original(args, cwd=directory)):
+                    return ci.version_only(base, head, ci.changed_paths(base, head))
+            bump = commit(manifest.replace("0.24.0", "0.25.0"), '[[package]]\nname = "mynou"\nversion = "0.25.0"\n', notes=True)
+            self.assertTrue(released(bump))
+            other = commit(manifest.replace("0.24.0", "0.25.0") + "[profile.release]\nlto = true\n",
+                           '[[package]]\nname = "mynou"\nversion = "0.25.0"\n')
+            self.assertFalse(released(other))
+            edition = commit(manifest.replace("2024", "2021"), '[[package]]\nname = "mynou"\nversion = "0.24.0"\n')
+            self.assertFalse(released(edition))
+            self.assertFalse(ci.version_only(base, bump, ["Cargo.toml", "src/lib.rs"]))
+            self.assertFalse(ci.version_only(base, bump, ["docs/releases/unreleased.md"]))
 
     def test_git_diff_keeps_merge_base_renames_and_every_path(self):
         with tempfile.TemporaryDirectory() as directory:

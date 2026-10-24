@@ -317,7 +317,7 @@ without tokens, private paths or media names.
 
 ## Build from source
 
-With Rust 1.99.0 and no network access needed:
+With Rust 1.99.1 and no network access needed:
 
 ```sh
 cargo build --release --offline --locked

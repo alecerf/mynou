@@ -29,9 +29,9 @@ jobs:
         with:
           persist-credentials: false
       - name: Install Rust
-        run: rustup toolchain install 1.99.0 --profile minimal
+        run: rustup toolchain install 1.99.1 --profile minimal
       - name: Build the optimized native library harness
-        run: cargo +1.99.0 test --release --lib --no-run --offline --locked --message-format=json > "$RUNNER_TEMP/representative-build.jsonl"
+        run: cargo +1.99.1 test --release --lib --no-run --offline --locked --message-format=json > "$RUNNER_TEMP/representative-build.jsonl"
       - name: Measure a finite mixed workload
         env:
           SMOKE: ${{ inputs.smoke }}

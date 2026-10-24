@@ -15,7 +15,7 @@ protection.
 
 The `Torrent engine load evidence` workflow runs on `macos-26` (arm64) when the
 torrent engine, the tunnel, the virtual stack or the harness changes, and can be
-dispatched manually. It uses Rust 1.99.0, a release library test harness and no
+dispatched manually. It uses Rust 1.99.1, a release library test harness and no
 Cargo dependencies. Locally, compile with:
 
 ```sh

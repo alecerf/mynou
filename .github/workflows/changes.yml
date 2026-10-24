@@ -8,6 +8,8 @@ on:
         value: ${{ jobs.changes.outputs.build }}
       tooling:
         value: ${{ jobs.changes.outputs.tooling }}
+      release:
+        value: ${{ jobs.changes.outputs.release }}
       languages:
         value: ${{ jobs.changes.outputs.languages }}
 permissions:
@@ -20,6 +22,7 @@ jobs:
       tests: ${{ steps.select.outputs.tests }}
       build: ${{ steps.select.outputs.build }}
       tooling: ${{ steps.select.outputs.tooling }}
+      release: ${{ steps.select.outputs.release }}
       languages: ${{ steps.select.outputs.languages }}
     steps:
       - uses: actions/checkout@v7.0.1
