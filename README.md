@@ -33,8 +33,9 @@
 - **Nothing hidden underneath.** Mynou is safe Rust built on the standard
   library only: zero Cargo dependencies, no `unsafe` code and no external
   program at runtime.
-- **It explains itself.** A search preview shows which release Mynou would pick
-  and why every other one was rejected, before anything is downloaded.
+- **It explains itself.** The release list of a title shows which one Mynou
+  would pick and why every other one was rejected; you can also pick one
+  yourself.
 - **Careful with your files.** Imports never overwrite, upgrades keep the
   earlier file, and cancelling a request never deletes anything.
 
@@ -132,7 +133,7 @@ disabled:
 | Library folders | Library | |
 | Downloads | Downloads (folders, port 6881, limits, seeding) | |
 | Plex server and watchlist | Plex | Plex token |
-| TMDB catalog, needed for series | TMDB catalog | TMDB token |
+| TMDB catalog, to find titles and follow series | TMDB catalog | TMDB token |
 | Sources to search | Indexers | API key of each source |
 
 Saving validates the settings and applies them at once; an invalid change is
@@ -153,12 +154,12 @@ describe an indexer.
 The interface is served by Mynou itself at `http://127.0.0.1:8787/`: plain
 HTML, CSS and JavaScript embedded in the executable, with no build step.
 
-- **Eight views**: dashboard, requests, jobs, transfers, library, series,
-  sources and settings, updated live.
-- **Preview before you commit**: search a title, read why each release was
-  kept or rejected, then submit it explicitly.
-- **Keyboard first**: `/` or `Ctrl+K` opens the command palette, `1`–`8`
-  switch views.
+- **Five views**: overview, library (films and series), jobs, transfers and
+  settings, updated live.
+- **Like Radarr and Sonarr**: find a film or a series on TMDB and add it;
+  Mynou then searches the indexers by itself. From a job, or from any episode
+  of a followed series, **Choose a release** lists what the indexers offer,
+  with why each release was kept or rejected, and downloads the one you pick.
 
 The token stays in the browser tab and the interface accepts same-origin pages
 only. It listens on your Mac alone by default; to reach it from elsewhere, put

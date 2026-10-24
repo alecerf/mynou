@@ -3,135 +3,213 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="color-scheme" content="light dark">
+  <meta name="color-scheme" content="dark light">
   <meta name="referrer" content="no-referrer">
   <title>Mynou</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/app.css">
   <script src="/app.js" type="module"></script>
+  <!-- Fetched together instead of one import level at a time. -->
+  <link rel="modulepreload" href="/js/theme.js">
+  <link rel="modulepreload" href="/js/dom.js">
+  <link rel="modulepreload" href="/js/format.js">
+  <link rel="modulepreload" href="/js/motion.js">
+  <link rel="modulepreload" href="/js/components.js">
+  <link rel="modulepreload" href="/js/link.js">
+  <link rel="modulepreload" href="/js/store.js">
+  <link rel="modulepreload" href="/js/sources.js">
+  <link rel="modulepreload" href="/js/router.js">
+  <link rel="modulepreload" href="/js/session.js">
+  <link rel="modulepreload" href="/js/art.js">
+  <link rel="modulepreload" href="/js/dashboard.js">
+  <link rel="modulepreload" href="/js/library.js">
+  <link rel="modulepreload" href="/js/jobs.js">
+  <link rel="modulepreload" href="/js/transfers.js">
+  <link rel="modulepreload" href="/js/settings.js">
+  <link rel="modulepreload" href="/js/requests.js">
+  <link rel="modulepreload" href="/js/releases.js">
 </head>
 <body>
+  <svg class="sprite" aria-hidden="true"><defs>
+    <symbol id="i-logo" viewBox="0 0 28 28"><g class="cat-tail"><path class="cat-fur" d="M20 11h5v13h-6v-3h3v-7h-2Z"/></g><path class="cat-fur" d="M4 2h4v3h6V2h4v5h2v8h-3v3h2v6H4v-3h2v-6H3V7h1Z"/><g class="cat-eyes"><path class="cat-face" d="M6 9h4v2H6zm8-1h2v4h-2Z"/></g><path class="cat-face" d="M10 13h3v2h-3zm-3 9h3v2H7zm8 0h3v2h-3Z"/></symbol>
+    <symbol id="i-dashboard" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></symbol>
+    <symbol id="i-library" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="16" rx="2"/><path d="M8 2h8M10 10v6l5-3Z"/></symbol>
+    <symbol id="i-series" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="14" rx="3"/><path d="m8 2 4 4 4-4M10 11v5l4-2.5Z"/></symbol>
+    <symbol id="i-requests" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-jobs" viewBox="0 0 24 24"><path d="m3 12 4-7 5 14 5-14 4 7"/></symbol>
+    <symbol id="i-transfers" viewBox="0 0 24 24"><path d="M8 3v14m-5-5 5 5 5-5M16 21V7m-5 5 5-5 5 5"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 19 19 5M5 5h14v14"/></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 3v14m-5-5 5 5 5-5M4 21h16"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="m8 5 12 7-12 7Z"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
+    <symbol id="i-retry" viewBox="0 0 24 24"><path d="M20 8a8 8 0 1 0 0 8M20 3v5h-5"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3 2 20h20Z"/><path d="M12 10v4M12 17h.01"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/></symbol>
+    <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M3 6h.1M3 12h.1M3 18h.1"/></symbol>
+    <symbol id="i-sync" viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 14-5.3L20 9M20 4v5h-5M20 12a8 8 0 0 1-14 5.3L4 15M4 20v-5h5"/></symbol>
+    <symbol id="i-auto" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 0 0 16Z" fill="currentColor"/></symbol>
+    <symbol id="i-light" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+    <symbol id="i-spinner" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" opacity=".25"/><path d="M12 3a9 9 0 0 1 9 9"/></symbol>
+    <symbol id="i-dark" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"/></symbol>
+  </defs></svg>
+  <template id="icon-template"><svg class="icon" aria-hidden="true"><use href="#i-arrow"></use></svg></template>
+
   <a class="skip" href="#main">Skip to content</a>
 
-  <header class="bar">
-    <a class="brand" href="#dashboard" aria-label="Mynou home"><span class="mark" aria-hidden="true"></span>Mynou</a>
-    <nav id="nav" aria-label="Views"></nav>
-    <div class="tools">
-      <button type="button" id="open-palette" class="ghost" aria-keyshortcuts="Control+K /">
-        Commands <kbd>/</kbd>
-      </button>
-      <output id="link" class="pill" data-state="connecting" role="status">Connecting</output>
-    </div>
-  </header>
-
-  <main id="main" tabindex="-1">
-    <section id="view-dashboard" class="view" aria-labelledby="t-dashboard" hidden>
-      <h1 id="t-dashboard">Dashboard</h1>
-      <div id="stats" class="stats"></div>
-      <div id="alerts" class="alerts"></div>
-      <h2>Recent activity</h2>
-      <ol id="recent" class="list"></ol>
-    </section>
-
-    <section id="view-requests" class="view" aria-labelledby="t-requests" hidden>
-      <h1 id="t-requests">Requests</h1>
-      <form id="request-form" class="card form" autocomplete="off">
-        <label class="field">Kind
-          <select name="kind">
-            <option value="movie">Movie</option>
-            <option value="episode">Episode</option>
-            <option value="series">Series</option>
-          </select>
-        </label>
-        <label class="field grow">Title
-          <input name="title" required maxlength="200" placeholder="Title" spellcheck="false">
-        </label>
-        <label class="field narrow">Year
-          <input name="year" type="number" inputmode="numeric" min="1888" max="2100" placeholder="Any">
-        </label>
-        <label class="field narrow" data-for="episode">Season
-          <input name="season" type="number" inputmode="numeric" min="0" max="9999">
-        </label>
-        <label class="field narrow" data-for="episode">Episode
-          <input name="episode" type="number" inputmode="numeric" min="1" max="99999">
-        </label>
-        <div class="actions">
-          <button type="submit" class="primary">Preview</button>
-        </div>
-      </form>
-      <div id="search-out" aria-live="polite"></div>
-    </section>
-
-    <section id="view-jobs" class="view" aria-labelledby="t-jobs" hidden>
-      <h1 id="t-jobs">Jobs</h1>
-      <div class="filters">
-        <input id="job-filter" type="search" placeholder="Search all jobs" aria-label="Search all jobs" spellcheck="false">
-        <div id="job-states" class="chips" role="group" aria-label="State"></div>
+  <aside class="sidebar">
+    <a class="brand" href="#dashboard" aria-label="Mynou home"><svg class="logo" aria-hidden="true"><use href="#i-logo"></use></svg><span>mynou<span class="brand-period">.</span></span></a>
+    <nav id="nav" aria-label="Views"><span id="nav-indicator" class="nav-indicator" aria-hidden="true"></span></nav>
+    <div class="sidebar-bottom">
+      <div id="theme" class="theme-switch" role="group" aria-label="Theme">
+        <button type="button" data-choice="auto" aria-pressed="true" aria-label="Match the system" title="Match the system"><svg class="icon" aria-hidden="true"><use href="#i-auto"></use></svg></button>
+        <button type="button" data-choice="light" aria-pressed="false" aria-label="Light" title="Light"><svg class="icon" aria-hidden="true"><use href="#i-light"></use></svg></button>
+        <button type="button" data-choice="dark" aria-pressed="false" aria-label="Dark" title="Dark"><svg class="icon" aria-hidden="true"><use href="#i-dark"></use></svg></button>
       </div>
-      <ol id="jobs" class="list"></ol>
-      <div class="actions"><button type="button" id="jobs-more" hidden>Load more jobs</button></div>
-    </section>
+      <output id="link" class="link-state" data-state="connecting" role="status">Connecting</output>
+    </div>
+  </aside>
 
-    <section id="view-transfers" class="view" aria-labelledby="t-transfers" hidden>
-      <h1 id="t-transfers">Transfers</h1>
-      <ol id="transfers" class="list"></ol>
-      <button id="transfers-more" type="button" hidden>Load more transfers</button>
-    </section>
+  <div class="workspace">
+    <header class="topbar">
+      <p class="breadcrumb"><a class="mobile-brand" href="#dashboard" aria-label="Mynou home"><svg class="logo" aria-hidden="true"><use href="#i-logo"></use></svg></a></p>
+      <div class="tools">
+        <output id="link-mobile" class="link-dot" data-state="connecting" aria-hidden="true"></output>
+        <a class="primary request-button" href="#requests" data-view="requests"><svg class="icon" aria-hidden="true"><use href="#i-requests"></use></svg><span>New request</span></a>
+      </div>
+    </header>
 
-    <section id="view-library" class="view" aria-labelledby="t-library" hidden>
-      <h1 id="t-library">Library</h1>
-      <div class="actions"><button type="button" id="check-upgrades">Check for upgrades</button></div>
-      <div id="library" class="grid"></div>
-      <div class="actions"><button type="button" id="library-more" hidden>Load more library entries</button></div>
-    </section>
+    <main id="main" tabindex="-1">
+      <section id="view-dashboard" class="view" aria-labelledby="t-dashboard" hidden>
+        <div id="ambient" class="ambient" aria-hidden="true"></div>
+        <header class="page-heading">
+          <div>
+            <h1 id="t-dashboard"><span id="greeting">The evening</span><br>is <em>yours.</em></h1>
+          </div>
+        </header>
+        <div id="alerts" class="alerts"></div>
+        <dl id="stats" class="summary-strip"></dl>
+        <div class="section-heading"><h2>On their way</h2></div>
+        <div id="in-motion" class="in-motion"></div>
+        <div class="dashboard-bottom">
+          <section aria-labelledby="t-fresh">
+            <div class="section-heading"><h2 id="t-fresh">Freshly collected</h2><a class="text-link" href="#library">The library <svg class="icon" aria-hidden="true"><use href="#i-arrow"></use></svg></a></div>
+            <div id="fresh" class="recent-grid"></div>
+          </section>
+          <section aria-labelledby="t-recent">
+            <div class="section-heading"><h2 id="t-recent">Recently finished</h2><a class="text-link" href="#jobs">Jobs <svg class="icon" aria-hidden="true"><use href="#i-arrow"></use></svg></a></div>
+            <ol id="recent" class="activity-list"></ol>
+          </section>
+        </div>
+      </section>
 
-    <section id="view-series" class="view" aria-labelledby="t-series" hidden>
-      <h1 id="t-series">Series</h1>
-      <div id="series" class="grid"></div>
-      <div class="actions"><button type="button" id="series-more" hidden>Load more series</button></div>
-    </section>
+      <section id="view-library" class="view" aria-labelledby="t-library" hidden>
+        <header class="page-heading">
+          <div>
+            <h1 id="t-library">The <em>collection.</em></h1>
+          </div>
+          <button type="button" id="check-upgrades" class="secondary"><svg class="icon" aria-hidden="true"><use href="#i-sync"></use></svg><span>Check for upgrades</span></button>
+        </header>
+        <div class="collection-tools">
+          <div id="library-tabs" class="tabs" role="group" aria-label="Kind">
+            <button type="button" data-kind="" aria-pressed="true">Everything <span></span></button>
+            <button type="button" data-kind="movie" aria-pressed="false">Films <span></span></button>
+            <button type="button" data-kind="series" aria-pressed="false">Series <span></span></button>
+          </div>
+          <div class="tool-right">
+            <label class="filter-search"><svg class="icon" aria-hidden="true"><use href="#i-search"></use></svg><input id="library-filter" type="search" placeholder="Find a title…" aria-label="Find a title" spellcheck="false"></label>
+            <div class="view-toggle" role="group" aria-label="Layout">
+              <button type="button" class="icon-button" data-layout="grid" aria-pressed="true" aria-label="Grid"><svg class="icon" aria-hidden="true"><use href="#i-grid"></use></svg></button>
+              <button type="button" class="icon-button" data-layout="list" aria-pressed="false" aria-label="List"><svg class="icon" aria-hidden="true"><use href="#i-list"></use></svg></button>
+            </div>
+          </div>
+        </div>
+        <p id="library-meta" class="collection-meta" role="status"></p>
+        <div id="library" class="collection-grid"></div>
+        <div class="actions"><button type="button" id="library-more" hidden>Load more</button></div>
+      </section>
 
-    <section id="view-sources" class="view" aria-labelledby="t-sources" hidden>
-      <h1 id="t-sources">Sources</h1>
-      <div class="actions"><button type="button" id="sync-now">Sync now</button></div>
-      <div id="sources" class="grid"></div>
-    </section>
+      <section id="view-requests" class="view" aria-labelledby="t-requests" hidden>
+        <header class="page-heading">
+          <div>
+            <h1 id="t-requests">Ask for <em>something.</em></h1>
+            <p class="intro">Find a film or a series. Once it is added, Mynou looks for it on your indexers by itself.</p>
+          </div>
+        </header>
+        <form id="request-form" class="finder" autocomplete="off">
+          <div id="request-kind" class="tabs" role="group" aria-label="Kind">
+            <button type="button" data-kind="movie" aria-pressed="true">Films</button>
+            <button type="button" data-kind="series" aria-pressed="false">Series</button>
+          </div>
+          <label class="finder-field"><svg class="icon" aria-hidden="true"><use href="#i-search"></use></svg><input name="query" type="search" required maxlength="128" placeholder="A title, in any language" aria-label="Title" spellcheck="false"></label>
+          <input name="year" class="finder-year" type="number" inputmode="numeric" min="1888" max="2100" placeholder="Year" aria-label="Year">
+          <button type="submit" class="primary">Search</button>
+        </form>
+        <p id="catalog-meta" class="catalog-meta" aria-live="polite" hidden></p>
+        <div id="catalog-out" class="collection-grid catalog-grid"></div>
+      </section>
 
-    <section id="view-settings" class="view" aria-labelledby="t-settings" hidden>
-      <h1 id="t-settings">Settings</h1>
-      <p id="settings-state" class="muted" role="status"></p>
-      <form id="settings-form" autocomplete="off">
-        <div id="settings-groups" class="grid"></div>
-        <article class="card">
-          <h3>Indexers</h3>
-          <ol id="settings-indexers" class="list"></ol>
-          <div class="actions"><button type="button" id="indexer-add">Add an indexer</button></div>
-        </article>
-        <div class="actions"><button type="submit" class="primary">Save settings</button></div>
-      </form>
-      <h2>Secrets</h2>
-      <p class="muted">Tokens and API keys are kept in Mynou's storage and are never shown again. A saved secret takes precedence over the environment variable of the same name.</p>
-      <ol id="settings-secrets" class="list"></ol>
-      <form id="secret-form" class="card form" autocomplete="off">
-        <label class="field grow">Other secret name
-          <input name="name" required maxlength="128" pattern="[A-Z_][A-Z0-9_]*" placeholder="MYNOU_EXAMPLE_KEY" spellcheck="false">
-        </label>
-        <label class="field grow">Value
-          <input name="value" type="password" required maxlength="4096" autocomplete="new-password" spellcheck="false">
-        </label>
-        <div class="actions"><button type="submit">Save secret</button></div>
-      </form>
-      <details class="card">
-        <summary>All settings as JSON</summary>
-        <p class="muted">Every setting, including release profiles, requester accounts, IRC and indexer authentication. Unknown fields are rejected, so a typo is reported instead of ignored.</p>
-        <textarea id="settings-json" rows="18" spellcheck="false" aria-label="Settings JSON"></textarea>
-        <div class="actions"><button type="button" id="settings-json-save">Save JSON</button><button type="button" id="settings-json-reset" class="ghost">Reload</button></div>
-      </details>
-    </section>
-  </main>
+      <section id="view-jobs" class="view compact" aria-labelledby="t-jobs" hidden>
+        <header class="page-heading">
+          <div>
+            <h1 id="t-jobs">Jobs</h1>
+          </div>
+        </header>
+        <div class="filters">
+          <label class="filter-search"><svg class="icon" aria-hidden="true"><use href="#i-search"></use></svg><input id="job-filter" type="search" placeholder="Search all jobs" aria-label="Search all jobs" spellcheck="false"></label>
+          <select id="job-state" aria-label="State"><option value="">All states</option></select>
+        </div>
+        <ol id="jobs" class="activity-list"></ol>
+        <div class="actions"><button type="button" id="jobs-more" hidden>Load more jobs</button></div>
+      </section>
+
+      <section id="view-transfers" class="view compact" aria-labelledby="t-transfers" hidden>
+        <header class="page-heading">
+          <div>
+            <h1 id="t-transfers">Transfers</h1>
+          </div>
+        </header>
+        <ol id="transfers" class="activity-list"></ol>
+        <div class="actions"><button id="transfers-more" type="button" hidden>Load more transfers</button></div>
+      </section>
+
+      <section id="view-settings" class="view compact" aria-labelledby="t-settings" hidden>
+        <header class="page-heading">
+          <div>
+            <h1 id="t-settings">Settings</h1>
+            <p id="settings-state" class="intro" role="status" hidden></p>
+          </div>
+        </header>
+        <form id="settings-form" class="settings" autocomplete="off">
+          <div id="settings-groups"></div>
+          <section class="setting-group">
+            <div class="setting-intro"><h2>Indexers</h2><p class="hint">Where Mynou looks for releases.</p></div>
+            <div class="setting-list">
+              <ol id="settings-indexers"></ol>
+              <button type="button" id="indexer-add" class="setting-add"><svg class="icon" aria-hidden="true"><use href="#i-requests"></use></svg>Add an indexer</button>
+            </div>
+          </section>
+          <div id="save-bar" class="save-bar" hidden>
+            <span>Unsaved changes</span>
+            <button type="button" id="settings-discard" class="ghost">Discard</button>
+            <button type="submit" class="primary">Save</button>
+          </div>
+        </form>
+      </section>
+    </main>
+
+    <footer class="page-footer"><span id="footer-version"></span></footer>
+  </div>
+
+  <nav id="mobile-nav" class="mobile-nav" aria-label="Main views"></nav>
 
   <dialog id="login" aria-labelledby="login-title">
     <form method="dialog" id="login-form" class="sheet">
+      <svg class="logo sheet-logo" aria-hidden="true"><use href="#i-logo"></use></svg>
       <h2 id="login-title">Connect to Mynou</h2>
       <p class="muted">Paste your access token. It stays in this tab only and is sent as a WebSocket subprotocol, never in a URL. Lost it? Stop Mynou and run <code>mynou token --reset</code>.</p>
       <label class="field">Access token
@@ -144,6 +222,7 @@
 
   <dialog id="first-start" aria-labelledby="first-start-title">
     <form method="dialog" id="first-start-form" class="sheet">
+      <svg class="logo sheet-logo" aria-hidden="true"><use href="#i-logo"></use></svg>
       <h2 id="first-start-title">Welcome to Mynou</h2>
       <div id="first-start-create">
         <p class="muted">Create the access token that protects this interface and the API.</p>
@@ -162,19 +241,12 @@
     </form>
   </dialog>
 
-  <dialog id="palette" aria-label="Command palette">
-    <div class="sheet">
-      <input id="palette-input" type="search" placeholder="Type a command" aria-label="Command" autocomplete="off" spellcheck="false">
-      <ul id="palette-list" role="listbox" aria-label="Commands"></ul>
-    </div>
-  </dialog>
-
   <dialog id="detail" aria-labelledby="detail-title">
-    <div class="sheet">
-      <h2 id="detail-title"></h2>
-      <div id="detail-body"></div>
-      <div class="actions"><button type="button" id="detail-close">Close</button></div>
-    </div>
+    <header class="detail-hero">
+      <div class="dialog-top"><span></span><button type="button" id="detail-close" class="icon-button" aria-label="Close"><svg class="icon" aria-hidden="true"><use href="#i-close"></use></svg></button></div>
+      <h2 id="detail-title" tabindex="-1" class="detail-title"></h2>
+    </header>
+    <div id="detail-body"></div>
   </dialog>
 
   <div id="toasts" role="status" aria-live="polite"></div>

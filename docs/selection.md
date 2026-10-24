@@ -8,8 +8,8 @@ same profiles to compare a recorded release with new candidates; see
 
 ## Configure profiles
 
-Add an optional `selection` object to the settings (the JSON editor of the
-**Settings** view, or `mynou settings --save`):
+Add an optional `selection` object to the settings with
+`mynou settings --save`:
 
 ```json
 {
@@ -176,6 +176,29 @@ The API equivalent is `POST /api/search` (optionally
 A body containing `source_url` or `source_path` returns `manual_override: true`
 without searching or echoing the source. `GET /api/profiles` returns the
 configured profiles, and `mynou doctor` shows the active profile names.
+
+## Choose a release by hand
+
+The web interface opens this report from a job (**Choose a release**) and from
+each episode of a followed series. Picking one release records it on the
+request, and Mynou downloads it instead of the release it would have selected.
+A rejected release can be chosen too, after a second confirmation; it is
+recorded with the active profile, so later upgrades compare against it.
+
+`POST /api/grab` takes `{"request": {...}, "candidate_id": "..."}`, the request
+object as for `POST /api/search` and a candidate ID from its report. Mynou
+searches again and accepts the candidate only if a source still offers it, so
+the browser never sees an acquisition URL. A missing request is created; a
+queued, failed or cancelled request takes the new release, and a transfer it
+had is paused like on a retry. A request that is downloading, being processed
+right now, already imported, or bound to its own source (`source_url`,
+`source_path`, a season pack, IRC) is refused.
+
+For an episode of a followed series, `POST /api/series/ID/search` with
+`{"season": 1, "episode": 2}` (and optional `after` and `limit`) returns the
+report together with the episode's `request`, and `POST /api/series/ID/grab`
+with `{"season": 1, "episode": 2, "candidate_id": "..."}` chooses a release.
+Both build the request as monitoring would, including any numbering decision.
 
 If your sources name releases differently, a restrictive profile may reject
 them: inspect the preview and adjust the policy deliberately. Keep source

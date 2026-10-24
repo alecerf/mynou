@@ -41,6 +41,21 @@ impl Engine {
             .public_json())
     }
 
+    /// The request of one catalog episode of a tracked series, as monitoring
+    /// would submit it.
+    pub fn series_episode_request(&self, id: &str, season: u32, episode: u32) -> Result<Request> {
+        let record = lock(&self.series_store)?
+            .get(id)?
+            .ok_or("Unknown monitored series")?;
+        let known = record
+            .plan
+            .episodes
+            .iter()
+            .find(|e| e.season == season && e.episode == episode)
+            .ok_or("Episode is absent from the series catalog")?;
+        Ok(record.episode_request(known))
+    }
+
     pub fn track_series(
         &self,
         request: &Request,
