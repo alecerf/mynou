@@ -589,3 +589,168 @@ fn plex_availability_scans_listings_beyond_the_former_item_limit_one_page_at_a_t
     assert!(integrations::available(&config, &movie()).unwrap());
     assert_eq!(served.load(Ordering::Acquire), 1);
 }
+
+#[test]
+fn catalog_search_lists_titles_years_and_synopses_without_invalid_entries() {
+    let fixture = Fixture::open(|path, _| {
+        assert!(path.starts_with("/3/search/tv?"), "{path}");
+        assert!(path.contains("query=Fixture%20Show"), "{path}");
+        assert!(path.contains("first_air_date_year=2024"), "{path}");
+        (
+            200,
+            r#"{"results":[
+            {"id":42,"name":"Fixture Show","original_name":"Spectacle","first_air_date":"2024-01-01","overview":"A show.","poster_path":"/abc123.jpg"},
+            {"id":0,"name":"No identity"},
+            {"id":43,"name":"","first_air_date":"2024-08-02"},
+            {"id":44,"name":"Undated Show","original_name":"Undated Show","first_air_date":""}]}"#
+                .into(),
+        )
+    });
+    let mut config = config();
+    config.catalog.enabled = true;
+    config.catalog.url = format!("{}/3", fixture.url);
+    config.catalog.token_env = "PATH".into();
+    let report = integrations::catalog_search(&config, "series", " Fixture Show ", 2024).unwrap();
+    let results = report.get("results").unwrap().as_array().unwrap();
+    assert_eq!(results.len(), 2);
+    assert_eq!(results[0].get("tmdb_id").unwrap().as_u64(), Some(42));
+    assert_eq!(results[0].get("kind").unwrap().as_str(), Some("series"));
+    assert_eq!(
+        results[0].get("title").unwrap().as_str(),
+        Some("Fixture Show")
+    );
+    assert_eq!(
+        results[0].get("original_title").unwrap().as_str(),
+        Some("Spectacle")
+    );
+    assert_eq!(results[0].get("year").unwrap().as_u64(), Some(2024));
+    assert_eq!(
+        results[0].get("overview").unwrap().as_str(),
+        Some("A show.")
+    );
+    assert_eq!(results[1].get("tmdb_id").unwrap().as_u64(), Some(44));
+    assert_eq!(
+        results[0].get("poster").unwrap().as_str(),
+        Some("/abc123.jpg")
+    );
+    assert!(results[1].get("poster").is_none());
+    assert!(results[1].get("original_title").is_none());
+    assert!(results[1].get("year").unwrap().as_u64().is_none());
+    for (kind, text) in [("episode", "Fixture"), ("movie", ""), ("movie", "a\u{7}b")] {
+        assert!(integrations::catalog_search(&config, kind, text, 0).is_err());
+    }
+    config.catalog.enabled = false;
+    assert!(integrations::catalog_search(&config, "movie", "Fixture", 0).is_err());
+}
+
+#[test]
+fn a_chosen_release_is_found_again_by_its_candidate_id_even_when_rejected() {
+    let fixture = Fixture::open(|_, _| {
+        (
+            200,
+            r#"{"results":[
+            {"title":"Fixture.Movie.2024.720p","seeders":7,"url":"magnet:?xt=urn:btih:chosen"},
+            {"title":"Fixture.Movie.2024.1080p","seeders":0,"url":"magnet:?xt=urn:btih:dead"}] }"#
+                .into(),
+        )
+    });
+    let mut config = config();
+    config.sources.push(Source {
+        options: Default::default(),
+        name: "fixture".into(),
+        kind: "json".into(),
+        url: fixture.url.clone(),
+        api_key_env: "MYNOU_TEST_ABSENT_CREDENTIAL_239104".into(),
+    });
+    let report = integrations::search_report(&config, &movie()).unwrap();
+    let id = |list: &str| {
+        report.get(list).unwrap().as_array().unwrap()[0]
+            .get("id")
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+    let deadline = std::time::Instant::now() + Duration::from_secs(30);
+    let (accepted, ok) =
+        integrations::pick_release_before(&config, &movie(), &id("accepted"), deadline).unwrap();
+    assert!(ok);
+    assert_eq!(accepted.url, "magnet:?xt=urn:btih:chosen");
+    let (rejected, ok) =
+        integrations::pick_release_before(&config, &movie(), &id("rejected"), deadline).unwrap();
+    assert!(!ok);
+    assert_eq!(rejected.url, "magnet:?xt=urn:btih:dead");
+    assert_eq!(rejected.title, "Fixture.Movie.2024.1080p");
+    for (id, error) in [
+        ("0".repeat(64), "no longer offered"),
+        ("../x".into(), "invalid candidate"),
+    ] {
+        let Err(refused) = integrations::pick_release_before(&config, &movie(), &id, deadline)
+        else {
+            panic!("{id} was accepted");
+        };
+        assert!(refused.contains(error), "{refused}");
+    }
+}
+
+#[test]
+fn catalog_posters_become_data_urls_only_for_jpeg_or_png_images() {
+    use std::io::Read;
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let base = format!("http://{}/t/p/w342", listener.local_addr().unwrap());
+    let served = Arc::new(AtomicUsize::new(0));
+    let count = served.clone();
+    thread::spawn(move || {
+        for stream in listener.incoming() {
+            let mut stream = stream.unwrap();
+            let mut head = [0; 2048];
+            let n = stream.read(&mut head).unwrap();
+            let line = String::from_utf8_lossy(&head[..n]).to_string();
+            count.fetch_add(1, Ordering::SeqCst);
+            let body: &[u8] = if line.contains("/poster.jpg") {
+                &[0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]
+            } else {
+                b"<html>not an image</html>"
+            };
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            )
+            .unwrap();
+            stream.write_all(body).unwrap();
+        }
+    });
+    let mut config = config();
+    config.catalog.enabled = true;
+    let poster = integrations::catalog_poster_from(&config, &base, "/poster.jpg").unwrap();
+    assert_eq!(
+        poster.get("data_url").unwrap().as_str(),
+        Some("data:image/jpeg;base64,/9j/4AECAw==")
+    );
+    // A second read comes from memory.
+    integrations::catalog_poster_from(&config, &base, "/poster.jpg").unwrap();
+    assert_eq!(served.load(Ordering::SeqCst), 1);
+    assert!(
+        integrations::catalog_poster_from(&config, &base, "/page.jpg")
+            .unwrap_err()
+            .contains("not a JPEG or PNG")
+    );
+    for path in [
+        "poster.jpg",
+        "/../x.jpg",
+        "/a.gif",
+        "/a.jpg?x=1",
+        "/",
+        "/.jpg",
+    ] {
+        assert!(
+            integrations::catalog_poster_from(&config, &base, path)
+                .unwrap_err()
+                .contains("invalid poster path"),
+            "{path}"
+        );
+    }
+    config.catalog.enabled = false;
+    assert!(integrations::catalog_poster_from(&config, &base, "/poster.jpg").is_err());
+}

@@ -4879,3 +4879,109 @@ fn inventory_growth_report() {
         f.finish();
     }
 }
+
+#[test]
+fn a_chosen_release_creates_or_replaces_a_request_but_never_an_active_or_imported_one() {
+    let directory = Directory::new();
+    let mut store = Store::open(&directory.0).unwrap();
+    let chosen = |title: &str| RecordedRelease {
+        title: title.into(),
+        profile: "hd".into(),
+    };
+    // A new title: the request is recorded with its release, ready for download.
+    let job = store
+        .grab(
+            request("Chosen movie"),
+            "magnet:?xt=urn:btih:chosen".into(),
+            chosen("Chosen.Movie.2026.1080p"),
+        )
+        .unwrap();
+    assert_eq!(job.state, "queued");
+    assert_eq!(
+        job.acquisition_url.as_deref(),
+        Some("magnet:?xt=urn:btih:chosen")
+    );
+    assert_eq!(job.release, Some(chosen("Chosen.Movie.2026.1080p")));
+    assert_eq!(store.submit(request("Chosen movie")).unwrap().id, job.id);
+
+    // A failed request leaves its transfer to retirement and takes the new release.
+    let mut failed = raw_job(1, 10);
+    failed.state = "failed".into();
+    failed.attempts = 3;
+    failed.last_error = Some("Search: no release".into());
+    failed.acquisition_url = Some("magnet:?xt=urn:btih:old".into());
+    failed.download_id = Some("a".repeat(40));
+    failed.release = Some(chosen("Synthetic.Movie.1.2026.720p"));
+    let mut downloading = raw_job(2, 10);
+    downloading.state = "downloading".into();
+    downloading.acquisition_url = Some("magnet:?xt=urn:btih:running".into());
+    downloading.download_id = Some("b".repeat(40));
+    let mut leased = raw_job(3, 10);
+    leased.state = "processing".into();
+    leased.lease_id = Some("c".repeat(32));
+    leased.lease_until = now() + 600;
+    bulk(
+        &mut store,
+        vec![
+            failed.clone(),
+            downloading.clone(),
+            leased.clone(),
+            ready_job(4, 10),
+        ],
+    );
+    let replaced = store
+        .grab(
+            failed.request.clone(),
+            "magnet:?xt=urn:btih:new".into(),
+            chosen("Synthetic.Movie.1.2026.2160p"),
+        )
+        .unwrap();
+    assert_eq!(replaced.id, failed.id);
+    assert_eq!(replaced.state, "queued");
+    assert_eq!(
+        (replaced.attempts, replaced.last_error.as_deref()),
+        (0, None)
+    );
+    assert_eq!(
+        replaced.acquisition_url.as_deref(),
+        Some("magnet:?xt=urn:btih:new")
+    );
+    assert_eq!(replaced.download_id, None);
+    assert_eq!(replaced.retiring_transfers, vec!["a".repeat(40)]);
+    assert_eq!(
+        replaced.release,
+        Some(chosen("Synthetic.Movie.1.2026.2160p"))
+    );
+
+    for (job, error) in [
+        (&downloading, "A download is already running"),
+        (&leased, "working on this request"),
+        (&ready_job(4, 10), "already in your library"),
+    ] {
+        let refused = store
+            .grab(
+                job.request.clone(),
+                "magnet:?xt=urn:btih:other".into(),
+                chosen("Synthetic.Movie.2026.1080p"),
+            )
+            .unwrap_err();
+        assert!(refused.contains(error), "{refused}");
+        assert_eq!(&store.get(&job.id).unwrap().unwrap().state, &job.state);
+    }
+    let mut explicit = request("Explicit movie");
+    explicit.source_url = Some("magnet:?xt=urn:btih:explicit".into());
+    assert!(
+        store
+            .grab(
+                explicit,
+                "magnet:?xt=urn:btih:other".into(),
+                chosen("Explicit.2026")
+            )
+            .is_err()
+    );
+    // The choice is durable: a restart reads it back as recorded.
+    drop(store);
+    let mut store = Store::open(&directory.0).unwrap();
+    assert_eq!(store.get(&replaced.id).unwrap().unwrap(), replaced);
+    assert_eq!(store.get(&job.id).unwrap().unwrap(), job);
+}

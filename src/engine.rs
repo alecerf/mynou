@@ -338,6 +338,38 @@ impl Engine {
         Ok(jobs)
     }
 
+    /// Downloads the release an operator chose from a search report, found
+    /// again by its candidate ID, instead of the one Mynou would select.
+    pub fn grab(&self, request: &Request, candidate_id: &str) -> Result<Job> {
+        if self.read_only {
+            return Err("Read-only preview cannot record a chosen release".into());
+        }
+        let config = self.configuration_for_request(request)?;
+        let (selected, _) = integrations::pick_release_before(
+            &config,
+            request,
+            candidate_id,
+            Instant::now() + Duration::from_secs(90),
+        )?;
+        let job = {
+            let _publication = self.torrent_publication()?;
+            let mut store = lock(&self.store)?;
+            let job = store.grab(
+                request.clone(),
+                selected.url,
+                RecordedRelease {
+                    title: selected.title,
+                    profile: selected.profile,
+                },
+            )?;
+            // A transfer the choice detached was recorded in the same transaction.
+            self.retire_previous_transfers(&mut store)?;
+            job
+        };
+        self.requester_operator_interest(std::slice::from_ref(&job))?;
+        Ok(job)
+    }
+
     pub fn sync(&self) -> Result<usize> {
         if !self.config.requesters.accounts.is_empty() {
             let before = lock(&self.store)?.counts()?.jobs;

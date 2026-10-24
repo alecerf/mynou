@@ -116,6 +116,7 @@ All routes need the Bearer token:
 | `POST /api/series/ID/episodes` | `{"season": 1, "episode": 2, "enabled": false}` for an episode in the plan |
 | `POST /api/series/ID/refresh` | Empty body or `{}`: fresh catalog check and bounded submission |
 | `POST /api/series/ID/numbering` | Numbering preview or apply (below) |
+| `POST /api/series/ID/search`, `/grab` | Search an episode's releases and choose one by hand; see [selection](selection.md#choose-a-release-by-hand) |
 | `POST /api/series/ID/packs`, `/pack-search`, `/shared-file` | [Season packs and shared videos](packs.md) |
 | `GET /api/calendar` | Dated episodes with monitoring choices and matching jobs |
 

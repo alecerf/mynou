@@ -630,6 +630,37 @@ pub(crate) fn route(
             let request = Request::from_json(&value)?;
             Ok((200, engine.search_preview(&request, &page)?))
         }
+        ("GET", path) if path.starts_with("/api/catalog/poster?") => {
+            let query = path.split_once('?').map_or("", |(_, query)| query);
+            let poster = query
+                .strip_prefix("path=")
+                .filter(|value| !value.contains('&'))
+                .ok_or("Catalog: the poster query is path=/NAME.jpg")?;
+            let poster =
+                crate::torrent::url_decode(poster).map_err(|_| "Catalog: invalid poster path")?;
+            Ok((200, integrations::catalog_poster(&engine.config, &poster)?))
+        }
+        ("GET", path) if path == "/api/catalog" || path.starts_with("/api/catalog?") => {
+            let catalog = CatalogQuery::parse(path.split_once('?').map_or("", |(_, query)| query))?;
+            Ok((
+                200,
+                integrations::catalog_search(
+                    &engine.config,
+                    &catalog.kind,
+                    &catalog.text,
+                    catalog.year,
+                )?,
+            ))
+        }
+        ("POST", "/api/grab") => {
+            let value = control_body(body, &["request", "candidate_id"], false)?;
+            let request = Request::from_json(value.get("request").ok_or("request is required")?)?;
+            let candidate = value
+                .get("candidate_id")
+                .and_then(Value::as_str)
+                .ok_or("candidate_id must be a string")?;
+            Ok((201, public_job(&engine.grab(&request, candidate)?)))
+        }
         ("GET", "/api/profiles") => Ok((200, engine.config.selection.to_json())),
         ("GET", path)
             if path == "/api/title-profiles" || path.starts_with("/api/title-profiles?") =>
@@ -886,6 +917,50 @@ pub(crate) fn route(
                         control_body(body, &[], true)?;
                         engine.refresh_series(&id)?
                     }
+                    "search" | "grab" => {
+                        let value = control_body(
+                            body,
+                            &["season", "episode", "candidate_id", "after", "limit"],
+                            false,
+                        )?;
+                        let number = |key| {
+                            value
+                                .get(key)
+                                .and_then(Value::as_u64)
+                                .and_then(|number| u32::try_from(number).ok())
+                                .ok_or_else(|| format!("{key} must be a nonnegative integer"))
+                        };
+                        let request = engine.series_episode_request(
+                            &id,
+                            number("season")?,
+                            number("episode")?,
+                        )?;
+                        if parts[1] == "grab" {
+                            let candidate = value
+                                .get("candidate_id")
+                                .and_then(Value::as_str)
+                                .ok_or("candidate_id must be a string")?;
+                            public_job(&engine.grab(&request, candidate)?)
+                        } else {
+                            let mut page = Vec::new();
+                            if let Some(after) = value.get("after") {
+                                page.push(format!(
+                                    "after={}",
+                                    after.as_str().ok_or("after must be a string")?
+                                ));
+                            }
+                            if let Some(limit) = value.get("limit") {
+                                page.push(format!(
+                                    "limit={}",
+                                    limit.as_u64().ok_or("limit must be an integer")?
+                                ));
+                            }
+                            let page = integrations::SearchPage::parse(&page.join("&"))?;
+                            let mut report = engine.search_preview(&request, &page)?;
+                            report.insert("request", request.to_json());
+                            report
+                        }
+                    }
                     "monitor" => {
                         let value = control_body(
                             body,
@@ -1094,6 +1169,49 @@ pub(crate) fn route(
     }
 }
 
+/// `kind=movie|series&query=TEXT&year=N` of a catalog search.
+struct CatalogQuery {
+    kind: String,
+    text: String,
+    year: u32,
+}
+
+impl CatalogQuery {
+    fn parse(text: &str) -> Result<Self> {
+        if text.len() > 2048 {
+            return Err("Catalog query is too large".into());
+        }
+        let mut query = Self {
+            kind: String::new(),
+            text: String::new(),
+            year: 0,
+        };
+        let mut seen = std::collections::BTreeSet::new();
+        for pair in text.split('&').filter(|pair| !pair.is_empty()) {
+            let (name, value) = pair.split_once('=').ok_or("Invalid catalog query")?;
+            if !seen.insert(name) {
+                return Err("Duplicate catalog query field".into());
+            }
+            match name {
+                "kind" => query.kind = value.to_owned(),
+                "query" => {
+                    query.text = crate::torrent::url_decode(value)
+                        .map_err(|_| "Search text must be percent-encoded UTF-8")?;
+                }
+                "year" => {
+                    query.year = value
+                        .parse()
+                        .ok()
+                        .filter(|year| (1888..=2100).contains(year))
+                        .ok_or("year must be between 1888 and 2100")?;
+                }
+                _ => return Err("Unknown catalog query field".into()),
+            }
+        }
+        Ok(query)
+    }
+}
+
 fn optional_boolean(value: &Value, key: &str) -> Result<Option<bool>> {
     value
         .get(key)
@@ -1239,6 +1357,28 @@ pub(crate) fn write_within(stream: &mut TcpStream, data: &[u8], deadline: Instan
 mod tests {
     use super::*;
     use std::sync::atomic::AtomicBool;
+
+    #[test]
+    fn catalog_queries_decode_text_and_bound_every_field() {
+        let query =
+            CatalogQuery::parse("kind=series&query=La%20Casa+de%20Papel&year=2017").unwrap();
+        assert_eq!(
+            (query.kind.as_str(), query.text.as_str(), query.year),
+            ("series", "La Casa de Papel", 2017)
+        );
+        assert_eq!(CatalogQuery::parse("kind=movie&query=Up").unwrap().year, 0);
+        for bad in [
+            "kind=movie&kind=series",
+            "kind=movie&query=%E2",
+            "kind=movie&year=1700",
+            "kind=movie&year=x",
+            "kind=movie&page=2",
+            "kind",
+        ] {
+            assert!(CatalogQuery::parse(bad).is_err(), "{bad}");
+        }
+        assert!(CatalogQuery::parse(&"a".repeat(2049)).is_err());
+    }
     fn parse(raw: &[u8]) -> Result<()> {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();

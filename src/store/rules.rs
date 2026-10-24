@@ -165,7 +165,25 @@ impl Db<'_> {
             && job.download_id.is_none()
             && job.files.is_empty()
             && job.progress == 0.0;
-        if current.release.is_some() && current.release != job.release && !fresh_search {
+        // An operator's choice replaces the release of a request that has no
+        // transfer running and nothing imported; see Store::grab.
+        let manual_choice = matches!(current.state.as_str(), "queued" | "failed" | "cancelled")
+            && current.imports.is_empty()
+            && job.state == "queued"
+            && job.lease_id.is_none()
+            && job.imports.is_empty()
+            && job.request.source_path.is_none()
+            && job.request.source_url.is_none()
+            && job.release.is_some()
+            && job.acquisition_url.is_some()
+            && job.download_id.is_none()
+            && job.files.is_empty()
+            && job.progress == 0.0;
+        if current.release.is_some()
+            && current.release != job.release
+            && !fresh_search
+            && !manual_choice
+        {
             return Err("recorded release is immutable".to_owned());
         }
         let now = super::now();

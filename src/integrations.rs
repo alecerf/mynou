@@ -726,6 +726,183 @@ fn catalog_identity(request: &Request, value: &Value) -> Result<u64> {
         .ok_or("TMDB catalog: missing identification")?)
 }
 
+/// Titles the TMDB catalog finds for a query: what an operator picks from
+/// before Mynou searches the indexers. `kind` is `movie` or `series`.
+pub fn catalog_search(config: &Config, kind: &str, text: &str, year: u32) -> Result<Value> {
+    let tv = match kind {
+        "movie" => false,
+        "series" => true,
+        _ => return Err("Catalog: kind must be movie or series".into()),
+    };
+    let text = text.trim();
+    if text.is_empty() || text.chars().count() > 128 || text.chars().any(char::is_control) {
+        return Err("Catalog: the search text must have 1 to 128 characters".into());
+    }
+    let mut pairs = vec![
+        ("query", text.to_owned()),
+        ("include_adult", "false".to_owned()),
+    ];
+    if year != 0 {
+        pairs.push((
+            if tv { "first_air_date_year" } else { "year" },
+            year.to_string(),
+        ));
+    }
+    let value = catalog_json(
+        config,
+        if tv { "search/tv" } else { "search/movie" },
+        &pairs,
+    )?;
+    let items = value
+        .get("results")
+        .and_then(Value::as_array)
+        .ok_or("TMDB catalog: missing results")?;
+    let mut results = Vec::new();
+    for item in items.iter().take(20) {
+        let Some(id) = integer(item, "id").filter(|id| *id > 0 && *id <= 9_007_199_254_740_991)
+        else {
+            continue;
+        };
+        let Some(title) = string(item, if tv { "name" } else { "title" })
+            .map(str::trim)
+            .filter(|t| !t.is_empty() && t.len() <= 512 && !t.chars().any(char::is_control))
+        else {
+            continue;
+        };
+        let mut entry = Value::object();
+        entry.insert("tmdb_id", Value::Number(id as f64));
+        entry.insert("kind", kind);
+        entry.insert("title", title);
+        if let Some(original) = string(
+            item,
+            if tv {
+                "original_name"
+            } else {
+                "original_title"
+            },
+        )
+        .map(str::trim)
+        .filter(|o| {
+            !o.is_empty() && *o != title && o.len() <= 512 && !o.chars().any(char::is_control)
+        }) {
+            entry.insert("original_title", original);
+        }
+        let year = string(item, if tv { "first_air_date" } else { "release_date" })
+            .filter(|text| crate::date::day(text).is_ok())
+            .and_then(|text| text[..4].parse::<u32>().ok());
+        entry.insert(
+            "year",
+            year.map_or(Value::Null, |y| Value::Number(f64::from(y))),
+        );
+        if let Some(overview) = string(item, "overview")
+            .map(str::trim)
+            .filter(|o| !o.is_empty())
+        {
+            entry.insert("overview", report_text(overview, 1_000));
+        }
+        if let Some(poster) = string(item, "poster_path").filter(|p| poster_path(p)) {
+            entry.insert("poster", poster);
+        }
+        results.push(entry);
+    }
+    let mut report = Value::object();
+    report.insert("results", Value::Array(results));
+    Ok(report)
+}
+
+/// TMDB serves poster images here, at a width that suits a cover.
+const TMDB_POSTERS: &str = "https://image.tmdb.org/t/p/w342";
+const MAX_POSTER_BYTES: usize = 2 * 1024 * 1024;
+/// Recent posters kept in memory, as data URLs.
+const POSTER_CACHE_BYTES: usize = 16 * 1024 * 1024;
+
+/// A poster path as TMDB names it, such as `/d5NXSklXo0qyIYkgV94XAgMIckC.jpg`.
+fn poster_path(path: &str) -> bool {
+    path.strip_prefix('/')
+        .and_then(|name| name.rsplit_once('.'))
+        .is_some_and(|(stem, extension)| {
+            (1..=64).contains(&stem.len())
+                && stem.bytes().all(|b| b.is_ascii_alphanumeric())
+                && matches!(extension, "jpg" | "png")
+        })
+}
+
+#[derive(Default)]
+struct PosterCache {
+    urls: BTreeMap<String, Arc<str>>,
+    order: VecDeque<String>,
+    bytes: usize,
+}
+
+fn poster_cache() -> &'static Mutex<PosterCache> {
+    static CACHE: OnceLock<Mutex<PosterCache>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(PosterCache::default()))
+}
+
+/// One catalog poster as a `data:` URL, so the page shows it without loading
+/// anything from another origin. Only JPEG and PNG images are passed on.
+pub fn catalog_poster(config: &Config, path: &str) -> Result<Value> {
+    catalog_poster_from(config, TMDB_POSTERS, path)
+}
+
+pub fn catalog_poster_from(config: &Config, base: &str, path: &str) -> Result<Value> {
+    if !config.catalog.enabled {
+        return Err("TMDB catalog is disabled".into());
+    }
+    if !poster_path(path) {
+        return Err("Catalog: invalid poster path".into());
+    }
+    let key = format!("{base}{path}");
+    let cached = poster_cache()
+        .lock()
+        .map_err(|_| "Catalog: poster cache unavailable")?
+        .urls
+        .get(&key)
+        .cloned();
+    let url = match cached {
+        Some(url) => url,
+        None => {
+            let response = client()
+                .with_max_body(MAX_POSTER_BYTES)
+                .request("GET", &key, &[], &[])
+                .map_err(|_| "Catalog: poster request failed")?;
+            if !(200..300).contains(&response.status) {
+                return Err(format!("Catalog: poster HTTP response {}", response.status));
+            }
+            let kind = match response.body.as_slice() {
+                [0xff, 0xd8, 0xff, ..] => "jpeg",
+                [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a, ..] => "png",
+                _ => return Err("Catalog: the poster is not a JPEG or PNG image".into()),
+            };
+            let url: Arc<str> = format!(
+                "data:image/{kind};base64,{}",
+                crate::ws::base64(&response.body)
+            )
+            .into();
+            let mut cache = poster_cache()
+                .lock()
+                .map_err(|_| "Catalog: poster cache unavailable")?;
+            if !cache.urls.contains_key(&key) {
+                cache.bytes += url.len();
+                cache.urls.insert(key.clone(), url.clone());
+                cache.order.push_back(key);
+                while cache.bytes > POSTER_CACHE_BYTES {
+                    let Some(oldest) = cache.order.pop_front() else {
+                        break;
+                    };
+                    if let Some(gone) = cache.urls.remove(&oldest) {
+                        cache.bytes -= gone.len();
+                    }
+                }
+            }
+            url
+        }
+    };
+    let mut value = Value::object();
+    value.insert("data_url", url.as_ref());
+    Ok(value)
+}
+
 pub(crate) fn series_plan_before(
     config: &Config,
     request: &Request,
@@ -1791,11 +1968,17 @@ struct SearchResult {
     packs: BTreeMap<Position, Candidate>,
     configured: usize,
     successful: usize,
+    /// The candidate an operator chose, retained whatever its assessment.
+    pick: Option<String>,
+    picked: Option<Candidate>,
 }
 
 impl SearchResult {
     fn offer(&mut self, position: Position, candidate: Candidate) {
         self.total = self.total.saturating_add(1);
+        if self.pick.as_deref() == Some(candidate.id.as_str()) {
+            self.picked = Some(candidate.clone());
+        }
         if candidate.assessment.accepted {
             if self.pack_limit > 0 {
                 self.packs.insert(position, candidate.clone());
@@ -1931,11 +2114,12 @@ fn search_candidates_before(
     request: &Request,
     deadline: Instant,
 ) -> Result<SearchResult> {
-    search_candidates_mode(config, request, deadline, false, None, 0)
+    search_candidates_mode(config, request, deadline, false, None, 0, None)
 }
 
 /// A search keeps the selection, at most `limit + 1` report candidates after
-/// `after` and, for packs, the accepted shortlist; `limit` 0 only selects.
+/// `after`, for packs the accepted shortlist and, when given, the candidate
+/// `pick`; `limit` 0 only selects.
 fn search_candidates_mode(
     config: &Config,
     request: &Request,
@@ -1943,6 +2127,7 @@ fn search_candidates_mode(
     pack: bool,
     after: Option<Position>,
     limit: usize,
+    pick: Option<&str>,
 ) -> Result<SearchResult> {
     remaining_search_time(deadline)?;
     request.validate()?;
@@ -1972,6 +2157,8 @@ fn search_candidates_mode(
         packs: BTreeMap::new(),
         configured: config.sources.len(),
         successful: 0,
+        pick: pick.map(str::to_owned),
+        picked: None,
     };
     let mut used_sources = Vec::new();
     for source in &config.sources {
@@ -2084,7 +2271,7 @@ pub fn search_report_page(config: &Config, request: &Request, page: &SearchPage)
     let deadline = Instant::now()
         .checked_add(SEARCH_BUDGET)
         .ok_or("Search: invalid search time budget")?;
-    search_candidates_mode(config, request, deadline, false, after, page.limit)
+    search_candidates_mode(config, request, deadline, false, after, page.limit, None)
         .map(|result| result.report())
 }
 
@@ -2129,8 +2316,15 @@ pub(crate) fn search_pack_candidates(
     request: &Request,
     deadline: Instant,
 ) -> Result<(Value, Vec<SelectedRelease>)> {
-    let result =
-        search_candidates_mode(config, request, deadline, true, None, DEFAULT_REPORT_PAGE)?;
+    let result = search_candidates_mode(
+        config,
+        request,
+        deadline,
+        true,
+        None,
+        DEFAULT_REPORT_PAGE,
+        None,
+    )?;
     let report = result.report();
     let profile = result.profile;
     let candidates = result
@@ -2174,6 +2368,49 @@ pub fn select_release_before(
         return Err("Search: manual sources do not have a verified release assessment".into());
     }
     selected_release(search_candidates_before(config, request, deadline)?)
+}
+
+/// The release an operator chose from a search report, found again by its
+/// candidate ID in a fresh search. A rejected release may be chosen; the
+/// returned flag says whether the profile accepted it.
+pub fn pick_release_before(
+    config: &Config,
+    request: &Request,
+    id: &str,
+    deadline: Instant,
+) -> Result<(SelectedRelease, bool)> {
+    let deadline = deadline.min(
+        Instant::now()
+            .checked_add(SEARCH_BUDGET)
+            .ok_or("Search: invalid search time budget")?,
+    );
+    request.validate()?;
+    if request.source_path.is_some() || request.source_url.is_some() {
+        return Err("Search: manual sources cannot be searched".into());
+    }
+    if id.len() != 64 || !id.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
+        return Err("Search: invalid candidate ID".into());
+    }
+    let result = search_candidates_mode(config, request, deadline, false, None, 0, Some(id))?;
+    let candidate = result
+        .picked
+        .ok_or("Search: this release is no longer offered by the indexers; search again")?;
+    RecordedRelease {
+        title: candidate.release.title.clone(),
+        profile: result.profile.clone(),
+    }
+    .validate()?;
+    let accepted = candidate.assessment.accepted;
+    Ok((
+        SelectedRelease {
+            url: candidate.release.url,
+            title: candidate.release.title,
+            profile: result.profile,
+            assessment: candidate.assessment,
+            id: candidate.id,
+        },
+        accepted,
+    ))
 }
 
 fn plex_section<'a>(config: &'a Config, request: &Request) -> Result<&'a str> {

@@ -71,6 +71,17 @@ pub struct Certificate {
 
 /// Parse a certificate with canonical definite DER lengths and bounded fields.
 pub fn parse_certificate(bytes: &[u8]) -> Result<Certificate> {
+    parse(bytes, false)
+}
+
+/// A trust anchor from the local store. A few long-standing roots, such as
+/// Starfield Services Root G2, carry the serial number 0 that RFC 5280 asks
+/// relying parties to tolerate; a certificate from a peer must not.
+fn parse_anchor(bytes: &[u8]) -> Result<Certificate> {
+    parse(bytes, true)
+}
+
+fn parse(bytes: &[u8], anchor: bool) -> Result<Certificate> {
     if bytes.is_empty() || bytes.len() > MAX_CERTIFICATE {
         return Err("Certificate: size exceeds the limit".into());
     }
@@ -96,7 +107,7 @@ pub fn parse_certificate(bytes: &[u8]) -> Result<Certificate> {
         0
     };
     let serial = positive_integer(reader.expect(0x02)?.body)?;
-    if serial.len() > 20 || serial.iter().all(|b| *b == 0) {
+    if serial.len() > 20 || (!anchor && serial.iter().all(|b| *b == 0)) {
         return Err("Certificate: invalid serial number".into());
     }
     let inner_algorithm = reader.expect(0x30)?;
@@ -575,32 +586,38 @@ pub fn validate_chain(
     if !matches_hostname(leaf, hostname)? {
         return Err("TLS: certificate does not match the server hostname".into());
     }
-    for i in 1..chain.len() {
-        let issuer = &chain[i];
-        validate_ca(issuer, i - 1, now)?;
-        if chain[i - 1].issuer != issuer.subject {
-            return Err("TLS: inconsistent certificate chain names".into());
-        }
-        verify_signature(&chain[i - 1], &issuer.public_key)?;
-    }
-    let last = chain.last().unwrap();
-    let roots = certificates_from_pem(roots_pem)?;
-    for root_der in roots {
-        let Ok(root) = parse_certificate(&root_der) else {
-            continue;
-        };
-        if root.encoded == last.encoded {
-            validate_ca(&root, chain.len().saturating_sub(2), now)?;
-            if root.issuer == root.subject && root.algorithm != SignatureAlgorithm::Unsupported {
-                verify_signature(&root, &root.public_key)?;
+    let roots: Vec<Certificate> = certificates_from_pem(roots_pem)?
+        .iter()
+        .filter_map(|der| parse_anchor(der).ok())
+        .collect();
+    // The shortest trusted path wins: certificates the peer sends beyond it,
+    // such as a root cross-signed by an older authority, are never needed and
+    // never trusted. Only the exact bytes of a stored root end a path at itself.
+    for end in 0..chain.len() {
+        if end > 0 {
+            let issuer = &chain[end];
+            validate_ca(issuer, end - 1, now)?;
+            if chain[end - 1].issuer != issuer.subject {
+                return Err("TLS: inconsistent certificate chain names".into());
             }
-            return Ok(leaf.public_key.clone());
+            verify_signature(&chain[end - 1], &issuer.public_key)?;
         }
-        if last.issuer == root.subject
-            && validate_ca(&root, chain.len() - 1, now).is_ok()
-            && verify_signature(last, &root.public_key).is_ok()
-        {
-            return Ok(leaf.public_key.clone());
+        let last = &chain[end];
+        for root in &roots {
+            if end > 0 && root.encoded == last.encoded {
+                validate_ca(root, end - 1, now)?;
+                if root.issuer == root.subject && root.algorithm != SignatureAlgorithm::Unsupported
+                {
+                    verify_signature(root, &root.public_key)?;
+                }
+                return Ok(leaf.public_key.clone());
+            }
+            if last.issuer == root.subject
+                && validate_ca(root, end, now).is_ok()
+                && verify_signature(last, &root.public_key).is_ok()
+            {
+                return Ok(leaf.public_key.clone());
+            }
         }
     }
     Err("TLS: certificate chain has no compatible trusted root".into())
@@ -779,8 +796,39 @@ mod tests {
         assert!(validate_chain(&full, OLD_ROOT, "localhost", now).is_ok());
         assert!(validate_chain(&[WEAK_LEAF.to_vec()], OLD_ROOT, "localhost", now).is_err());
         // The same historical certificate received from a peer is not an
-        // anchor unless those exact bytes are in the explicit trust store.
-        assert!(validate_chain(&full, test_fixture::ROOT_PEM, "localhost", now).is_err());
+        // anchor unless those exact bytes are in the explicit trust store:
+        // it is ignored after a trusted path and never vouches for a weak one.
+        assert!(validate_chain(&full, test_fixture::ROOT_PEM, "localhost", now).is_ok());
+        let weak = vec![WEAK_LEAF.to_vec(), OLD_ROOT_DER.to_vec()];
+        assert!(validate_chain(&weak, test_fixture::ROOT_PEM, "localhost", now).is_err());
+        assert!(validate_chain(&weak, OLD_ROOT, "localhost", now).is_err());
+    }
+    #[test]
+    fn a_trusted_path_ignores_a_cross_signed_root_sent_after_it() {
+        // api.themoviedb.org sends Amazon Root CA 1 cross-signed by Starfield
+        // Services Root G2, a stored root whose serial number is 0.
+        const LEAF: &[u8] = include_bytes!("pki/fixtures/tmdb-leaf.der");
+        const M04: &[u8] = include_bytes!("pki/fixtures/tmdb-amazon-m04.der");
+        const CROSS: &[u8] = include_bytes!("pki/fixtures/tmdb-amazon-root-cross.der");
+        const AMAZON: &[u8] = include_bytes!("pki/fixtures/amazon-root-ca-1.pem");
+        const STARFIELD: &[u8] = include_bytes!("pki/fixtures/starfield-services-root-g2.pem");
+        let now = parse_certificate(LEAF).unwrap().not_before + 86_400;
+        let chain = vec![LEAF.to_vec(), M04.to_vec(), CROSS.to_vec()];
+        let host = "api.themoviedb.org";
+        assert!(validate_chain(&chain, AMAZON, host, now).is_ok());
+        assert!(validate_chain(&chain[..2], AMAZON, host, now).is_ok());
+        // Only through the cross-signature: the zero serial is tolerated in the store.
+        assert!(validate_chain(&chain, STARFIELD, host, now).is_ok());
+        assert!(validate_chain(&chain[..2], STARFIELD, host, now).is_err());
+        assert!(validate_chain(&chain, test_fixture::ROOT_PEM, host, now).is_err());
+        assert!(validate_chain(&chain, AMAZON, "themoviedb.example", now).is_err());
+        let anchor = &certificates_from_pem(STARFIELD).unwrap()[0];
+        assert!(parse_anchor(anchor).is_ok());
+        assert!(
+            parse_certificate(anchor)
+                .unwrap_err()
+                .contains("serial number")
+        );
     }
     #[test]
     fn authenticates_independent_p384_and_rsa384_fixtures() {

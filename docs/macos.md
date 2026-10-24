@@ -47,7 +47,7 @@ address; otherwise, and whenever the token is lost, stop Mynou and run
 `mynou token --reset`, which prints a new token once. Commands that reach the
 running service read the token from `MYNOU_API_TOKEN`, which you set the way
 you prefer. Then set Mynou up in the **Settings** view: library folders, downloads, Plex, TMDB, sources and their
-tokens. Plex and TMDB start disabled. Use ordinary folders you own rather than
+tokens. Plex and TMDB turn on once their token is saved. Use ordinary folders you own rather than
 paths through symbolic links: imports never overwrite files and refuse
 symbolic links.
 

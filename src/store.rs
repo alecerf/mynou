@@ -116,6 +116,46 @@ pub struct Event {
     pub at: u64,
 }
 
+/// A new request, queued for its first search.
+fn fresh_job(
+    key: String,
+    request: Request,
+    pack_file: Option<String>,
+    pack_origin: Option<crate::pack::PackOrigin>,
+    requester: Option<crate::requesters::Provenance>,
+) -> Result<Job> {
+    let at = now();
+    Ok(Job {
+        id: random_id()?,
+        key,
+        request,
+        state: "queued".to_owned(),
+        progress: 0.0,
+        files: Vec::new(),
+        imports: Vec::new(),
+        attempts: 0,
+        last_error: None,
+        created_at: at,
+        updated_at: at,
+        next_attempt_at: 0,
+        acquisition_url: None,
+        download_id: None,
+        lease_id: None,
+        lease_until: 0,
+        release: None,
+        upgrade_parent: None,
+        monitored: true,
+        monitor_checked_at: 0,
+        pack_file,
+        pack_origin,
+        shared_file: None,
+        shared_upgrade: None,
+        requester,
+        irc_origin: None,
+        retiring_transfers: Vec::new(),
+    })
+}
+
 pub fn now() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -2211,6 +2251,78 @@ impl Store {
         self.submit_with_mapping(request, None, None, None)
     }
 
+    /// Records the release an operator chose for a request, creating the
+    /// request when it does not exist. The worker then downloads that release
+    /// instead of searching. A request that is downloading, being worked on,
+    /// imported or bound to its own source keeps what it has.
+    pub fn grab(&mut self, request: Request, url: String, release: RecordedRelease) -> Result<Job> {
+        request.validate()?;
+        release.validate()?;
+        if !matches!(request.kind.as_str(), "movie" | "episode")
+            || request.source_path.is_some()
+            || request.source_url.is_some()
+        {
+            return Err(
+                "Only a film or an episode without its own source can take a chosen release".into(),
+            );
+        }
+        let key = request.canonical_key();
+        self.mutate(|db| {
+            let at = now();
+            let Some(mut job) = db.by_key(&key)? else {
+                let media = layout::digest_bytes(&request.media_key())?;
+                if db.exists(&layout::shared_media_key(&media))? {
+                    return Err("Episode already belongs to immutable shared-file ownership".into());
+                }
+                let mut job = fresh_job(key, request, None, None, None)?;
+                job.acquisition_url = Some(url);
+                job.release = Some(release);
+                db.commit_jobs(vec![job.clone()], "release chosen manually")?;
+                return Ok(job);
+            };
+            if job.state == "ready" || !job.imports.is_empty() {
+                return Err("This title is already in your library".into());
+            }
+            if job.upgrade_parent.is_some()
+                || job.shared_upgrade.is_some()
+                || job.shared_file.is_some()
+                || job.pack_file.is_some()
+                || job.irc_origin.is_some()
+            {
+                return Err("This request is bound to another source; Mynou cannot replace it".into());
+            }
+            if job.lease_id.is_some() && job.lease_until > at {
+                return Err("Mynou is working on this request right now; try again in a moment".into());
+            }
+            if job.download_id.is_some() && !matches!(job.state.as_str(), "failed" | "cancelled") {
+                return Err("A download is already running for this request; cancel it to choose another release".into());
+            }
+            // As a retry does, keep the detached transfer until its retirement is durable.
+            if let Some(previous) = job.download_id.take()
+                && valid_transfer_id(&previous)
+                && !job.retiring_transfers.contains(&previous)
+            {
+                if job.retiring_transfers.len() >= MAX_RETIRING_TRANSFERS {
+                    return Err("previous transfers still await retirement; restart or retry later".to_owned());
+                }
+                job.retiring_transfers.push(previous);
+            }
+            job.state = "queued".to_owned();
+            job.lease_id = None;
+            job.lease_until = 0;
+            job.last_error = None;
+            job.attempts = 0;
+            job.next_attempt_at = 0;
+            job.acquisition_url = Some(url);
+            job.release = Some(release);
+            job.files.clear();
+            job.progress = 0.0;
+            job.updated_at = at;
+            db.commit_jobs(vec![job.clone()], "release chosen manually")?;
+            Ok(job)
+        })
+    }
+
     pub(crate) fn submit_requester(
         &mut self,
         request: Request,
@@ -2280,36 +2392,7 @@ impl Store {
             if db.exists(&layout::shared_media_key(&media))? {
                 return Err("Episode already belongs to immutable shared-file ownership".into());
             }
-            let at = now();
-            let job = Job {
-                id: random_id()?,
-                key,
-                request,
-                state: "queued".to_owned(),
-                progress: 0.0,
-                files: Vec::new(),
-                imports: Vec::new(),
-                attempts: 0,
-                last_error: None,
-                created_at: at,
-                updated_at: at,
-                next_attempt_at: 0,
-                acquisition_url: None,
-                download_id: None,
-                lease_id: None,
-                lease_until: 0,
-                release: None,
-                upgrade_parent: None,
-                monitored: true,
-                monitor_checked_at: 0,
-                pack_file,
-                pack_origin,
-                shared_file: None,
-                shared_upgrade: None,
-                requester,
-                irc_origin: None,
-                retiring_transfers: Vec::new(),
-            };
+            let job = fresh_job(key, request, pack_file, pack_origin, requester)?;
             db.commit_jobs(vec![job.clone()], "request recorded")?;
             Ok(job)
         })

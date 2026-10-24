@@ -11,8 +11,8 @@ the server token still confirms and refreshes the library.
 
 ## Bind accounts
 
-Add an optional `requesters` section to the settings (the JSON editor of the
-**Settings** view, or `mynou settings --save`):
+Add an optional `requesters` section to the settings with
+`mynou settings --save`:
 
 ```json
 {

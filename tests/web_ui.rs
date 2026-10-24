@@ -149,6 +149,7 @@ fn assets_are_public_and_locked_down_while_the_api_stays_private() {
     for (path, kind) in [
         ("/", "text/html"),
         ("/app.js", "text/javascript"),
+        ("/js/store.js", "text/javascript"),
         ("/app.css", "text/css"),
         ("/favicon.svg", "image/svg+xml"),
     ] {
