@@ -534,6 +534,19 @@ pub(crate) fn route(
     match (method, path) {
         ("GET", "/api/status") => Ok((200, engine.status()?)),
         ("GET", "/api/vpn") => Ok((200, engine.vpn_status())),
+        ("GET", "/api/update") => Ok((200, crate::update::report())),
+        ("POST", "/api/update") => Ok((200, crate::update::check_now())),
+        ("POST", "/api/update/install") => {
+            if crate::update::staged().is_none() {
+                return Ok((409, error("No update is ready to install")));
+            }
+            // Mynou stops cleanly, backs up its state and restarts updated.
+            crate::update::request_restart();
+            engine.stopped.store(true, Ordering::Release);
+            let mut v = Value::object();
+            v.insert("status", "installing");
+            Ok((202, v))
+        }
         ("GET", "/api/settings") => Ok((200, engine.settings()?)),
         ("POST", "/api/settings") => {
             let text = std::str::from_utf8(body).map_err(|_| "Invalid settings encoding")?;

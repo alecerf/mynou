@@ -116,3 +116,35 @@ fn secrets_are_write_only_and_apply_at_once() {
     assert!(config::secret(name).is_err());
     assert!(json::stringify(&call(&engine, "GET", "/api/secrets", "")).contains("missing"));
 }
+
+#[test]
+fn updates_are_automatic_by_default_and_only_a_staged_one_installs() {
+    let _turn = SECRETS.lock().unwrap_or_else(|e| e.into_inner());
+    let dir = Directory::new();
+    let engine = open(&dir);
+    assert!(engine.config.updates_automatic);
+    let mut document = config::default_json();
+    document.insert("updates", json::parse(r#"{"automatic":false}"#).unwrap());
+    assert!(
+        !config::from_json(&document, &dir.0)
+            .unwrap()
+            .updates_automatic
+    );
+    document.insert("updates", json::parse(r#"{"channel":"beta"}"#).unwrap());
+    assert!(config::from_json(&document, &dir.0).is_err());
+    let report = call(&engine, "GET", "/api/update", "");
+    assert_eq!(
+        report.get("version").and_then(json::Value::as_str),
+        Some(env!("CARGO_PKG_VERSION"))
+    );
+    // A development build never replaces itself.
+    assert!(
+        report
+            .get("eligible")
+            .and_then(json::Value::as_str)
+            .is_some_and(|reason| reason.contains("published release"))
+    );
+    let (status, _) = route(&engine, "POST", "/api/update/install", b"").unwrap();
+    assert_eq!(status, 409);
+    assert!(!engine.stopped.load(Ordering::Acquire));
+}

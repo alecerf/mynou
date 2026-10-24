@@ -163,6 +163,7 @@
 
   .alerts { display: grid; gap: 0.5rem; margin-block-start: var(--gap); }
   .alert { padding: 0.75rem 1rem; border-radius: var(--radius); border: 1px solid color-mix(in oklab, var(--bad) 50%, var(--line)); background: color-mix(in oklab, var(--bad) 10%, var(--surface)); }
+  .notice { padding: 0.75rem 1rem; border-radius: var(--radius); border: 1px solid var(--line); background: var(--surface); }
   .empty { padding: 2rem 1rem; text-align: center; color: var(--muted); border: 1px dashed var(--line); border-radius: var(--radius); }
 
   dl.facts { display: grid; grid-template-columns: max-content 1fr; gap: 0.2rem 0.9rem; font-size: 0.85rem; }

@@ -91,6 +91,7 @@ resolve against the data directory.
 | `selection` | unrestricted | [Release selection](selection.md) |
 | `monitoring` | disabled | [Library upgrades](library.md#background-monitoring) |
 | `series_packs` | disabled | [Automatic packs](packs.md#prefer-packs-during-monitoring) |
+| `updates.automatic` | `true` | [Install new versions automatically](#updates) |
 | `irc`, `requesters` | absent | [IRC announcements](sources.md#irc-announcements), [requester accounts](requesters.md) |
 
 Each integration names the secret that holds its credential (the `*_env`
@@ -192,14 +193,45 @@ journal confirms each transaction on disk, and an interrupted final write is
 recovered at the next start. `POST /api/shutdown` lets running work finish;
 stopping the process instead relies on that recovery.
 
-To upgrade, read the new release notes, back up, stop the service, download the
-next release's executable, verify it as above and install it at the same path.
-Keep the data directory and library folders. Published
-releases never change; each update is a new version. To roll back, reinstall the
-previous executable with compatible data: some versions change storage formats
-that older versions refuse (see [limits](limits.md#persistence-and-platform)).
-Never delete older executables or user data automatically. Data from the former
-Go release (SQLite) is not imported: keep it in a separate folder.
+Data from the former Go release (SQLite) is not imported: keep it in a separate
+folder.
+
+### Updates
+
+Like Plex Media Server, Mynou updates itself. Once a day, starting a few
+minutes after it starts, it checks the latest
+[GitHub release](https://github.com/alecerf/mynou/releases). It downloads a
+newer executable, checks it against the release's `SHA256SUMS`, makes sure it
+runs and reports its version, and stages it next to the installed executable.
+The dashboard then shows the new version.
+
+Mynou installs it once no request is in progress, or at once with **Install
+now**:
+
+1. It stops cleanly, as `POST /api/shutdown` does.
+2. It copies `state/` and the current executable to
+   `updates/OLD-to-NEW/` in the data directory.
+3. It replaces the executable atomically and starts it again in the same
+   process, so the launchd service keeps running.
+
+If the new version cannot start, Mynou restores that copy of `state/` and the
+previous executable, then starts again on them. The state it could not open is
+kept in `updates/OLD-to-NEW/state.failed`. Mynou keeps the two most recent
+backups and never touches downloads or the library.
+
+`mynou update` checks and installs now: through the running service, or
+directly while Mynou is stopped. Turn off `updates.automatic` in the
+**Settings** view to update only on demand. Only release executables update
+themselves. Mynou must be able to write in the folder that holds its
+executable (`~/.local/bin` above). Published releases never change; each update
+is a new version.
+
+To update by hand instead, back up, stop the service, download and verify the
+next executable as above, and install it at the same path. To go back to an
+earlier version, stop Mynou and reinstall the previous executable with
+compatible data, such as a backup from `updates/`: some versions change storage
+formats that older versions refuse (see
+[limits](limits.md#persistence-and-platform)).
 
 ## Native WireGuard controls
 

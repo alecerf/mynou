@@ -121,9 +121,12 @@ For a coherent backup: stop, verify `service status` is unloaded, then back up
 the data directory (all stores, including settings, secrets, the access token digest and VPN policy/profile material),
 downloads and media according to your retention policy. Keep credentials and
 backups private. Uninstall before changing the binary path.
-Download and checksum-verify the new binary, preserve the previous executable,
-install at the same stable path, reinstall/start, then verify health, pending
-work and VPN intent. No work PR changes the package version.
+Mynou [updates itself](macos.md#updates) in place. It restarts within the same
+process, so the registration and its binary path stay valid, and a version that
+cannot start is rolled back to the previous executable and state. For a manual
+update, download and checksum-verify the new binary, preserve the previous
+executable, install it at the same stable path, reinstall/start, then verify
+health, pending work and VPN intent. No work PR changes the package version.
 
 For rollback, stop and uninstall the new registration, restore a compatible
 binary **and its coherent pre-upgrade state backup** when formats changed,

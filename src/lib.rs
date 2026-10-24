@@ -35,6 +35,7 @@ pub mod torrent;
 pub mod tunnel;
 pub mod tunnel_http;
 pub mod ui;
+pub mod update;
 pub mod vpn;
 pub mod wireguard;
 pub mod ws;

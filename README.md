@@ -280,10 +280,13 @@ another prefix, add a path mapping as described in
 <details>
 <summary><strong>How do I upgrade or back up?</strong></summary>
 
-Stop the service, back up the data directory (its `state/` and
-`downloads/` folders, which also hold your settings) and your library, then verify and install the new executable at the
-same path. The details, including rolling back, are in
-[Back up and upgrade](docs/macos.md#back-up-and-upgrade).
+Mynou updates itself, like Plex. It checks for a new release once a day and
+installs it once no request is in progress, after backing up its storage. If
+the new version cannot start, Mynou goes back to the previous version and
+data. `mynou update` installs one now. For your own backups, stop the service
+and copy the data directory (its `state/` and `downloads/` folders, which also
+hold your settings) and your library. The details, including updating by hand,
+are in [Back up and upgrade](docs/macos.md#back-up-and-upgrade).
 </details>
 
 Still stuck? [Open an issue](https://github.com/alecerf/mynou/issues/new/choose),

@@ -84,6 +84,8 @@ pub struct Config {
     pub selection: crate::selection::SelectionConfig,
     pub monitoring: Monitoring,
     pub series_packs_enabled: bool,
+    /// Install published updates in the background, the way Plex does.
+    pub updates_automatic: bool,
     pub plex: Plex,
     pub catalog: Catalog,
     pub sources: Vec<Source>,
@@ -169,6 +171,7 @@ pub fn default_json() -> Value {
             ]),
         ),
         ("series_packs", object(vec![("enabled", false.into())])),
+        ("updates", object(vec![("automatic", true.into())])),
         ("indexers", Value::Array(Vec::new())),
     ])
 }
@@ -393,6 +396,7 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
             "selection",
             "monitoring",
             "series_packs",
+            "updates",
             "library",
             "downloads",
             "plex",
@@ -521,6 +525,13 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
             boolean(section, "enabled", false)?
         }
     };
+    let updates_automatic = match v.get("updates") {
+        None => true,
+        Some(section) => {
+            keys(section, &["automatic"])?;
+            boolean(section, "automatic", true)?
+        }
+    };
     let base = absolute_path(base)?;
     let requesters = crate::requesters::Settings::from_json(v.get("requesters"), &base)?;
     let irc = match v.get("irc") {
@@ -586,6 +597,7 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
         selection,
         monitoring: monitoring(v)?,
         series_packs_enabled,
+        updates_automatic,
         plex: Plex {
             enabled: boolean(p, "enabled", false)?,
             url: text(p, "url", "http://127.0.0.1:32400")?,
