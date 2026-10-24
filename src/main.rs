@@ -85,6 +85,7 @@ const HELP: &str = "Mynou — media automation using Rust std only
   status | sync [--dir DIR]
   show | events | retry | cancel ID [--dir DIR]
   healthcheck [--dir DIR]
+  update [--dir DIR]   (installs the latest release now; Mynou also does it once a day)
   demo [--dir mynou-demo]
   version
 
@@ -142,7 +143,9 @@ impl Args {
         let allowed: &[&str] = match command.as_str() {
             "service" => &["dir", "help", "action", "label"],
             "doctor" | "serve" | "service-run" | "status" | "sync" | "show" | "events"
-            | "retry" | "cancel" | "healthcheck" | "monitor" | "unmonitor" => &["dir", "help"],
+            | "update" | "retry" | "cancel" | "healthcheck" | "monitor" | "unmonitor" => {
+                &["dir", "help"]
+            }
             "jobs" | "library" => &["dir", "help", "after", "limit", "query", "state"],
             "requesters" | "requester-sync" => &["dir", "help"],
             "vpn" => &["dir", "help", "action", "profile", "settings"],
@@ -695,6 +698,30 @@ fn execute(args: Args) -> Result<()> {
         )?);
         return Ok(());
     }
+    if args.command == "update" {
+        if online {
+            let mut reply = call(&config, "POST", "/api/update", None)?;
+            if reply.get("staged").and_then(Value::as_str).is_some() {
+                reply = call(&config, "POST", "/api/update/install", None)?;
+            }
+            output(&reply);
+        } else {
+            mynou::update::check_now();
+            let installed = match mynou::update::staged() {
+                Some(staged) => {
+                    // Stopped: nothing runs while the state is backed up.
+                    let _lock = Store::open_for_management(&config)?;
+                    mynou::update::apply(&path, &staged)?;
+                    Some(mynou::update::display(staged.version))
+                }
+                None => None,
+            };
+            let mut reply = mynou::update::report();
+            reply.insert("installed", installed.map_or(Value::Null, Value::String));
+            output(&reply);
+        }
+        return Ok(());
+    }
     if args.command == "healthcheck" {
         let r = HttpClient::new()
             .without_proxy()
@@ -753,9 +780,26 @@ fn execute(args: Args) -> Result<()> {
             );
         }
         let engine = Engine::open_serving(config)?;
+        // The storage opened: an update that led here is kept.
+        mynou::update::confirm(&path);
         let api = startup.serve(engine)?;
         let result = api.run_supervised();
         let _ = fs::remove_file(endpoint_file(&path));
+        if result.is_ok()
+            && mynou::update::restart_requested()
+            && let Some(staged) = mynou::update::staged()
+        {
+            match mynou::update::apply(&path, &staged) {
+                Ok(()) if supervised => mynou::service::log(&path, "updating")?,
+                Ok(()) => eprintln!(
+                    "mynou: installing {}",
+                    mynou::update::display(staged.version)
+                ),
+                // Restart unchanged rather than stay stopped.
+                Err(error) => eprintln!("mynou: {error}"),
+            }
+            return Err(mynou::update::restart());
+        }
         if supervised && result.is_ok() {
             mynou::service::log(&path, "stopped_cleanly")?;
         }
@@ -1916,7 +1960,23 @@ fn main() {
         .ok()
         .filter(|a| a.command == "service-run")
         .and_then(|args| args.data_dir().ok());
-    if let Err(error) = args.and_then(execute) {
+    let serving_path = args
+        .as_ref()
+        .ok()
+        .filter(|a| matches!(a.command.as_str(), "serve" | "service-run"))
+        .and_then(|args| args.data_dir().ok());
+    if let Err(mut error) = args.and_then(execute) {
+        // The version an update just installed could not start: restart on
+        // the previous version and the state backed up before the update.
+        if let Some(path) = &serving_path
+            && mynou::update::recover(path) == Ok(true)
+        {
+            if service_path.is_some() {
+                let _ = mynou::service::log(path, "update_rolled_back");
+            }
+            eprintln!("mynou: {error}; restoring the previous version");
+            error = mynou::update::restart();
+        }
         if let Some(path) = service_path {
             let _ = mynou::service::log(&path, "runtime_failed");
         } else {

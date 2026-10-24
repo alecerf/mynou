@@ -254,7 +254,10 @@ views.dashboard = {
       (el, [label, value]) => { $('b', el).textContent = value ?? '–'; $('span', el).textContent = label; });
     const alerts = [status.maintenance_error && `Maintenance: ${status.maintenance_error}`,
       status.last_sync_error && `Last sync: ${status.last_sync_error}`, status.stopped && 'The service is stopping.'].filter(Boolean);
-    $('#alerts').replaceChildren(...alerts.map((a) => h('p', { class: 'alert', role: 'alert' }, a)));
+    const update = status.update?.staged && h('p', { class: 'notice', role: 'status' },
+      `Mynou ${status.update.staged} is ready. It installs when Mynou is idle; your data is backed up first. `,
+      h('button', { type: 'button', onclick: (e) => act(e.currentTarget, () => link.call('POST', '/api/update/install', {}), 'Installing the update; Mynou restarts') }, 'Install now'));
+    $('#alerts').replaceChildren(...alerts.map((a) => h('p', { class: 'alert', role: 'alert' }, a)), ...(update ? [update] : []));
     const jobs = itemsOf(data.get('jobs')?.data).toSorted((a, b) => String(b.updated_at).localeCompare(String(a.updated_at))).slice(0, 8);
     const recent = $('#recent');
     if (!jobs.length) recent.replaceChildren(h('li', { class: 'empty' }, 'No jobs yet. Make a request to get started.'));
@@ -667,6 +670,9 @@ const SETTING_GROUPS = [
     ['monitoring.interval_secs', 'Check interval (seconds)', 'number'],
     ['series_packs.enabled', 'Use season packs', 'check'],
     ['workers', 'Workers', 'number'],
+  ]],
+  ['Updates', [
+    ['updates.automatic', 'Install new versions automatically (checked daily)', 'check'],
   ]],
   ['Web interface', [
     ['listen', 'Listen address (applies at the next start)', 'text'],

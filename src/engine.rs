@@ -587,6 +587,7 @@ impl Engine {
         let mut v = Value::object();
         v.insert("vpn", self.vpn_status());
         v.insert("version", env!("CARGO_PKG_VERSION"));
+        v.insert("update", crate::update::report());
         v.insert(
             "migrations",
             crate::progress::report(&[
@@ -783,6 +784,23 @@ impl Engine {
         crate::irc::lookup::start(self, handles);
         crate::indexers::watch::start(self, handles);
         crate::indexers::cross_seed::start(self, handles);
+        if self.config.updates_automatic && crate::update::executable().is_ok() {
+            let engine = self.clone();
+            handles.push(thread::spawn(move || {
+                while !engine.stopped.load(Ordering::Acquire) {
+                    if crate::update::due() {
+                        crate::update::check_in_background();
+                    }
+                    if crate::update::staged().is_some() && engine.idle() {
+                        // Stop cleanly; the caller backs up and restarts.
+                        crate::update::request_restart();
+                        engine.stopped.store(true, Ordering::Release);
+                        break;
+                    }
+                    engine.wait(60_000);
+                }
+            }));
+        }
         if self.config.catalog.enabled {
             let engine = self.clone();
             handles.push(thread::spawn(move || {
@@ -834,6 +852,15 @@ impl Engine {
                 }
             }));
         }
+    }
+
+    /// No request is in progress, so a restart interrupts nothing.
+    fn idle(&self) -> bool {
+        try_lock(&self.store)
+            .ok()
+            .flatten()
+            .and_then(|mut store| store.counts().ok())
+            .is_some_and(|counts| counts.active == 0)
     }
 
     pub(crate) fn wait(&self, millis: u64) {

@@ -14,3 +14,15 @@ stopped, replaces a lost token. Commands that reach the running service read
 it from `MYNOU_API_TOKEN`. Every command takes `--dir DIR` (default
 `$MYNOU_HOME`, else `~/Library/Application Support/Mynou`), whose `state/jobs`
 holds the storage ([details](/docs/macos.md#configure-mynou), #359, #361).
+
+## Added: Automatic updates
+
+Like Plex Media Server, Mynou updates itself. Once a day it checks the latest
+release, then downloads the new executable and checks it against
+`SHA256SUMS`. Once no request is in progress, it stops cleanly, backs up
+`state/` and the previous executable under `updates/` in the data directory,
+and restarts on the new version within the same process. If the new version
+cannot start, Mynou restores that backup and the previous executable. The
+dashboard offers **Install now**, `mynou update` installs on demand, and
+`updates.automatic: false` turns automatic updates off
+([details](/docs/macos.md#updates), #363).
