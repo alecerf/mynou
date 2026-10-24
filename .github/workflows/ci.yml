@@ -305,8 +305,10 @@ jobs:
           retention-days: 7
   release:
     needs: package
-    # Only a pushed version tag that passed the decision publishes.
-    if: github.ref_type == 'tag' && needs.package.outputs.publish == 'true'
+    # Only a pushed version tag that passed the decision publishes. The
+    # explicit result check is needed: a release skips validate, and the
+    # implicit success() would skip this job too.
+    if: ${{ !cancelled() && needs.package.result == 'success' && github.ref_type == 'tag' && needs.package.outputs.publish == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
