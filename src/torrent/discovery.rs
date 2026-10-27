@@ -1,7 +1,7 @@
 use super::transport::Network;
 use crate::{Result, bencode::Value, net::NetworkDatagram};
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
     sync::atomic::{AtomicBool, Ordering},
     time::{Duration, Instant},
@@ -84,6 +84,9 @@ pub struct TrackerRequest<'a> {
 pub struct TrackerReply {
     pub peers: Vec<SocketAddr>,
     pub interval: Duration,
+    /// Swarm counts the tracker reported, when it did.
+    pub seeders: Option<u64>,
+    pub leechers: Option<u64>,
 }
 
 pub const DEFAULT_TRACKER_INTERVAL: Duration = Duration::from_secs(1800);
@@ -237,7 +240,17 @@ fn parse_tracker_reply(value: &Value) -> Result<TrackerReply> {
     }
     peers.sort_unstable();
     peers.dedup();
-    Ok(TrackerReply { peers, interval })
+    // Counts are informative only: a malformed one is ignored, not an error.
+    let count = |key: &[u8]| match field(value, key) {
+        Some(Value::Int(n)) => u64::try_from(*n).ok(),
+        _ => None,
+    };
+    Ok(TrackerReply {
+        peers,
+        interval,
+        seeders: count(b"complete"),
+        leechers: count(b"incomplete"),
+    })
 }
 
 fn nonce() -> Result<u32> {
@@ -343,10 +356,18 @@ fn udp_announce(
             .try_into()
             .map_err(|_| "Truncated UDP interval")?,
     );
+    let count = |at: usize| {
+        response[at..at + 4]
+            .try_into()
+            .ok()
+            .map(|bytes| u64::from(u32::from_be_bytes(bytes)))
+    };
     let peers = decode_peers(&response[20..], address.is_ipv6())?;
     Ok(TrackerReply {
         peers,
         interval: bounded_interval(u64::from(interval)),
+        leechers: count(12),
+        seeders: count(16),
     })
 }
 
@@ -363,7 +384,7 @@ pub fn dht_lookup(
     let socket = network
         .datagram(false)
         .map_err(|_| "Could not create DHT socket")?;
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + Duration::from_secs(8);
     let mut nodes: Vec<SocketAddr> = seeds.iter().copied().filter(SocketAddr::is_ipv4).collect();
     if seeds.is_empty() {
         for host in [
@@ -379,90 +400,145 @@ pub fn dht_lookup(
     dht_search(&*socket, hash, port, announce, stop, nodes, deadline)
 }
 
+/// Queries in flight at once, and the closest responders a lookup settles on (BEP 5).
+const DHT_PARALLEL: usize = 8;
+const DHT_CLOSEST: usize = 16;
+/// Bounds of one lookup: queries sent, candidate nodes kept, peers returned.
+const DHT_QUERIES: usize = 256;
+const DHT_CANDIDATES: usize = 512;
+const DHT_PEERS: usize = 1000;
+/// How soon a lookup that found no peer is tried again, instead of the
+/// usual minute: one lost bootstrap reply should not stall a new download.
+pub const DHT_RETRY: Duration = Duration::from_secs(10);
+/// A node that has not answered by then is skipped.
+const DHT_QUERY_TIMEOUT: Duration = Duration::from_secs(1);
+/// Distance given to nodes whose id is unknown, such as bootstrap routers.
+const UNKNOWN: [u8; 20] = [0xff; 20];
+
+fn distance(id: &[u8], hash: &[u8; 20]) -> [u8; 20] {
+    let mut out = [0; 20];
+    for ((out, a), b) in out.iter_mut().zip(id).zip(hash) {
+        *out = a ^ b;
+    }
+    out
+}
+
+/// An iterative Kademlia lookup: the closest unqueried nodes are asked, a few
+/// at a time, until the closest responders have all answered. Peers come from
+/// every answer; the announcement goes to the closest nodes that gave a token.
 fn dht_search(
     socket: &dyn NetworkDatagram,
     hash: &[u8; 20],
     port: u16,
     announce: bool,
     stop: &AtomicBool,
-    mut nodes: Vec<SocketAddr>,
+    nodes: Vec<SocketAddr>,
     deadline: Instant,
 ) -> Result<Vec<SocketAddr>> {
     socket
-        .set_read_timeout(Some(Duration::from_millis(250)))
+        .set_read_timeout(Some(Duration::from_millis(100)))
         .map_err(|_| "Could not configure DHT timeout")?;
     let id = crate::crypto::random_bytes::<20>()?;
-    let mut seen = BTreeSet::new();
+    let mut candidates: BTreeSet<([u8; 20], SocketAddr)> =
+        nodes.into_iter().map(|node| (UNKNOWN, node)).collect();
+    let mut queried = BTreeSet::new();
+    let mut responders: BTreeMap<([u8; 20], SocketAddr), Option<Vec<u8>>> = BTreeMap::new();
+    let mut pending: BTreeMap<[u8; 4], (SocketAddr, Instant)> = BTreeMap::new();
     let mut peers = BTreeSet::new();
     let mut tx = nonce()?;
-    for index in 0..64 {
-        if stop.load(Ordering::Relaxed) || Instant::now() >= deadline || index >= nodes.len() {
+    let mut sent = 0;
+    while !stop.load(Ordering::Relaxed) && Instant::now() < deadline && peers.len() < DHT_PEERS {
+        // Settled once every candidate left is farther than the closest responders.
+        let bound = responders.keys().nth(DHT_CLOSEST - 1).map(|(d, _)| *d);
+        while pending.len() < DHT_PARALLEL && sent < DHT_QUERIES {
+            let Some(&(near, target)) = candidates
+                .iter()
+                .find(|(_, address)| !queried.contains(address))
+            else {
+                break;
+            };
+            if bound.is_some_and(|bound| near > bound) {
+                break;
+            }
+            queried.insert(target);
+            tx = tx.wrapping_add(1);
+            let transaction = tx.to_be_bytes();
+            let query = dict(&[
+                (b"t", Value::Bytes(transaction.to_vec())),
+                (b"y", Value::Bytes(b"q".to_vec())),
+                (b"q", Value::Bytes(b"get_peers".to_vec())),
+                (
+                    b"a",
+                    dict(&[
+                        (b"id", Value::Bytes(id.to_vec())),
+                        (b"info_hash", Value::Bytes(hash.to_vec())),
+                    ]),
+                ),
+            ]);
+            sent += 1;
+            if socket
+                .send_to(&crate::bencode::encode(&query), target)
+                .is_ok()
+            {
+                pending.insert(transaction, (target, Instant::now()));
+            }
+        }
+        if pending.is_empty() {
             break;
         }
-        let target = nodes[index];
-        if !seen.insert(target) {
-            continue;
-        }
-        tx = tx.wrapping_add(1);
-        let transaction = tx.to_be_bytes();
-        let query = dict(&[
-            (b"t", Value::Bytes(transaction.to_vec())),
-            (b"y", Value::Bytes(b"q".to_vec())),
-            (b"q", Value::Bytes(b"get_peers".to_vec())),
-            (
-                b"a",
-                dict(&[
-                    (b"id", Value::Bytes(id.to_vec())),
-                    (b"info_hash", Value::Bytes(hash.to_vec())),
-                ]),
-            ),
-        ]);
-        socket
-            .send_to(&crate::bencode::encode(&query), target)
-            .map_err(|_| "Could not send DHT request")?;
         let mut buf = [0; 4096];
-        let (n, from) = match socket.recv_from(&mut buf) {
-            Ok(v) => v,
-            Err(_) => continue,
-        };
-        if from != target {
-            continue;
-        }
-        let response = match crate::bencode::parse(&buf[..n]) {
-            Ok(v) => v,
-            Err(_) => continue,
-        };
-        if value_bytes(field(&response, b"t")) != Some(transaction.as_slice())
-            || value_bytes(field(&response, b"y")) != Some(b"r".as_slice())
+        if let Ok((n, from)) = socket.recv_from(&mut buf)
+            && let Ok(response) = crate::bencode::parse(&buf[..n])
+            && let Some(transaction) = value_bytes(field(&response, b"t"))
+                .and_then(|t| <[u8; 4]>::try_from(t).ok())
+            // An answer counts only from the node it was asked of.
+            && pending.get(&transaction).is_some_and(|(target, _)| *target == from)
         {
-            continue;
-        }
-        let Some(r) = field(&response, b"r") else {
-            continue;
-        };
-        if let Some(Value::List(values)) = field(r, b"values") {
-            for value in values.iter().take(200) {
-                if let Ok(raw) = super::metainfo::bytes(value)
-                    && let Ok(found) = decode_peers(raw, false)
-                {
-                    peers.extend(found);
+            pending.remove(&transaction);
+            if value_bytes(field(&response, b"y")) == Some(b"r".as_slice())
+                && let Some(r) = field(&response, b"r")
+            {
+                if let Some(Value::List(values)) = field(r, b"values") {
+                    for value in values.iter().take(200) {
+                        if let Ok(raw) = super::metainfo::bytes(value)
+                            && let Ok(found) = decode_peers(raw, false)
+                        {
+                            peers.extend(found);
+                        }
+                    }
                 }
+                if let Some(raw) = value_bytes(field(r, b"nodes"))
+                    && raw.len() % 26 == 0
+                {
+                    for node in raw.as_chunks::<26>().0.iter().take(32) {
+                        if let Ok(found) = decode_peers(&node[20..], false) {
+                            for address in found {
+                                if !queried.contains(&address) {
+                                    candidates.insert((distance(&node[..20], hash), address));
+                                }
+                            }
+                        }
+                    }
+                    while candidates.len() > DHT_CANDIDATES {
+                        candidates.pop_last();
+                    }
+                }
+                let near = value_bytes(field(r, b"id"))
+                    .filter(|id| id.len() == 20)
+                    .map_or(UNKNOWN, |id| distance(id, hash));
+                let token = value_bytes(field(r, b"token"))
+                    .filter(|token| announce && token.len() <= 256)
+                    .map(<[u8]>::to_vec);
+                responders.insert((near, from), token);
             }
         }
-        if let Some(raw) = value_bytes(field(r, b"nodes"))
-            && raw.len() % 26 == 0
-        {
-            for node in raw.as_chunks::<26>().0.iter().take(32) {
-                if let Ok(found) = decode_peers(&node[20..], false)
-                    && nodes.len() < 128
-                {
-                    nodes.extend(found);
-                }
-            }
-        }
-        if announce
-            && let Some(token) = value_bytes(field(r, b"token"))
-            && token.len() <= 256
+        pending.retain(|_, (_, at)| at.elapsed() < DHT_QUERY_TIMEOUT);
+    }
+    if announce {
+        for ((_, target), token) in responders
+            .iter()
+            .filter_map(|(key, token)| Some((key, token.as_ref()?)))
+            .take(DHT_PARALLEL)
         {
             tx = tx.wrapping_add(1);
             let query = dict(&[
@@ -475,17 +551,14 @@ fn dht_search(
                         (b"id", Value::Bytes(id.to_vec())),
                         (b"info_hash", Value::Bytes(hash.to_vec())),
                         (b"port", Value::Int(i64::from(port))),
-                        (b"token", Value::Bytes(token.to_vec())),
+                        (b"token", Value::Bytes(token.clone())),
                     ]),
                 ),
             ]);
-            let _ = socket.send_to(&crate::bencode::encode(&query), target);
-        }
-        if peers.len() >= 100 {
-            break;
+            let _ = socket.send_to(&crate::bencode::encode(&query), *target);
         }
     }
-    Ok(peers.into_iter().collect())
+    Ok(peers.into_iter().take(DHT_PEERS).collect())
 }
 
 pub fn pex_peers(payload: &[u8]) -> Result<Vec<SocketAddr>> {
@@ -846,8 +919,10 @@ mod tests {
         assert_eq!(peers, vec!["198.51.100.7:6881".parse().unwrap()]);
         let sent = socket.sent();
         let targets: Vec<_> = sent.iter().map(|(_, target)| *target).collect();
-        assert_eq!(targets, vec![first, first, second]);
-        let announce = crate::bencode::parse(&sent[1].0).unwrap();
+        // Both nodes are asked; only the one that answered itself, with a
+        // token, receives the announcement.
+        assert_eq!(targets, vec![first, second, first]);
+        let announce = crate::bencode::parse(&sent[2].0).unwrap();
         assert_eq!(
             value_bytes(field(&announce, b"q")),
             Some(b"announce_peer".as_slice())

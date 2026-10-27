@@ -28,3 +28,39 @@ extended master secret whenever the server offers it. There is no session
 resumption or renegotiation, a TLS 1.3 server's downgrade sentinel is refused,
 and the certificate and host name are validated as with TLS 1.3
 ([details](/docs/limits.md)).
+
+## Changed: WireGuard profiles with IPv6 are accepted
+
+A provider profile may add an IPv6 address, IPv6 resolvers and `::/0` to its
+IPv4 settings. They are kept in the stored profile, but the tunnel still
+carries IPv4 only: those entries are not used, and no IPv6 traffic falls back
+to the host network
+([details](/docs/wireguard-profiles.md)).
+
+## Changed: Faster downloads through the VPN
+
+Torrents through the WireGuard VPN download about ten times faster. On a busy
+swarm over Wi-Fi, the steady rate went from about 2 MiB/s to 29 to 35 MiB/s, at
+a quarter of the processor time per gigabyte. The VPN's TCP now negotiates window
+scaling and selective acknowledgment, keeps out-of-order data for a whole
+512 KiB window and acknowledges in batches; the tunnel reads ahead instead of
+asking for each message; torrent requests leave in one packet instead of
+three; and each peer is asked for its next piece before the current one ends,
+instead of waiting a round trip between pieces. This last change also helps
+without the VPN. A new download through the VPN also finds its first peers in seconds:
+DHT queries no longer fail while the tunnel is busy, and an empty lookup is
+retried after 10 seconds instead of a minute
+([details](/docs/netstack-tcp.md#tcp-option-decision-and-measured-limits)).
+A download now dials up to 50 peers by default instead of 4:
+`downloads.max_peers` accepts 1 to 256, set in Settings as **Peers per
+download**, and active downloads share at most 256 workers. Seeding counters
+are saved every 30 seconds instead of every second.
+
+## Fixed: Port forwarding brings peers to downloads
+
+With VPN port forwarding, peers that connected to Mynou while a torrent was
+still downloading were left idle until they gave up: they were only served once
+the torrent was complete. They now join the download like the peers Mynou dials,
+ahead of new outgoing attempts. Peers whose systems offer ECN when connecting,
+the default on macOS and many Linux servers, were also refused by the VPN's TCP;
+they are now accepted without ECN.

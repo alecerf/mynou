@@ -19,8 +19,9 @@ protocol 6 for the configured address (`ipv4::parse_protocol`; the UDP entry poi
 still refuses TCP and the reverse). Then:
 
 - the data offset is 5 to 15 words and the bytes exist; both ports are nonzero;
-- the reserved bits and NS are zero, urgent, ECN-echo and CWR are refused, SYN with
-  FIN or RST and FIN with RST are refused, and the urgent pointer is zero;
+- urgent is refused, SYN with FIN or RST and FIN with RST are refused, and the
+  urgent pointer is zero; the reserved bits, AE, ECN-echo and CWR are ignored as
+  RFC 9293 asks, so an ECN-setup SYN (RFC 3168) is answered without ECN;
 - the pseudo-header checksum verifies. It is mandatory over IPv4 and a computed
   zero is sent as zero (the UDP "all ones" rule does not apply);
 - options are walked by length: End-of-Options stops the scan, No-Operation pads,
@@ -67,11 +68,22 @@ and can drain received bytes, then it is released.
   supported. A SYN to a port without a listener, and any other segment for no flow,
   is answered with an RST as RFC 9293 prescribes, bounded by the `outbox` limit.
 - **Data**: in-order bytes go to the receive buffer; out-of-order segments (at most
-  `reorder_segments`, at most one receive buffer of bytes) are kept and merged
-  when the gap fills; duplicates and overlaps are trimmed. A FIN that arrives
-  ahead of missing bytes is ignored and comes again. The window is the free space
-  of the receive buffer (no window scaling, 65535 at most); reading opens it and
-  announces it when worthwhile.
+  `reorder_segments`, at most one receive buffer of bytes) are kept in sequence
+  order and merged when the gap fills; duplicates and overlaps are trimmed. A FIN
+  that arrives ahead of missing bytes is ignored and comes again. The window is
+  the free space of the receive buffer. Above 65535 bytes it needs window scaling
+  (RFC 7323): every SYN offers the shift that covers `receive_buffer`, a SYN-ACK
+  answers only a SYN that offered one, and both sides scale only when both did.
+  As in Linux, a read announces the opened window only when at most half the
+  buffer remains of what the peer was last told and the window at least doubles
+  it, so a large window is not re-announced on every read.
+- **Acknowledgment**: SYNs offer SACK-permitted (RFC 2018). When both did, every
+  acknowledgment sent while out-of-order data is held carries up to three SACK
+  blocks, the range with the latest arrival first. An out-of-order segment or one
+  that fills a gap is acknowledged at once; without SACK, each out-of-order
+  segment gets its own duplicate ACK so the sender can fast-retransmit. With
+  `ack_delay` set, in-order data is acknowledged once `ack_segments` full-sized
+  segments arrived, or after the delay; unset, every arrival is acknowledged.
 - **Sending**: at most the smaller of the congestion window and the peer window.
   Loss is handled go-back-N from the first unacknowledged byte: three duplicate
   acknowledgments or a timeout set the threshold to half the flight (at least two
@@ -82,7 +94,8 @@ and can drain received bytes, then it is released.
   acknowledged (including fast retransmit, PMTU resegmentation and probes).
   ACKs of ambiguous bytes preserve the backed-off timer; a fresh sample can
   reduce it. A retransmitted handshake starts data with at least 3 s RTO.
-  There is no delayed or selective acknowledgment, Nagle or timestamps.
+  SACK blocks from the peer are skipped: this stack never uses them as a
+  sender, which RFC 2018 allows. There is no Nagle or timestamps.
 - **Zero window**: queued data waits and a one-byte probe is sent with backoff; the
   flow fails with `Timeout` if the window stays closed for `persist_limit`.
 - **Closing**: FIN and the full RFC 9293 closing states, including simultaneous
@@ -92,18 +105,24 @@ and can drain received bytes, then it is released.
 
 | Bound | Default | Exhaustion |
 | --- | --- | --- |
-| Flows | 64 | `FlowsFull`; a SYN is dropped (`TableFull`) |
+| Flows | 256 | `FlowsFull`; a SYN is dropped (`TableFull`) |
 | Listeners | 8 | `ListenersFull` |
 | Backlog per listener (half-open plus unaccepted) | 16 | SYN dropped (`Backlog`) |
 | Send buffer per flow | 65536 | `send` takes fewer bytes |
-| Receive buffer and window per flow | 65535 | data outside the window is dropped |
-| Send, receive and out-of-order bytes in total | 4 MiB | `send` takes fewer bytes, data is dropped |
-| Out-of-order segments per flow | 16 | the segment is dropped, the peer resends |
+| Receive buffer and window per flow | 65535 (up to 16 MiB with scaling) | data outside the window is dropped |
+| Send, receive and out-of-order bytes in total | 32 MiB | `send` takes fewer bytes, data is dropped |
+| Out-of-order segments per flow | 16 (up to 1024) | the segment is dropped, the peer resends |
+| Delayed acknowledgment | off (`ack_delay` under 500 ms, `ack_segments` 1 to 16) | the acknowledgment leaves at once |
 | Segments per flow per poll | 16 | `poll` reports an immediate wake-up |
 | Queued control packets | 64 | the packet is dropped and counted |
 | Retransmissions / SYN retransmissions | 8 / 5 | the flow fails with `Timeout` |
 | Retransmission timeout | 1 s to 60 s | backoff stops at the cap |
 | TIME-WAIT, closed linger, zero-window stall | 30 s, 30 s, 120 s | the flow is released or fails |
+
+The tunnel overrides some of these for torrent peers behind a long VPN path:
+a 512 KiB receive buffer (shift 4), a 256 KiB send buffer, 64 MiB in total, 512
+out-of-order segments and acknowledgments delayed up to 20 ms or four segments.
+A WireGuard profile only changes the MTU.
 
 `TcpConfig::new` takes the same `Ipv4Config` as the UDP layer and an MTU, validates
 every bound and rejects values outside the documented ranges, including an initial
@@ -141,12 +160,11 @@ runtime dispatches ICMP through these same APIs and its generation fence.
 
 ## TCP option decision and measured limits
 
-For #219, implement RTT estimation now; retain the unscaled window and cumulative
-ACKs. Trackers and bounded DNS exchanges can use this stream, but **bulk torrent
-throughput is not accepted as production-ready**. There is no torrent caller yet;
-window scaling and SACK need a separate measured bulk-transfer implementation
-before claiming good performance across high-delay or lossy paths. Simultaneous
-open and TCP keep-alive also remain unsupported.
+For #219, RTT estimation came first with the unscaled window and cumulative ACKs.
+Torrent peers now use this stream through the tunnel, so the receive side gained
+window scaling, SACK, a reorder queue as large as the window and delayed
+acknowledgments. The sending side is unchanged: Tahoe, go-back-N, no use of the
+peer's SACK blocks. Simultaneous open and TCP keep-alive remain unsupported.
 
 The deterministic warm-window test sends 2 MiB to grow congestion credit above
 the advertised window, then queues 131070 bytes with a 1 MiB send buffer and a
@@ -155,8 +173,19 @@ At 100 ms RTT that window alone limits one stream to 655350 B/s (5.2428 Mbit/s),
 before other overhead; this is an arithmetic ceiling from measured flight, not
 an Internet throughput benchmark. The two-gap loss test loses segments one and
 three of a four-MSS flight: seven MSS are emitted in total, including one
-unnecessary retransmission of already-held data without SACK. Both are explicit
-limitations, not evidence that scaling or SACK have no value.
+unnecessary retransmission of already-held data, because this stack's sender
+ignores SACK. With a negotiated scale and a 1 MiB receive buffer, the same warm
+flight exceeds 65535 bytes.
+
+On a real swarm (an Ubuntu ISO, a Wi-Fi Mac, a commercial WireGuard VPN, 120 s
+per run), these changes, together with read-ahead in the tunnel driver, torrent
+messages written at once and requests pipelined across pieces, raised the steady
+download rate through the VPN from 2.2 MiB/s to 29 to 35 MiB/s (29 to 33 MiB/s
+with port forwarding), and lowered the cost from 118 to about 30 CPU-seconds
+per GiB. Without the VPN the
+same swarm gives 56 MiB/s. About 30 % of segments still arrive out of order on
+that path, and every datagram the tunnel sends costs a system call on one UDP
+flow, so acknowledgments are kept few.
 
 The scripted RTT test measures a 400 ms handshake, then a 600 ms data round trip:
 SRTT moves to 425 ms, variance to 200 ms and RTO to 1225 ms. Timeout doubles RTO
@@ -185,16 +214,16 @@ clock fences, and entropy failure.
 The generator and the Rust code are by the same authors from the same RFCs, and
 the state machine is only ever exercised against itself, so these tests catch
 implementation slips, not misreadings shared by both, and no independent TCP stack
-is involved. Only the deterministic flight/loss measurements above are claimed; real-path
-throughput, congestion behavior and interoperability are not measured.
+is involved. Beyond the deterministic flight/loss measurements, only the real-swarm
+download rates above were measured; congestion behavior as a sender and
+interoperability are not.
 
 ## Remaining obligations
 
 The driver that feeds decrypted session bytes in, encrypts what comes out, owns
 the clock and generations and revokes the UDP table, the DNS client and this stack
 together is now [the tunnel runtime](/docs/tunnel.md). IP fragmentation is refused
-and IPv6 remains blocked, as documented above. Still missing: window scaling,
-selective acknowledgment, simultaneous open and TCP keep-alive for bulk peers; the
-transport, HTTP/TLS and torrent integration; profile controls; an independently
-implemented peer in CI; and the isolation evidence listed in
-[the design](/docs/wireguard-design.md). Nothing here changes user-visible behavior.
+and IPv6 remains blocked, as documented above. Still missing: SACK-based
+recovery as a sender, simultaneous open and TCP keep-alive for bulk peers; an
+independently implemented peer in CI; and the isolation evidence listed in
+[the design](/docs/wireguard-design.md).

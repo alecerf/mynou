@@ -162,6 +162,10 @@ fn rejects_unsupported_addresses_routes_resolvers_and_endpoints() {
                 "10.0.0.1/+1",
                 "10.0.0.1/24,10.0.0.2/24",
                 "::1/128",
+                "fd00::2/128",
+                "10.0.0.1/24,fd00::2/129",
+                "10.0.0.1/24,fd00::2/128,fd00::3/128",
+                "10.0.0.1/24,ff02::1/128",
                 "0.0.0.1/8",
                 "127.0.0.1/8",
                 "224.0.0.1/8",
@@ -175,6 +179,8 @@ fn rejects_unsupported_addresses_routes_resolvers_and_endpoints() {
                 "",
                 "resolver.example",
                 "::1",
+                "fd00::1",
+                "1.1.1.1,fd00::1,fd00::1",
                 "127.0.0.1",
                 "0.0.0.0",
                 "224.0.0.1",
@@ -190,7 +196,8 @@ fn rejects_unsupported_addresses_routes_resolvers_and_endpoints() {
             vec![
                 "0.0.0.0/1",
                 "10.0.0.0/8",
-                "0.0.0.0/0,::/0",
+                "0.0.0.0/0,::/1",
+                "0.0.0.0/0,::/0,::/0",
                 "::/0",
                 "0.0.0.1/0",
                 "0.0.0.0/0,0.0.0.0/0",
@@ -420,4 +427,22 @@ fn bare_final_carriage_return_is_rejected() {
         failure(&format!("{}\r", fixture().trim_end())).kind,
         ErrorKind::Syntax
     );
+}
+
+#[test]
+fn ipv6_entries_are_accepted_and_kept_while_the_tunnel_stays_ipv4() {
+    let input = fixture()
+        .replace(
+            "Address = 10.23.0.2/24",
+            "Address = 10.23.0.2/24, fd00:23::2/128",
+        )
+        .replace("DNS = 10.23.0.1, 1.1.1.1", "DNS = 10.23.0.1, fd00:23::1")
+        .replace("AllowedIPs = 0.0.0.0/0", "AllowedIPs = ::/0, 0.0.0.0/0");
+    let profile = parse(&input).unwrap();
+    assert_eq!(profile.dns(), [Ipv4Addr::new(10, 23, 0, 1)]);
+    let document = profile.private_document();
+    assert!(document.contains("Address = 10.23.0.2/24, fd00:23::2/128\n"));
+    assert!(document.contains("DNS = 10.23.0.1, fd00:23::1\n"));
+    assert!(document.contains("AllowedIPs = 0.0.0.0/0, ::/0\n"));
+    assert_eq!(parse(&document).unwrap().private_document(), document);
 }

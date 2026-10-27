@@ -39,7 +39,7 @@ use std::{
     path::{Path, PathBuf},
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
     },
     thread::{self, JoinHandle},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -97,6 +97,43 @@ pub(crate) struct TransferCounters {
     pub uploaded: AtomicU64,
     pub verified: AtomicU64,
 }
+/// One connection of a running download, as the transfer details show it.
+struct PeerView {
+    address: SocketAddr,
+    /// False until the handshake completes.
+    connected: bool,
+    /// None until the peer says which pieces it has; some never do.
+    progress: Option<f64>,
+    downloading: bool,
+    received_bytes: u64,
+}
+/// A peer this transfer seeds to, kept while its incoming connection lasts.
+#[derive(Clone)]
+struct SeedingPeer {
+    address: SocketAddr,
+    /// None until the peer says which pieces it has.
+    progress: Option<f64>,
+    interested: bool,
+    sent_bytes: u64,
+    last_sent: Option<Instant>,
+}
+/// Keys of `Job::seeding_peers`, unique across transfers.
+static SEEDING_PEER_KEY: AtomicU64 = AtomicU64::new(0);
+/// Takes a seeding peer off its transfer when the connection ends.
+struct SeedingRegistration<'a> {
+    jobs: &'a Jobs,
+    id: String,
+    key: u64,
+}
+impl Drop for SeedingRegistration<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut jobs) = self.jobs.lock()
+            && let Some(job) = jobs.get_mut(&self.id)
+        {
+            job.seeding_peers.remove(&self.key);
+        }
+    }
+}
 struct AnnounceState {
     started: bool,
     completed: bool,
@@ -104,6 +141,12 @@ struct AnnounceState {
     in_flight: bool,
     next: Instant,
     retry_after: Instant,
+    /// What the last answer said, for the transfer details.
+    last_at: u64,
+    last_error: Option<String>,
+    seeders: Option<u64>,
+    leechers: Option<u64>,
+    peers: usize,
 }
 impl Default for AnnounceState {
     fn default() -> Self {
@@ -114,12 +157,28 @@ impl Default for AnnounceState {
             in_flight: false,
             next: Instant::now(),
             retry_after: Instant::now(),
+            last_at: 0,
+            last_error: None,
+            seeders: None,
+            leechers: None,
+            peers: 0,
         }
     }
 }
 struct Job {
     persistence_failed: AtomicBool,
     retiring: bool,
+    /// Set by `Client::remove`: once its activity drains, the manager forgets
+    /// the transfer instead of keeping it, and deletes its files when true.
+    removing: Option<bool>,
+    /// The peers of the running download, refreshed by its coordinator.
+    live_peers: Vec<PeerView>,
+    /// Addresses the download knows of, from trackers, DHT and PEX.
+    known_peers: usize,
+    /// Incoming peers served from verified data, by registration key.
+    seeding_peers: BTreeMap<u64, SeedingPeer>,
+    /// Where the running download takes incoming peers of its torrent.
+    inbound: Option<std::sync::mpsc::SyncSender<wire::Inbound>>,
     admitted: bool,
     needs_rehash: bool,
     seed_queued: bool,
@@ -661,6 +720,40 @@ fn persist_index(job: &Job) -> Result<()> {
     Ok(())
 }
 
+/// Forgets a removed transfer: its index record first, so an interruption
+/// leaves at worst unreferenced state files, then that state and, when asked,
+/// its downloaded files. Each step tolerates a previous partial run.
+fn forget(
+    config: &DownloadConfig,
+    index: &Mutex<index::TransferIndex>,
+    id: &str,
+    delete_files: bool,
+) -> Result<()> {
+    index
+        .lock()
+        .map_err(|_| "Native transfer index lock is poisoned")?
+        .remove(id)?;
+    let absent = |result: std::io::Result<()>| {
+        result.or_else(|error| match error.kind() {
+            std::io::ErrorKind::NotFound => Ok(()),
+            _ => Err(error),
+        })
+    };
+    for suffix in ["control", "torrent", "source", "paused", "seed"] {
+        absent(fs::remove_file(
+            config.state_dir.join(format!("{id}.{suffix}")),
+        ))
+        .map_err(|_| "Could not remove the transfer state")?;
+    }
+    crate::store::sync_directory(&config.state_dir)
+        .map_err(|_| "Could not synchronize the transfer state")?;
+    if delete_files {
+        absent(fs::remove_dir_all(config.data_dir.join(id)))
+            .map_err(|_| "Could not delete the downloaded files")?;
+    }
+    Ok(())
+}
+
 fn persist_control(config: &DownloadConfig, job: &mut Job) -> Result<()> {
     let control = snapshot_control(job);
     let encoded = control.encode()?;
@@ -862,6 +955,145 @@ fn transfer_state(job: &Job) -> &'static str {
     } else {
         "queued"
     }
+}
+
+/// The scheme, host and port of a tracker: its path and query often carry
+/// a private passkey, which never leaves the service.
+fn tracker_host(url: &str) -> String {
+    let (scheme, rest) = url.split_once("://").unwrap_or(("", url));
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    let host = authority.rsplit('@').next().unwrap_or_default();
+    let host = crate::integrations::report_text(host, 255);
+    if scheme.is_empty() {
+        host
+    } else {
+        format!("{}://{host}", scheme.to_ascii_lowercase())
+    }
+}
+
+/// What one transfer's detail page adds to its list entry: identity, pieces,
+/// trackers and the peers of a running download.
+fn transfer_details(job: &Job, config: &DownloadConfig, value: &mut crate::json::Value) {
+    use crate::json::Value as Json;
+    let hashes: Vec<_> = job
+        .source
+        .v1
+        .iter()
+        .map(|hash| Json::String(hex(hash)))
+        .chain(job.source.v2.iter().map(|hash| Json::String(hex(hash))))
+        .collect();
+    value.insert("info_hashes", Json::Array(hashes));
+    if let Some(meta) = &job.meta {
+        let name = meta
+            .files
+            .iter()
+            .find(|file| !file.padding)
+            .and_then(|file| file.path.components().next())
+            .map(|part| part.as_os_str().to_string_lossy().into_owned());
+        value.insert("name", name.map_or(Json::Null, Json::String));
+        value.insert("total_bytes", meta.total.to_string());
+        value.insert("piece_count", meta.count().to_string());
+        value.insert("piece_bytes", meta.piece_length.to_string());
+        value.insert("private", meta.private);
+    }
+    let private = job.meta.as_ref().is_some_and(|meta| meta.private);
+    value.insert("dht", config.dht && !private);
+    value.insert("pex", config.pex && !private);
+    let now = Instant::now();
+    let trackers = job
+        .source
+        .trackers
+        .iter()
+        .take(64)
+        .map(|url| {
+            let mut tracker = Json::object();
+            tracker.insert("host", tracker_host(url));
+            let state = job.announcements.get(url);
+            let status = match state {
+                Some(state) if state.in_flight => "announcing",
+                Some(state) if state.last_error.is_some() => "error",
+                Some(state) if state.last_at != 0 => "working",
+                _ => "waiting",
+            };
+            tracker.insert("status", status);
+            if let Some(state) = state {
+                let optional =
+                    |count: Option<u64>| count.map_or(Json::Null, |n| n.to_string().into());
+                tracker.insert("seeders", optional(state.seeders));
+                tracker.insert("leechers", optional(state.leechers));
+                tracker.insert("peers", state.peers.to_string());
+                tracker.insert(
+                    "last_at",
+                    if state.last_at == 0 {
+                        Json::Null
+                    } else {
+                        state.last_at.to_string().into()
+                    },
+                );
+                tracker.insert(
+                    "next_in_secs",
+                    state
+                        .next
+                        .saturating_duration_since(now)
+                        .as_secs()
+                        .to_string(),
+                );
+                tracker.insert(
+                    "error",
+                    state.last_error.clone().map_or(Json::Null, Json::String),
+                );
+            }
+            tracker
+        })
+        .collect();
+    value.insert("trackers", Json::Array(trackers));
+    let peers = if job.running {
+        job.live_peers.as_slice()
+    } else {
+        &[]
+    };
+    value.insert(
+        "known_peers",
+        (if job.running { job.known_peers } else { 0 }).to_string(),
+    );
+    value.insert(
+        "peers",
+        Json::Array(
+            peers
+                .iter()
+                .map(|peer| {
+                    let mut entry = Json::object();
+                    entry.insert("address", peer.address.to_string());
+                    entry.insert("connected", peer.connected);
+                    entry.insert("progress", peer.progress.map_or(Json::Null, Json::Number));
+                    entry.insert("downloading", peer.downloading);
+                    entry.insert("received_bytes", peer.received_bytes.to_string());
+                    entry
+                })
+                .collect(),
+        ),
+    );
+    value.insert(
+        "seeding_peers",
+        Json::Array(
+            job.seeding_peers
+                .values()
+                .map(|peer| {
+                    let mut entry = Json::object();
+                    entry.insert("address", peer.address.to_string());
+                    entry.insert("progress", peer.progress.map_or(Json::Null, Json::Number));
+                    entry.insert("interested", peer.interested);
+                    entry.insert(
+                        "uploading",
+                        peer.last_sent
+                            .is_some_and(|at| at.elapsed() < Duration::from_secs(3)),
+                    );
+                    entry.insert("sent_bytes", peer.sent_bytes.to_string());
+                    entry
+                })
+                .collect(),
+        ),
+    );
 }
 
 fn transfer_value(
@@ -1087,6 +1319,11 @@ fn load_job(config: &DownloadConfig, id: &str) -> Result<Job> {
                 index: None,
                 persistence_failed: AtomicBool::new(false),
                 retiring: false,
+                removing: None,
+                live_peers: Vec::new(),
+                known_peers: 0,
+                seeding_peers: BTreeMap::new(),
+                inbound: None,
                 admitted: true,
                 needs_rehash: false,
                 seed_queued: false,
@@ -1141,6 +1378,11 @@ fn load_job(config: &DownloadConfig, id: &str) -> Result<Job> {
                 index: None,
                 persistence_failed: AtomicBool::new(false),
                 retiring: false,
+                removing: None,
+                live_peers: Vec::new(),
+                known_peers: 0,
+                seeding_peers: BTreeMap::new(),
+                inbound: None,
                 admitted: true,
                 needs_rehash: false,
                 seed_queued: false,
@@ -1302,7 +1544,9 @@ fn trim_jobs(
     let mut candidates: Vec<_> = jobs
         .iter()
         .filter(|(_, j)| {
-            !j.running
+            // A transfer being removed stays resident until the manager forgets it.
+            j.removing.is_none()
+                && !j.running
                 && j.cross_seed
                     .as_ref()
                     .is_none_or(|reuse| Arc::strong_count(&reuse.activity) == 1)
@@ -1382,7 +1626,7 @@ impl Client {
             policy,
             network,
         });
-        if !(1..=8).contains(&config.max_peers) {
+        if !(1..=256).contains(&config.max_peers) {
             return Err("Invalid peer connection count".into());
         }
         mkdir_private(&config.state_dir)?;
@@ -1615,6 +1859,11 @@ impl Client {
                 index: None,
                 persistence_failed: AtomicBool::new(false),
                 retiring: false,
+                removing: None,
+                live_peers: Vec::new(),
+                known_peers: 0,
+                seeding_peers: BTreeMap::new(),
+                inbound: None,
                 admitted: true,
                 needs_rehash: false,
                 seed_queued: false,
@@ -1771,6 +2020,41 @@ impl Client {
         job.status.message = "Download paused".into();
         persist_control(&self.config, job)?;
         Ok(())
+    }
+    /// Stops a transfer for good. The manager forgets it once its peers,
+    /// announces and workers have drained, with its files when asked; until
+    /// then it stays paused, also across a restart.
+    pub fn remove(&self, id: &str, delete_files: bool) -> Result<()> {
+        if cross_seed::reused_by(&self.config, id)? {
+            return Err("A cross-seed transfer seeds from these files; remove it first".into());
+        }
+        let gate = cross_seed::gate(self, id)?;
+        let _admission = gate
+            .as_ref()
+            .map(|gate| {
+                gate.lock()
+                    .map_err(|_| "Cross-seed activity lock is poisoned")
+            })
+            .transpose()?;
+        let mut jobs = self
+            .jobs
+            .lock()
+            .map_err(|_| "BitTorrent state lock is poisoned")?;
+        self.load(&mut jobs, id)?;
+        let job = jobs.get_mut(id).ok_or("Unknown download")?;
+        // Paused as `cancel` does, so an interrupted removal leaves a paused transfer.
+        atomic_write(
+            &self.config.state_dir.join(format!("{id}.paused")),
+            b"paused\n",
+        )?;
+        settle_seed_clock(job);
+        job.paused = true;
+        // A cross-seed transfer reads another transfer's files: it has none of its own.
+        job.removing = Some(delete_files && job.cross_seed.is_none());
+        job.retiring = true;
+        job.cancel.store(true, Ordering::Release);
+        job.status.message = "Removing".into();
+        persist_control(&self.config, job)
     }
     /// Resume using the cached, authenticated identity; never reload a source URL.
     pub fn resume(&self, id: &str) -> Result<DownloadStatus> {
@@ -1996,13 +2280,16 @@ impl Client {
             .lock()
             .map_err(|_| "BitTorrent state lock is poisoned")?;
         self.load(&mut jobs, id)?;
-        Ok(transfer_value(
-            jobs.get(id).ok_or("Unknown download")?,
+        let job = jobs.get(id).ok_or("Unknown download")?;
+        let mut value = transfer_value(
+            job,
             0,
             &self.policy.policy,
             &self.config,
             &self.policy.seed_queue,
-        ))
+        );
+        transfer_details(job, &self.config, &mut value);
+        Ok(value)
     }
     pub fn transfers(&self) -> Result<crate::json::Value> {
         Ok(self
@@ -2292,6 +2579,9 @@ impl Drop for Client {
 }
 
 fn resume_job(config: &DownloadConfig, job: &mut Job) -> Result<()> {
+    if job.removing.is_some() {
+        return Err("This transfer is being removed".into());
+    }
     if job.paused || job.failed {
         let marker = config.state_dir.join(format!("{}.paused", job.status.id));
         if fs::symlink_metadata(&marker).is_ok() {
@@ -2488,10 +2778,15 @@ fn announce(
         && let Some(state) = job.announcements.get_mut(&task.url)
     {
         state.in_flight = false;
+        state.last_at = crate::store::now();
         match result {
             Ok(response) => {
                 state.retry_after = Instant::now();
                 state.next = Instant::now() + response.interval;
+                state.last_error = None;
+                state.seeders = response.seeders;
+                state.leechers = response.leechers;
+                state.peers = response.peers.len();
                 match task.event {
                     discovery::TrackerEvent::Started => {
                         state.started = true;
@@ -2515,9 +2810,10 @@ fn announce(
                     merge_peers(&mut job.tracker_peers, response.peers);
                 }
             }
-            Err(_) => {
+            Err(error) => {
                 state.next = Instant::now() + Duration::from_secs(30);
                 state.retry_after = state.next;
+                state.last_error = Some(crate::integrations::report_text(&error, 256));
             }
         }
     }
@@ -2703,7 +2999,10 @@ fn manager_loop(
             if let Err(error) = trim_jobs(&config, &mut map, config.download_slots() + 32) {
                 eprintln!("Could not retire indexed transfer: {error}");
             }
-            if config.seed && seed_rotation.elapsed() >= Duration::from_secs(30) {
+            // Rotation only makes room: when every retained seed fits in the
+            // working set, retiring them would only reverify their data.
+            let seeds_waiting = seed_cursor.is_some() || map.len() >= config.download_slots() + 32;
+            if config.seed && seeds_waiting && seed_rotation.elapsed() >= Duration::from_secs(30) {
                 // Retire a bounded seed window. Existing peer/announcement guards
                 // pin jobs until cancellation has drained their activity.
                 let ids: Vec<_> = map
@@ -2738,11 +3037,15 @@ fn manager_loop(
                 .map(|(id, _)| id.clone())
                 .collect();
             for id in retired {
-                if let Some(mut job) = map.remove(&id)
-                    && let Err(error) = persist_control(&config, &mut job)
-                {
-                    eprintln!("Could not save retired seed: {error}");
-                    map.insert(id, job);
+                if let Some(mut job) = map.remove(&id) {
+                    let result = match job.removing {
+                        Some(delete_files) => forget(&config, &index, &id, delete_files),
+                        None => persist_control(&config, &mut job),
+                    };
+                    if let Err(error) = result {
+                        eprintln!("Could not retire transfer {id}: {error}");
+                        map.insert(id, job);
+                    }
                 }
             }
             let candidates = index
@@ -2949,7 +3252,13 @@ fn manager_loop(
             for job in map.values_mut() {
                 apply_seed_limits(job, &config, &policy.policy);
             }
-            (flushed.elapsed() >= Duration::from_secs(1))
+            // Byte counters and progress change every second while a transfer
+            // moves, and on macOS each durable sync also flushes the disk cache
+            // full of downloaded data: saving them every second kept this lock
+            // in flushes for about half of each second. Commands are saved when
+            // given, `Client::drop` saves everything on shutdown, and verified
+            // pieces are found again on restart.
+            (flushed.elapsed() >= Duration::from_secs(30))
                 .then(|| map.keys().cloned().collect::<Vec<_>>())
         } else {
             None
@@ -3107,20 +3416,8 @@ fn download_sequential(
     while !stop.load(Ordering::Acquire) {
         if let Some(m) = &meta {
             if !scanned {
-                prepare_files(m, &base, stop)?;
-                have = (0..m.count())
-                    .map(|i| {
-                        if stop.load(Ordering::Acquire) {
-                            return false;
-                        }
-                        if m.pieces[i].is_none() && m.v2_pieces[i].is_none() {
-                            return false;
-                        }
-                        read_piece(m, &base, i)
-                            .map(|data| m.verify(i, &data))
-                            .unwrap_or(false)
-                    })
-                    .collect();
+                let fresh = prepare_files(m, &base, stop)?;
+                have = verify_existing(m, &base, stop, &fresh);
                 counters.verified.store(
                     have.iter()
                         .enumerate()
@@ -3177,17 +3474,22 @@ fn download_sequential(
             && !private
             && (known || (source.trackers.is_empty() && source.peers.is_empty()))
         {
-            next_dht = Instant::now() + Duration::from_secs(60);
-            if let Ok(peers) = discovery::dht_lookup(
+            let peers = discovery::dht_lookup(
                 &*policy.network,
                 &hash,
                 config.listen_port,
                 known,
                 stop,
                 &[],
-            ) {
-                merge_peers(&mut addresses, peers);
-            }
+            )
+            .unwrap_or_default();
+            next_dht = Instant::now()
+                + if peers.is_empty() {
+                    discovery::DHT_RETRY
+                } else {
+                    Duration::from_secs(60)
+                };
+            merge_peers(&mut addresses, peers);
         }
         let peers: Vec<_> = addresses.iter().copied().take(1000).collect();
         if let Ok(mut jobs) = jobs.lock()
@@ -3234,19 +3536,8 @@ fn download_sequential(
                         source.v2 = m.v2;
                         source.trackers.extend(m.trackers.clone());
                         persist_meta(config, id, &m)?;
-                        prepare_files(&m, &base, stop)?;
-                        have = (0..m.count())
-                            .map(|i| {
-                                if stop.load(Ordering::Acquire)
-                                    || (m.pieces[i].is_none() && m.v2_pieces[i].is_none())
-                                {
-                                    return false;
-                                }
-                                read_piece(&m, &base, i)
-                                    .map(|d| m.verify(i, &d))
-                                    .unwrap_or(false)
-                            })
-                            .collect();
+                        let fresh = prepare_files(&m, &base, stop)?;
+                        have = verify_existing(&m, &base, stop, &fresh);
                         counters.verified.store(
                             have.iter()
                                 .enumerate()
@@ -3313,7 +3604,7 @@ fn download_sequential(
                 }) else {
                     break;
                 };
-                match peer.fetch_piece(m, i, stop) {
+                match peer.fetch_piece(m, i, &mut || None, stop) {
                     Ok(data) => {
                         let _publication = policy.network.publication()?;
                         write_piece(m, &base, i, &data)?;
@@ -3368,15 +3659,18 @@ fn download_sequential(
     Err("Download interrupted".into())
 }
 
-fn prepare_files(meta: &Meta, base: &Path, stop: &AtomicBool) -> Result<()> {
+fn prepare_files(meta: &Meta, base: &Path, stop: &AtomicBool) -> Result<Vec<bool>> {
     prepare_selected_files(meta, base, stop, None)
 }
+/// Creates and sizes the files, and says which held no byte before: their
+/// pieces are zeros and need no reading.
 fn prepare_selected_files(
     meta: &Meta,
     base: &Path,
     stop: &AtomicBool,
     selected: Option<&[bool]>,
-) -> Result<()> {
+) -> Result<Vec<bool>> {
+    let mut fresh = vec![false; meta.files.len()];
     for (index, f) in meta.files.iter().enumerate() {
         if stop.load(Ordering::Acquire) {
             return Err("Download interrupted".into());
@@ -3421,17 +3715,61 @@ fn prepare_selected_files(
         {
             return Err("Special media files are not allowed".into());
         }
-        if file
+        let length = file
             .metadata()
             .map_err(|_| "Media file is inaccessible")?
-            .len()
-            != f.length
-        {
+            .len();
+        fresh[index] = length == 0;
+        if length != f.length {
             file.set_len(f.length)
                 .map_err(|_| "Could not resize media file")?;
         }
     }
-    Ok(())
+    Ok(fresh)
+}
+
+/// Which pieces the files on disk already hold, hashed on every core. A piece
+/// that touches a file created empty holds zeros and is not read.
+fn verify_existing(meta: &Meta, base: &Path, stop: &AtomicBool, fresh: &[bool]) -> Vec<bool> {
+    let count = meta.count();
+    let piece_length = meta.piece_length as u64;
+    let mut skip = vec![false; count];
+    for (file, _) in meta
+        .files
+        .iter()
+        .zip(fresh)
+        .filter(|(f, fresh)| **fresh && f.length > 0)
+    {
+        let first = (file.offset / piece_length) as usize;
+        let last = ((file.offset + file.length - 1) / piece_length) as usize;
+        for flag in &mut skip[first.min(count)..(last + 1).min(count)] {
+            *flag = true;
+        }
+    }
+    let next = AtomicUsize::new(0);
+    let have: Vec<AtomicBool> = (0..count).map(|_| AtomicBool::new(false)).collect();
+    // Each thread holds one piece; eight bound that memory and saturate a disk.
+    let threads = thread::available_parallelism()
+        .map_or(1, |n| n.get())
+        .min(8);
+    thread::scope(|scope| {
+        for _ in 0..threads {
+            scope.spawn(|| {
+                loop {
+                    let index = next.fetch_add(1, Ordering::Relaxed);
+                    if index >= count || stop.load(Ordering::Acquire) {
+                        break;
+                    }
+                    let held = !skip[index]
+                        && (meta.pieces[index].is_some() || meta.v2_pieces[index].is_some())
+                        && read_piece(meta, base, index)
+                            .is_ok_and(|data| meta.verify(index, &data));
+                    have[index].store(held, Ordering::Relaxed);
+                }
+            });
+        }
+    });
+    have.into_iter().map(AtomicBool::into_inner).collect()
 }
 fn read_piece(meta: &Meta, base: &Path, index: usize) -> Result<Vec<u8>> {
     let start = index as u64 * meta.piece_length as u64;
@@ -3452,10 +3790,9 @@ fn read_piece(meta: &Meta, base: &Path, index: usize) -> Result<Vec<u8>> {
     }
     Ok(data)
 }
+/// Writes a piece that `Peer::fetch_piece` has already checked against `meta`;
+/// hashing it again here would double the CPU cost of every download.
 fn write_piece(meta: &Meta, base: &Path, index: usize, data: &[u8]) -> Result<()> {
-    if !meta.verify(index, data) {
-        return Err("Piece has not been authenticated".into());
-    }
     let start = index as u64 * meta.piece_length as u64;
     let end = start + data.len() as u64;
     for f in &meta.files {
@@ -3631,7 +3968,7 @@ fn listen_loop(
             }
         }
         match listener.accept() {
-            Ok((stream, _)) if peers.len() < 32 => {
+            Ok((stream, address)) if peers.len() < 32 => {
                 let cfg = config.clone();
                 let js = jobs.clone();
                 let st = stop.clone();
@@ -3640,7 +3977,7 @@ fn listen_loop(
                 let admission = admission.clone();
                 peers.push(thread::spawn(move || {
                     let _ = serve_peer(
-                        stream,
+                        (stream, address),
                         &cfg,
                         &js,
                         &st,
@@ -3734,7 +4071,7 @@ fn reserve_upload(
     })
 }
 fn serve_peer(
-    mut stream: Box<dyn crate::net::NetworkStream>,
+    (mut stream, address): (Box<dyn crate::net::NetworkStream>, SocketAddr),
     config: &DownloadConfig,
     jobs: &Jobs,
     stop: &AtomicBool,
@@ -3790,7 +4127,7 @@ fn serve_peer(
             }
         }
     }
-    let (torrent_id, meta, ready, known_peers, cancel, counters, upload_gate, reuse) = {
+    let (torrent_id, meta, ready, known_peers, cancel, counters, upload_gate, reuse, inbound) = {
         let mut jobs = jobs
             .lock()
             .map_err(|_| "BitTorrent state lock is poisoned")?;
@@ -3823,6 +4160,7 @@ fn serve_peer(
                         job.counters.clone(),
                         job.upload_gate.clone(),
                         job.cross_seed.clone(),
+                        job.inbound.clone(),
                     ))
                 } else {
                     None
@@ -3830,6 +4168,25 @@ fn serve_peer(
             })
             .ok_or("Unknown incoming torrent")?
     };
+    // A download in progress takes the peer as one of its own: an empty
+    // bitfield here would leave it idle until it gives up.
+    if !ready && let Some(inbound) = inbound {
+        let handoff = wire::Inbound {
+            stream,
+            address,
+            hash,
+            extensions: incoming[25] & 0x10 != 0,
+        };
+        match inbound.try_send(handoff) {
+            Ok(()) => return Ok(()),
+            Err(
+                std::sync::mpsc::TrySendError::Full(back)
+                | std::sync::mpsc::TrySendError::Disconnected(back),
+            ) => {
+                stream = back.stream;
+            }
+        }
+    }
     let v2_wire = meta.v1 != Some(hash);
     let mut response = [0; 68];
     response[0] = 19;
@@ -3861,18 +4218,72 @@ fn serve_peer(
         }
     }
     wire::write_message(&mut stream, 5, &bitfield, Some(&cancel))?;
+    // What the detail page shows of this peer, published at each message.
+    let mut view = SeedingPeer {
+        address,
+        progress: None,
+        interested: false,
+        sent_bytes: 0,
+        last_sent: None,
+    };
+    let mut have = vec![0u8; count.div_ceil(8)];
+    let mut have_count = 0usize;
+    let registration = if ready && config.seed {
+        let mut map = jobs
+            .lock()
+            .map_err(|_| "BitTorrent state lock is poisoned")?;
+        let job = map.get_mut(&torrent_id).ok_or("Unknown incoming torrent")?;
+        let key = SEEDING_PEER_KEY.fetch_add(1, Ordering::Relaxed);
+        job.seeding_peers.insert(key, view.clone());
+        Some(SeedingRegistration {
+            jobs,
+            id: torrent_id.clone(),
+            key,
+        })
+    } else {
+        None
+    };
+    let publish = |job: &mut Job, view: &SeedingPeer| {
+        if let Some(registration) = &registration
+            && let Some(slot) = job.seeding_peers.get_mut(&registration.key)
+        {
+            *slot = view.clone();
+        }
+    };
     let mut metadata_id = None;
     let mut pex_id = None;
     let base = config.data_dir.join(&torrent_id);
     let mut cached_piece: Option<(usize, Vec<u8>)> = None;
     while !stop.load(Ordering::Acquire) && !cancel.load(Ordering::Acquire) {
         let (id, payload) = wire::read_message(&mut stream, Some(&cancel))?;
+        match id {
+            2 => view.interested = true,
+            3 => view.interested = false,
+            4 if payload.len() == 4 => {
+                let index =
+                    u32::from_be_bytes([payload[0], payload[1], payload[2], payload[3]]) as usize;
+                if index < count && have[index / 8] & (0x80 >> (index % 8)) == 0 {
+                    have[index / 8] |= 0x80 >> (index % 8);
+                    have_count += 1;
+                    view.progress = Some(have_count as f64 / count as f64);
+                }
+            }
+            5 if payload.len() == have.len() => {
+                have.copy_from_slice(&payload);
+                have_count = (0..count)
+                    .filter(|i| have[i / 8] & (0x80 >> (i % 8)) != 0)
+                    .count();
+                view.progress = Some(have_count as f64 / count as f64);
+            }
+            _ => {}
+        }
         {
             let mut map = jobs
                 .lock()
                 .map_err(|_| "BitTorrent state lock is poisoned")?;
             let job = map.get_mut(&torrent_id).ok_or("Unknown incoming torrent")?;
             peer_available(job, config, &policy.policy, &cancel)?;
+            publish(job, &view);
         }
         match id {
             2 if ready && config.seed => wire::write_message(&mut stream, 1, &[], Some(&cancel))?,
@@ -3976,12 +4387,15 @@ fn serve_peer(
                 )?;
                 drop(seed_permit);
                 drop(reservation);
+                view.sent_bytes += length as u64;
+                view.last_sent = Some(Instant::now());
                 {
                     let mut map = jobs
                         .lock()
                         .map_err(|_| "BitTorrent state lock is poisoned")?;
                     let job = map.get_mut(&torrent_id).ok_or("Unknown incoming torrent")?;
                     apply_seed_limits(job, config, &policy.policy);
+                    publish(job, &view);
                 }
             }
             20 if payload.first() == Some(&0) => {
@@ -4209,6 +4623,11 @@ mod control_runtime_tests {
             index: None,
             persistence_failed: AtomicBool::new(false),
             retiring: false,
+            removing: None,
+            live_peers: Vec::new(),
+            known_peers: 0,
+            seeding_peers: BTreeMap::new(),
+            inbound: None,
             admitted: true,
             needs_rehash: false,
             seed_queued: false,

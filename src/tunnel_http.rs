@@ -25,6 +25,9 @@ use std::{
 const QUEUE: usize = 32;
 const BATCH: usize = 8;
 const CHUNK: usize = 16 * 1024;
+/// The most one read takes from a flow; the rest of it serves later reads
+/// without a round trip through the owner.
+const READ_AHEAD: usize = 256 * 1024;
 const TICK: Duration = Duration::from_millis(2);
 const START_TIMEOUT: Duration = Duration::from_secs(5);
 const QUEUED: u8 = 0;
@@ -251,19 +254,29 @@ fn run(
     generation: &AtomicU64,
     publication: &RwLock<()>,
 ) {
+    // A full batch likely left commands queued: then do not wait for datagrams.
+    let mut busy = false;
     while !cancelled.load(Ordering::Acquire) {
         runtime.collect();
-        if runtime.tunnel.pump(TICK).is_err() {
+        if runtime
+            .tunnel
+            .pump(if busy { Duration::ZERO } else { TICK })
+            .is_err()
+        {
             break;
         }
         publish(&runtime, generation, publication);
+        busy = true;
         for _ in 0..BATCH {
             if cancelled.load(Ordering::Acquire) {
                 break;
             }
             let command = match receiver.try_recv() {
                 Ok(command) => command,
-                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Empty) => {
+                    busy = false;
+                    break;
+                }
                 Err(TryRecvError::Disconnected) => {
                     cancelled.store(true, Ordering::Release);
                     break;
@@ -541,6 +554,9 @@ struct Stream {
     _lease: Arc<()>,
     read_timeout: Mutex<Option<Duration>>,
     write_timeout: Mutex<Option<Duration>>,
+    /// Bytes already taken from the flow, from `offset` on.
+    received: Vec<u8>,
+    offset: usize,
 }
 impl Stream {
     fn new(connector: &Connector, flow: VirtualFlow, lease: Arc<()>) -> Self {
@@ -551,6 +567,8 @@ impl Stream {
             _lease: lease,
             read_timeout: Mutex::new(None),
             write_timeout: Mutex::new(None),
+            received: Vec::new(),
+            offset: 0,
         }
     }
     fn deadline(timeout: Option<Duration>) -> io::Result<Instant> {
@@ -565,6 +583,12 @@ impl Read for Stream {
         if buffer.is_empty() {
             return Ok(0);
         }
+        if self.offset < self.received.len() {
+            let n = buffer.len().min(self.received.len() - self.offset);
+            buffer[..n].copy_from_slice(&self.received[self.offset..self.offset + n]);
+            self.offset += n;
+            return Ok(n);
+        }
         let deadline = Self::deadline(
             *self
                 .read_timeout
@@ -572,10 +596,10 @@ impl Read for Stream {
                 .map_err(|_| error(io::ErrorKind::Other))?,
         )?;
         let flow = self.flow;
-        let max = buffer.len().min(CHUNK);
         loop {
             let (read, data) = self.owner.wait(Some(self.generation), deadline, move |r| {
-                let mut data = vec![0; max];
+                let ready = r.tunnel.tcp_readable(flow).map_err(failed)?;
+                let mut data = vec![0; ready.clamp(1, READ_AHEAD)];
                 let read = r.tunnel.tcp_recv(flow, &mut data).map_err(failed)?;
                 if let TcpRead::Data(n) = read {
                     data.truncate(n);
@@ -585,8 +609,11 @@ impl Read for Stream {
                 Ok((read, data))
             })?;
             match read {
-                TcpRead::Data(n) => {
-                    buffer[..n].copy_from_slice(&data);
+                TcpRead::Data(_) => {
+                    let n = buffer.len().min(data.len());
+                    buffer[..n].copy_from_slice(&data[..n]);
+                    self.received = data;
+                    self.offset = n;
                     return Ok(n);
                 }
                 TcpRead::Eof => return Ok(0),

@@ -19,11 +19,22 @@ pub const SYN: u8 = 0x02;
 pub const RST: u8 = 0x04;
 pub const PSH: u8 = 0x08;
 pub const ACK: u8 = 0x10;
-/// Urgent, ECN-echo and congestion-window-reduced are not supported.
-const UNSUPPORTED_FLAGS: u8 = 0xe0;
+/// Urgent data is not supported.
+const UNSUPPORTED_FLAGS: u8 = 0x20;
+/// ECN-echo and congestion-window-reduced, ignored on receipt as RFC 9293
+/// asks of a stack without ECN: an ECN-setup SYN (RFC 3168) is answered as a
+/// plain one, which declines ECN.
+const IGNORED_FLAGS: u8 = 0xc0;
 const OPTION_END: u8 = 0;
 const OPTION_NOP: u8 = 1;
 const OPTION_MSS: u8 = 2;
+const OPTION_WINDOW_SCALE: u8 = 3;
+const OPTION_SACK_PERMITTED: u8 = 4;
+const OPTION_SACK: u8 = 5;
+/// SACK blocks one segment carries; four would fit without timestamps.
+pub const SACK_BLOCKS: usize = 3;
+/// RFC 7323 section 2.3: a larger shift is used as 14.
+pub const MAX_WINDOW_SCALE: u8 = 14;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum SegmentError {
@@ -36,15 +47,17 @@ pub enum SegmentError {
     Flags,
     /// A nonzero urgent pointer.
     Urgent,
-    /// A malformed option, or two MSS options.
+    /// A malformed option, or two MSS or window scale options.
     Options,
     /// An MSS option below [`MIN_PEER_MSS`].
     Mss,
     Checksum,
 }
 
-/// A validated segment. `mss` is only reported for a SYN, the one place RFC 9293
-/// defines it; elsewhere the option is skipped.
+/// A validated segment. `mss`, `window_scale` and `sack_permitted` are only
+/// reported for a SYN, the one place RFC 9293, 7323 and 2018 define them;
+/// elsewhere they are skipped. SACK blocks are skipped: this stack never uses
+/// them as a sender, which RFC 2018 allows.
 #[derive(PartialEq, Eq, Debug)]
 pub struct Segment<'a> {
     pub source_port: u16,
@@ -54,6 +67,9 @@ pub struct Segment<'a> {
     pub flags: u8,
     pub window: u16,
     pub mss: Option<u16>,
+    /// The peer's window shift, at most [`MAX_WINDOW_SCALE`].
+    pub window_scale: Option<u8>,
+    pub sack_permitted: bool,
     pub payload: &'a [u8],
 }
 
@@ -82,8 +98,16 @@ fn valid_flags(flags: u8) -> bool {
         && flags & (FIN | RST) != FIN | RST
 }
 
-fn parse_options(options: &[u8]) -> Result<Option<u16>, SegmentError> {
+struct Options {
+    mss: Option<u16>,
+    scale: Option<u8>,
+    sack_permitted: bool,
+}
+
+fn parse_options(options: &[u8]) -> Result<Options, SegmentError> {
     let mut mss = None;
+    let mut scale = None;
+    let mut sack_permitted = false;
     let mut index = 0;
     while index < options.len() {
         match options[index] {
@@ -100,11 +124,27 @@ fn parse_options(options: &[u8]) -> Result<Option<u16>, SegmentError> {
                     }
                     mss = Some(u16::from_be_bytes([options[index + 2], options[index + 3]]));
                 }
+                if kind == OPTION_WINDOW_SCALE {
+                    if length != 3 || scale.is_some() {
+                        return Err(SegmentError::Options);
+                    }
+                    scale = Some(options[index + 2].min(MAX_WINDOW_SCALE));
+                }
+                if kind == OPTION_SACK_PERMITTED {
+                    if length != 2 {
+                        return Err(SegmentError::Options);
+                    }
+                    sack_permitted = true;
+                }
                 index += length;
             }
         }
     }
-    Ok(mss)
+    Ok(Options {
+        mss,
+        scale,
+        sack_permitted,
+    })
 }
 
 /// Parses an IP payload that already passed [`ipv4::parse_protocol`] for TCP.
@@ -125,9 +165,10 @@ pub fn parse(
     if source_port == 0 || destination_port == 0 {
         return Err(SegmentError::Port);
     }
-    let flags = bytes[13];
-    // The low nibble of byte 12 holds the reserved bits and the NS flag.
-    if bytes[12] & 0x0f != 0 || !valid_flags(flags) {
+    // The low nibble of byte 12 holds the reserved bits and the AE (formerly
+    // NS) flag, ignored on receipt like ECN-echo and CWR.
+    let flags = bytes[13] & !IGNORED_FLAGS;
+    if !valid_flags(flags) {
         return Err(SegmentError::Flags);
     }
     if bytes[18..20] != [0, 0] {
@@ -136,7 +177,11 @@ pub fn parse(
     if segment_sum(source, destination, bytes) != 0xffff {
         return Err(SegmentError::Checksum);
     }
-    let mss = parse_options(&bytes[HEADER_LEN..offset])?;
+    let Options {
+        mss,
+        scale: window_scale,
+        sack_permitted,
+    } = parse_options(&bytes[HEADER_LEN..offset])?;
     if mss.is_some_and(|mss| mss < MIN_PEER_MSS) {
         return Err(SegmentError::Mss);
     }
@@ -148,6 +193,8 @@ pub fn parse(
         flags,
         window: u16::from_be_bytes([bytes[14], bytes[15]]),
         mss: if flags & SYN != 0 { mss } else { None },
+        window_scale: if flags & SYN != 0 { window_scale } else { None },
+        sack_permitted: flags & SYN != 0 && sack_permitted,
         payload: &bytes[offset..],
     })
 }
@@ -169,6 +216,12 @@ pub struct Header {
     pub window: u16,
     /// Emitted as a 4-byte MSS option; only meaningful on a SYN.
     pub mss: Option<u16>,
+    /// Emitted as a window scale option after a NOP; only meaningful on a SYN.
+    pub window_scale: Option<u8>,
+    /// Emitted after two NOPs; only meaningful on a SYN.
+    pub sack_permitted: bool,
+    /// Received ranges beyond the acknowledgment, as (left, right) edges.
+    pub sack: [Option<(u32, u32)>; SACK_BLOCKS],
 }
 
 /// Builds a complete inner IPv4/TCP packet of at most `mtu` bytes. The
@@ -184,7 +237,13 @@ pub fn build(
     if header.source_port == 0 || header.destination_port == 0 {
         return Err(BuildError::Port);
     }
-    let options = if header.mss.is_some() { 4 } else { 0 };
+    let blocks = header.sack.iter().flatten().count();
+    let options = 4
+        * (usize::from(header.mss.is_some())
+            + usize::from(header.window_scale.is_some())
+            + usize::from(header.sack_permitted)
+            + usize::from(blocks > 0))
+        + 8 * blocks;
     let length = HEADER_LEN + options + payload.len();
     if IPV4_HEADER_LEN + length > mtu {
         return Err(BuildError::TooLarge);
@@ -201,6 +260,19 @@ pub fn build(
     if let Some(mss) = header.mss {
         segment.extend_from_slice(&[OPTION_MSS, 4]);
         segment.extend_from_slice(&mss.to_be_bytes());
+    }
+    if let Some(shift) = header.window_scale {
+        segment.extend_from_slice(&[OPTION_NOP, OPTION_WINDOW_SCALE, 3, shift]);
+    }
+    if header.sack_permitted {
+        segment.extend_from_slice(&[OPTION_NOP, OPTION_NOP, OPTION_SACK_PERMITTED, 2]);
+    }
+    if blocks > 0 {
+        segment.extend_from_slice(&[OPTION_NOP, OPTION_NOP, OPTION_SACK, 2 + 8 * blocks as u8]);
+        for (left, right) in header.sack.iter().flatten() {
+            segment.extend_from_slice(&left.to_be_bytes());
+            segment.extend_from_slice(&right.to_be_bytes());
+        }
     }
     segment.extend_from_slice(payload);
     let value = !segment_sum(source, destination, &segment);

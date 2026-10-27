@@ -71,6 +71,33 @@ fn order_key(order: u64) -> Key {
     key
 }
 
+/// Deletes every secondary key a record holds, before it is replaced or forgotten.
+fn release_keys(old: &Record, changes: &mut BTreeMap<Key, Option<Vec<u8>>>) -> Result<()> {
+    for hash in [old.v1.map(|v| v.to_vec()), old.v2.map(|v| v.to_vec())]
+        .into_iter()
+        .flatten()
+    {
+        changes.insert(alias_key(&hash), None);
+    }
+    if old.queued() {
+        changes.insert(queue_key(old)?, None);
+    }
+    changes.insert(id_key(SEED, &old.status.id)?, None);
+    let mut all = queue_key(old)?;
+    all[0] = ALL_ORDERED;
+    changes.insert(all, None);
+    for wire in [old.v1, old.v2.map(|h| h[..20].try_into().unwrap())]
+        .into_iter()
+        .flatten()
+    {
+        let mut key = alias_key(&wire);
+        key[0] = WIRE;
+        changes.insert(key, None);
+    }
+    changes.insert(order_key(old.control.queue_order), None);
+    Ok(())
+}
+
 pub(super) struct Record {
     pub status: DownloadStatus,
     pub control: TorrentControl,
@@ -499,28 +526,7 @@ impl TransferIndex {
         }
         let mut changes = BTreeMap::new();
         if let Some(old) = &old {
-            for hash in [old.v1.map(|v| v.to_vec()), old.v2.map(|v| v.to_vec())]
-                .into_iter()
-                .flatten()
-            {
-                changes.insert(alias_key(&hash), None);
-            }
-            if old.queued() {
-                changes.insert(queue_key(old)?, None);
-            }
-            changes.insert(id_key(SEED, &old.status.id)?, None);
-            let mut all = queue_key(old)?;
-            all[0] = ALL_ORDERED;
-            changes.insert(all, None);
-            for wire in [old.v1, old.v2.map(|h| h[..20].try_into().unwrap())]
-                .into_iter()
-                .flatten()
-            {
-                let mut key = alias_key(&wire);
-                key[0] = WIRE;
-                changes.insert(key, None);
-            }
-            changes.insert(order_key(old.control.queue_order), None);
+            release_keys(old, &mut changes)?;
         }
         let order = order_key(record.control.queue_order);
         if self
@@ -633,6 +639,63 @@ impl TransferIndex {
         if let Some(old_digest) = old_digest {
             let path = snapshots.join(hex(&old_digest));
             fs::remove_file(path).map_err(|_| "Cannot remove superseded transfer snapshot")?;
+            crate::store::sync_directory(&snapshots)
+                .map_err(|_| "Cannot synchronize transfer snapshots")?;
+        }
+        Ok(())
+    }
+    /// Forgets a transfer: its record, every secondary key and its snapshot.
+    /// A transfer already forgotten is not an error.
+    pub fn remove(&mut self, id: &str) -> Result<()> {
+        let primary = id_key(PRIMARY, id)?;
+        let Some(old) = self.get(id)? else {
+            return Ok(());
+        };
+        let old_digest = self.index.get(&primary)?;
+        let mut changes = BTreeMap::new();
+        release_keys(&old, &mut changes)?;
+        let mut counts = self.counts()?;
+        counts.listing = counts
+            .listing
+            .checked_add(1)
+            .ok_or("Transfer listing sequence exhausted")?;
+        counts.count = counts
+            .count
+            .checked_sub(1)
+            .ok_or("Invalid transfer count")?;
+        counts.downloaded = counts
+            .downloaded
+            .checked_sub(u128::from(old.control.downloaded_bytes))
+            .ok_or("Invalid downloaded aggregate")?;
+        counts.uploaded = counts
+            .uploaded
+            .checked_sub(u128::from(old.control.uploaded_bytes))
+            .ok_or("Invalid uploaded aggregate")?;
+        changes.insert(primary, None);
+        changes.insert(COUNTS, Some(counts.encode()));
+        let mut changes: Vec<_> = changes
+            .into_iter()
+            .map(|(k, v)| match v {
+                Some(v) if v.len() <= 32 => Change::PutInline(k, v),
+                Some(v) => Change::Put(k, v),
+                None => Change::Delete(k),
+            })
+            .collect();
+        crate::inventory::backlog::maintain(
+            &mut self.index,
+            &mut changes,
+            &primary,
+            false,
+            crate::store::now(),
+        )?;
+        self.index.commit(changes)?;
+        if let Some(old_digest) = old_digest {
+            let snapshots = self.directory.join("transfer-snapshots");
+            match fs::remove_file(snapshots.join(hex(&old_digest))) {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(_) => return Err("Cannot remove the transfer snapshot".into()),
+            }
             crate::store::sync_directory(&snapshots)
                 .map_err(|_| "Cannot synchronize transfer snapshots")?;
         }

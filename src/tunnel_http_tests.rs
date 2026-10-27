@@ -794,6 +794,10 @@ fn writes_are_chunked_and_backpressure_respects_the_write_timeout() {
         .set_write_timeout(Some(Duration::from_millis(40)))
         .unwrap();
     let input = vec![b'x'; CHUNK * 2];
+    let bound = config(SocketAddr::from(([127, 0, 0, 1], 9)), false)
+        .tcp
+        .send_buffer
+        + CHUNK;
     let start = Instant::now();
     let mut sent = 0;
     loop {
@@ -801,7 +805,7 @@ fn writes_are_chunked_and_backpressure_respects_the_write_timeout() {
             Ok(n) => {
                 assert!(n > 0 && n <= CHUNK);
                 sent += n;
-                assert!(sent <= 65_536 + CHUNK, "bounded native send buffer");
+                assert!(sent <= bound, "bounded native send buffer");
             }
             Err(e) => {
                 assert_eq!(e.kind(), io::ErrorKind::TimedOut);
