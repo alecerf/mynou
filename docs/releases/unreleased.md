@@ -66,6 +66,17 @@ The TMDB catalog uses its read access token only (`MYNOU_TMDB_TOKEN`); the
 A settings document with fields this version does not know, written by an older
 or newer Mynou, now loads and ignores them instead of being refused.
 
+## Changed: Torrents wait until you choose how they connect
+
+A data directory without a VPN choice no longer downloads through your own
+connection by default: torrents, startup and new requests wait until
+**Settings → VPN** has a WireGuard profile, or until **Use my own connection**
+saves that choice. The overview says so until it is done. This also applies to
+an existing installation that never set up the VPN: choose once after updating.
+A profile can therefore be imported before any torrent leaves, now that it is
+imported through the running service
+([details](/docs/wireguard-operator.md#state-and-recovery)).
+
 ## Changed: WireGuard profiles with IPv6 are accepted
 
 A provider profile may add an IPv6 address, IPv6 resolvers and `::/0` to its

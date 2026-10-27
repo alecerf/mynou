@@ -281,7 +281,7 @@ fn execute(args: Args) -> Result<()> {
             startup.address()?
         );
     }
-    let engine = Engine::open_serving(config)?;
+    let engine = Engine::open_for_service(config)?;
     // The storage opened: an update that led here is kept.
     mynou::update::confirm(&path);
     let api = startup.serve(engine)?;

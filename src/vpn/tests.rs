@@ -1044,3 +1044,47 @@ pub(crate) fn load_operator(config: &crate::config::Config, driver: HttpTunnel) 
     }
     operator
 }
+
+#[test]
+fn a_service_without_intent_waits_for_a_choice_and_never_starts_direct() {
+    let directory = Directory::new();
+    let config = directory.config();
+    fs::create_dir_all(&config.store_dir).unwrap();
+    let operator = Operator::load_for_service(&config.store_dir);
+    let gate = operator.gate();
+    let report = operator.report(&gate);
+    assert_eq!(state(&report), "unchosen");
+    assert_eq!(report.get("enabled"), Some(&Value::Bool(false)));
+    assert!(gate.publication().is_err());
+    assert!(!operator.ready(&gate));
+    for action in ["enable", "reconnect", "revoke", "enable-forwarding"] {
+        assert!(operator.control(&gate, action, None).is_err());
+        assert_eq!(state(&operator.report(&gate)), "unchosen");
+    }
+    assert!(!stored(&config).exists());
+    // Choosing Direct is explicit and durable.
+    operator.control(&gate, "disable", None).unwrap();
+    let intent = Intent::decode(&profile::read_private_text(&stored(&config)).unwrap()).unwrap();
+    assert!(intent.mode == Mode::Disabled && intent.profile.is_none());
+    let operator = Operator::load_for_service(&config.store_dir);
+    let gate = operator.gate();
+    assert_eq!(state(&operator.report(&gate)), "disabled");
+    assert!(gate.publication().is_ok());
+    // Engines opened outside the service keep the Direct default.
+    let directory = Directory::new();
+    let engine = Engine::open_for_management(directory.config()).unwrap();
+    assert_eq!(state(&engine.vpn_status()), "disabled");
+}
+
+#[test]
+fn an_import_ends_the_wait_for_a_choice() {
+    let directory = Directory::new();
+    let config = directory.config();
+    fs::create_dir_all(&config.store_dir).unwrap();
+    let operator = Operator::load_for_service(&config.store_dir);
+    let gate = operator.gate();
+    let profile = profile::parse(PROFILE).unwrap();
+    assert_redacted(&operator.control(&gate, "import", Some(profile)).unwrap());
+    let intent = Intent::decode(&profile::read_private_text(&stored(&config)).unwrap()).unwrap();
+    assert!(intent.mode == Mode::Enabled && intent.profile.is_some());
+}

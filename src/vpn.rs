@@ -27,6 +27,7 @@ const STORAGE: &str = "Cannot persist private VPN intent; torrent networking rem
 const DISABLED: &str = "# mynou-vpn-v1 disabled\n";
 const ENABLED: &str = "# mynou-vpn-v1 enabled\n";
 const REVOKED: &str = "# mynou-vpn-v1 revoked\n";
+const UNCHOSEN: &str = "Choose a VPN profile or your own connection before torrents start";
 /// Opt-in NAT-PMP forwarding to the profile's DNS gateway (owner decision, #223).
 const FORWARDING: &str = "# mynou-forwarding natpmp\n";
 
@@ -35,6 +36,9 @@ enum Mode {
     Disabled,
     Enabled,
     Revoked,
+    /// No `vpn.conf` yet: torrents wait until the operator imports a profile
+    /// or chooses Direct. Never persisted; any control writes a real intent.
+    Unchosen,
 }
 struct Intent {
     mode: Mode,
@@ -72,7 +76,7 @@ impl Intent {
     }
     fn document(&self) -> String {
         let mut text = match self.mode {
-            Mode::Disabled => DISABLED,
+            Mode::Disabled | Mode::Unchosen => DISABLED,
             Mode::Enabled => ENABLED,
             Mode::Revoked => REVOKED,
         }
@@ -200,10 +204,20 @@ pub(crate) struct Operator {
 }
 impl Operator {
     pub(crate) fn load(directory: &Path, runtime: bool) -> Arc<Self> {
+        Self::load_with(directory, runtime, false)
+    }
+    /// As the service loads it: a store that never chose waits for a choice
+    /// instead of using Direct, so no torrent leaves before a profile exists.
+    pub(crate) fn load_for_service(directory: &Path) -> Arc<Self> {
+        Self::load_with(directory, true, true)
+    }
+    fn load_with(directory: &Path, runtime: bool, choose: bool) -> Arc<Self> {
         let path = directory.join("vpn.conf");
-        let loaded = match fs::symlink_metadata(&path) {
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(DISABLED.to_owned()),
-            _ => profile::read_private_text(&path).map_err(|_| ()),
+        let missing = matches!(fs::symlink_metadata(&path), Err(e) if e.kind() == std::io::ErrorKind::NotFound);
+        let loaded = if missing {
+            Ok(DISABLED.to_owned())
+        } else {
+            profile::read_private_text(&path).map_err(|_| ())
         };
         let intent = loaded.as_ref().ok().and_then(|s| Intent::decode(s).ok());
         let mut state = State {
@@ -215,7 +229,9 @@ impl Operator {
             error: None,
             telemetry: None,
         };
-        if let Some(intent) = intent {
+        if missing && choose {
+            state.mode = Mode::Unchosen;
+        } else if let Some(intent) = intent {
             state.document = intent.document();
             state.mode = intent.mode;
             state.forwarding = intent.forwarding;
@@ -304,7 +320,10 @@ impl Operator {
             return value;
         };
         forwarding_json(&mut value, &state, gate);
-        value.insert("enabled", state.mode != Mode::Disabled);
+        value.insert(
+            "enabled",
+            !matches!(state.mode, Mode::Disabled | Mode::Unchosen),
+        );
         value.insert("profile_present", state.document.contains("[Interface]"));
         if let Some(error) = state.error {
             value.insert("state", "error");
@@ -323,6 +342,10 @@ impl Operator {
             Mode::Revoked => {
                 value.insert("state", "blocked");
                 value.insert("reason", "Profile revoked by operator");
+            }
+            Mode::Unchosen => {
+                value.insert("state", "unchosen");
+                value.insert("reason", UNCHOSEN);
             }
             Mode::Enabled => {
                 if let Some(driver) = &state.driver {
@@ -392,7 +415,13 @@ impl Operator {
         if self.changed() {
             return Err("VPN generation is already retiring; retry after reload".into());
         }
-        let mut intent = if state.error.is_none() {
+        let mut intent = if state.mode == Mode::Unchosen {
+            Intent {
+                mode: Mode::Unchosen,
+                forwarding: false,
+                profile: None,
+            }
+        } else if state.error.is_none() {
             Intent::decode(&state.document)?
         } else {
             Intent {
@@ -589,6 +618,13 @@ impl crate::engine::Engine {
             return Err("External transport has no operator VPN controls".into());
         };
         operator.control(gate, action, profile)
+    }
+    /// No VPN mode was ever chosen, so torrents and startup wait for one.
+    pub(crate) fn vpn_unchosen(&self) -> bool {
+        self.vpn
+            .as_ref()
+            .and_then(|operator| operator.state.lock().ok())
+            .is_some_and(|state| state.mode == Mode::Unchosen)
     }
     pub(crate) fn vpn_ready(&self) -> bool {
         match (&self.vpn, &self.vpn_gate) {

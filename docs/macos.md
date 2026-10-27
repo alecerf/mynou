@@ -38,7 +38,9 @@ Start the service:
 
 The first start creates `~/Library/Application Support/Mynou`, private to your
 account. Open <http://127.0.0.1:8787/>; there is no sign-in. Then set Mynou up in the **Settings** view: library folders, downloads, Plex, TMDB, sources and their
-tokens. Plex and TMDB turn on once their token is saved. Use ordinary folders you own rather than
+tokens. Plex and TMDB turn on once their token is saved. Torrents wait until
+**Settings → VPN** has a choice: a WireGuard profile, or your own connection.
+Use ordinary folders you own rather than
 paths through symbolic links: imports never overwrite files and refuse
 symbolic links.
 
@@ -213,6 +215,6 @@ available in **Settings → VPN** and through the API. See the
 [operator reference](wireguard-operator.md) for supported settings, startup and
 restart behavior, file permissions and limitations. The
 [WireGuard installation and migration guide](wireguard-macos-migration.md)
-covers private import before startup, backups, verification, recovery and
+covers the first import, backups, verification, recovery and
 rollback without changing the existing Gluetun deployment. Read the
 [evidence and supported-subset limits](wireguard-acceptance.md) before migrating.

@@ -51,11 +51,16 @@ views.dashboard = {
         h('button', { type: 'button', onclick: (e) => act(e.currentTarget, () => link.call('POST', '/api/update/install', {}), 'Installing the update; Mynou restarts') }, 'Install now'));
       // The alerts are rebuilt only when their words change, so a live push
       // neither replays their entrance nor drops a button being pressed.
-      const signature = JSON.stringify([alerts, status.update?.staged ?? null]);
+      // Until a VPN mode is chosen, torrents and new requests wait for it.
+      const unchosen = status.vpn?.state === 'unchosen';
+      const choose = unchosen && h('p', { class: 'notice', role: 'status' },
+        'Torrents wait until you choose how they connect: through a VPN, or through your own connection. ',
+        h('a', { href: '#settings/vpn' }, 'Choose in Settings'));
+      const signature = JSON.stringify([alerts, status.update?.staged ?? null, unchosen]);
       const box = $('#alerts');
       if (box.dataset.signature !== signature) {
         box.dataset.signature = signature;
-        box.replaceChildren(...alerts.map((a) => h('p', { class: 'alert', role: 'alert' }, icon('alert'), a)), ...(update ? [update] : []));
+        box.replaceChildren(...(choose ? [choose] : []), ...alerts.map((a) => h('p', { class: 'alert', role: 'alert' }, icon('alert'), a)), ...(update ? [update] : []));
         for (const el of box.children) Motion.animate(el, [{ opacity: 0.4, transform: 'translateY(-6px)' }, { opacity: 1, transform: 'none' }], { duration: 220 });
       }
     }

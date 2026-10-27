@@ -40,8 +40,11 @@ forwarding is reported separately ([below](#port-forwarding)).
 
 ## State and recovery
 
-States are `disabled`, `connecting`, `protected`, `reconnecting`, `blocked` and
-`error`. New torrent work, including metadata inspections without download
+States are `unchosen`, `disabled`, `connecting`, `protected`, `reconnecting`,
+`blocked` and `error`. `unchosen` is a service whose store has no `vpn.conf`:
+torrent work and startup wait, and requests are refused, until a profile is
+imported or `disable` chooses Direct, which is then saved. Nothing uses Direct
+before that explicit choice. New torrent work, including metadata inspections without download
 workers, cannot use Direct while the persisted intent requires protection.
 Startup exposes status and VPN controls while workers and the torrent listener
 wait for a protected generation. Plex, catalog and management keep their existing

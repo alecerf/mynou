@@ -87,6 +87,15 @@ def main():
                     return response.status == 200
             except (OSError, urllib.error.URLError):
                 return False
+        # A new store keeps torrents waiting for a VPN choice; this fixture
+        # runs without downloads, so it chooses the machine's own connection.
+        def unchosen():
+            try:
+                return api(initial, "GET", "/api/vpn")["state"] == "unchosen"
+            except (OSError, urllib.error.URLError):
+                return False  # storage is still opening
+        wait(unchosen, seconds=60)
+        api(initial, "POST", "/api/vpn/control", {"action": "disable"})
         wait(started, seconds=60)
         value = api(initial, "GET", "/api/settings")["settings"]
         with socket.socket() as bound:
