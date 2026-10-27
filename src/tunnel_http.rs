@@ -3,7 +3,7 @@
 //! receive this network explicitly; operator activation remains separate.
 use crate::{
     net::{HttpConnector, NetworkStream},
-    netstack::{Read as TcpRead, TcpState},
+    netstack::{Answer, Failure, Read as TcpRead, Record, TcpState},
     tunnel::{
         Endpoint, Lookup, Status, SystemClock, Tunnel, TunnelConfig, TunnelState, VirtualFlow,
         VirtualListener, VirtualUdp,
@@ -12,7 +12,7 @@ use crate::{
 };
 use std::{
     io::{self, Read, Write},
-    net::{IpAddr, Ipv4Addr},
+    net::IpAddr,
     sync::{
         Arc, Mutex, RwLock, Weak,
         atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering},
@@ -30,6 +30,9 @@ const CHUNK: usize = 16 * 1024;
 const READ_AHEAD: usize = 256 * 1024;
 const TICK: Duration = Duration::from_millis(2);
 const START_TIMEOUT: Duration = Duration::from_secs(5);
+/// How long the other address family may still answer once one lookup gave
+/// addresses (the resolution delay of RFC 8305 section 3).
+const RESOLUTION_DELAY: Duration = Duration::from_millis(50);
 const QUEUED: u8 = 0;
 const CLAIMED: u8 = 1;
 const ABANDONED: u8 = 2;
@@ -112,6 +115,8 @@ impl Runtime {
 
 struct Owner {
     identity: u128,
+    /// The tunnel carries IPv6: AAAA lookups and IPv6 destinations are used.
+    ipv6: bool,
     sender: SyncSender<Command>,
     cancelled: Arc<AtomicBool>,
     generation: Arc<AtomicU64>,
@@ -327,6 +332,7 @@ impl HttpTunnel {
         if !matches!(config.endpoint, Endpoint::Address(a) if a.is_ipv4()) {
             return Err(error(io::ErrorKind::InvalidInput));
         }
+        let ipv6 = config.ip.local_ipv6().is_some();
         let identity = u128::from_be_bytes(
             crate::crypto::random_bytes::<16>().map_err(|_| error(io::ErrorKind::Other))?,
         );
@@ -365,6 +371,7 @@ impl HttpTunnel {
             .map_err(|_| error(io::ErrorKind::Other))?;
         let owner = Arc::new(Owner {
             identity,
+            ipv6,
             sender,
             cancelled,
             generation,
@@ -438,14 +445,18 @@ struct Connector {
     generation: u64,
 }
 impl Connector {
-    fn resolve(&self, host: &str, deadline: Instant) -> io::Result<Vec<Ipv4Addr>> {
+    /// IPv4 addresses first, then IPv6 ones when the tunnel carries IPv6.
+    /// Both lookups run at once; once one gives addresses, the other has
+    /// `RESOLUTION_DELAY` more to answer, so a resolver that drops AAAA
+    /// queries does not delay IPv4.
+    fn resolve(&self, host: &str, deadline: Instant) -> io::Result<Vec<IpAddr>> {
         if let Ok(ip) = host.parse::<IpAddr>() {
             return match ip {
-                IpAddr::V4(ip) if usable(ip) => Ok(vec![ip]),
+                ip if usable(ip) && (ip.is_ipv4() || self.owner.ipv6) => Ok(vec![ip]),
                 _ => Err(error(io::ErrorKind::InvalidInput)),
             };
         }
-        // Reject IPv6 literals (including bracketed and scoped forms) and
+        // Reject IPv6 literals in other forms (bracketed, scoped) and
         // malformed names before creating a virtual DNS query.
         if host.is_empty() || host.len() > 253 || host.contains([':', '[', ']']) {
             return Err(error(io::ErrorKind::InvalidInput));
@@ -453,39 +464,73 @@ impl Connector {
         let lease = Arc::new(());
         let weak = Arc::downgrade(&lease);
         let name = host.to_owned();
-        let lookup = self.owner.wait(Some(self.generation), deadline, move |r| {
-            let lookup = r.tunnel.resolve(&name).map_err(failed)?;
-            r.leases.push((
-                r.tunnel.status().generation.unwrap_or(0),
-                weak,
-                Resource::Lookup(lookup),
-            ));
-            Ok(lookup)
-        })?;
-        loop {
-            let result = self.owner.wait(Some(self.generation), deadline, move |r| {
-                let result = r.tunnel.lookup_result(lookup).map_err(failed)?;
-                if result.is_some() {
-                    r.leases.retain(|(_, _, resource)| !matches!(resource, Resource::Lookup(id) if *id == lookup));
-                }
-                Ok(result)
-            })?;
-            if let Some(result) = result {
-                let answer = result.map_err(|_| error(io::ErrorKind::NotFound))?;
-                let addresses: Vec<_> = answer
-                    .addresses
-                    .into_iter()
-                    .filter(|ip| usable(*ip))
-                    .collect();
-                if addresses.is_empty() {
-                    return Err(error(io::ErrorKind::InvalidInput));
-                }
-                return Ok(addresses);
+        let records = if self.owner.ipv6 {
+            vec![Record::A, Record::Aaaa]
+        } else {
+            vec![Record::A]
+        };
+        let lookups = self.owner.wait(Some(self.generation), deadline, move |r| {
+            let mut lookups = Vec::new();
+            for record in records {
+                let lookup = r.tunnel.resolve_record(&name, record).map_err(failed)?;
+                r.leases.push((
+                    r.tunnel.status().generation.unwrap_or(0),
+                    weak.clone(),
+                    Resource::Lookup(lookup),
+                ));
+                lookups.push(lookup);
             }
-            pause(deadline)?;
+            Ok(lookups)
+        })?;
+        let mut results: Vec<Option<Result<Answer, Failure>>> =
+            lookups.iter().map(|_| None).collect();
+        let mut settle: Option<Instant> = None;
+        while results.iter().any(Option::is_none) && settle.is_none_or(|at| Instant::now() < at) {
+            let open: Vec<_> = lookups
+                .iter()
+                .zip(&results)
+                .filter(|(_, result)| result.is_none())
+                .map(|(lookup, _)| *lookup)
+                .collect();
+            let done = self.owner.wait(Some(self.generation), deadline, move |r| {
+                let mut done = Vec::new();
+                for lookup in open {
+                    if let Some(result) = r.tunnel.lookup_result(lookup).map_err(failed)? {
+                        r.leases.retain(|(_, _, resource)| !matches!(resource, Resource::Lookup(id) if *id == lookup));
+                        done.push((lookup, result));
+                    }
+                }
+                Ok(done)
+            })?;
+            for (lookup, result) in done {
+                if result.is_ok() {
+                    settle.get_or_insert_with(|| Instant::now() + RESOLUTION_DELAY);
+                }
+                if let Some(index) = lookups.iter().position(|known| *known == lookup) {
+                    results[index] = Some(result);
+                }
+            }
+            if results.iter().any(Option::is_none) {
+                pause(deadline)?;
+            }
         }
+        // A lookup still open here is cancelled when `lease` is dropped.
+        let answers: Vec<_> = results.into_iter().flatten().collect();
+        if answers.iter().all(Result::is_err) {
+            return Err(error(io::ErrorKind::NotFound));
+        }
+        let addresses: Vec<_> = answers
+            .into_iter()
+            .flatten()
+            .flat_map(|answer| answer.addresses)
+            .filter(|ip| usable(*ip))
+            .collect();
+        if addresses.is_empty() {
+            return Err(error(io::ErrorKind::InvalidInput));
+        }
+        Ok(addresses)
     }
-    fn open(&self, address: Ipv4Addr, port: u16, deadline: Instant) -> io::Result<Stream> {
+    fn open(&self, address: IpAddr, port: u16, deadline: Instant) -> io::Result<Stream> {
         let lease = Arc::new(());
         let weak = Arc::downgrade(&lease);
         let flow = self.owner.wait(Some(self.generation), deadline, move |r| {
@@ -511,14 +556,25 @@ impl Connector {
     }
 }
 // LAN addresses travel only inside the tunnel. Loopback/link-local and unusable
-// IPv4 are rejected, independent of literal versus virtual DNS source.
-fn usable(ip: Ipv4Addr) -> bool {
-    !ip.is_unspecified()
-        && !ip.is_loopback()
-        && !ip.is_link_local()
-        && !ip.is_multicast()
-        && ip.octets()[0] != 0
-        && ip.octets()[0] < 240
+// addresses are rejected, independent of literal versus virtual DNS source.
+// IPv4-mapped and -compatible IPv6 forms would bypass the IPv4 rules.
+fn usable(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(ip) => {
+            !ip.is_unspecified()
+                && !ip.is_loopback()
+                && !ip.is_link_local()
+                && !ip.is_multicast()
+                && ip.octets()[0] != 0
+                && ip.octets()[0] < 240
+        }
+        IpAddr::V6(ip) => {
+            !ip.is_multicast()
+                && !ip.is_unicast_link_local()
+                && ip.to_ipv4_mapped().is_none()
+                && ip.segments()[..6] != [0; 6]
+        }
+    }
 }
 impl HttpConnector for Connector {
     fn connect(

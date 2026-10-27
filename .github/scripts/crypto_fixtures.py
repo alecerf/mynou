@@ -379,6 +379,70 @@ def tcp_vectors():
     return rows
 
 
+def ipv6_packet(source, destination, next_header, payload, hop_limit=64):
+    # RFC 8200 section 3: the fixed header only, traffic class and flow label zero.
+    header = bytes((0x60, 0, 0, 0)) + len(payload).to_bytes(2, "big") + bytes((next_header, hop_limit))
+    header += ipaddress.IPv6Address(source).packed + ipaddress.IPv6Address(destination).packed
+    return header + payload
+
+
+def ipv6_pseudo(source, destination, next_header, length):
+    # RFC 8200 section 8.1: addresses, 32-bit upper-layer length, zeros and next header.
+    return (ipaddress.IPv6Address(source).packed + ipaddress.IPv6Address(destination).packed
+            + length.to_bytes(4, "big") + bytes((0, 0, 0, next_header)))
+
+
+def ipv6_vectors():
+    local, remote = "fd00:64::2", "2001:db8::9"
+    udp = []
+    for source_port, destination_port, payload in ((53, 40000, b""), (53, 40000, pattern(1, 3)),
+                                                    (6881, 49152, pattern(511, 3)),
+                                                    (65535, 65535, pattern(1376, 3))):
+        length = 8 + len(payload)
+        segment = source_port.to_bytes(2, "big") + destination_port.to_bytes(2, "big")
+        segment += length.to_bytes(2, "big") + b"\0\0" + payload
+        # RFC 8200 section 8.1: the checksum is mandatory; a computed zero is sent as ones.
+        value = inet_checksum(ipv6_pseudo(remote, local, 17, length) + segment) or 0xFFFF
+        segment = segment[:6] + value.to_bytes(2, "big") + segment[8:]
+        udp.append({"source": remote, "destination": local, "source_port": source_port,
+                    "destination_port": destination_port, "payload": payload.hex(),
+                    "packet": ipv6_packet(remote, local, 17, segment).hex()})
+    tcp = []
+    for sequence, acknowledgment, flags, window, payload, options in (
+            (1000, 0, 2, 65535, b"", bytes((2, 4)) + (1364).to_bytes(2, "big")),
+            (1, 2, 16, 1000, pattern(100, 5), b""),
+            (4294967290, 4294967295, 24, 65535, pattern(1364, 7), b"")):
+        offset = (20 + len(options)) // 4
+        segment = (443).to_bytes(2, "big") + (49152).to_bytes(2, "big")
+        segment += sequence.to_bytes(4, "big") + acknowledgment.to_bytes(4, "big")
+        segment += bytes((offset << 4, flags)) + window.to_bytes(2, "big") + bytes(4) + options + payload
+        value = inet_checksum(ipv6_pseudo(remote, local, 6, len(segment)) + segment)
+        segment = segment[:16] + value.to_bytes(2, "big") + segment[18:]
+        tcp.append({"source": remote, "destination": local, "sequence": sequence,
+                    "acknowledgment": acknowledgment, "flags": flags, "window": window,
+                    "payload": payload.hex(), "packet": ipv6_packet(remote, local, 6, segment).hex()})
+
+    def icmpv6(source, destination, message):
+        # RFC 4443 section 2.3: the checksum covers the IPv6 pseudo-header.
+        value = inet_checksum(ipv6_pseudo(source, destination, 58, len(message)) + message)
+        return ipv6_packet(source, destination, 58, message[:2] + value.to_bytes(2, "big") + message[4:])
+
+    body = (0x1234).to_bytes(2, "big") + (7).to_bytes(2, "big") + pattern(56, 11)
+    echo = {"request": icmpv6(remote, local, bytes((128, 0, 0, 0)) + body).hex(),
+            "reply": icmpv6(local, remote, bytes((129, 0, 0, 0)) + body).hex()}
+    name, txid = "tracker.example.net", 0x2B3C
+    aaaa = lambda address: ipaddress.IPv6Address(address).packed
+    pointer = bytes((0xC0, 12))
+    answers = dns_record(pointer, 28, 300, aaaa("2001:db8::10")) + dns_record(pointer, 28, 120, aaaa("2001:db8::11"))
+    dns = {"id": txid, "name": name,
+           "query": dns_message(txid, name, flags=0x0100, qtype=28).hex(),
+           "response": dns_message(txid, name, answers, 2, qtype=28).hex(),
+           "addresses": ["2001:db8::10", "2001:db8::11"], "ttl": 120,
+           "a_in_aaaa": dns_message(txid, name, dns_record(pointer, 1, 300, bytes((192, 0, 2, 10))), 1,
+                                    qtype=28).hex()}
+    return {"local": local, "remote": remote, "udp": udp, "tcp": tcp, "echo": echo, "dns": dns}
+
+
 def dns_name(name):
     wire = b""
     for label in name.rstrip(".").split("."):
@@ -489,7 +553,8 @@ def vectors():
                                     "output": expand(prk, info, length).hex()})
     return {"schema": 1, "blake2s": hashes, "hmac": hmacs, "hkdf": derivations,
             "wireguard": transport_vectors(), "handshake": handshake_vectors(),
-            "cookie": cookie_vectors(), "inner": inner_ip_vectors(), "tcp": tcp_vectors(), "dns": dns_vectors()}
+            "cookie": cookie_vectors(), "inner": inner_ip_vectors(), "tcp": tcp_vectors(), "dns": dns_vectors(),
+            "ipv6": ipv6_vectors()}
 
 
 def main():
@@ -504,7 +569,8 @@ def main():
           f"{len(data['hkdf'])} HKDFs, {len(data['wireguard'])} transport packets, "
           f"{len(data['handshake'])} Noise handshakes, {len(data['cookie'])} cookie exchanges, "
           f"{len(data['inner']['ipv4']) + len(data['inner']['udp'])} inner packets, "
-          f"{len(data['dns']['responses'])} DNS replies")
+          f"{len(data['dns']['responses'])} DNS replies, "
+          f"{len(data['ipv6']['udp']) + len(data['ipv6']['tcp']) + 2} IPv6 packets")
 
 
 if __name__ == "__main__":

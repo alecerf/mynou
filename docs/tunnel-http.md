@@ -58,18 +58,28 @@ not cancel a connector still in use. There is no detached runtime thread.
 
 ## Destination and HTTP policy
 
-HTTP hostname queries use only the virtual tunnel DNS client. Literal IPv4
-needs no lookup. IPv6 literals (including brackets and scoped forms), zero
-ports, unspecified, loopback, link-local, multicast, reserved and broadcast IPv4
-are rejected. The same IPv4 checks apply to DNS answers. The virtual resolver
-requests A records; an IPv6-only destination fails without host resolver or
-Happy Eyeballs fallback. The inner stack also enforces its configured allowed
-network and rejects its own local address.
+HTTP hostname queries use only the virtual tunnel DNS client. Literal addresses
+need no lookup. Zero ports and unspecified, loopback, link-local, multicast,
+reserved and broadcast IPv4 are rejected. When the tunnel carries IPv6 (the
+profile has an IPv6 address and the `::/0` route), IPv6 literals and answers are
+used too, except multicast, link-local, loopback, unspecified and IPv4-mapped or
+-compatible forms; scoped forms are always rejected. Without IPv6 in the tunnel,
+every IPv6 literal is rejected and no AAAA query is sent. The same checks apply to
+DNS answers. The inner stack also enforces its configured allowed networks and
+rejects its own local addresses.
 
-Private/LAN IPv4 may be reached **inside the tunnel only**, subject to that
+Name resolution order is fixed. The virtual resolver is asked for A records and,
+with IPv6 in the tunnel, AAAA records at the same time. The answer lists the IPv4
+addresses first, then the IPv6 ones, and connections try them in that order.
+Once one lookup returns addresses, the other has 50 ms more (the resolution delay
+of RFC 8305), so a resolver that never answers AAAA does not delay IPv4; a later
+answer is not used. A name with addresses in only one family uses that family.
+Nothing falls back to the host resolver or the host's IPv6.
+
+Private/LAN addresses may be reached **inside the tunnel only**, subject to that
 network policy. A LAN URL unreachable through the tunnel fails. No destination,
 redirect, proxy setting or error selects a direct socket or resolver. The
-configured DNS server may itself be private IPv4 inside the tunnel.
+configured DNS servers may themselves be private addresses inside the tunnel.
 
 The [HTTP connector contract](http-connector.md) still applies. Redirects share
 the same captured connector and absolute request deadline. HTTP ignores

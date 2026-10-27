@@ -146,6 +146,87 @@ fn datagrams_carry_tracker_exchanges_and_refuse_ipv6() {
     assert!(!wire.iter().any(|d| d.windows(8).any(|w| w == b"announce")));
 }
 
+/// Both ends of a `Pair` with their IPv6 address; the resolver stays IPv4.
+fn dual_stack(client: &mut TunnelConfig, server: &mut TunnelConfig) {
+    for (config, local) in [(client, CLIENT6), (server, SERVER6)] {
+        config.ip = config
+            .ip
+            .with_ipv6(local, std::net::Ipv6Addr::UNSPECIFIED, 0)
+            .unwrap();
+        config.tcp.ip = config.ip;
+        if let Some(dns) = config.dns.as_mut() {
+            dns.ip = config.ip;
+        }
+    }
+}
+
+#[test]
+fn an_ipv6_tunnel_resolves_ipv4_first_and_reaches_ipv6_peers() {
+    let pair = Pair::with(dual_stack);
+    let network = &pair.client_network;
+    let peers = network.resolve("peer.example:6881", end()).unwrap();
+    let expected: [SocketAddr; 2] = [
+        "10.7.0.1:6881".parse().unwrap(),
+        "[fd00:7::1]:6881".parse().unwrap(),
+    ];
+    assert_eq!(peers, expected);
+    assert_eq!(
+        pair.dns.load(Ordering::Relaxed),
+        2,
+        "one A and one AAAA query"
+    );
+    assert_eq!(
+        network.resolve("[fd00:7::1]:6881", end()).unwrap(),
+        [expected[1]],
+        "literal IPv6 needs no lookup"
+    );
+    assert!(network.datagram(true).is_ok());
+
+    let listener = pair
+        .server_network
+        .listen("[::]:0".parse().unwrap())
+        .unwrap();
+    let target = SocketAddr::from((SERVER6, listener.port()));
+    let mut stream = network.connect(target, Duration::from_secs(3)).unwrap();
+    let deadline = end();
+    let (mut accepted, remote) = loop {
+        match listener.accept() {
+            Ok(accepted) => break accepted,
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock => pause(deadline).unwrap(),
+            Err(e) => panic!("{e}"),
+        }
+    };
+    assert_eq!(remote.ip(), IpAddr::V6(CLIENT6));
+    for side in [&mut stream, &mut accepted] {
+        side.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+    }
+    stream.write_all(b"over-ipv6").unwrap();
+    assert_eq!(read_exact(&mut *accepted, 9), b"over-ipv6");
+    accepted.write_all(b"back").unwrap();
+    assert_eq!(read_exact(&mut *stream, 4), b"back");
+}
+
+#[test]
+fn an_ipv4_tunnel_never_asks_for_aaaa() {
+    let pair = Pair::new();
+    let peers = pair
+        .client_network
+        .resolve("peer.example:6881", end())
+        .unwrap();
+    assert_eq!(peers, ["10.7.0.1:6881".parse::<SocketAddr>().unwrap()]);
+    assert_eq!(pair.dns.load(Ordering::Relaxed), 1);
+    assert!(
+        pair.client_network
+            .listen("[::]:0".parse().unwrap())
+            .is_err()
+    );
+    assert!(
+        pair.client_network
+            .resolve("[fd00:7::1]:6881", end())
+            .is_err()
+    );
+}
+
 #[test]
 fn tracker_http_uses_the_same_generation_bound_connector() {
     let f = Fixture::new();

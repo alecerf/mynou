@@ -4,8 +4,8 @@ use crate::netstack::support::{address, binary, bytes, fixtures, number, text};
 const LOCAL: Ipv4Addr = Ipv4Addr::new(10, 64, 0, 2);
 const REMOTE: Ipv4Addr = Ipv4Addr::new(203, 0, 113, 9);
 
-fn config() -> Ipv4Config {
-    Ipv4Config::new(LOCAL, Ipv4Addr::UNSPECIFIED, 0).unwrap()
+fn config() -> IpConfig {
+    IpConfig::new(LOCAL, Ipv4Addr::UNSPECIFIED, 0).unwrap()
 }
 
 fn sample(payload: &[u8]) -> Vec<u8> {
@@ -70,7 +70,7 @@ fn independent_checksum_and_packet_vectors() {
     assert_eq!(rows.len(), 6);
     for row in rows {
         let packet = binary(row, "packet");
-        let config = Ipv4Config::new(address(row, "destination"), Ipv4Addr::UNSPECIFIED, 0);
+        let config = IpConfig::new(address(row, "destination"), Ipv4Addr::UNSPECIFIED, 0);
         let config = config.unwrap();
         let parsed = parse(&config, &packet).unwrap();
         assert_eq!(parsed.source, address(row, "source"));
@@ -191,7 +191,7 @@ fn only_padding_options_are_accepted() {
 #[test]
 fn source_must_be_in_the_allowed_network() {
     let allowed = |network: [u8; 4], prefix: u8| {
-        Ipv4Config::new(LOCAL, Ipv4Addr::from(network), prefix).unwrap()
+        IpConfig::new(LOCAL, Ipv4Addr::from(network), prefix).unwrap()
     };
     let packet = sample(b"x");
     assert!(parse(&allowed([203, 0, 113, 0], 24), &packet).is_ok());
@@ -214,14 +214,14 @@ fn source_must_be_in_the_allowed_network() {
 #[test]
 fn configuration_is_validated() {
     let any = Ipv4Addr::UNSPECIFIED;
-    assert_eq!(Ipv4Config::new(LOCAL, any, 33), Err(PacketError::Config));
+    assert_eq!(IpConfig::new(LOCAL, any, 33), Err(PacketError::Config));
     for local in [
         any,
         Ipv4Addr::LOCALHOST,
         Ipv4Addr::BROADCAST,
         Ipv4Addr::new(224, 0, 0, 1),
     ] {
-        assert_eq!(Ipv4Config::new(local, any, 0), Err(PacketError::Config));
+        assert_eq!(IpConfig::new(local, any, 0), Err(PacketError::Config));
     }
     assert_eq!(config().local(), LOCAL);
 }

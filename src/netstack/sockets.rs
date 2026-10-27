@@ -4,10 +4,10 @@
 
 use super::icmp::{self, Effect as IcmpEffect, Ingest as IcmpIngest};
 use super::udp::{self, DatagramError};
-use super::{Fence, Ipv4Config, PacketError, ipv4};
+use super::{Fence, IpConfig, PacketError, ip, ipv4};
 use crate::wireguard::Entropy;
 use std::collections::{BTreeMap, VecDeque};
-use std::net::Ipv4Addr;
+use std::net::IpAddr;
 use std::time::Duration;
 
 /// Ephemeral ports are drawn uniformly from 49152 to 65535.
@@ -66,7 +66,7 @@ impl Handle {
 
 #[derive(PartialEq, Eq, Debug)]
 pub struct Received {
-    pub source: Ipv4Addr,
+    pub source: IpAddr,
     pub source_port: u16,
     pub payload: Vec<u8>,
 }
@@ -92,10 +92,10 @@ pub enum Ingest {
 
 struct Socket {
     serial: u64,
-    remote: Option<(Ipv4Addr, u16)>,
+    remote: Option<(IpAddr, u16)>,
     queue: VecDeque<Received>,
     path_mtu: usize,
-    sent: Option<(Ipv4Addr, [u8; 8], usize)>,
+    sent: Option<(IpAddr, [u8; 8], usize)>,
     unreachable: Option<u8>,
 }
 
@@ -210,7 +210,7 @@ impl UdpSockets {
         &mut self,
         generation: u64,
         handle: Handle,
-        remote: (Ipv4Addr, u16),
+        remote: (IpAddr, u16),
     ) -> Result<(), SocketError> {
         let socket = self.socket(generation, handle)?;
         if socket.remote != Some(remote) {
@@ -245,14 +245,14 @@ impl UdpSockets {
         Ok(received)
     }
 
-    /// Builds the inner packet for one datagram from this socket. A connected
-    /// socket sends only to its remote.
+    /// Builds the inner packet for one datagram from this socket, from `local`
+    /// of the remote's family. A connected socket sends only to its remote.
     pub fn send(
         &mut self,
         generation: u64,
         handle: Handle,
-        local: Ipv4Addr,
-        remote: (Ipv4Addr, u16),
+        local: IpAddr,
+        remote: (IpAddr, u16),
         payload: &[u8],
         mtu: usize,
     ) -> Result<Vec<u8>, SocketError> {
@@ -272,9 +272,10 @@ impl UdpSockets {
         )
         .map_err(SocketError::Build)?;
         if socket.remote == Some(remote) {
+            let header = ip::header_len(local);
             socket.sent = Some((
                 local,
-                packet[20..28].try_into().expect("UDP header"),
+                packet[header..header + 8].try_into().expect("UDP header"),
                 packet.len(),
             ));
         }
@@ -284,12 +285,7 @@ impl UdpSockets {
     /// Applies advice only to the most recent connected datagram, with an exact
     /// UDP header (including its checksum/length), source and remote match. No
     /// destination cache or error queue can grow from unsolicited traffic.
-    pub fn ingest_icmp(
-        &mut self,
-        generation: u64,
-        config: &Ipv4Config,
-        bytes: &[u8],
-    ) -> IcmpIngest {
+    pub fn ingest_icmp(&mut self, generation: u64, config: &IpConfig, bytes: &[u8]) -> IcmpIngest {
         if !self.admit(generation) {
             return IcmpIngest::Revoked;
         }
@@ -305,7 +301,7 @@ impl UdpSockets {
             return IcmpIngest::Dropped;
         };
         if socket.remote != Some((advice.remote, remote_port))
-            || socket.sent != Some((config.local(), advice.transport, advice.total))
+            || socket.sent != Some((advice.local, advice.transport, advice.total))
         {
             return IcmpIngest::Dropped;
         }
@@ -327,7 +323,7 @@ impl UdpSockets {
     pub fn deliver(
         &mut self,
         generation: u64,
-        source: Ipv4Addr,
+        source: IpAddr,
         source_port: u16,
         destination_port: u16,
         payload: &[u8],
@@ -359,9 +355,9 @@ impl UdpSockets {
     }
 
     /// Validates one decrypted inner packet and delivers it. The configuration's
-    /// inner address and allowed source network are the only admission rules.
-    pub fn ingest(&mut self, generation: u64, config: &Ipv4Config, packet: &[u8]) -> Ingest {
-        let packet = match ipv4::parse(config, packet) {
+    /// inner addresses and allowed source networks are the only admission rules.
+    pub fn ingest(&mut self, generation: u64, config: &IpConfig, packet: &[u8]) -> Ingest {
+        let packet = match ip::parse_protocol(config, packet, ipv4::PROTOCOL_UDP) {
             Ok(packet) => packet,
             Err(error) => return Ingest::Ip(error),
         };

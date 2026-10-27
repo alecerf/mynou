@@ -184,6 +184,8 @@ struct State {
     /// NAT-PMP gateway of an enabled forwarding intent: the profile's DNS.
     gateway: Option<Ipv4Addr>,
     forwarding: bool,
+    /// The profile's tunnel carries IPv6.
+    ipv6: bool,
     error: Option<&'static str>,
     /// The last telemetry the tunnel answered, and when: a tunnel busy with
     /// traffic may miss one status deadline without anything being wrong.
@@ -226,6 +228,7 @@ impl Operator {
             driver: None,
             gateway: None,
             forwarding: false,
+            ipv6: false,
             error: None,
             telemetry: None,
         };
@@ -235,6 +238,7 @@ impl Operator {
             state.document = intent.document();
             state.mode = intent.mode;
             state.forwarding = intent.forwarding;
+            state.ipv6 = intent.profile.as_ref().is_some_and(Profile::ipv6);
             if intent.forwarding {
                 state.gateway = intent
                     .profile
@@ -314,6 +318,7 @@ impl Operator {
         value.insert("complete_isolation_verified", false);
         value.insert("forwarding", "disabled");
         value.insert("handshake_age_secs", Value::Null);
+        value.insert("ipv6", false);
         let Ok(mut state) = self.state.try_lock() else {
             value.insert("state", "blocked");
             value.insert("reason", "VPN control is busy");
@@ -382,6 +387,11 @@ impl Operator {
                                 value.insert("reason", format!("{reason:?}"));
                             }
                             value.insert("attempt", status.attempt);
+                            // IPv6 is active only in a protected tunnel that carries it.
+                            value.insert(
+                                "ipv6",
+                                state.ipv6 && status.state == TunnelState::Protected,
+                            );
                             if let Some(age) = age {
                                 value.insert("handshake_age_secs", age.as_secs().to_string());
                             }
@@ -472,6 +482,7 @@ impl Operator {
         }
         state.mode = intent.mode;
         state.forwarding = intent.forwarding;
+        state.ipv6 = intent.profile.as_ref().is_some_and(Profile::ipv6);
         state.document = document;
         self.changed.store(true, Ordering::Release);
         drop(state);

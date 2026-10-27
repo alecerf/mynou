@@ -284,6 +284,15 @@ required CI, the macOS migration guide and the owner's explicit waiver of final
 independent acceptance. Existing protocol, generation and operator fixtures
 retain their scope.
 
+## IPv6 in the tunnel (#372)
+
+Two `tunnel_http::tests::network` fixtures extend the observer to IPv6. A
+dual-stack pair resolves a name to its IPv4 then IPv6 address through tunnel
+DNS, accepts a bracketed IPv6 literal and exchanges TCP bytes with an IPv6
+virtual listener; an IPv4-only pair sends no AAAA query and refuses IPv6
+literals and listeners. Both declare only their owned loopback outer UDP
+endpoints, so any host IPv6 socket, lookup or send fails the run.
+
 ## Protected discovery (#337)
 
 Five `source_network::tests` fixtures extend the required observer with virtual

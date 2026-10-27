@@ -58,8 +58,10 @@ The Rust tests require the fixture path supplied by CI, bound their input to
 - The same generator also writes RFC 1071 checksum, inner IPv4/UDP packet and DNS
   query/reply vectors for [the offline inner stack](/docs/netstack.md) (13
   checksums, 13 packets, 2 queries, 27 replies), and TCP segment vectors for
-  [its TCP layer](/docs/netstack-tcp.md) (14 segments), computed from the RFCs
-  with Python's `struct`, never from Mynou code.
+  [its TCP layer](/docs/netstack-tcp.md) (14 segments), and IPv6 vectors (4 UDP
+  and 3 TCP packets, an ICMPv6 echo request with its reply, an AAAA response),
+  computed from the RFCs with Python's `ipaddress` and integer arithmetic, never
+  from Mynou code.
 
 All fixture keys and messages are synthetic. No credentials or real network
 traffic are required. Tests and validation run only in GitHub Actions, following

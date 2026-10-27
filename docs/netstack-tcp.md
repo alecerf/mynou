@@ -2,7 +2,7 @@
 
 [#205](https://github.com/alecerf/mynou/issues/205) adds the TCP layer of the
 userspace IP stack described in [the design](/docs/wireguard-design.md), on top of
-the strict inner IPv4 codec of [the IPv4/UDP/DNS guide](/docs/netstack.md). It only
+the strict inner IPv4 and IPv6 codecs of [the IP/UDP/DNS guide](/docs/netstack.md). It only
 sees inner IP datagrams: what `Session::receive` of [the transport](/docs/wireguard-transport.md)
 returns goes in through `TcpStack::ingest`, and what `TcpStack::poll` returns is
 what a driver would encrypt and send. There is no host socket, engine,
@@ -15,15 +15,16 @@ I/O. The caller passes a captured generation and a monotonic elapsed time.
 ## Segment codec
 
 `tcp::parse` accepts a segment only if the IP layer already accepted it as
-protocol 6 for the configured address (`ipv4::parse_protocol`; the UDP entry point
-still refuses TCP and the reverse). Then:
+protocol 6 for a configured address (`ip::parse_protocol`, IPv4 or IPv6; the UDP
+entry point still refuses TCP and the reverse). Then:
 
 - the data offset is 5 to 15 words and the bytes exist; both ports are nonzero;
 - urgent is refused, SYN with FIN or RST and FIN with RST are refused, and the
   urgent pointer is zero; the reserved bits, AE, ECN-echo and CWR are ignored as
   RFC 9293 asks, so an ECN-setup SYN (RFC 3168) is answered without ECN;
-- the pseudo-header checksum verifies. It is mandatory over IPv4 and a computed
-  zero is sent as zero (the UDP "all ones" rule does not apply);
+- the pseudo-header checksum verifies, with the IPv4 or the IPv6 pseudo-header
+  (RFC 8200 section 8.1). It is mandatory and a computed zero is sent as zero
+  (the UDP "all ones" rule does not apply);
 - options are walked by length: End-of-Options stops the scan, No-Operation pads,
   every other option needs a length of at least 2 inside the option area and is
   skipped. A second MSS option, an MSS option that is not 4 bytes or an MSS below
@@ -31,7 +32,8 @@ still refuses TCP and the reverse). Then:
 
 The builder writes only a 4-byte MSS option on a SYN and fails with `TooLarge`
 rather than fragmenting or truncating; `mtu` is between 576 and 1424 like the UDP
-builder, so the MSS is `mtu - 40` (1384 at the session budget).
+builder, so the MSS is `mtu - 40` over IPv4 (1384 at the session budget) and
+`mtu - 60` over IPv6 (1364), whose stack needs an `mtu` of at least 1280.
 
 ## Flows
 
@@ -124,7 +126,7 @@ a 512 KiB receive buffer (shift 4), a 256 KiB send buffer, 64 MiB in total, 512
 out-of-order segments and acknowledgments delayed up to 20 ms or four segments.
 A WireGuard profile only changes the MTU.
 
-`TcpConfig::new` takes the same `Ipv4Config` as the UDP layer and an MTU, validates
+`TcpConfig::new` takes the same `IpConfig` as the UDP layer and an MTU, validates
 every bound and rejects values outside the documented ranges, including an initial
 RTO below 1 s or a maximum below 60 s. The initial sequence
 number and ephemeral port come from the injectable `Entropy`; if it fails the
@@ -133,7 +135,7 @@ operation fails and no predictable value is used.
 ## ICMP and path MTU
 
 `TcpStack::ingest_icmp` first applies the bounded checks in
-[the IPv4 guide](/docs/netstack.md#icmp-advice-and-fragment-policy), then requires
+[the IP guide](/docs/netstack.md#icmp-advice-and-fragment-policy), then requires
 an existing flow with the quoted local port, remote address and remote port.
 The quoted TCP sequence must be within actually transmitted, unacknowledged
 sequence space, including wraparound. An unsent SYN, acknowledged bytes, closed
@@ -141,13 +143,14 @@ flows and unknown tuples cannot be affected. This follows the sequence-checking
 mitigation in [RFC 5927](https://www.rfc-editor.org/rfc/rfc5927#section-4.1);
 it does not authenticate a router or defeat an observer or a correct sequence guess.
 
-An eligible fragmentation-needed quote can only lower `path_mtu`, down to 576,
-when the quoted datagram exceeded that MTU. The quoted length is chosen by the
-sender, so it must also fit a segment the flow could have sent (`40 + MSS`), and
+An eligible fragmentation-needed or ICMPv6 packet-too-big quote can only lower
+`path_mtu`, down to 576 (1280 over IPv6), when the quoted datagram exceeded that
+MTU. The quoted length is chosen by the sender, so it must also fit a segment the
+flow could have sent (`40 + MSS`, `60 + MSS` over IPv6), and
 handshake states ignore fragmentation-needed entirely: no SYN or SYN-ACK exceeds
 576 bytes, and a forged quote must not rewind or silence a handshake, whose
 retries still end in `Timeout`. The send MSS becomes the smaller of
-the peer's MSS and the path's `mtu - 40`, and outstanding bytes are resegmented
+the peer's MSS and the path's `mtu - 40` (`mtu - 60`), and outstanding bytes are resegmented
 from `snd_una` under the existing congestion, peer-window and retry limits.
 Zero legacy MTUs and increases are ignored. No destination cache or new table is
 created; the state is a few fixed fields within each bounded flow.
@@ -222,8 +225,8 @@ interoperability are not.
 
 The driver that feeds decrypted session bytes in, encrypts what comes out, owns
 the clock and generations and revokes the UDP table, the DNS client and this stack
-together is now [the tunnel runtime](/docs/tunnel.md). IP fragmentation is refused
-and IPv6 remains blocked, as documented above. Still missing: SACK-based
+together is now [the tunnel runtime](/docs/tunnel.md). IP fragmentation is refused,
+as documented above. Still missing: SACK-based
 recovery as a sender, simultaneous open and TCP keep-alive for bulk peers; an
 independently implemented peer in CI; and the isolation evidence listed in
 [the design](/docs/wireguard-design.md).

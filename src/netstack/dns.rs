@@ -1,12 +1,13 @@
 //! Bounded DNS stub client over virtual UDP with virtual TCP fallback. It asks configured inner resolver
-//! IPv4 addresses only, for A records, with one virtual socket per query. There
+//! addresses only, for A or AAAA records, with one virtual socket per query. There
 //! is no host resolver, search list or cache. TCP shares the caller's bounded flow table.
 
-use super::ipv4::{check_mtu, unroutable};
+use super::ip::unroutable;
+use super::ipv4::check_mtu;
 use super::sockets::{Handle, SocketError, UdpSockets};
-use super::{Fence, FlowHandle, Ipv4Config, Read, TcpError, TcpFailure, TcpStack};
+use super::{Fence, FlowHandle, IpConfig, Read, TcpError, TcpFailure, TcpStack};
 use crate::wireguard::Entropy;
-use std::net::Ipv4Addr;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::time::Duration;
 
 pub const PORT: u16 = 53;
@@ -23,6 +24,7 @@ const MAX_RECORDS: usize = 32;
 const MAX_ALIASES: usize = 8;
 const TYPE_A: u16 = 1;
 const TYPE_CNAME: u16 = 5;
+const TYPE_AAAA: u16 = 28;
 const CLASS_IN: u16 = 1;
 const TXID_ATTEMPTS: usize = 8;
 
@@ -40,17 +42,36 @@ pub enum ReplyError {
     Pointer,
     Records,
     Rdata,
-    /// Any answer record other than A and CNAME, so also AAAA.
+    /// Any answer record other than CNAME and the asked type, so an AAAA
+    /// answer to an A question and an A answer to an AAAA one.
     Type,
     Class,
     TooLarge,
+}
+
+/// The address record a query asks for.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Record {
+    /// IPv4 addresses.
+    A,
+    /// IPv6 addresses.
+    Aaaa,
+}
+
+impl Record {
+    fn code(self) -> u16 {
+        match self {
+            Record::A => TYPE_A,
+            Record::Aaaa => TYPE_AAAA,
+        }
+    }
 }
 
 /// What one validated reply says.
 #[derive(PartialEq, Eq, Debug)]
 pub enum Reply {
     Addresses {
-        addresses: Vec<Ipv4Addr>,
+        addresses: Vec<IpAddr>,
         ttl: u32,
     },
     NameError,
@@ -109,12 +130,23 @@ fn be16(bytes: &[u8]) -> u16 {
     u16::from_be_bytes([bytes[0], bytes[1]])
 }
 
-/// Validates one datagram against the pending query: transaction id, response
-/// flags, exactly the asked question (`question` is its lowercase wire name), then
-/// the answers. Only A records (and CNAMEs leading to them) owned by the asked
-/// name or an alias are used; unrelated owners are ignored, any other type is an
-/// error. Addresses that are never valid unicast peers are dropped.
+/// [`parse_response_for`] an A question.
 pub fn parse_response(id: u16, question: &[u8], message: &[u8]) -> Result<Reply, ReplyError> {
+    parse_response_for(Record::A, id, question, message)
+}
+
+/// Validates one datagram against the pending query: transaction id, response
+/// flags, exactly the asked question (`question` is its lowercase wire name, of
+/// the type `record`), then the answers. Only records of that type (and CNAMEs
+/// leading to them) owned by the asked name or an alias are used; unrelated
+/// owners are ignored, any other type is an error. Addresses that are never
+/// valid unicast peers are dropped.
+pub fn parse_response_for(
+    record: Record,
+    id: u16,
+    question: &[u8],
+    message: &[u8],
+) -> Result<Reply, ReplyError> {
     if message.len() > MAX_DNS_MESSAGE {
         return Err(ReplyError::TooLarge);
     }
@@ -139,7 +171,7 @@ pub fn parse_response(id: u16, question: &[u8], message: &[u8]) -> Result<Reply,
     let tail = message
         .get(position..position + 4)
         .ok_or(ReplyError::Truncated)?;
-    if tail != [0u8, 1, 0, 1] {
+    if be16(tail) != record.code() || be16(&tail[2..]) != CLASS_IN {
         return Err(ReplyError::Question);
     }
     position += 4;
@@ -173,11 +205,14 @@ pub fn parse_response(id: u16, question: &[u8], message: &[u8]) -> Result<Reply,
             value => value,
         };
         match be16(header) {
-            TYPE_A => {
-                if data.len() != 4 {
-                    return Err(ReplyError::Rdata);
-                }
-                let address = Ipv4Addr::new(data[0], data[1], data[2], data[3]);
+            kind @ (TYPE_A | TYPE_AAAA) if kind == record.code() => {
+                let address = match (data.len(), record) {
+                    (4, Record::A) => IpAddr::V4(Ipv4Addr::new(data[0], data[1], data[2], data[3])),
+                    (16, Record::Aaaa) => IpAddr::V6(Ipv6Addr::from(
+                        <[u8; 16]>::try_from(data).map_err(|_| ReplyError::Rdata)?,
+                    )),
+                    _ => return Err(ReplyError::Rdata),
+                };
                 if owners.contains(&owner)
                     && !unroutable(address)
                     && !addresses.contains(&address)
@@ -232,19 +267,21 @@ fn encode_name(name: &str) -> Result<Vec<u8>, DnsError> {
     Ok(wire)
 }
 
-fn query_message(txid: u16, wire: &[u8]) -> Vec<u8> {
+fn query_message(txid: u16, wire: &[u8], record: Record) -> Vec<u8> {
     let mut message = Vec::with_capacity(12 + wire.len() + 4);
     message.extend_from_slice(&txid.to_be_bytes());
     message.extend_from_slice(&[0x01, 0x00, 0, 1, 0, 0, 0, 0, 0, 0]);
     message.extend_from_slice(wire);
-    message.extend_from_slice(&[0, 1, 0, 1]);
+    message.extend_from_slice(&record.code().to_be_bytes());
+    message.extend_from_slice(&CLASS_IN.to_be_bytes());
     message
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct DnsConfig {
-    pub ip: Ipv4Config,
-    pub resolvers: Vec<Ipv4Addr>,
+    pub ip: IpConfig,
+    /// IPv4 resolvers, and IPv6 ones when the stack carries IPv6.
+    pub resolvers: Vec<IpAddr>,
     pub mtu: usize,
     /// Spacing between attempts; resolvers are tried in turn.
     pub retry_interval: Duration,
@@ -255,7 +292,7 @@ pub struct DnsConfig {
 }
 
 impl DnsConfig {
-    pub fn new(ip: Ipv4Config, resolvers: Vec<Ipv4Addr>, mtu: usize) -> Self {
+    pub fn new(ip: IpConfig, resolvers: Vec<IpAddr>, mtu: usize) -> Self {
         Self {
             ip,
             resolvers,
@@ -275,7 +312,9 @@ impl DnsConfig {
             .all(|(index, resolver)| !resolvers[..index].contains(resolver));
         let valid = (1..=MAX_RESOLVERS).contains(&resolvers.len())
             && distinct
-            && !resolvers.iter().any(|&resolver| unroutable(resolver))
+            && resolvers
+                .iter()
+                .all(|&resolver| !unroutable(resolver) && self.ip.source(resolver).is_some())
             && check_mtu(self.mtu).is_ok()
             && (1..=8).contains(&self.attempts)
             && (1..=64).contains(&self.max_pending)
@@ -305,7 +344,7 @@ pub struct QueryId(u64);
 
 #[derive(PartialEq, Eq, Debug)]
 pub struct Answer {
-    pub addresses: Vec<Ipv4Addr>,
+    pub addresses: Vec<IpAddr>,
     pub ttl: Duration,
 }
 
@@ -348,6 +387,7 @@ pub struct Poll {
 struct Pending {
     id: QueryId,
     txid: u16,
+    record: Record,
     wire: Vec<u8>,
     message: Vec<u8>,
     socket: Handle,
@@ -447,28 +487,38 @@ impl<E: Entropy> DnsClient<E> {
         sockets: &mut UdpSockets,
         generation: u64,
         socket: Handle,
-        resolver: Ipv4Addr,
+        resolver: IpAddr,
         message: &[u8],
     ) -> Result<Vec<u8>, SocketError> {
         let remote = (resolver, PORT);
+        let local = self
+            .config
+            .ip
+            .source(resolver)
+            .ok_or(SocketError::Build(super::ipv4::BuildError::Source))?;
         sockets.connect(generation, socket, remote)?;
-        sockets.send(
-            generation,
-            socket,
-            self.config.ip.local(),
-            remote,
-            message,
-            self.config.mtu,
-        )
+        sockets.send(generation, socket, local, remote, message, self.config.mtu)
     }
 
-    /// Starts a query: validates the name, takes a fresh random transaction id and
-    /// source port, and returns the first inner packet to send.
+    /// [`start_record`](Self::start_record) for A records.
     pub fn start(
         &mut self,
         sockets: &mut UdpSockets,
         generation: u64,
         name: &str,
+        now: Duration,
+    ) -> Result<(QueryId, Vec<u8>), DnsError> {
+        self.start_record(sockets, generation, name, Record::A, now)
+    }
+
+    /// Starts a query: validates the name, takes a fresh random transaction id and
+    /// source port, and returns the first inner packet to send.
+    pub fn start_record(
+        &mut self,
+        sockets: &mut UdpSockets,
+        generation: u64,
+        name: &str,
+        record: Record,
         now: Duration,
     ) -> Result<(QueryId, Vec<u8>), DnsError> {
         self.admit(generation, now)?;
@@ -479,7 +529,7 @@ impl<E: Entropy> DnsClient<E> {
         let txid = self.transaction()?;
         let bound = sockets.bind(generation, 0, &mut self.entropy);
         let socket = bound.map_err(|error| self.lift(error))?;
-        let message = query_message(txid, &wire);
+        let message = query_message(txid, &wire, record);
         let resolver = self.config.resolvers[0];
         let sent = self.transmit(sockets, generation, socket, resolver, &message);
         let packet = match sent {
@@ -494,6 +544,7 @@ impl<E: Entropy> DnsClient<E> {
         self.pending.push(Pending {
             id,
             txid,
+            record,
             wire: wire.to_ascii_lowercase(),
             message,
             socket,
@@ -586,7 +637,12 @@ impl<E: Entropy> DnsClient<E> {
                         self.rejected = self.rejected.saturating_add(1);
                         continue;
                     }
-                    match parse_response(query.txid, &query.wire, &datagram.payload) {
+                    match parse_response_for(
+                        query.record,
+                        query.txid,
+                        &query.wire,
+                        &datagram.payload,
+                    ) {
                         Ok(Reply::Truncated) => {
                             return self.start_tcp(tcp, generation, query, datagram.source, now);
                         }
@@ -630,7 +686,7 @@ impl<E: Entropy> DnsClient<E> {
         tcp: &mut TcpStack<impl Entropy>,
         generation: u64,
         query: &mut Pending,
-        resolver: Ipv4Addr,
+        resolver: IpAddr,
         now: Duration,
     ) -> Step {
         let flow = match tcp.connect(generation, now, resolver, PORT) {
@@ -709,7 +765,8 @@ impl<E: Entropy> DnsClient<E> {
                 }
                 stream.expected = Some(length);
             } else {
-                match parse_response(query.txid, &query.wire, &stream.received[2..]) {
+                let message = &stream.received[2..];
+                match parse_response_for(query.record, query.txid, &query.wire, message) {
                     Ok(reply) => return Step::Done(self.finish(reply)),
                     Err(_) => {
                         self.rejected = self.rejected.saturating_add(1);

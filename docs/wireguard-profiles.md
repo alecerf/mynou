@@ -39,10 +39,14 @@ full IPv4 route from `AllowedIPs` or create a host route. Inner DNS uses the
 explicit resolvers; no host resolver is consulted. Endpoint hostnames and IPv6
 endpoints are rejected; the tunnel runtime itself accepts only a literal IPv4 endpoint.
 
-The IPv6 address, IPv6 resolvers and `::/0` route of a provider profile are
-accepted and kept in the stored profile, but the tunnel carries IPv4 only for
-now: those entries are not used, and no IPv6 traffic falls back to the host
-network. The NAT-PMP gateway is the first IPv4 resolver.
+The tunnel carries IPv6 too when the profile has an IPv6 address, the `::/0`
+route and an MTU of at least 1280: the IPv6 address becomes the inner IPv6
+source, every IPv6 source is accepted from the peer, and the IPv6 resolvers are
+asked after the IPv4 ones in the profile order. Otherwise the IPv6 entries are
+only kept in the stored profile, and so is a link-local or other address the
+stack cannot own, rather than refusing a profile. No IPv6 traffic ever falls
+back to the host network. `Profile::ipv6` reports the result. The NAT-PMP
+gateway is the first IPv4 resolver.
 
 All fields are unique: repeated `DNS` or `AllowedIPs` lines are rejected too.
 Unknown fields, additional peers/addresses, partial routes, `ListenPort`,

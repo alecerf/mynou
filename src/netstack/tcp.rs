@@ -1,12 +1,11 @@
-//! Inner TCP segment codec over the strict IPv4 layer: length-checked options (at
+//! Inner TCP segment codec over the strict IPv4 and IPv6 layers: length-checked options (at
 //! most the 40 bytes the data offset allows), exact
 //! pseudo-header checksum (mandatory, unlike UDP) and builders bounded by a
 //! caller MTU. It never allocates from a length field and has no state.
 
-use super::ipv4::{
-    self, BuildError, HEADER_LEN as IPV4_HEADER_LEN, PROTOCOL_TCP, check_mtu, fold, sum,
-};
-use std::net::Ipv4Addr;
+use super::ip::{self, pseudo_sum};
+use super::ipv4::{BuildError, HEADER_LEN as IPV4_HEADER_LEN, PROTOCOL_TCP, check_mtu, fold, sum};
+use std::net::IpAddr;
 
 pub const HEADER_LEN: usize = 20;
 /// RFC 9293: the MSS assumed when the peer sent no option.
@@ -82,13 +81,9 @@ impl Segment<'_> {
 }
 
 /// Pseudo-header and segment sum; the segment is last so its odd tail is padded.
-fn segment_sum(source: Ipv4Addr, destination: Ipv4Addr, segment: &[u8]) -> u16 {
-    let mut pseudo = [0u8; 12];
-    pseudo[..4].copy_from_slice(&source.octets());
-    pseudo[4..8].copy_from_slice(&destination.octets());
-    pseudo[9] = PROTOCOL_TCP;
-    pseudo[10..].copy_from_slice(&(segment.len() as u16).to_be_bytes());
-    fold(sum(segment, sum(&pseudo, 0)))
+fn segment_sum(source: IpAddr, destination: IpAddr, segment: &[u8]) -> u16 {
+    let pseudo = pseudo_sum(source, destination, PROTOCOL_TCP, segment.len());
+    fold(sum(segment, pseudo))
 }
 
 fn valid_flags(flags: u8) -> bool {
@@ -147,12 +142,13 @@ fn parse_options(options: &[u8]) -> Result<Options, SegmentError> {
     })
 }
 
-/// Parses an IP payload that already passed [`ipv4::parse_protocol`] for TCP.
+/// Parses an IP payload that already passed IP validation for TCP.
 pub fn parse(
-    source: Ipv4Addr,
-    destination: Ipv4Addr,
+    source: impl Into<IpAddr>,
+    destination: impl Into<IpAddr>,
     bytes: &[u8],
 ) -> Result<Segment<'_>, SegmentError> {
+    let (source, destination) = (source.into(), destination.into());
     if bytes.len() < HEADER_LEN {
         return Err(SegmentError::Truncated);
     }
@@ -199,7 +195,8 @@ pub fn parse(
     })
 }
 
-/// The largest TCP payload an `mtu` carries without options.
+/// The largest TCP payload an `mtu` carries over IPv4 without options; IPv6
+/// carries 20 less.
 pub fn max_payload(mtu: usize) -> Result<usize, BuildError> {
     check_mtu(mtu)?;
     Ok(mtu - IPV4_HEADER_LEN - HEADER_LEN)
@@ -224,15 +221,16 @@ pub struct Header {
     pub sack: [Option<(u32, u32)>; SACK_BLOCKS],
 }
 
-/// Builds a complete inner IPv4/TCP packet of at most `mtu` bytes. The
-/// acknowledgment is written as given; callers set it only with ACK.
+/// Builds a complete inner IPv4/TCP or IPv6/TCP packet of at most `mtu`
+/// bytes. The acknowledgment is written as given; callers set it only with ACK.
 pub fn build(
-    source: Ipv4Addr,
-    destination: Ipv4Addr,
+    source: impl Into<IpAddr>,
+    destination: impl Into<IpAddr>,
     header: &Header,
     payload: &[u8],
     mtu: usize,
 ) -> Result<Vec<u8>, BuildError> {
+    let (source, destination) = (source.into(), destination.into());
     check_mtu(mtu)?;
     if header.source_port == 0 || header.destination_port == 0 {
         return Err(BuildError::Port);
@@ -245,7 +243,7 @@ pub fn build(
             + usize::from(blocks > 0))
         + 8 * blocks;
     let length = HEADER_LEN + options + payload.len();
-    if IPV4_HEADER_LEN + length > mtu {
+    if ip::header_len(destination) + length > mtu {
         return Err(BuildError::TooLarge);
     }
     let mut segment = Vec::with_capacity(length);
@@ -277,7 +275,7 @@ pub fn build(
     segment.extend_from_slice(payload);
     let value = !segment_sum(source, destination, &segment);
     segment[16..18].copy_from_slice(&value.to_be_bytes());
-    ipv4::build(source, destination, PROTOCOL_TCP, &segment, mtu)
+    ip::build(source, destination, PROTOCOL_TCP, &segment, mtu)
 }
 
 #[cfg(test)]

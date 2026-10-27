@@ -430,7 +430,7 @@ fn bare_final_carriage_return_is_rejected() {
 }
 
 #[test]
-fn ipv6_entries_are_accepted_and_kept_while_the_tunnel_stays_ipv4() {
+fn ipv6_entries_put_ipv6_in_the_tunnel_and_are_kept() {
     let input = fixture()
         .replace(
             "Address = 10.23.0.2/24",
@@ -440,9 +440,38 @@ fn ipv6_entries_are_accepted_and_kept_while_the_tunnel_stays_ipv4() {
         .replace("AllowedIPs = 0.0.0.0/0", "AllowedIPs = ::/0, 0.0.0.0/0");
     let profile = parse(&input).unwrap();
     assert_eq!(profile.dns(), [Ipv4Addr::new(10, 23, 0, 1)]);
+    assert!(profile.ipv6());
     let document = profile.private_document();
     assert!(document.contains("Address = 10.23.0.2/24, fd00:23::2/128\n"));
     assert!(document.contains("DNS = 10.23.0.1, fd00:23::1\n"));
     assert!(document.contains("AllowedIPs = 0.0.0.0/0, ::/0\n"));
     assert_eq!(parse(&document).unwrap().private_document(), document);
+    let config = profile.into_tunnel_config();
+    let local: std::net::Ipv6Addr = "fd00:23::2".parse().unwrap();
+    assert_eq!(config.ip.local_ipv6(), Some(local));
+    assert_eq!(config.tcp.ip, config.ip);
+    let resolvers = config.dns.unwrap().resolvers;
+    assert_eq!(
+        resolvers,
+        [
+            "10.23.0.1".parse::<IpAddr>().unwrap(),
+            "fd00:23::1".parse().unwrap()
+        ]
+    );
+    // Without the IPv6 route, below the IPv6 MTU or with a link-local
+    // address, the profile is kept but the tunnel stays IPv4 only.
+    for edited in [
+        input.replace("AllowedIPs = ::/0, 0.0.0.0/0", "AllowedIPs = 0.0.0.0/0"),
+        input.replace("MTU = 1280", "MTU = 1279"),
+        input.replace("fd00:23::2/128", "fe80::2/64"),
+    ] {
+        let profile = parse(&edited).unwrap();
+        assert!(!profile.ipv6());
+        let config = profile.into_tunnel_config();
+        assert_eq!(config.ip.local_ipv6(), None);
+        assert_eq!(
+            config.dns.unwrap().resolvers,
+            ["10.23.0.1".parse::<IpAddr>().unwrap()]
+        );
+    }
 }

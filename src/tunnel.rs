@@ -1,20 +1,20 @@
 //! Outer-UDP tunnel runtime: one owner drives the offline WireGuard `Peer` and
-//! the virtual IPv4/UDP/DNS/TCP stack over a single physical UDP socket, behind
+//! the virtual IPv4/IPv6/UDP/DNS/TCP stack over a single physical UDP socket, behind
 //! one generation fence. It has no torrent caller or user-visible
 //! protection, and its loopback tests are not interoperability evidence; see
 //! docs/tunnel.md for the boundary and the remaining gates.
 
 use crate::netstack::{
-    Answer, Delivery, DnsClient, DnsConfig, DnsError, Failure, Finished, FlowHandle, Handle,
-    Ingest, Ipv4Config, Limits, ListenerHandle, MAX_MTU, MIN_MTU, PROTOCOL_TCP, PROTOCOL_UDP,
-    QueryId, Read, Received, SocketError, TcpConfig, TcpError, TcpIngest, TcpStack, TcpState,
-    UdpSockets,
+    Answer, BuildError, Delivery, DnsClient, DnsConfig, DnsError, Failure, Finished, FlowHandle,
+    Handle, IPV6_MIN_MTU, Ingest, IpConfig, Limits, ListenerHandle, MAX_MTU, MIN_MTU,
+    PROTOCOL_ICMP, PROTOCOL_ICMPV6, PROTOCOL_TCP, PROTOCOL_UDP, QueryId, Read, Received, Record,
+    SocketError, TcpConfig, TcpError, TcpIngest, TcpStack, TcpState, UdpSockets,
 };
 use crate::wireguard::{
     Entropy, Load, MAX_DATAGRAM, MAX_QUEUED_PAYLOADS, Peer, PeerClock, PeerOutput, PeerStatus,
 };
 use std::io::ErrorKind;
-use std::net::{Ipv4Addr, SocketAddr, UdpSocket};
+use std::net::{IpAddr, SocketAddr, UdpSocket};
 use std::time::{Duration, Instant, SystemTime};
 
 /// Width of the window in which handshake messages are counted for `Load`.
@@ -23,6 +23,8 @@ pub const LOAD_WINDOW: Duration = Duration::from_secs(1);
 /// rather than silently truncated.
 const RECEIVE_BUFFER: usize = 2048;
 const HOUR: Duration = Duration::from_secs(3600);
+/// ICMPv6 echo replies waiting for the next timer run; more requests are dropped.
+const ECHO_REPLIES: usize = 8;
 
 /// The runtime's only time source: a monotonic elapsed time and the wall time
 /// used for handshake timestamps. Production uses [`SystemClock`].
@@ -109,7 +111,7 @@ pub struct TunnelConfig {
     pub endpoint: Endpoint,
     /// Local address of the outer socket; IPv4 only.
     pub bind: SocketAddr,
-    pub ip: Ipv4Config,
+    pub ip: IpConfig,
     pub mtu: usize,
     /// Start a handshake at once and keep the session fresh, or only answer.
     pub initiate: bool,
@@ -133,12 +135,7 @@ pub struct TunnelConfig {
 }
 
 impl TunnelConfig {
-    pub fn new(
-        secret: [u8; 32],
-        peer_public: [u8; 32],
-        endpoint: Endpoint,
-        ip: Ipv4Config,
-    ) -> Self {
+    pub fn new(secret: [u8; 32], peer_public: [u8; 32], endpoint: Endpoint, ip: IpConfig) -> Self {
         Self {
             secret,
             peer_public,
@@ -174,8 +171,9 @@ impl TunnelConfig {
         }
     }
 
-    /// Adds the inner resolvers, with the DNS client defaults.
-    pub fn with_dns(mut self, resolvers: Vec<Ipv4Addr>) -> Self {
+    /// Adds the inner resolvers, with the DNS client defaults. IPv6 resolvers
+    /// need an IPv6 address in `ip`.
+    pub fn with_dns(mut self, resolvers: Vec<IpAddr>) -> Self {
         self.dns = Some(DnsConfig::new(self.ip, resolvers, self.mtu));
         self
     }
@@ -189,7 +187,9 @@ impl TunnelConfig {
             .dns
             .as_ref()
             .is_none_or(|dns| dns.ip == self.ip && dns.mtu == self.mtu);
+        let ipv6 = self.ip.local_ipv6().is_none() || self.mtu >= IPV6_MIN_MTU;
         let valid = (MIN_MTU..=MAX_MTU).contains(&self.mtu)
+            && ipv6
             && self.tcp.ip == self.ip
             && self.tcp.mtu == self.mtu
             && dns
@@ -318,7 +318,7 @@ impl VirtualFlow {
         self.flow.local_port()
     }
 
-    pub fn remote(&self) -> (Ipv4Addr, u16) {
+    pub fn remote(&self) -> (IpAddr, u16) {
         self.flow.remote()
     }
 }
@@ -349,6 +349,8 @@ struct Live<E: Entropy> {
     tcp: TcpStack<E>,
     dns: Option<DnsClient<E>>,
     results: Vec<Finished>,
+    /// ICMPv6 echo replies to send with the next timer run.
+    echoes: Vec<Vec<u8>>,
     remote: SocketAddr,
     keepalive_at: Option<Duration>,
     next: [Option<Duration>; 3],
@@ -525,6 +527,7 @@ impl<E: Entropy + Clone, C: Clock> Tunnel<E, C> {
             tcp,
             dns,
             results: Vec::new(),
+            echoes: Vec::new(),
             remote: self.endpoint,
             keepalive_at: None,
             next: [None; 3],
@@ -644,7 +647,7 @@ impl<E: Entropy + Clone, C: Clock> Tunnel<E, C> {
         };
         transmit(&self.socket, live.remote, datagrams, &mut self.stats);
         for payload in output.inner_payloads {
-            dispatch(live, &self.config.ip, payload, now, &mut self.stats);
+            dispatch(live, &self.config, payload, now, &mut self.stats);
         }
         true
     }
@@ -746,7 +749,7 @@ impl<E: Entropy + Clone, C: Clock> Tunnel<E, C> {
             return;
         };
         let generation = live.generation;
-        let mut packets = Vec::new();
+        let mut packets = std::mem::take(&mut live.echoes);
         let mut failed = false;
         if let Some(dns) = live.dns.as_mut() {
             match dns.poll(&mut live.udp, &mut live.tcp, generation, now) {
@@ -973,7 +976,7 @@ impl<E: Entropy + Clone, C: Clock> Tunnel<E, C> {
     pub fn udp_connect(
         &mut self,
         socket: VirtualUdp,
-        remote: (Ipv4Addr, u16),
+        remote: (IpAddr, u16),
     ) -> Result<(), TunnelError> {
         let live = self.current(socket.generation)?;
         live.udp
@@ -984,10 +987,14 @@ impl<E: Entropy + Clone, C: Clock> Tunnel<E, C> {
     pub fn udp_send_to(
         &mut self,
         socket: VirtualUdp,
-        remote: (Ipv4Addr, u16),
+        remote: (IpAddr, u16),
         payload: &[u8],
     ) -> Result<(), TunnelError> {
-        let (local, mtu) = (self.config.ip.local(), self.config.mtu);
+        let local = self.config.ip.source(remote.0);
+        let local = local.ok_or(TunnelError::Udp(SocketError::Build(
+            BuildError::Destination,
+        )))?;
+        let mtu = self.config.mtu;
         let live = self.current(socket.generation)?;
         let packet = live
             .udp
@@ -1011,8 +1018,18 @@ impl<E: Entropy + Clone, C: Clock> Tunnel<E, C> {
             .map_err(TunnelError::Udp)
     }
 
+    /// Whether the inner stack carries IPv6.
+    pub fn ipv6(&self) -> bool {
+        self.config.ip.local_ipv6().is_some()
+    }
+
     /// Starts an A lookup through the inner resolvers only.
     pub fn resolve(&mut self, name: &str) -> Result<Lookup, TunnelError> {
+        self.resolve_record(name, Record::A)
+    }
+
+    /// Starts an A or AAAA lookup through the inner resolvers only.
+    pub fn resolve_record(&mut self, name: &str, record: Record) -> Result<Lookup, TunnelError> {
         let now = self.clock.now();
         let limit = self.config.dns.as_ref().map_or(0, |dns| dns.max_pending);
         let live = self.live.as_mut().ok_or(TunnelError::Unavailable)?;
@@ -1022,7 +1039,7 @@ impl<E: Entropy + Clone, C: Clock> Tunnel<E, C> {
             return Err(TunnelError::Busy);
         }
         let (id, packet) = dns
-            .start(&mut live.udp, generation, name, now)
+            .start_record(&mut live.udp, generation, name, record, now)
             .map_err(TunnelError::Dns)?;
         self.encrypt(packet, now).or_else(|error| match error {
             // The client retries on its own schedule; the lookup stands.
@@ -1052,7 +1069,7 @@ impl<E: Entropy + Clone, C: Clock> Tunnel<E, C> {
         Ok(())
     }
 
-    pub fn tcp_connect(&mut self, remote: Ipv4Addr, port: u16) -> Result<VirtualFlow, TunnelError> {
+    pub fn tcp_connect(&mut self, remote: IpAddr, port: u16) -> Result<VirtualFlow, TunnelError> {
         let now = self.clock.now();
         let live = self.live()?;
         let generation = live.generation;
@@ -1157,22 +1174,36 @@ impl<E: Entropy + Clone, C: Clock> Tunnel<E, C> {
     }
 }
 
-/// Routes one authenticated padded inner packet to the UDP table or the TCP
-/// stack; each validates the whole packet before anything is delivered.
+/// Routes one authenticated padded inner packet to the UDP table, the TCP
+/// stack or the ICMP handling; each validates the whole packet before anything
+/// is delivered. IPv6 is routed only when the stack has an IPv6 address.
 fn dispatch<E: Entropy>(
     live: &mut Live<E>,
-    ip: &Ipv4Config,
+    config: &TunnelConfig,
     packet: Vec<u8>,
     now: Duration,
     stats: &mut Stats,
 ) {
-    let protocol = match packet.first() {
-        Some(first) if first >> 4 == 4 && packet.len() >= 20 => packet[9],
+    let ip = &config.ip;
+    let protocol = match packet.first().map(|first| first >> 4) {
+        Some(4) if packet.len() >= 20 => packet[9],
+        Some(6) if packet.len() >= 40 && ip.local_ipv6().is_some() => packet[6],
         _ => {
             stats.inner_rejected += 1;
             return;
         }
     };
+    if protocol == PROTOCOL_ICMPV6
+        && packet[0] >> 4 == 6
+        && let Some(reply) = crate::netstack::icmp_echo_reply(ip, &packet, config.mtu)
+    {
+        if live.echoes.len() < ECHO_REPLIES {
+            live.echoes.push(reply);
+        } else {
+            stats.inner_dropped += 1;
+        }
+        return;
+    }
     match protocol {
         PROTOCOL_UDP => match live.udp.ingest(live.generation, ip, &packet) {
             Ingest::Delivered(Delivery::Queued) => {}
@@ -1185,7 +1216,7 @@ fn dispatch<E: Entropy>(
             TcpIngest::Dropped(_) | TcpIngest::Revoked => stats.inner_dropped += 1,
             _ => {}
         },
-        crate::netstack::PROTOCOL_ICMP => {
+        PROTOCOL_ICMP | PROTOCOL_ICMPV6 => {
             use crate::netstack::IcmpIngest;
             let tcp = live.tcp.ingest_icmp(live.generation, now, &packet);
             let outcome = if tcp == IcmpIngest::Dropped {

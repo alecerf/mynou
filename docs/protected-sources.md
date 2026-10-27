@@ -37,7 +37,8 @@ Import and enable a supported native VPN profile using the
 no protected generation is ready, including when the engine has Direct transport,
 before startup readiness, after revocation and on a retired engine. It never
 consults the environment HTTP proxy or falls back to host DNS/TCP. The tunnel
-supports IPv4 destinations only; IPv6 is rejected rather than retried on the host.
+reaches IPv6 destinations only when the profile routes IPv6; otherwise IPv6 is
+rejected rather than retried on the host.
 
 Every engine captures one immutable network generation. Ordinary rekey keeps it;
 loss, profile changes and forwarding changes that retire it require the supervisor

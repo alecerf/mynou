@@ -12,7 +12,7 @@ use crate::{
 };
 use std::{
     io,
-    net::{IpAddr, SocketAddr, SocketAddrV4},
+    net::SocketAddr,
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
@@ -28,11 +28,14 @@ fn message(error: io::Error) -> String {
     error.to_string()
 }
 
-/// A literal, usable IPv4 destination with a nonzero port.
-fn destination(address: SocketAddr) -> io::Result<SocketAddrV4> {
-    match address {
-        SocketAddr::V4(v4) if v4.port() != 0 && usable(*v4.ip()) => Ok(v4),
-        _ => Err(error(io::ErrorKind::InvalidInput)),
+/// A literal, usable destination with a nonzero port: IPv4, or IPv6 when
+/// the tunnel carries it.
+fn destination(connector: &Connector, address: SocketAddr) -> io::Result<SocketAddr> {
+    let family = address.is_ipv4() || connector.owner.ipv6;
+    if address.port() != 0 && usable(address.ip()) && family {
+        Ok(address)
+    } else {
+        Err(error(io::ErrorKind::InvalidInput))
     }
 }
 
@@ -60,6 +63,15 @@ impl TunnelNetwork {
             .ok()
             .filter(|port| *port != 0)
             .ok_or_else(|| error(io::ErrorKind::InvalidInput))?;
+        // An IPv6 literal is bracketed, as in a URL authority.
+        let host = match host
+            .strip_prefix('[')
+            .and_then(|inner| inner.strip_suffix(']'))
+        {
+            Some(inner) if inner.parse::<std::net::Ipv6Addr>().is_ok() => inner,
+            Some(_) => return Err(error(io::ErrorKind::InvalidInput)),
+            None => host,
+        };
         let generation = Some(self.connector.generation);
         // A literal needs no owner call; admit it like any lookup, and reject
         // an answer observed after loss or cancellation.
@@ -77,8 +89,9 @@ impl TunnelNetwork {
     }
 
     fn bind_datagram(&self, ipv6: bool) -> io::Result<Datagram> {
-        // The tunnel carries IPv4 only; IPv6 is refused, never sent elsewhere.
-        if ipv6 {
+        // Without IPv6 in the tunnel, IPv6 is refused, never sent elsewhere.
+        // A virtual socket serves both families.
+        if ipv6 && !self.connector.owner.ipv6 {
             return Err(error(io::ErrorKind::InvalidInput));
         }
         let (connector, lease) = (&self.connector, Arc::new(()));
@@ -107,11 +120,14 @@ impl TunnelNetwork {
 
     fn bind_listener(&self, address: SocketAddr) -> io::Result<Listener> {
         // Unspecified and loopback binds both name the virtual interface: the
-        // listener is reachable only through the tunnel, never on the host.
-        let requested = match address {
-            SocketAddr::V4(v4) if v4.ip().is_unspecified() || v4.ip().is_loopback() => v4.port(),
-            _ => return Err(error(io::ErrorKind::InvalidInput)),
-        };
+        // listener is reachable only through the tunnel, never on the host. It
+        // accepts both families the tunnel carries.
+        let ip = address.ip();
+        let family = address.is_ipv4() || self.connector.owner.ipv6;
+        if !(ip.is_unspecified() || ip.is_loopback()) || !family {
+            return Err(error(io::ErrorKind::InvalidInput));
+        }
+        let requested = address.port();
         let (connector, lease) = (&self.connector, Arc::new(()));
         let weak = Arc::downgrade(&lease);
         let (listener, port) = connector.owner.call(
@@ -194,12 +210,12 @@ impl Network for TunnelNetwork {
         timeout: Duration,
     ) -> crate::Result<Box<dyn NetworkStream>> {
         let open = || -> io::Result<Box<dyn NetworkStream>> {
-            let address = destination(address)?;
+            let address = destination(&self.connector, address)?;
             let deadline = Instant::now()
                 .checked_add(timeout)
                 .ok_or_else(|| error(io::ErrorKind::InvalidInput))?;
             Ok(Box::new(self.connector.open(
-                *address.ip(),
+                address.ip(),
                 address.port(),
                 deadline,
             )?))
@@ -207,7 +223,7 @@ impl Network for TunnelNetwork {
         open().map_err(message)
     }
 
-    /// Tunnel DNS only, bounded by `deadline`; literal IPv4 needs no lookup.
+    /// Tunnel DNS only, bounded by `deadline`; a literal address needs no lookup.
     fn resolve(&self, authority: &str, deadline: Instant) -> crate::Result<Vec<SocketAddr>> {
         self.resolve_authority(authority, deadline).map_err(message)
     }
@@ -242,9 +258,10 @@ impl Datagram {
 
 impl NetworkDatagram for Datagram {
     fn send_to(&self, packet: &[u8], target: SocketAddr) -> io::Result<usize> {
-        let target = destination(target)?;
+        let target = destination(&self.connector, target)?;
         // Bound the command allocation before copying a caller-supplied slice.
-        // The native socket additionally checks its configured/path MTU.
+        // The native socket additionally checks its configured/path MTU and
+        // the larger IPv6 header.
         let max_payload = crate::netstack::MAX_MTU
             - crate::netstack::IPV4_HEADER_LEN
             - crate::netstack::UDP_HEADER_LEN;
@@ -260,7 +277,7 @@ impl NetworkDatagram for Datagram {
             .owner
             .wait(Some(self.connector.generation), deadline, move |r| {
                 r.tunnel
-                    .udp_send_to(socket, (*target.ip(), target.port()), &payload)
+                    .udp_send_to(socket, (target.ip(), target.port()), &payload)
                     .map_err(failed)
             })?;
         Ok(packet.len())
@@ -325,7 +342,7 @@ impl NetworkListener for Listener {
         let (ip, port) = flow.remote();
         Ok((
             Box::new(Stream::new(connector, flow, lease)),
-            SocketAddr::from((IpAddr::V4(ip), port)),
+            SocketAddr::from((ip, port)),
         ))
     }
 

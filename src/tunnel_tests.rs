@@ -2,6 +2,7 @@ use super::*;
 use crate::crypto::{blake2s, keyed_blake2s, x25519_public_key};
 use crate::netstack::TcpState;
 use std::cell::{Cell, RefCell};
+use std::net::{Ipv4Addr, Ipv6Addr};
 use std::rc::Rc;
 use std::time::UNIX_EPOCH;
 
@@ -9,6 +10,8 @@ const CLIENT_SECRET: [u8; 32] = [17; 32];
 const SERVER_SECRET: [u8; 32] = [29; 32];
 const CLIENT_IP: Ipv4Addr = Ipv4Addr::new(10, 7, 0, 2);
 const SERVER_IP: Ipv4Addr = Ipv4Addr::new(10, 7, 0, 1);
+const CLIENT_IP6: Ipv6Addr = Ipv6Addr::new(0xfd00, 7, 0, 0, 0, 0, 0, 2);
+const SERVER_IP6: Ipv6Addr = Ipv6Addr::new(0xfd00, 7, 0, 0, 0, 0, 0, 1);
 const MARKER: &[u8] = b"inner-plaintext-marker";
 
 /// Scripted monotonic and wall time shared by both tunnels of a test.
@@ -208,21 +211,21 @@ struct World {
 }
 
 fn client_config(endpoint: SocketAddr) -> TunnelConfig {
-    let ip = Ipv4Config::new(CLIENT_IP, Ipv4Addr::UNSPECIFIED, 0).unwrap();
+    let ip = IpConfig::new(CLIENT_IP, Ipv4Addr::UNSPECIFIED, 0).unwrap();
     let mut config = TunnelConfig::new(
         CLIENT_SECRET,
         x25519_public_key(SERVER_SECRET),
         Endpoint::Address(endpoint),
         ip,
     )
-    .with_dns(vec![SERVER_IP]);
+    .with_dns(vec![SERVER_IP.into()]);
     config.psk = Some([53; 32]);
     config.bind = loopback();
     config
 }
 
 fn server_config(endpoint: SocketAddr) -> TunnelConfig {
-    let ip = Ipv4Config::new(SERVER_IP, Ipv4Addr::new(10, 7, 0, 0), 24).unwrap();
+    let ip = IpConfig::new(SERVER_IP, Ipv4Addr::new(10, 7, 0, 0), 24).unwrap();
     let mut config = TunnelConfig::new(
         SERVER_SECRET,
         x25519_public_key(CLIENT_SECRET),
@@ -365,8 +368,12 @@ fn answer(query: &[u8], address: [u8; 4]) -> Vec<u8> {
 /// One TCP flow from the client to a server listener: `size` bytes up, a
 /// reply down, then a graceful close on both sides.
 fn exchange(world: &mut World, port: u16, size: usize, tick: Duration) {
+    exchange_with(world, SERVER_IP.into(), port, size, tick);
+}
+
+fn exchange_with(world: &mut World, server: IpAddr, port: u16, size: usize, tick: Duration) {
     let listener = world.server.tcp_listen(port).unwrap();
-    let flow = world.client.tcp_connect(SERVER_IP, port).unwrap();
+    let flow = world.client.tcp_connect(server, port).unwrap();
     let data: Vec<u8> = (0..size).map(|index| (index * 7 % 251) as u8).collect();
     let mut accepted = None;
     let (mut sent, mut received, mut reply) = (0, Vec::new(), Vec::new());
@@ -419,6 +426,130 @@ fn exchange(world: &mut World, port: u16, size: usize, tick: Duration) {
     )));
 }
 
+/// Gives both ends their IPv6 address, and the client an IPv6 resolver only.
+fn dual_stack(client: &mut TunnelConfig, server: &mut TunnelConfig) {
+    client.ip = client
+        .ip
+        .with_ipv6(CLIENT_IP6, Ipv6Addr::UNSPECIFIED, 0)
+        .unwrap();
+    client.tcp.ip = client.ip;
+    let dns = client.dns.as_mut().unwrap();
+    dns.ip = client.ip;
+    dns.resolvers = vec![SERVER_IP6.into()];
+    let network = Ipv6Addr::new(0xfd00, 7, 0, 0, 0, 0, 0, 0);
+    server.ip = server.ip.with_ipv6(SERVER_IP6, network, 64).unwrap();
+    server.tcp.ip = server.ip;
+}
+
+#[test]
+fn ipv6_udp_aaaa_and_tcp_cross_an_encrypted_loopback_tunnel() {
+    let mut world = World::new(dual_stack);
+    world.connect(Duration::from_millis(100), 20);
+    assert!(world.client.ipv6());
+
+    let service = world.server.udp_bind(7000).unwrap();
+    let local = world.client.udp_bind(0).unwrap();
+    world
+        .client
+        .udp_send_to(local, (SERVER_IP6.into(), 7000), MARKER)
+        .unwrap();
+    world.settle();
+    let request = drain(&mut world.server, service);
+    assert_eq!(request.len(), 1);
+    assert_eq!(request[0].source, CLIENT_IP6);
+    world
+        .server
+        .udp_send_to(service, (CLIENT_IP6.into(), local.port()), b"pong")
+        .unwrap();
+    // The same socket keeps talking IPv4 too.
+    world
+        .server
+        .udp_send_to(service, (CLIENT_IP.into(), local.port()), b"four")
+        .unwrap();
+    world.settle();
+    let replies = drain(&mut world.client, local);
+    let sources: Vec<_> = replies.iter().map(|reply| reply.source).collect();
+    assert_eq!(sources, [IpAddr::from(SERVER_IP6), IpAddr::from(SERVER_IP)]);
+
+    // AAAA through the IPv6 resolver, over IPv6.
+    let resolver = world.server.udp_bind(53).unwrap();
+    let lookup = world
+        .client
+        .resolve_record("Tracker.Example", Record::Aaaa)
+        .unwrap();
+    world.settle();
+    let query = drain(&mut world.server, resolver);
+    assert_eq!(query.len(), 1);
+    assert_eq!(query[0].source, CLIENT_IP6);
+    let address = Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 0x99);
+    let mut response = query[0].payload.clone();
+    response[2..4].copy_from_slice(&[0x81, 0x80]);
+    response[6..8].copy_from_slice(&[0, 1]);
+    response.extend_from_slice(&[0xc0, 12, 0, 28, 0, 1, 0, 0, 0, 60, 0, 16]);
+    response.extend_from_slice(&address.octets());
+    world
+        .server
+        .udp_send_to(
+            resolver,
+            (CLIENT_IP6.into(), query[0].source_port),
+            &response,
+        )
+        .unwrap();
+    world.settle();
+    let resolved = world
+        .client
+        .lookup_result(lookup)
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert_eq!(resolved.addresses, vec![IpAddr::from(address)]);
+
+    exchange_with(
+        &mut world,
+        SERVER_IP6.into(),
+        8443,
+        200_000,
+        Duration::from_millis(10),
+    );
+
+    // Every outer datagram is a WireGuard message; no inner bytes are visible.
+    assert!(world.relay.seen.iter().all(|(datagram, _)| {
+        matches!(datagram.first(), Some(1..=4))
+            && !datagram
+                .windows(MARKER.len())
+                .any(|window| window == MARKER)
+    }));
+}
+
+#[test]
+fn an_ipv4_only_tunnel_refuses_ipv6_without_sending_anything() {
+    let mut world = World::new(|_, _| {});
+    world.connect(Duration::from_millis(100), 20);
+    assert!(!world.client.ipv6());
+    let local = world.client.udp_bind(0).unwrap();
+    let seen = world.relay.seen.len();
+    assert!(
+        world
+            .client
+            .udp_send_to(local, (SERVER_IP6.into(), 7000), b"x")
+            .is_err()
+    );
+    assert!(world.client.tcp_connect(SERVER_IP6.into(), 80).is_err());
+    assert!(
+        world
+            .client
+            .resolve_record("tracker.example", Record::Aaaa)
+            .is_ok()
+    );
+    world.settle();
+    // The AAAA query itself still goes to the IPv4 resolver, inside the tunnel.
+    assert!(
+        world.relay.seen[seen..]
+            .iter()
+            .all(|(datagram, _)| matches!(datagram.first(), Some(1..=4)))
+    );
+}
+
 #[test]
 fn udp_dns_and_tcp_cross_an_encrypted_loopback_tunnel() {
     let mut world = World::new(|_, _| {});
@@ -430,7 +561,7 @@ fn udp_dns_and_tcp_cross_an_encrypted_loopback_tunnel() {
     let local = world.client.udp_bind(0).unwrap();
     world
         .client
-        .udp_send_to(local, (SERVER_IP, 7000), MARKER)
+        .udp_send_to(local, (SERVER_IP.into(), 7000), MARKER)
         .unwrap();
     world.settle();
     let request = drain(&mut world.server, service);
@@ -440,12 +571,15 @@ fn udp_dns_and_tcp_cross_an_encrypted_loopback_tunnel() {
     assert_eq!(request[0].payload, MARKER);
     world
         .server
-        .udp_send_to(service, (CLIENT_IP, local.port()), b"pong")
+        .udp_send_to(service, (CLIENT_IP.into(), local.port()), b"pong")
         .unwrap();
     world.settle();
     let reply = drain(&mut world.client, local);
     assert_eq!(reply.len(), 1);
-    assert_eq!((reply[0].source, reply[0].source_port), (SERVER_IP, 7000));
+    assert_eq!(
+        (reply[0].source, reply[0].source_port),
+        (SERVER_IP.into(), 7000)
+    );
     assert_eq!(reply[0].payload, b"pong");
 
     let resolver = world.server.udp_bind(53).unwrap();
@@ -457,7 +591,11 @@ fn udp_dns_and_tcp_cross_an_encrypted_loopback_tunnel() {
     let response = answer(&query[0].payload, [10, 9, 8, 7]);
     world
         .server
-        .udp_send_to(resolver, (CLIENT_IP, query[0].source_port), &response)
+        .udp_send_to(
+            resolver,
+            (CLIENT_IP.into(), query[0].source_port),
+            &response,
+        )
         .unwrap();
     world.settle();
     let resolved = world
@@ -503,7 +641,7 @@ fn loss_reordering_and_duplication_are_survived() {
     for index in 0..30u8 {
         world
             .client
-            .udp_send_to(local, (SERVER_IP, 7000), &[index])
+            .udp_send_to(local, (SERVER_IP.into(), 7000), &[index])
             .unwrap();
         world.step();
     }
@@ -533,7 +671,7 @@ fn rekey_under_traffic_keeps_the_generation() {
         for datagram in drain(&mut world.server, service) {
             world
                 .server
-                .udp_send_to(service, (CLIENT_IP, local.port()), &datagram.payload)
+                .udp_send_to(service, (CLIENT_IP.into(), local.port()), &datagram.payload)
                 .unwrap();
         }
         world.step();
@@ -544,7 +682,7 @@ fn rekey_under_traffic_keeps_the_generation() {
     for second in 0..300u32 {
         world
             .client
-            .udp_send_to(local, (SERVER_IP, 7000), &second.to_be_bytes())
+            .udp_send_to(local, (SERVER_IP.into(), 7000), &second.to_be_bytes())
             .unwrap();
         world.advance(Duration::from_secs(1));
         echo(&mut world, &mut echoed);
@@ -605,7 +743,7 @@ fn junk_handshakes_are_refused_without_counting_as_load() {
     world.flood(&junk_handshakes(), 10);
     world
         .client
-        .udp_send_to(local, (SERVER_IP, 7000), b"through")
+        .udp_send_to(local, (SERVER_IP.into(), 7000), b"through")
         .unwrap();
     world.settle();
     assert_eq!(drain(&mut world.server, service).len(), 1);
@@ -626,7 +764,7 @@ fn roaming_follows_authenticated_packets_only() {
     let moved = world.relay.address(1);
     world
         .client
-        .udp_send_to(local, (SERVER_IP, 7000), b"moved")
+        .udp_send_to(local, (SERVER_IP.into(), 7000), b"moved")
         .unwrap();
     world.settle();
     assert_eq!(drain(&mut world.server, service).len(), 1);
@@ -634,7 +772,7 @@ fn roaming_follows_authenticated_packets_only() {
     assert_eq!(world.server.stats().roamed, 1);
     world
         .server
-        .udp_send_to(service, (CLIENT_IP, local.port()), b"back")
+        .udp_send_to(service, (CLIENT_IP.into(), local.port()), b"back")
         .unwrap();
     world.settle();
     assert_eq!(drain(&mut world.client, local).len(), 1);
@@ -669,7 +807,7 @@ fn endpoint_silence_revokes_then_reconnects_a_fresh_generation() {
     });
     world.connect(Duration::from_millis(100), 20);
     let old = world.client.udp_bind(0).unwrap();
-    let flow = world.client.tcp_connect(SERVER_IP, 80).unwrap();
+    let flow = world.client.tcp_connect(SERVER_IP.into(), 80).unwrap();
     world.relay.block = true;
     for _ in 0..120 {
         if world.client.status().state != TunnelState::Protected {
@@ -685,7 +823,7 @@ fn endpoint_silence_revokes_then_reconnects_a_fresh_generation() {
     ));
     assert_eq!(status.generation, None);
     assert_eq!(
-        world.client.udp_send_to(old, (SERVER_IP, 7), b"x"),
+        world.client.udp_send_to(old, (SERVER_IP.into(), 7), b"x"),
         Err(TunnelError::Revoked)
     );
     assert_eq!(world.client.tcp_state(flow), Err(TunnelError::Revoked));
@@ -700,7 +838,7 @@ fn endpoint_silence_revokes_then_reconnects_a_fresh_generation() {
     let service = world.server.udp_bind(7000).unwrap();
     world
         .client
-        .udp_send_to(fresh, (SERVER_IP, 7000), b"again")
+        .udp_send_to(fresh, (SERVER_IP.into(), 7000), b"again")
         .unwrap();
     world.settle();
     assert_eq!(drain(&mut world.server, service)[0].payload, b"again");
@@ -775,7 +913,7 @@ fn revocation_wins_against_delayed_old_generation_results() {
     let listener = world.server.tcp_listen(8080).unwrap();
     let local = world.client.udp_bind(40000).unwrap();
     let lookup = world.client.resolve("tracker.example").unwrap();
-    let flow = world.client.tcp_connect(SERVER_IP, 8080).unwrap();
+    let flow = world.client.tcp_connect(SERVER_IP.into(), 8080).unwrap();
     world.settle();
     let query = drain(&mut world.server, resolver).remove(0);
     let peer = world.server.tcp_accept(listener).unwrap().unwrap();
@@ -785,11 +923,11 @@ fn revocation_wins_against_delayed_old_generation_results() {
     let response = answer(&query.payload, [10, 9, 8, 7]);
     world
         .server
-        .udp_send_to(resolver, (CLIENT_IP, query.source_port), &response)
+        .udp_send_to(resolver, (CLIENT_IP.into(), query.source_port), &response)
         .unwrap();
     world
         .server
-        .udp_send_to(service, (CLIENT_IP, 40000), b"stale")
+        .udp_send_to(service, (CLIENT_IP.into(), 40000), b"stale")
         .unwrap();
     world.server.tcp_send(peer, b"stale bytes").unwrap();
     world.settle();
@@ -819,7 +957,7 @@ fn revocation_wins_against_delayed_old_generation_results() {
     let fresh = world.client.udp_bind(40000).unwrap();
     world
         .client
-        .udp_send_to(fresh, (SERVER_IP, 7000), b"new")
+        .udp_send_to(fresh, (SERVER_IP.into(), 7000), b"new")
         .unwrap();
     let rejected = world.client.stats().rejected;
     world.relay.capture = false;
@@ -882,7 +1020,7 @@ fn queues_stay_bounded_under_flood() {
     for _ in 0..100 {
         world
             .server
-            .udp_send_to(source, (CLIENT_IP, 9000), b"flood")
+            .udp_send_to(source, (CLIENT_IP.into(), 9000), b"flood")
             .unwrap();
         world.relay.step();
         world.client.pump(Duration::ZERO).unwrap();
@@ -909,7 +1047,10 @@ fn the_peer_queue_bounds_traffic_before_a_session() {
     let local = world.client.udp_bind(0).unwrap();
     let mut accepted = 0;
     for _ in 0..40 {
-        match world.client.udp_send_to(local, (SERVER_IP, 7000), b"early") {
+        match world
+            .client
+            .udp_send_to(local, (SERVER_IP.into(), 7000), b"early")
+        {
             Ok(()) => accepted += 1,
             Err(error) => assert_eq!(error, TunnelError::QueueFull),
         }
@@ -959,7 +1100,7 @@ fn configuration_and_endpoint_are_validated() {
         Tunnel::new(config, Stream::new(5), clock.clone()).map(|_| ())
     };
     assert_eq!(build(&|_| {}), Ok(()));
-    let other = Ipv4Config::new(Ipv4Addr::new(10, 7, 0, 3), Ipv4Addr::UNSPECIFIED, 0).unwrap();
+    let other = IpConfig::new(Ipv4Addr::new(10, 7, 0, 3), Ipv4Addr::UNSPECIFIED, 0).unwrap();
     let invalid: [&dyn Fn(&mut TunnelConfig); 9] = [
         &|config| config.tcp.ip = other,
         &|config| config.mtu = 500,
@@ -1066,7 +1207,9 @@ fn a_send_after_idle_expiry_is_refused_and_revokes() {
     let seen = world.relay.seen.len();
     world.clock.advance(Duration::from_secs(200));
     assert_eq!(
-        world.client.udp_send_to(old, (SERVER_IP, 7000), b"x"),
+        world
+            .client
+            .udp_send_to(old, (SERVER_IP.into(), 7000), b"x"),
         Err(TunnelError::Revoked)
     );
     let status = world.client.status();
@@ -1276,7 +1419,7 @@ fn keepalive_overflow_never_sends_early_or_panics() {
         assert_eq!(client.status().state, TunnelState::Protected);
         let local = client.udp_bind(0).unwrap();
         client
-            .udp_send_to(local, (SERVER_IP, 7000), b"at the clock limit")
+            .udp_send_to(local, (SERVER_IP.into(), 7000), b"at the clock limit")
             .unwrap();
         assert_eq!(client.stats().sent, sent + 1);
         assert_eq!(client.status().generation, Some(1));
@@ -1292,7 +1435,7 @@ fn keepalive_overflow_never_sends_early_or_panics() {
         assert_eq!(client.stats().sent, sent);
         assert_eq!(client.udp_recv(local), Err(TunnelError::Revoked));
         assert_eq!(
-            client.udp_send_to(local, (SERVER_IP, 7000), b"revoked"),
+            client.udp_send_to(local, (SERVER_IP.into(), 7000), b"revoked"),
             Err(TunnelError::Revoked)
         );
     }
@@ -1311,7 +1454,7 @@ fn truncated_dns_falls_back_to_tcp_inside_the_encrypted_tunnel() {
     truncated[2..4].copy_from_slice(&[0x83, 0x80]);
     world
         .server
-        .udp_send_to(udp, (CLIENT_IP, question.source_port), &truncated)
+        .udp_send_to(udp, (CLIENT_IP.into(), question.source_port), &truncated)
         .unwrap();
     world.settle();
     let flow = world.server.tcp_accept(listener).unwrap().unwrap();
@@ -1345,10 +1488,13 @@ fn authenticated_icmp_advice_reaches_a_connected_udp_socket() {
     world.connect(Duration::from_millis(100), 20);
     let service = world.server.udp_bind(7000).unwrap();
     let socket = world.client.udp_bind(0).unwrap();
-    world.client.udp_connect(socket, (SERVER_IP, 7000)).unwrap();
     world
         .client
-        .udp_send_to(socket, (SERVER_IP, 7000), &[7; 1200])
+        .udp_connect(socket, (SERVER_IP.into(), 7000))
+        .unwrap();
+    world
+        .client
+        .udp_send_to(socket, (SERVER_IP.into(), 7000), &[7; 1200])
         .unwrap();
     world.settle();
     assert_eq!(drain(&mut world.server, service).len(), 1);
@@ -1367,14 +1513,14 @@ fn authenticated_icmp_advice_reaches_a_connected_udp_socket() {
     assert_eq!(
         world
             .client
-            .udp_send_to(socket, (SERVER_IP, 7000), &[7; 773]),
+            .udp_send_to(socket, (SERVER_IP.into(), 7000), &[7; 773]),
         Err(TunnelError::Udp(SocketError::Build(
             crate::netstack::BuildError::TooLarge
         )))
     );
     world
         .client
-        .udp_send_to(socket, (SERVER_IP, 7000), b"query")
+        .udp_send_to(socket, (SERVER_IP.into(), 7000), b"query")
         .unwrap();
     let original =
         crate::netstack::build_udp(CLIENT_IP, SERVER_IP, socket.port(), 7000, b"query", MAX_MTU)

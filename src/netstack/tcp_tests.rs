@@ -1,12 +1,14 @@
 use super::*;
-use crate::netstack::ipv4::{Ipv4Config, MAX_MTU, MIN_MTU, PacketError, parse_protocol};
+use crate::netstack::ipv4;
+use crate::netstack::ipv4::{IpConfig, MAX_MTU, MIN_MTU, PacketError, parse_protocol};
 use crate::netstack::support::{address, binary, fixtures, number};
+use std::net::Ipv4Addr;
 
 const LOCAL: Ipv4Addr = Ipv4Addr::new(10, 64, 0, 2);
 const REMOTE: Ipv4Addr = Ipv4Addr::new(203, 0, 113, 9);
 
-fn config(local: Ipv4Addr) -> Ipv4Config {
-    Ipv4Config::new(local, Ipv4Addr::UNSPECIFIED, 0).unwrap()
+fn config(local: Ipv4Addr) -> IpConfig {
+    IpConfig::new(local, Ipv4Addr::UNSPECIFIED, 0).unwrap()
 }
 
 fn header(flags: u8) -> Header {
@@ -34,7 +36,7 @@ fn segment(header: &Header, payload: &[u8]) -> Vec<u8> {
 fn tamper(bytes: &mut Vec<u8>, edit: impl FnOnce(&mut Vec<u8>)) {
     edit(bytes);
     bytes[16..18].copy_from_slice(&[0, 0]);
-    let value = !segment_sum(REMOTE, LOCAL, bytes);
+    let value = !segment_sum(REMOTE.into(), LOCAL.into(), bytes);
     bytes[16..18].copy_from_slice(&value.to_be_bytes());
 }
 
