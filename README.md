@@ -16,7 +16,6 @@
 <p align="center">
   <a href="#quick-start">Quick start</a> ·
   <a href="#set-up-your-library">Set up</a> ·
-  <a href="#everyday-commands">Commands</a> ·
   <a href="#features">Features</a> ·
   <a href="#documentation">Documentation</a> ·
   <a href="#questions-and-troubleshooting">Help</a>
@@ -52,7 +51,7 @@ indexers you want Mynou to search.
 
 | Step | What Mynou does |
 | --- | --- |
-| 1. Request | Takes a title from a Plex watchlist, the command line, the API or the web interface. |
+| 1. Request | Takes a title from a Plex watchlist, the API or the web interface. |
 | 2. Search | Asks the indexers you configured for matching releases. |
 | 3. Select | Picks the best release for your profile and records why the others lost. |
 | 4. Download | Fetches it with the built-in BitTorrent client and verifies every piece. |
@@ -93,20 +92,6 @@ before anything is installed. Prefer clicking? Download both files from the
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-**3. Watch it work.** The demo runs the whole chain on your Mac with a local
-torrent peer, a simulated indexer and a simulated Plex. It downloads synthetic
-media, analyzes it, imports it and confirms it:
-
-```sh
-mynou demo --dir "$HOME/mynou-demo"
-```
-
-The directory must not exist yet. Delete it whenever you like.
-
-> [!TIP]
-> Curious about a file you already have? `mynou analyze FILE --json` prints its
-> container, tracks, codecs, duration and languages.
-
 ## Set up your library
 
 Mynou keeps its settings in its own storage and you set it up from the web
@@ -121,9 +106,8 @@ mynou serve
 It keeps its data in `~/Library/Application Support/Mynou` (use `--dir DIR` or
 `MYNOU_HOME` for another place) and creates that folder on first start.
 
-**2. Open <http://127.0.0.1:8787/>** and create your access token. Mynou shows
-it only once: keep it safe, for example in your password manager, since Mynou
-keeps only a fingerprint of it.
+**2. Open <http://127.0.0.1:8787/>**. There is no account or sign-in: Mynou
+listens on your Mac alone.
 
 **3. Open the Settings view** and turn on what you use. Plex and TMDB start
 disabled:
@@ -140,8 +124,7 @@ Saving validates the settings and applies them at once; an invalid change is
 refused and leaves the saved settings untouched. Tokens are kept in Mynou's
 storage and never shown again. Every setting, including release profiles,
 requester accounts and IRC, is also available as JSON in the same view, through
-`GET` and `POST /api/settings`, and with `mynou settings` and
-`mynou secrets`. The [configuration reference](docs/macos.md#configure-mynou)
+`GET` and `POST /api/settings`, and `POST /api/secrets`. The [configuration reference](docs/macos.md#configure-mynou)
 lists every setting and the [sources guide](docs/sources.md) shows how to
 describe an indexer.
 
@@ -161,46 +144,17 @@ HTML, CSS and JavaScript embedded in the executable, with no build step.
   of a followed series, **Choose a release** lists what the indexers offer,
   with why each release was kept or rejected, and downloads the one you pick.
 
-The token stays in the browser tab and the interface accepts same-origin pages
-only. It listens on your Mac alone by default; to reach it from elsewhere, put
-a reverse proxy with TLS that you trust in front of it.
+It has no sign-in, so it listens on a loopback address only and answers pages
+and commands of this Mac, never a page of another site.
 
-## Everyday commands
-
-Commands use the default data directory, or add `--dir DIR`.
-
-| I want to… | Command |
-| --- | --- |
-| See which release would be chosen, without recording anything | `mynou search --title "Example Movie" --year 2026` |
-| Request a movie and let Mynou search for it | `mynou submit --title "Example Movie" --year 2026` |
-| Request it from a magnet or torrent I already have | `mynou submit --title "Example Movie" --year 2026 --url 'magnet:?xt=urn:btih:...'` |
-| Import a file that is already on my Mac | `mynou submit --title "Local movie" --path ./movie.mp4` |
-| Read my Plex watchlists now | `mynou sync` |
-| Follow a series | `mynou track-series --title "Example Series" --year 2026` |
-| See upcoming episodes | `mynou calendar` |
-| List requests and their state | `mynou jobs` |
-| Understand what happened to one request | `mynou show ID`, `mynou events ID` |
-| Try a request again, or stop it | `mynou retry ID`, `mynou cancel ID` |
-| Watch downloads | `mynou torrents` |
-| See my library and available upgrades | `mynou library`, `mynou upgrades` |
-| Check that everything is healthy | `mynou status`, `mynou doctor` |
-| Read or replace my settings | `mynou settings`, `mynou settings --save` (document on standard input) |
-
-`mynou help` lists every command. Commands talk to the running service when
-there is one and otherwise read the local journal; series, calendar and
-transfer commands need the service.
-
-Commands that reach the running service read your access token from the
-`MYNOU_API_TOKEN` environment variable; set it the way you prefer (your shell
-profile, your keychain, a file your own tooling loads). Everything is also
-available over HTTP: `/api` routes take the access token as an
-`Authorization: Bearer` header, and `/healthz` and `/readyz` report health.
+Everything is also available over HTTP from this Mac: `/api` routes, and
+`/healthz` and `/readyz` for health.
 
 ## Features
 
 | | |
 | --- | --- |
-| **Requests** | Plex watchlists from one or several accounts, the command line, the web interface and an HTTP API. |
+| **Requests** | Plex watchlists from one or several accounts, the web interface and an HTTP API. |
 | **Sources** | RSS, JSON and Torznab indexers with optional authentication, opt-in feed watching for new releases, and opt-in IRC announcement channels. |
 | **Release selection** | Movie and episode profiles on resolution, source, codec, language, terms and scores, with previews that explain every decision. |
 | **BitTorrent** | v1, v2 and hybrid torrents, magnets, trackers, DHT and PEX, parallel peers, pause and resume, priorities, bandwidth limits and seeding policies. |
@@ -249,23 +203,9 @@ enabled.
 </details>
 
 <details>
-<summary><strong>The demo says the directory already exists</strong></summary>
-
-`mynou demo` only writes into a directory it creates. Pick a new path or remove
-the previous demo directory.
-</details>
-
-<details>
-<summary><strong>I lost my access token</strong></summary>
-
-Mynou cannot show it again. Stop Mynou, run `mynou token --reset` to create a
-new one (it is printed once), then start Mynou and sign in with it.
-</details>
-
-<details>
 <summary><strong>A search finds nothing</strong></summary>
 
-Run `mynou doctor`, then `mynou indexers` to see the state of each source. Series
+Open **Settings → Indexers** to see the state of each source. Series
 also need the TMDB catalog (enabled in Settings, with its token). The
 [sources guide](docs/sources.md#health-pause-and-probe) explains source health.
 </details>

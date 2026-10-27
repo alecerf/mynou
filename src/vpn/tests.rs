@@ -473,7 +473,7 @@ fn supervisor_replaces_retired_generations_and_keeps_management_api_reachable() 
     let mut config = directory.config();
     config.listen = "127.0.0.1:0".into();
     let engine = Engine::open_operator(config.clone(), true, false, true, Some(operator)).unwrap();
-    let api = crate::server::Api::bind(engine, "0123456789abcdef0123456789abcdef".into()).unwrap();
+    let api = crate::server::Api::bind(engine).unwrap();
     let url = format!("http://{}", api.address().unwrap());
     let worker = thread::spawn(move || api.run_supervised());
     let client = HttpClient::new()
@@ -495,18 +495,6 @@ fn supervisor_replaces_retired_generations_and_keeps_management_api_reachable() 
             )
             .unwrap()
     };
-    assert_eq!(
-        client
-            .request(
-                "POST",
-                &format!("{url}/api/vpn/control"),
-                &[("Content-Type".into(), "application/json".into())],
-                b"{\"action\":\"disable\"}"
-            )
-            .unwrap()
-            .status,
-        401
-    );
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
         let response = call("GET", "/api/status", "");

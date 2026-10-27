@@ -1,6 +1,5 @@
 //! Original native HTTP source protocol fixtures. Never public trackers or torrents.
 mod api_support;
-mod home_support;
 mod library_support;
 use api_support::{Server, TOKEN};
 use library_support::Directory;
@@ -15,7 +14,6 @@ use std::{
     io::{Read, Write},
     net::TcpListener,
     path::Path,
-    process::Command,
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -855,60 +853,12 @@ fn offline_source_previews_never_create_missing_snapshot_or_apply_control() {
     assert_eq!(p.searches.load(Ordering::Acquire), 0);
 }
 #[test]
-fn cli_source_control_uses_online_guard_and_offline_persisted_policy() {
-    let d = Directory::new();
-    let p = Provider::open();
-    let server = Server::open(cfg(&d, &p, "none"));
-    let id = policy_id(&server.engine);
-    home_support::serve_here(&d.0, &server.authority);
-    let run = |extra: &[&str]| {
-        Command::new(env!("CARGO_BIN_EXE_mynou"))
-            .env("MYNOU_API_TOKEN", TOKEN)
-            .args(["indexer-control", &id, "--action", "pause", "--dir"])
-            .arg(&d.0)
-            .args(extra)
-            .output()
-            .unwrap()
-    };
-    let out = run(&[]);
-    assert!(
-        out.status.success(),
-        "{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    let report = json::parse(std::str::from_utf8(&out.stdout).unwrap()).unwrap();
-    redacted(&report);
-    let guard = report.get("plan_id").unwrap().as_str().unwrap();
-    assert!(run(&["--apply", "--plan-id", guard]).status.success());
-    assert!(!run(&["--apply", "--plan-id", guard]).status.success());
-    drop(server);
-    home_support::save_settings(&d.0, &value(&p, "none"));
-    let out = Command::new(env!("CARGO_BIN_EXE_mynou"))
-        .env_remove("MYNOU_API_TOKEN")
-        .args(["indexers", "--dir"])
-        .arg(&d.0)
-        .output()
-        .unwrap();
-    assert!(
-        out.status.success(),
-        "{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    let report = json::parse(std::str::from_utf8(&out.stdout).unwrap()).unwrap();
-    assert_eq!(
-        report.get("sources").unwrap().as_array().unwrap()[0].get("enabled"),
-        Some(&Value::Bool(false))
-    );
-    assert_eq!(p.searches.load(Ordering::Acquire), 0);
-}
-#[test]
-fn protected_source_health_api_and_cli_expose_only_safe_aliases() {
+fn protected_source_health_api_exposes_only_safe_aliases() {
     let d = Directory::new();
     let p = Provider::open();
     let c = cfg(&d, &p, "form");
     let server = Server::open(c);
     integrations::search(&server.engine.config, &movie()).unwrap();
-    assert_eq!(server.call("GET", "/api/indexers", &[], "").status, 401);
     let reply = server.call(
         "GET",
         "/api/indexers",
@@ -918,19 +868,6 @@ fn protected_source_health_api_and_cli_expose_only_safe_aliases() {
     assert_eq!(reply.status, 200);
     reply.no_secrets();
     redacted(&json::parse(&reply.body).unwrap());
-    home_support::serve_here(&d.0, &server.authority);
-    let out = Command::new(env!("CARGO_BIN_EXE_mynou"))
-        .env("MYNOU_API_TOKEN", TOKEN)
-        .args(["indexers", "--dir"])
-        .arg(&d.0)
-        .output()
-        .unwrap();
-    assert!(
-        out.status.success(),
-        "{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    redacted(&json::parse(std::str::from_utf8(&out.stdout).unwrap()).unwrap());
     assert_eq!(p.logins.load(Ordering::Acquire), 1);
 }
 #[test]
@@ -940,17 +877,6 @@ fn protected_source_controls_bind_bearer_and_one_use_reviews() {
     let server = Server::open(cfg(&d, &p, "none"));
     let id = policy_id(&server.engine);
     let route = format!("/api/indexers/{id}/control");
-    assert_eq!(
-        server
-            .call(
-                "POST",
-                &route,
-                &[("Content-Type", "application/json")],
-                r#"{"action":"pause"}"#
-            )
-            .status,
-        401
-    );
     let auth = format!("Bearer {TOKEN}");
     let headers = [
         ("Content-Type", "application/json"),

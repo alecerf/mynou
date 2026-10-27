@@ -99,8 +99,19 @@ pub fn checksum(sums: &str, name: &str) -> Option<[u8; 32]> {
     sums.lines().find_map(|line| {
         let (digest, file) = line.split_once(' ')?;
         let file = file.trim_start_matches(' ').trim_start_matches('*');
-        (file == name).then(|| crate::access::digest_from_hex(digest))?
+        (file == name).then(|| digest_from_hex(digest))?
     })
+}
+
+fn digest_from_hex(text: &str) -> Option<[u8; 32]> {
+    if text.len() != 64 || !text.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    let mut digest = [0; 32];
+    for (n, byte) in digest.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(&text[2 * n..2 * n + 2], 16).ok()?;
+    }
+    Some(digest)
 }
 
 /// A verified executable waiting next to the one it replaces.

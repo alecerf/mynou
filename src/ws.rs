@@ -100,26 +100,9 @@ pub fn valid_key(key: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b == b'+' || b == b'/')
 }
 
-/// Decodes the token carried as `auth.<hex>` in the subprotocol list.
-pub fn token_from_protocols(header: &str) -> Option<Vec<u8>> {
-    let mut offered = false;
-    let mut token = None;
-    for item in header.split(',').map(str::trim) {
-        if item == SUBPROTOCOL {
-            offered = true;
-        } else if let Some(hex) = item.strip_prefix("auth.") {
-            if hex.is_empty() || hex.len() % 2 != 0 || !hex.is_ascii() {
-                return None;
-            }
-            let bytes = hex
-                .as_bytes()
-                .chunks(2)
-                .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).ok()?, 16).ok())
-                .collect::<Option<Vec<u8>>>()?;
-            token = Some(bytes);
-        }
-    }
-    if offered { token } else { None }
+/// Whether the client offers the Mynou subprotocol.
+pub fn offers_subprotocol(header: &str) -> bool {
+    header.split(',').any(|item| item.trim() == SUBPROTOCOL)
 }
 
 /// The origin must name the same authority the request was sent to.
@@ -483,15 +466,11 @@ mod tests {
     }
 
     #[test]
-    fn protocol_list_carries_the_token() {
-        assert_eq!(
-            token_from_protocols("mynou.v1, auth.6162"),
-            Some(b"ab".to_vec())
-        );
-        assert_eq!(token_from_protocols("auth.6162"), None);
-        assert_eq!(token_from_protocols("mynou.v1"), None);
-        assert_eq!(token_from_protocols("mynou.v1, auth.6"), None);
-        assert_eq!(token_from_protocols("mynou.v1, auth.zz"), None);
+    fn the_subprotocol_must_be_offered() {
+        assert!(offers_subprotocol("mynou.v1"));
+        assert!(offers_subprotocol("other, mynou.v1"));
+        assert!(!offers_subprotocol(""));
+        assert!(!offers_subprotocol("mynou.v2"));
     }
 
     #[test]

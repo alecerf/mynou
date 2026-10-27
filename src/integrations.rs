@@ -639,15 +639,11 @@ fn catalog_json(config: &Config, path: &str, pairs: &[(&str, String)]) -> Result
         return Err("TMDB catalog is disabled".into());
     }
     let mut headers = vec![("Accept".into(), "application/json".into())];
-    let mut pairs = pairs.to_vec();
-    if let Some(token) = config::optional_secret(&config.catalog.token_env)? {
-        headers.push(("Authorization".into(), format!("Bearer {token}")));
-    } else if let Some(key) = config::optional_secret(&config.catalog.api_key_env)? {
-        pairs.push(("api_key", key));
-    } else {
-        return Err("TMDB catalog: missing token or API key".into());
-    }
-    let url = query(&endpoint(&config.catalog.url, path)?, &pairs)?;
+    let Some(token) = config::optional_secret(&config.catalog.token_env)? else {
+        return Err("TMDB catalog: missing read access token".into());
+    };
+    headers.push(("Authorization".into(), format!("Bearer {token}")));
+    let url = query(&endpoint(&config.catalog.url, path)?, pairs)?;
     let key = catalog_cache_key(&url, &headers);
     let cached = catalog_cache()
         .lock()
@@ -1148,15 +1144,11 @@ fn fresh_catalog(
         return Err("TMDB catalog is disabled".into());
     }
     let mut headers = vec![("Accept".into(), "application/json".into())];
-    let mut pairs = pairs.to_vec();
-    if let Some(token) = config::optional_secret(&config.catalog.token_env)? {
-        headers.push(("Authorization".into(), format!("Bearer {token}")));
-    } else if let Some(key) = config::optional_secret(&config.catalog.api_key_env)? {
-        pairs.push(("api_key", key));
-    } else {
-        return Err("TMDB catalog: missing token or API key".into());
-    }
-    let url = query(&endpoint(&config.catalog.url, path)?, &pairs)?;
+    let Some(token) = config::optional_secret(&config.catalog.token_env)? else {
+        return Err("TMDB catalog: missing read access token".into());
+    };
+    headers.push(("Authorization".into(), format!("Bearer {token}")));
+    let url = query(&endpoint(&config.catalog.url, path)?, pairs)?;
     let response = client()
         .with_timeout(remaining_search_time(deadline)?.min(Duration::from_secs(20)))
         .request("GET", &url, &headers, &[])

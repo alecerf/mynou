@@ -52,12 +52,6 @@ fn bearer_api_expands_shared_interests_without_undoing_pause_or_modifying_source
         ("Authorization", auth.as_str()),
         ("Content-Type", "application/json"),
     ];
-    assert_eq!(
-        server
-            .call("POST", &route, &[], r#"{"indices":[1]}"#)
-            .status,
-        401
-    );
     let before = server.engine.transfer(&torrent.id).unwrap();
     for body in [
         r#"{"indices":[1,99]}"#,

@@ -205,7 +205,7 @@ struct Server {
 
 impl Server {
     fn open(engine: Arc<Engine>) -> Self {
-        let api = Api::bind(engine.clone(), TOKEN.into()).unwrap();
+        let api = Api::bind(engine.clone()).unwrap();
         let origin = format!("http://{}", api.address().unwrap());
         Self {
             engine,

@@ -90,7 +90,7 @@ running service, and a changed account, policy or demand requires a new
 preview. Previews can read offline storage without writing. `requester-sync`
 polls every account now and needs the service.
 
-| Route (Bearer token) | Purpose |
+| Route | Purpose |
 | --- | --- |
 | `GET /api/requesters` | Accounts and poll results |
 | `GET /api/requesters/ACCOUNT?limit=100&after=CURSOR` | One account and a page of demand (`next` continues; omit `after` first) |

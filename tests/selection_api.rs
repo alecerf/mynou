@@ -1,5 +1,4 @@
 //! Read-only selection previews through the CLI and authenticated local API.
-mod home_support;
 use mynou::config::{self, Config};
 use mynou::engine::{Engine, lock};
 use mynou::json::{self, Value};
@@ -11,7 +10,6 @@ use std::fs;
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::thread::{self, JoinHandle};
@@ -132,7 +130,7 @@ struct Server {
 impl Server {
     fn open(config: Config) -> Self {
         let engine = Engine::open(config).unwrap();
-        let api = Api::bind(engine.clone(), TOKEN.into()).unwrap();
+        let api = Api::bind(engine.clone()).unwrap();
         let origin = format!("http://{}", api.address().unwrap());
         Self {
             engine,
@@ -251,47 +249,6 @@ fn preferred_indexer() -> Indexer {
     })
 }
 
-fn command(directory: &Path, args: &[&str]) -> Output {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_mynou"))
-        .current_dir(directory)
-        .env("MYNOU_HOME", directory)
-        .env("MYNOU_API_TOKEN", TOKEN)
-        .env_remove("MYNOU_DEMO_TOKEN")
-        .env_remove("MYNOU_PLEX_TOKEN")
-        .env_remove("MYNOU_SELECTION_ABSENT_FIXTURE_KEY_239104")
-        .args(args)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(8);
-    loop {
-        if child.try_wait().unwrap().is_some() {
-            return child.wait_with_output().unwrap();
-        }
-        if Instant::now() >= deadline {
-            child.kill().unwrap();
-            let output = child.wait_with_output().unwrap();
-            panic!(
-                "CLI fixture timed out: stdout={} stderr={}",
-                String::from_utf8_lossy(&output.stdout),
-                String::from_utf8_lossy(&output.stderr)
-            );
-        }
-        thread::sleep(Duration::from_millis(5));
-    }
-}
-
-fn successful(output: Output) -> Value {
-    assert!(
-        output.status.success(),
-        "stdout={} stderr={}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    json::parse(std::str::from_utf8(&output.stdout).unwrap().trim()).unwrap()
-}
-
 fn assert_preferred(report: &Value, configured: u64, failed: u64) {
     assert_eq!(report.get("profile").and_then(Value::as_str), Some("hd"));
     assert_eq!(report.get("manual_override"), Some(&Value::Bool(false)));
@@ -393,87 +350,12 @@ fn files(directory: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
 }
 
 #[test]
-fn offline_cli_preview_uses_saved_settings_without_changing_storage() {
-    let directory = Directory::new();
-    let indexer = preferred_indexer();
-    home_support::save_settings(&directory.0, &configuration(&[&indexer]));
-    let before = files(&directory.0);
-    let args = [
-        "search",
-        "--title",
-        "Fixture Movie",
-        "--kind",
-        "movie",
-        "--year",
-        "2024",
-        "--tmdb-id",
-        "42",
-    ];
-    let first = successful(command(&directory.0, &args));
-    assert_preferred(&first, 1, 0);
-    let second = successful(command(&directory.0, &args));
-    assert_eq!(first, second, "Selection IDs and ordering must be stable");
-    assert_eq!(indexer.requests.load(Ordering::Relaxed), 2);
-    assert_eq!(files(&directory.0), before);
-}
-
-#[test]
-fn cli_preview_rejects_invalid_options_without_indexer_requests_or_state_creation() {
-    let directory = Directory::new();
-    let indexer = preferred_indexer();
-    let before = files(&directory.0);
-    let cases: &[&[&str]] = &[
-        &["search"],
-        &["search", "--title"],
-        &["search", "--title", " "],
-        &["search", "--title", "Fixture Movie", "unexpected"],
-        &["search", "--title", "Fixture Movie", "--title", "Duplicate"],
-        &["search", "--title", "Fixture Movie", "--kind", "series"],
-        &["search", "--title", "Fixture Movie", "--kind", "file"],
-        &["search", "--title", "Fixture Movie", "--kind", "invalid"],
-        &["search", "--title", "Fixture Movie", "--year", "-1"],
-        &["search", "--title", "Fixture Movie", "--year", "10000"],
-        &["search", "--title", "Fixture Movie", "--season", "10000"],
-        &["search", "--title", "Fixture Movie", "--episode", "100000"],
-        &["search", "--title", "Fixture Movie", "--episode", "invalid"],
-        &["search", "--title", "Fixture Movie", "--tmdb-id", "-1"],
-        &["search", "--title", "Fixture Movie", "--path", "source.mp4"],
-        &[
-            "search",
-            "--title",
-            "Fixture Movie",
-            "--url",
-            "magnet:?xt=urn:btih:override",
-        ],
-        &["search", "--title", "Fixture Movie", "--unknown", "value"],
-        &["search", "--title", "Fixture Movie", "--limit", "0"],
-        &["search", "--title", "Fixture Movie", "--limit", "201"],
-        &["search", "--title", "Fixture Movie", "--after", "invalid"],
-    ];
-    for args in cases {
-        let output = command(&directory.0, args);
-        assert!(
-            !output.status.success(),
-            "Invalid CLI arguments were accepted: {args:?}"
-        );
-        assert!(
-            !output.stderr.is_empty(),
-            "Invalid CLI arguments need a diagnostic: {args:?}"
-        );
-    }
-    assert_eq!(indexer.requests.load(Ordering::Relaxed), 0);
-    assert_eq!(files(&directory.0), before);
-    assert!(!directory.0.join("state").exists());
-}
-
-#[test]
-fn authenticated_api_and_online_cli_preview_work_while_the_engine_journal_is_locked() {
+fn api_preview_works_while_the_engine_journal_is_locked() {
     let directory = Directory::new();
     let indexer = preferred_indexer();
     let failed = Indexer::open(|_| (503, "unavailable".into()));
     let value = configuration(&[&indexer, &failed]);
     let server = Server::open(config::from_json(&value, &directory.0).unwrap());
-    home_support::serve_here(&directory.0, server.origin.strip_prefix("http://").unwrap());
     let before = files(&directory.0);
     let mut store = lock(&server.engine.store).unwrap();
     let (status, profiles) = server.call("GET", "/api/profiles", Some(TOKEN), None);
@@ -483,21 +365,6 @@ fn authenticated_api_and_online_cli_preview_work_while_the_engine_journal_is_loc
         server.call("POST", "/api/search", Some(TOKEN), Some(&movie().to_json()));
     assert_eq!(status, 200, "{}", json::stringify(&report));
     assert_preferred(&report, 2, 1);
-    let online = successful(command(
-        &directory.0,
-        &[
-            "search",
-            "--title",
-            "Fixture Movie",
-            "--kind",
-            "movie",
-            "--year",
-            "2024",
-            "--tmdb-id",
-            "42",
-        ],
-    ));
-    assert_eq!(online, report);
     // Cursor pages concatenate to the full report in the same order.
     let ids = |report: &Value| -> Vec<Value> {
         ["accepted", "rejected"]
@@ -531,23 +398,6 @@ fn authenticated_api_and_online_cli_preview_work_while_the_engine_journal_is_loc
     paged.extend(ids(&rest));
     assert_eq!(paged, ids(&report));
     assert_eq!(paged.len(), 6);
-    let online_page = successful(command(
-        &directory.0,
-        &[
-            "search",
-            "--title",
-            "Fixture Movie",
-            "--kind",
-            "movie",
-            "--year",
-            "2024",
-            "--tmdb-id",
-            "42",
-            "--limit",
-            "2",
-        ],
-    ));
-    assert_eq!(online_page, first);
     let (status, error) = server.call(
         "POST",
         "/api/search?after=invalid",
@@ -555,97 +405,9 @@ fn authenticated_api_and_online_cli_preview_work_while_the_engine_journal_is_loc
         Some(&movie().to_json()),
     );
     assert_eq!(status, 400, "{}", json::stringify(&error));
-    assert_eq!(indexer.requests.load(Ordering::Relaxed), 5);
-    assert_eq!(failed.requests.load(Ordering::Relaxed), 5);
+    assert_eq!(indexer.requests.load(Ordering::Relaxed), 3);
+    assert_eq!(failed.requests.load(Ordering::Relaxed), 3);
     assert!(store.list().unwrap().is_empty());
-    assert_eq!(files(&directory.0), before);
-}
-
-#[test]
-fn preview_api_requires_authentication_before_accessing_profiles_or_indexers() {
-    let directory = Directory::new();
-    let indexer = preferred_indexer();
-    let server =
-        Server::open(config::from_json(&configuration(&[&indexer]), &directory.0).unwrap());
-    let before = files(&directory.0);
-    for token in [None, Some("incorrect-token")] {
-        let (status, error) = server.call("GET", "/api/profiles", token, None);
-        assert_eq!(status, 401);
-        assert_eq!(
-            error.get("error").and_then(Value::as_str),
-            Some("Authentication required")
-        );
-        let (status, error) = server.call("POST", "/api/search", token, Some(&movie().to_json()));
-        assert_eq!(status, 401);
-        assert_eq!(
-            error.get("error").and_then(Value::as_str),
-            Some("Authentication required")
-        );
-    }
-    assert_eq!(indexer.requests.load(Ordering::Relaxed), 0);
-    assert!(
-        lock(&server.engine.store)
-            .unwrap()
-            .list()
-            .unwrap()
-            .is_empty()
-    );
-    assert_eq!(files(&directory.0), before);
-}
-
-#[test]
-fn episode_cli_preview_uses_the_episode_profile_and_returns_rejection_reasons() {
-    let directory = Directory::new();
-    let indexer = Indexer::open(|path| {
-        assert!(path.contains("q=Fixture%20Series"));
-        assert!(path.contains("kind=episode"));
-        assert!(path.contains("season=2"));
-        assert!(path.contains("episode=3"));
-        (200, r#"{"results":[
-            {"title":"Fixture.Series.S02E03.2160p.WEB-DL.EN","seeders":10,"url":"magnet:?xt=urn:btih:synthetic-rejected-resolution"},
-            {"title":"Fixture.Series.S02E04.1080p.WEB-DL.EN","seeders":10,"url":"magnet:?xt=urn:btih:synthetic-wrong-episode"}
-        ]}"#.into())
-    });
-    home_support::save_settings(&directory.0, &configuration(&[&indexer]));
-    let before = files(&directory.0);
-    let report = successful(command(
-        &directory.0,
-        &[
-            "search",
-            "--title",
-            "Fixture Series",
-            "--kind",
-            "episode",
-            "--season",
-            "2",
-            "--episode",
-            "3",
-        ],
-    ));
-    assert_eq!(report.get("profile").and_then(Value::as_str), Some("hd"));
-    assert!(
-        report
-            .get("accepted")
-            .unwrap()
-            .as_array()
-            .unwrap()
-            .is_empty()
-    );
-    assert_eq!(report.get("selected_candidate_id"), Some(&Value::Null));
-    let rejected = report.get("rejected").unwrap().as_array().unwrap();
-    assert_eq!(rejected.len(), 2);
-    for candidate in rejected {
-        let reasons = candidate
-            .get("assessment")
-            .unwrap()
-            .get("reasons")
-            .unwrap()
-            .as_array()
-            .unwrap();
-        assert!(!reasons.is_empty());
-    }
-    assert_redacted(&report);
-    assert_eq!(indexer.requests.load(Ordering::Relaxed), 1);
     assert_eq!(files(&directory.0), before);
 }
 

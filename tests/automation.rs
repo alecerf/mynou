@@ -59,7 +59,7 @@ struct Server {
 impl Server {
     fn open(config: Config) -> Self {
         let engine = Engine::open(config).unwrap();
-        let api = Api::bind(engine.clone(), TOKEN.to_owned()).unwrap();
+        let api = Api::bind(engine.clone()).unwrap();
         let origin = format!("http://{}", api.address().unwrap());
         Self {
             engine,
@@ -131,11 +131,6 @@ fn authenticated_api_import_dedup_events_and_restart() {
     let server = Server::open(config.clone());
     assert_eq!(server.call("GET", "/healthz", None, None).0, 200);
     assert_eq!(server.call("GET", "/readyz", None, None).0, 200);
-    assert_eq!(server.call("GET", "/api/jobs", None, None).0, 401);
-    assert_eq!(
-        server.call("GET", "/api/jobs", Some("incorrect"), None).0,
-        401
-    );
     assert_eq!(server.call("GET", "/api/unknown", Some(TOKEN), None).0, 404);
     let request = local_request(&source, "Local Movie");
     let id = submit(&server, &request);

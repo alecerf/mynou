@@ -1,13 +1,12 @@
 //! Protected shared-file previews and guarded application through HTTP, forms and CLI.
 mod api_support;
 mod automatic_pack_support;
-mod home_support;
 mod library_support;
 mod series_support;
 #[allow(dead_code)]
 mod transfer_support;
 use api_support::{Server, TOKEN};
-use automatic_pack_support::{Provider, SECRET, no_sources, snapshot};
+use automatic_pack_support::{Provider, SECRET, no_sources};
 use library_support::Directory;
 use mynou::{
     config::Config,
@@ -16,12 +15,7 @@ use mynou::{
     pack::SharedFileRequest,
 };
 use series_support::{Catalog, episode, id, request};
-use std::{
-    fs,
-    process::{Command, Output, Stdio},
-    thread,
-    time::{Duration, Instant},
-};
+use std::fs;
 use transfer_support::{BLOCK, Torrent, payload};
 
 fn setup(directory: &Directory, provider: &Provider) -> (Catalog, Config, String) {
@@ -65,12 +59,6 @@ fn bearer_routes_reject_invalid_controls_before_io_and_apply_only_the_reviewed_b
     let server = Server::open(cfg);
     let series = tracked(&server.engine);
     let route = format!("/api/series/{series}/shared-file");
-    assert_eq!(
-        server
-            .call("POST", &route, &[], &json::stringify(&body(&source)))
-            .status,
-        401
-    );
     let auth = format!("Bearer {TOKEN}");
     let headers = [
         ("Authorization", auth.as_str()),
@@ -116,153 +104,4 @@ fn bearer_routes_reject_invalid_controls_before_io_and_apply_only_the_reviewed_b
             .iter()
             .all(|j| !json::stringify(&mynou::engine::public_job(j)).contains(SECRET))
     );
-}
-
-fn config_value(cfg: &Config) -> Value {
-    let mut value = mynou::config::default_json();
-    value.insert("listen", cfg.listen.clone());
-    value
-        .get_mut("library")
-        .unwrap()
-        .insert("series_root", cfg.series_root.to_str().unwrap());
-    value.get_mut("downloads").unwrap().insert("enabled", false);
-    let catalog = value.get_mut("catalog").unwrap();
-    catalog.insert("enabled", true);
-    catalog.insert("url", cfg.catalog.url.clone());
-    catalog.insert("token_env", cfg.catalog.token_env.clone());
-    catalog.insert("api_key_env", cfg.catalog.api_key_env.clone());
-    value
-}
-fn command(directory: &Directory, home: &std::path::Path, arguments: &[&str]) -> Output {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_mynou"))
-        .current_dir(&directory.0)
-        .env("MYNOU_HOME", home)
-        .env("MYNOU_API_TOKEN", TOKEN)
-        .env_remove("MYNOU_PLEX_TOKEN")
-        .args(arguments)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(8);
-    loop {
-        if child.try_wait().unwrap().is_some() {
-            return child.wait_with_output().unwrap();
-        }
-        if Instant::now() >= deadline {
-            child.kill().unwrap();
-            panic!(
-                "Shared-file CLI timed out: {:?}",
-                child.wait_with_output().unwrap()
-            );
-        }
-        thread::sleep(Duration::from_millis(5));
-    }
-}
-fn success(result: Output) -> Value {
-    assert!(
-        result.status.success(),
-        "{}",
-        String::from_utf8_lossy(&result.stderr)
-    );
-    json::parse(std::str::from_utf8(&result.stdout).unwrap()).unwrap()
-}
-
-#[test]
-fn cli_offline_preview_preserves_storage_and_online_apply_requires_its_guard() {
-    let directory = Directory::new();
-    let provider = Provider::open();
-    let (catalog, _cfg, source) = setup(&directory, &provider);
-    let cfg = catalog.config(&directory.0.join("engine"));
-    let engine = Engine::open_for_management(cfg.clone()).unwrap();
-    let series = tracked(&engine);
-    drop(engine);
-    let home = cfg.data_dir.clone();
-    home_support::save_settings(&home, &config_value(&cfg));
-    fs::write(
-        directory.0.join("shared.json"),
-        r#"{"file_path":"Pack/shared.mp4","season":1,"episodes":[1,2]}"#,
-    )
-    .unwrap();
-    let before = snapshot(&cfg.store_dir);
-    let report = success(command(
-        &directory,
-        &home,
-        &[
-            "series-shared-file",
-            &series,
-            "--url",
-            &source,
-            "--mapping",
-            "shared.json",
-        ],
-    ));
-    no_sources(&report);
-    assert_eq!(snapshot(&cfg.store_dir), before);
-    let plan = report.get("plan_id").unwrap().as_str().unwrap();
-    assert!(
-        !command(
-            &directory,
-            &home,
-            &[
-                "series-shared-file",
-                &series,
-                "--url",
-                &source,
-                "--mapping",
-                "shared.json",
-                "--apply",
-                "--plan-id",
-                plan
-            ]
-        )
-        .status
-        .success()
-    );
-    assert_eq!(snapshot(&cfg.store_dir), before);
-    let calls = provider.calls.lock().unwrap().len();
-    for arguments in [
-        vec![
-            "series-shared-file",
-            &series,
-            "--url",
-            &source,
-            "--mapping",
-            "shared.json",
-            "--apply",
-        ],
-        vec![
-            "series-shared-file",
-            &series,
-            "--url",
-            &source,
-            "--mapping",
-            "shared.json",
-            "--plan-id",
-            "invalid",
-        ],
-    ] {
-        assert!(!command(&directory, &home, &arguments).status.success());
-    }
-    assert_eq!(provider.calls.lock().unwrap().len(), calls);
-    let server = Server::open(cfg.clone());
-    home_support::serve_here(&home, &server.authority);
-    let applied = success(command(
-        &directory,
-        &home,
-        &[
-            "series-shared-file",
-            &series,
-            "--url",
-            &source,
-            "--mapping",
-            "shared.json",
-            "--apply",
-            "--plan-id",
-            plan,
-        ],
-    ));
-    no_sources(&applied);
-    assert_eq!(applied.get("submitted"), Some(&Value::Number(2.0)));
-    assert_eq!(lock(&server.engine.store).unwrap().list().unwrap().len(), 2);
 }

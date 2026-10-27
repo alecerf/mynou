@@ -105,8 +105,6 @@ record. Diagnostics never include URLs or credentials.
 
 ## Calendar and API
 
-All routes need the Bearer token:
-
 | Route | Purpose |
 | --- | --- |
 | `GET /api/series` | Summaries with episode, undated and unmapped counts, always as `{"series", "next", "total"}`: 50 by default, `?limit=N` (1 to 200) and `after=ID` choose the page |

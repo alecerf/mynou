@@ -1,6 +1,5 @@
 //! Original fixed-format text fixtures, protected previews and native import.
 mod api_support;
-mod home_support;
 mod irc_routing_support;
 mod irc_support;
 mod library_support;
@@ -17,7 +16,7 @@ use mynou::{
     },
     json::{self, Value},
 };
-use std::{fs, io::Write, process::Command, thread};
+use std::{fs, io::Write, thread};
 
 fn format(episodes: bool) -> Value {
     let mut v = Value::object();
@@ -420,39 +419,15 @@ fn format_configuration_is_bounded_complete_and_has_no_url_or_pattern_fields() {
 }
 
 #[test]
-fn protected_api_and_offline_cli_share_pure_text_previews_without_storage_writes() {
+fn protected_api_text_previews_never_write_storage() {
     let dir = Directory::new();
     let v = settings("irc://127.0.0.1:1");
     let cfg = config::from_json(&v, &dir.0).unwrap();
-    let file = dir.0.join("announce.txt");
-    home_support::save_settings(&dir.0, &v);
-    let saved = irc_support::bytes(&cfg.store_dir);
-    fs::write(&file, claim()).unwrap();
-    let out = Command::new(env!("CARGO_BIN_EXE_mynou"))
-        .args(["irc-preview", "local", "--text"])
-        .arg(&file)
-        .arg("--dir")
-        .arg(&dir.0)
-        .output()
-        .unwrap();
-    assert!(
-        out.status.success(),
-        "{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    assert_eq!(irc_support::bytes(&cfg.store_dir), saved);
-    let report = json::parse(std::str::from_utf8(&out.stdout).unwrap().trim()).unwrap();
     let server = Server::open(cfg);
     let before = irc_support::bytes(&server.engine.config.store_dir);
     let mut body = Value::object();
     body.insert("source_id", "local");
     body.insert("text", claim());
-    assert_eq!(
-        server
-            .call("POST", "/api/irc/preview", &[], &json::stringify(&body))
-            .status,
-        401
-    );
     let auth = format!("Bearer {TOKEN}");
     let headers = [
         ("Authorization", auth.as_str()),
@@ -465,7 +440,6 @@ fn protected_api_and_offline_cli_share_pure_text_previews_without_storage_writes
         &json::stringify(&body),
     );
     assert_eq!(reply.status, 200);
-    assert_eq!(json::parse(&reply.body).unwrap(), report);
     body.insert("announcement", irc_support::announcement(7));
     assert_eq!(
         server

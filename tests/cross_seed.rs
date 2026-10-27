@@ -1,5 +1,4 @@
 //! Synthetic loopback proofs for manual seed-only reuse; no public media.
-mod home_support;
 #[allow(dead_code)]
 mod transfer_support;
 use mynou::{
@@ -15,7 +14,6 @@ use std::{
     io::{Read, Write},
     net::{TcpListener, TcpStream},
     path::PathBuf,
-    process::Command,
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -875,9 +873,8 @@ fn api_authorization_and_cli_register_only_the_selected_readonly_seed() {
     .unwrap();
     let engine = Engine::open(cfg.clone()).unwrap();
     wait(|| engine.transfer(&source.id).unwrap().get("ready") == Some(&Value::Bool(true)));
-    let api = Api::bind(engine.clone(), TOKEN.into()).unwrap();
+    let api = Api::bind(engine.clone()).unwrap();
     let origin = format!("http://{}", api.address().unwrap());
-    home_support::serve_here(&scratch.0, &api.address().unwrap().to_string());
     let _server = ApiGuard {
         engine: engine.clone(),
         worker: Some(thread::spawn(move || api.run())),
@@ -895,12 +892,7 @@ fn api_authorization_and_cli_register_only_the_selected_readonly_seed() {
     let http = HttpClient::new()
         .without_proxy()
         .with_timeout(Duration::from_secs(5));
-    assert_eq!(
-        http.request("POST", &route, &[], json::stringify(&body).as_bytes())
-            .unwrap()
-            .status,
-        401
-    );
+    let valid = json::stringify(&body);
     body.insert("unknown", true);
     let headers = vec![
         ("Authorization".into(), format!("Bearer {TOKEN}")),
@@ -913,24 +905,15 @@ fn api_authorization_and_cli_register_only_the_selected_readonly_seed() {
         400
     );
     assert_eq!(engine.transfers().unwrap().as_array().unwrap().len(), 1);
-    let output = Command::new(env!("CARGO_BIN_EXE_mynou"))
-        .args([
-            "cross-seed",
-            &source.id,
-            "--torrent",
-            target.path.to_str().unwrap(),
-            "--dir",
-            scratch.0.to_str().unwrap(),
-        ])
-        .env(mynou::config::API_TOKEN_ENV, TOKEN)
-        .output()
+    let output = http
+        .request("POST", &route, &headers, valid.as_bytes())
         .unwrap();
     assert!(
-        output.status.success(),
+        (200..300).contains(&output.status),
         "{}",
-        String::from_utf8_lossy(&output.stderr)
+        String::from_utf8_lossy(&output.body)
     );
-    let snapshot = json::parse(std::str::from_utf8(&output.stdout).unwrap()).unwrap();
+    let snapshot = json::parse(std::str::from_utf8(&output.body).unwrap()).unwrap();
     assert_eq!(
         snapshot.get("id").unwrap().as_str(),
         Some(target.id.as_str())

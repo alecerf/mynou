@@ -517,7 +517,6 @@ fn the_native_cli_sends_an_exact_400_byte_response_and_its_required_terminator()
     let process = ChildGuard(
         Command::new(env!("CARGO_BIN_EXE_mynou"))
             .args(["serve", "--dir", dir.0.to_str().unwrap()])
-            .env("MYNOU_API_TOKEN", "0123456789abcdef0123456789abcdef")
             .env("MYNOU_IRC_TEST_USERNAME", &username)
             .env("MYNOU_IRC_TEST_PASSWORD", &password)
             .stdout(Stdio::from(log.try_clone().unwrap()))

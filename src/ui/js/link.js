@@ -7,20 +7,10 @@ class Link extends EventTarget {
   #next = 1;
   #attempt = 0;
   #timer = 0;
-  #token = '';
   state = 'closed';
 
-  get token() { return this.#token; }
-
-  connect(token) {
-    this.#token = token;
+  connect() {
     this.#open();
-  }
-
-  disconnect() {
-    clearTimeout(this.#timer);
-    this.#token = '';
-    this.#socket?.close(1000);
   }
 
   #setState(state) {
@@ -30,15 +20,11 @@ class Link extends EventTarget {
 
   #open() {
     clearTimeout(this.#timer);
-    if (!this.#token) return;
     this.#setState('connecting');
-    const hex = [...new TextEncoder().encode(this.#token)].map((b) => b.toString(16).padStart(2, '0')).join('');
     const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
-    const socket = new WebSocket(`${scheme}://${location.host}/ws`, ['mynou.v1', `auth.${hex}`]);
+    const socket = new WebSocket(`${scheme}://${location.host}/ws`, 'mynou.v1');
     this.#socket = socket;
-    let opened = false;
     socket.addEventListener('open', () => {
-      opened = true;
       this.#attempt = 0;
       this.#setState('open');
       socket.send(JSON.stringify({ subscribe: TOPICS }));
@@ -50,18 +36,9 @@ class Link extends EventTarget {
       for (const { reject } of this.#pending.values()) reject(new Error('Connection lost'));
       this.#pending.clear();
       this.#setState('closed');
-      if (!opened && this.#attempt === 0) this.#probe();
       const delay = Math.min(15000, 500 * 2 ** this.#attempt++) * (0.7 + Math.random() * 0.6);
       this.#timer = setTimeout(() => this.#open(), delay);
     });
-  }
-
-  /** A failed handshake is a wrong token only if the plain API says so. */
-  async #probe() {
-    try {
-      const response = await fetch('/api/status', { headers: { Authorization: `Bearer ${this.#token}` }, signal: AbortSignal.timeout(5000) });
-      if (response.status === 401) this.dispatchEvent(new Event('rejected'));
-    } catch { /* unreachable service: keep retrying */ }
   }
 
   #receive(text) {
@@ -94,7 +71,7 @@ class Link extends EventTarget {
     }
     const response = await fetch(path, {
       method,
-      headers: { Authorization: `Bearer ${this.#token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+      headers: body ? { 'Content-Type': 'application/json' } : {},
       body: body ? JSON.stringify(body) : undefined,
       signal: AbortSignal.timeout(60000),
     });

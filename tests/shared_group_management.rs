@@ -1,7 +1,6 @@
 //! CI-only protected whole-group JSON, form and CLI controls.
 mod api_support;
 mod automatic_pack_support;
-mod home_support;
 mod library_support;
 mod series_support;
 mod shared_group_support;
@@ -11,17 +10,11 @@ use api_support::{Server, TOKEN};
 use automatic_pack_support::{Provider, SECRET, no_sources, snapshot};
 use library_support::Directory;
 use mynou::{
-    config::{self, Config},
-    engine::{Engine, lock},
-    json::{self, Value},
+    engine::lock,
+    json::{self},
 };
-use shared_group_support::{Fixture, baseline, baseline_query};
-use std::{
-    fs,
-    process::{Command, Output, Stdio},
-    thread,
-    time::{Duration, Instant},
-};
+use shared_group_support::{Fixture, baseline_query};
+use std::fs;
 
 fn headers() -> [(String, String); 2] {
     [
@@ -43,17 +36,6 @@ fn authenticated_group_routes_require_complete_scope_and_guarded_quality_decisio
         .iter()
         .map(|(key, value)| (key.as_str(), value.as_str()))
         .collect();
-    assert_eq!(
-        server
-            .call(
-                "POST",
-                &route,
-                &[],
-                &json::stringify(&baseline_query().to_json())
-            )
-            .status,
-        401
-    );
     for patch in [
         r#"{"apply":true}"#,
         r#"{"plan_id":"bad"}"#,
@@ -122,126 +104,4 @@ fn authenticated_group_routes_require_complete_scope_and_guarded_quality_decisio
             .status,
         400
     );
-}
-
-fn config_value(cfg: &Config) -> Value {
-    let mut value = config::default_json();
-    value.insert("listen", cfg.listen.clone());
-    let library = value.get_mut("library").unwrap();
-    library.insert("movies_root", cfg.movies_root.to_str().unwrap().to_owned());
-    library.insert("series_root", cfg.series_root.to_str().unwrap().to_owned());
-    value.get_mut("downloads").unwrap().insert("enabled", false);
-    value.insert("selection", cfg.selection.to_json());
-    value
-}
-fn command(directory: &Directory, home: &std::path::Path, args: &[&str]) -> Output {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_mynou"))
-        .current_dir(&directory.0)
-        .env("MYNOU_HOME", home)
-        .env("MYNOU_API_TOKEN", TOKEN)
-        .env_remove("MYNOU_PLEX_TOKEN")
-        .args(args)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(8);
-    loop {
-        if child.try_wait().unwrap().is_some() {
-            return child.wait_with_output().unwrap();
-        }
-        if Instant::now() >= deadline {
-            child.kill().unwrap();
-            panic!(
-                "Group CLI timed out: {:?}",
-                child.wait_with_output().unwrap()
-            );
-        }
-        thread::sleep(Duration::from_millis(5));
-    }
-}
-fn success(result: Output) -> Value {
-    assert!(
-        result.status.success(),
-        "{}",
-        String::from_utf8_lossy(&result.stderr)
-    );
-    json::parse(std::str::from_utf8(&result.stdout).unwrap()).unwrap()
-}
-
-#[test]
-fn cli_offline_preview_preserves_state_and_service_apply_uses_the_same_guard() {
-    let directory = Directory::new();
-    let fixture = Fixture::new(&directory, 2);
-    let engine = Engine::open_for_management(fixture.cfg.clone()).unwrap();
-    let parents = fixture.parents(&engine);
-    baseline(&engine, &parents[0].id);
-    let mapping = fixture.replacement_query().to_json();
-    drop(engine);
-    let home = fixture.cfg.data_dir.clone();
-    home_support::save_settings(&home, &config_value(&fixture.cfg));
-    let before = snapshot(&fixture.cfg.store_dir);
-    let Value::Object(mut mapping) = mapping else {
-        panic!("group query");
-    };
-    mapping.remove("apply");
-    fs::write(
-        directory.0.join("group.json"),
-        json::stringify(&Value::Object(mapping)),
-    )
-    .unwrap();
-    let owner = parents[0].id.as_str();
-    let preview = success(command(
-        &directory,
-        &home,
-        &["library-group", owner, "--mapping", "group.json"],
-    ));
-    no_sources(&preview);
-    assert_eq!(snapshot(&fixture.cfg.store_dir), before);
-    let plan = preview.get("plan_id").unwrap().as_str().unwrap();
-    assert!(
-        !command(
-            &directory,
-            &home,
-            &[
-                "library-group",
-                owner,
-                "--mapping",
-                "group.json",
-                "--apply",
-                "--plan-id",
-                plan
-            ]
-        )
-        .status
-        .success()
-    );
-    assert_eq!(snapshot(&fixture.cfg.store_dir), before);
-    assert!(
-        !command(
-            &directory,
-            &home,
-            &["library-group", owner, "--mapping", "group.json", "--apply"]
-        )
-        .status
-        .success()
-    );
-    let server = Server::open(fixture.cfg.clone());
-    home_support::serve_here(&home, &server.authority);
-    let created = success(command(
-        &directory,
-        &home,
-        &[
-            "library-group",
-            owner,
-            "--mapping",
-            "group.json",
-            "--apply",
-            "--plan-id",
-            plan,
-        ],
-    ));
-    no_sources(&created);
-    assert_eq!(created.get("submitted"), Some(&Value::Number(2.0)));
-    assert_eq!(lock(&server.engine.store).unwrap().list().unwrap().len(), 4);
 }

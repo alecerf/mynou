@@ -227,7 +227,6 @@ impl Fixture {
         config.catalog.enabled = true;
         config.catalog.url = format!("http://127.0.0.1:{}/3", catalog.port);
         config.catalog.token_env = "PATH".into(); // Existing fixture convention, never logged.
-        config.catalog.api_key_env = "MYNOU_LOAD_ABSENT_KEY".into();
         let gateway = crate::tunnel_http::tests::NatPmp::start(&pair.server, 53186);
         let operator = crate::vpn::tests::load_operator(&config, pair.client.clone());
         let source_file = root.join("synthetic.mp4");
@@ -259,7 +258,7 @@ impl Fixture {
             "loaded engine startup",
             || engine.startup_step().unwrap(),
         );
-        let api = Api::bind(engine.clone(), TOKEN.into()).unwrap();
+        let api = Api::bind(engine.clone()).unwrap();
         let origin = format!("http://{}", api.address().unwrap());
         let api = thread::spawn(move || api.run());
         let workers = self.started.load(Ordering::Acquire).then(|| engine.start());

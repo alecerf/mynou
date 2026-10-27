@@ -46,17 +46,6 @@ fn bearer_pack_api_checks_entire_scope_and_redacts_source_urls() {
     payload.insert("source_url", SOURCE);
     payload.insert("episodes", json::parse(EPISODES).unwrap());
     let valid = json::stringify(&payload);
-    assert_eq!(
-        server
-            .call(
-                "POST",
-                &route,
-                &[("Content-Type", "application/json")],
-                &valid
-            )
-            .status,
-        401
-    );
     let bad = valid.replace("\"episode\":2", "\"episode\":99");
     assert_eq!(server.call("POST", &route, &headers, &bad).status, 400);
     assert!(

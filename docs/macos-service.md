@@ -17,8 +17,7 @@ to the deployed executable yourself in System Settings. Do not disable macOS
 privacy controls or give the service root privileges.
 
 For a new installation, first start a foreground `mynou serve` once: it creates
-the private data directory, and its web interface creates the access token and
-sets Mynou up (see [Configure Mynou](macos.md#configure-mynou)).
+the private data directory, and its web interface sets Mynou up (see [Configure Mynou](macos.md#configure-mynou)).
 
 Configure the library and downloads before installation. Every path must
 resolve to an existing absolute directory without symlinks; relative settings
@@ -30,27 +29,24 @@ owner's real inventory or credentials into an example configuration.
 
 The data directory identifies the installation: it must be an existing
 directory owned by the account, private (mode 0700) and without symlinked path
-components. Save credentials in Mynou's storage from the Settings view or
-`mynou secrets --set`: the service reads them there. Credentials exported only
+components. Save credentials in Mynou's storage from the Settings view: the
+service reads them there. Credentials exported only
 in your terminal are not copied into the service.
 
 ## Install and inspect
 
 ```sh
-mynou doctor
 mynou service --action install
 mynou service --action status
-mynou healthcheck
-mynou status
-mynou vpn --action status
+curl -s http://127.0.0.1:8787/readyz
 ```
 
 The default label is `org.mynou.automation`; `--label org.mynou.NAME` selects a
 separate registration. Never install two registrations for the same stores.
 The listener and existing exclusive store locks reject a second owner.
 `service status` reports registration, loaded state and process presence.
-Process presence alone is not readiness: `healthcheck` checks readiness and
-`status` shows startup progress and diagnostic state. Verify these after
+Process presence alone is not readiness: `/readyz` reports it, and the
+overview of the web interface shows startup progress and diagnostic state. Verify these after
 installation, upgrades, crashes and volume changes.
 
 Installation writes only the account's
@@ -118,7 +114,7 @@ not make detached disks reliable. Remount the same volume and inspect state
 before resuming. Do not create replacement directories at a missing mount.
 
 For a coherent backup: stop, verify `service status` is unloaded, then back up
-the data directory (all stores, including settings, secrets, the access token digest and VPN policy/profile material),
+the data directory (all stores, including settings, secrets and VPN policy/profile material),
 downloads and media according to your retention policy. Keep credentials and
 backups private. Uninstall before changing the binary path.
 Mynou [updates itself](macos.md#updates) in place. It restarts within the same

@@ -1548,25 +1548,6 @@ impl Store {
         self.save_record(layout::SECRETS_KEY, &value)
     }
 
-    /// The digest of the API access token, once one was created.
-    pub fn access(&mut self) -> Result<Option<[u8; 32]>> {
-        let Some(value) = self.record(layout::ACCESS_KEY)? else {
-            return Ok(None);
-        };
-        value
-            .as_str()
-            .and_then(crate::access::digest_from_hex)
-            .map(Some)
-            .ok_or_else(|| "The stored access token digest is invalid".to_owned())
-    }
-
-    pub fn save_access(&mut self, digest: &[u8; 32]) -> Result<()> {
-        self.save_record(
-            layout::ACCESS_KEY,
-            &Value::String(crate::access::hex(digest)),
-        )
-    }
-
     fn record(&mut self, key: Key) -> Result<Option<Value>> {
         let Backend::Ready(index) = &mut self.backend else {
             return Ok(None);

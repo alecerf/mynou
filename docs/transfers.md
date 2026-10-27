@@ -79,7 +79,7 @@ mynou torrent-priority ID --priority 100
 mynou file-priority ID --file 0 --priority high
 ```
 
-| CLI | API (Bearer token) |
+| CLI | API |
 | --- | --- |
 | `torrents`, `torrent ID` | `GET /api/transfers`, `GET /api/transfers/ID` |
 | `pause ID`, `resume ID` | `POST /api/transfers/ID/pause`, `POST /api/transfers/ID/resume` with `{}` |
@@ -172,7 +172,7 @@ completed source, supply original source file indices in candidate non-padding
 order, for example `--mapping '[2,0]'`. Inspect source indices with `torrent`.
 Missing mappings, duplicate indices, size mismatches and existing swarms fail.
 
-The Bearer-authenticated API is `POST /api/transfers/SOURCE_ID/cross-seed` with
+The API is `POST /api/transfers/SOURCE_ID/cross-seed` with
 `{"metadata_hex":"...","mapping":[2,0]}`; `mapping` is optional. Send the
 hexadecimal torrent bytes, never a server path. The first increment supports
 distinct-infohash v1 candidates only, up to 256 KiB metadata and 1024 metadata
@@ -281,7 +281,7 @@ mynou cross-seed-discovery --run --dry-run
 mynou cross-seed-discovery --run --indexer tracker-b --transfer ID
 ```
 
-| CLI | API (Bearer token) |
+| CLI | API |
 | --- | --- |
 | `cross-seed-discovery` | `GET /api/cross-seed/discovery` |
 | `cross-seed-discovery --run [...]` | `POST /api/cross-seed/discovery/run` with `{"dry_run": true, "force": false, "indexer": "ID", "transfer": "ID"}` (all optional) |

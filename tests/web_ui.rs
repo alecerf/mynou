@@ -1,6 +1,5 @@
 //! The embedded web interface and its WebSocket transport, over loopback only.
 mod api_support;
-mod home_support;
 mod jobs_state;
 mod series_support;
 
@@ -37,10 +36,6 @@ fn server(name: &str) -> (Server, PathBuf) {
     (Server::open(cfg), root)
 }
 
-fn hex(text: &str) -> String {
-    text.bytes().map(|b| format!("{b:02x}")).collect()
-}
-
 /// Sends a handshake and returns the stream with the response head.
 fn handshake(server: &Server, origin: Option<&str>, protocols: &str) -> (TcpStream, String) {
     let mut stream = TcpStream::connect(&server.authority).unwrap();
@@ -70,23 +65,17 @@ fn handshake(server: &Server, origin: Option<&str>, protocols: &str) -> (TcpStre
 
 fn open(server: &Server) -> TcpStream {
     let origin = server.origin();
-    let (stream, head) = handshake(
-        server,
-        Some(&origin),
-        &format!("mynou.v1, auth.{}", hex(TOKEN)),
-    );
+    let (stream, head) = handshake(server, Some(&origin), "mynou.v1");
     assert!(head.starts_with("HTTP/1.1 101"), "{head}");
     assert!(head.contains("Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo="));
     assert!(head.contains("Sec-WebSocket-Protocol: mynou.v1"));
-    assert!(!head.contains(TOKEN));
     stream
 }
 
 fn open_when_free(server: &Server) -> TcpStream {
     let origin = server.origin();
-    let protocols = format!("mynou.v1, auth.{}", hex(TOKEN));
     for _ in 0..200 {
-        let (stream, head) = handshake(server, Some(&origin), &protocols);
+        let (stream, head) = handshake(server, Some(&origin), "mynou.v1");
         if head.starts_with("HTTP/1.1 101") {
             return stream;
         }
@@ -161,8 +150,13 @@ fn assets_are_public_and_locked_down_while_the_api_stays_private() {
         assert_eq!(reply.headers["x-content-type-options"], "nosniff");
         reply.no_secrets();
     }
-    assert_eq!(server.call("GET", "/api/status", &[], "").status, 401);
-    assert_eq!(server.call("GET", "/ui", &[], "").status, 401);
+    // No sign-in: requests from this machine are answered, a page of another
+    // site or a name rebound to loopback is refused.
+    assert_eq!(server.call("GET", "/api/status", &[], "").status, 200);
+    let foreign = [("Origin", "http://evil.example")];
+    assert_eq!(server.call("GET", "/api/status", &foreign, "").status, 403);
+    let rebound = [("Host", "evil.example:8787")];
+    assert_eq!(server.call("GET", "/api/status", &rebound, "").status, 403);
     assert_eq!(server.call("GET", "/healthz", &[], "").status, 200);
 }
 
@@ -171,31 +165,21 @@ fn assets_are_public_and_locked_down_while_the_api_stays_private() {
 #[test]
 fn websocket_scenarios() {
     let (server, _root) = server("sockets");
-    handshake_requires_token_and_same_origin(&server);
+    handshake_requires_the_subprotocol_and_same_origin(&server);
     calls_and_subscriptions_use_the_existing_routes(&server);
     the_number_of_open_sockets_is_bounded(&server);
     series_beyond_two_hundred_reach_the_socket_in_pages();
 }
 
-fn handshake_requires_token_and_same_origin(server: &Server) {
+fn handshake_requires_the_subprotocol_and_same_origin(server: &Server) {
     let origin = server.origin();
-    let good = format!("mynou.v1, auth.{}", hex(TOKEN));
     for (origin, protocols, status) in [
-        (Some(origin.as_str()), String::new(), "401"),
-        (Some(origin.as_str()), "mynou.v1".to_owned(), "401"),
-        (
-            Some(origin.as_str()),
-            format!(
-                "mynou.v1, auth.{}",
-                hex("wrong-token-wrong-token-wrong-token-0")
-            ),
-            "401",
-        ),
-        (Some(origin.as_str()), format!("auth.{}", hex(TOKEN)), "401"),
-        (Some("http://evil.example"), good.clone(), "403"),
-        (None, good.clone(), "403"),
+        (Some(origin.as_str()), "", "400"),
+        (Some(origin.as_str()), "mynou.v2", "400"),
+        (Some("http://evil.example"), "mynou.v1", "403"),
+        (None, "mynou.v1", "403"),
     ] {
-        let (_, head) = handshake(server, origin, &protocols);
+        let (_, head) = handshake(server, origin, protocols);
         assert!(head.starts_with(&format!("HTTP/1.1 {status}")), "{head}");
         assert!(!head.contains("Upgrade: websocket"));
     }
@@ -285,11 +269,7 @@ fn the_number_of_open_sockets_is_bounded(server: &Server) {
     // Slots of earlier sockets are released asynchronously by the server.
     let held: Vec<_> = (0..8).map(|_| open_when_free(server)).collect();
     let origin = server.origin();
-    let (_, head) = handshake(
-        server,
-        Some(&origin),
-        &format!("mynou.v1, auth.{}", hex(TOKEN)),
-    );
+    let (_, head) = handshake(server, Some(&origin), "mynou.v1");
     assert!(head.starts_with("HTTP/1.1 503"), "{head}");
     drop(held);
 }
@@ -393,10 +373,10 @@ fn series_beyond_two_hundred_reach_the_socket_in_pages() {
 }
 
 #[test]
-fn jobs_above_the_old_total_cap_reach_http_websocket_and_cli_pages() {
+fn jobs_above_the_old_total_cap_reach_http_and_websocket_pages() {
     use mynou::store::{Event, Request, Store};
     use std::collections::BTreeSet;
-    use std::process::Command;
+
     let root = std::env::temp_dir().join(format!("mynou-job-consumers-{}", std::process::id()));
     let _ = fs::remove_dir_all(&root);
     fs::create_dir_all(&root).unwrap();
@@ -451,7 +431,6 @@ fn jobs_above_the_old_total_cap_reach_http_websocket_and_cli_pages() {
     let mut cfg = config::from_json(&value, &root).unwrap();
     cfg.store_dir = store_dir.clone();
     let server = Server::open(cfg);
-    home_support::serve_here(&root, &server.authority);
     let auth = format!("Bearer {TOKEN}");
     let mut socket = open_when_free(&server);
     send(&mut socket, r#"{"subscribe":["jobs"]}"#);
@@ -463,7 +442,7 @@ fn jobs_above_the_old_total_cap_reach_http_websocket_and_cli_pages() {
     );
     assert_eq!(page.get("jobs").unwrap().as_array().unwrap().len(), 50);
     assert!(page.get("next").unwrap().as_str().is_some());
-    for transport in ["http", "websocket", "cli"] {
+    for transport in ["http", "websocket"] {
         let mut after: Option<String> = None;
         let mut seen = BTreeSet::new();
         let mut request_id = 100;
@@ -478,7 +457,7 @@ fn jobs_above_the_old_total_cap_reach_http_websocket_and_cli_pages() {
                     assert_eq!(reply.status, 200, "{}", reply.body);
                     json::parse(&reply.body).unwrap()
                 }
-                "websocket" => {
+                _ => {
                     request_id += 1;
                     send(
                         &mut socket,
@@ -494,23 +473,6 @@ fn jobs_above_the_old_total_cap_reach_http_websocket_and_cli_pages() {
                             break reply.get("body").unwrap().clone();
                         }
                     }
-                }
-                _ => {
-                    let mut command = Command::new(env!("CARGO_BIN_EXE_mynou"));
-                    command
-                        .current_dir(&root)
-                        .env("MYNOU_API_TOKEN", TOKEN)
-                        .args(["jobs", "--dir", root.to_str().unwrap(), "--limit", "200"]);
-                    if let Some(cursor) = &after {
-                        command.args(["--after", cursor]);
-                    }
-                    let output = command.output().unwrap();
-                    assert!(
-                        output.status.success(),
-                        "{}",
-                        String::from_utf8_lossy(&output.stderr)
-                    );
-                    json::parse(std::str::from_utf8(&output.stdout).unwrap().trim()).unwrap()
                 }
             };
             assert_eq!(
@@ -539,55 +501,34 @@ fn jobs_above_the_old_total_cap_reach_http_websocket_and_cli_pages() {
     // A server-side search reaches a job far beyond the first page: each
     // request examines a bounded window and `next` resumes the search.
     let needle = format!("{:032x}", 5);
-    for transport in ["http", "cli"] {
-        let mut after: Option<String> = None;
-        let mut found = Vec::new();
-        let mut requests = 0;
-        loop {
-            let page = if transport == "http" {
-                let route = format!(
-                    "/api/jobs?limit=50&q={needle}&state=queued{}",
-                    after
-                        .as_ref()
-                        .map_or_else(String::new, |cursor| format!("&after={cursor}"))
-                );
-                let reply = server.call("GET", &route, &[("Authorization", &auth)], "");
-                assert_eq!(reply.status, 200, "{}", reply.body);
-                json::parse(&reply.body).unwrap()
-            } else {
-                let mut command = Command::new(env!("CARGO_BIN_EXE_mynou"));
-                command
-                    .current_dir(&root)
-                    .env("MYNOU_API_TOKEN", TOKEN)
-                    .args(["jobs", "--dir", root.to_str().unwrap()])
-                    .args(["--query", &needle.to_uppercase(), "--state", "queued"]);
-                if let Some(cursor) = &after {
-                    command.args(["--after", cursor]);
-                }
-                let output = command.output().unwrap();
-                assert!(
-                    output.status.success(),
-                    "{}",
-                    String::from_utf8_lossy(&output.stderr)
-                );
-                json::parse(std::str::from_utf8(&output.stdout).unwrap().trim()).unwrap()
-            };
-            assert!(page.get("scanned").and_then(json::Value::as_u64).unwrap() <= 1_000);
-            for row in page.get("jobs").unwrap().as_array().unwrap() {
-                found.push(row.get("id").unwrap().as_str().unwrap().to_owned());
-            }
-            requests += 1;
-            after = page
-                .get("next")
-                .and_then(json::Value::as_str)
-                .map(str::to_owned);
-            if after.is_none() {
-                break;
-            }
+    let mut after: Option<String> = None;
+    let mut found = Vec::new();
+    let mut requests = 0;
+    loop {
+        let route = format!(
+            "/api/jobs?limit=50&q={needle}&state=queued{}",
+            after
+                .as_ref()
+                .map_or_else(String::new, |cursor| format!("&after={cursor}"))
+        );
+        let reply = server.call("GET", &route, &[("Authorization", &auth)], "");
+        assert_eq!(reply.status, 200, "{}", reply.body);
+        let page = json::parse(&reply.body).unwrap();
+        assert!(page.get("scanned").and_then(json::Value::as_u64).unwrap() <= 1_000);
+        for row in page.get("jobs").unwrap().as_array().unwrap() {
+            found.push(row.get("id").unwrap().as_str().unwrap().to_owned());
         }
-        assert_eq!(found, vec![needle.clone()], "{transport}");
-        assert_eq!(requests, 11, "{transport}");
+        requests += 1;
+        after = page
+            .get("next")
+            .and_then(json::Value::as_str)
+            .map(str::to_owned);
+        if after.is_none() {
+            break;
+        }
     }
+    assert_eq!(found, vec![needle.clone()]);
+    assert_eq!(requests, 11);
     let stale = format!("{:016x}{:032x}", 1_u64, 1_u64);
     for route in [
         "/api/jobs?state=unknown".to_owned(),

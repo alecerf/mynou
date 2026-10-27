@@ -540,7 +540,7 @@ announcement, rule or profile requires a new preview. Acknowledged and dismissed
 announcements are final and are no longer routed; to stop a routed download,
 cancel its job. Listing and previews work offline without writing.
 
-| Route (Bearer token) | Purpose |
+| Route | Purpose |
 | --- | --- |
 | `GET /api/irc` | Sources, health and rules |
 | `GET /api/irc/announcements?limit=50&after=CURSOR` | Announcement history (`next_cursor`; omit `after` for the first page) |

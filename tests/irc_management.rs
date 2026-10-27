@@ -1,17 +1,11 @@
 //! Original protected API and pure/offline CLI reviews.
 mod api_support;
-mod home_support;
 mod irc_support;
 mod library_support;
 use api_support::{Server, TOKEN};
 use irc_support::*;
 use library_support::Directory;
-use mynou::{
-    config,
-    engine::Engine,
-    json::{self, Value},
-};
-use std::{fs, process::Command};
+use mynou::json::{self, Value};
 fn post(server: &Server, route: &str, value: &Value) -> api_support::Reply {
     server.call(
         "POST",
@@ -30,8 +24,6 @@ fn api_requires_authentication_strict_fields_and_current_guards() {
     let r = receive(&server.engine, 7);
     let id = record_id(&r);
     let route = format!("/api/irc/announcements/{id}/control");
-    assert_eq!(server.call("GET", "/api/irc", &[], "").status, 401);
-    assert_eq!(server.call("POST", &route, &[], "{}").status, 401);
     for patch in [
         r#"{"action":"grab"}"#,
         r#"{"action":"dismiss","token":"private"}"#,
@@ -82,115 +74,7 @@ fn api_requires_authentication_strict_fields_and_current_guards() {
     no_jobs(&server.engine);
 }
 #[test]
-fn cli_preview_is_pure_and_offline_apply_requires_the_running_service() {
-    let dir = Directory::new();
-    let v = value("irc://127.0.0.1:1");
-    home_support::save_settings(&dir.0, &v);
-    let saved = bytes(&dir.0.join("state/jobs"));
-    let payload = dir.0.join("announcement.json");
-    fs::write(&payload, json::stringify(&announcement(7))).unwrap();
-    let out = Command::new(env!("CARGO_BIN_EXE_mynou"))
-        .args(["irc-preview", "local", "--announcement"])
-        .arg(&payload)
-        .arg("--dir")
-        .arg(&dir.0)
-        .output()
-        .unwrap();
-    assert!(
-        out.status.success(),
-        "{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    assert_eq!(bytes(&dir.0.join("state/jobs")), saved);
-    let cfg = config::from_json(&v, &dir.0).unwrap();
-    let engine = Engine::open_for_management(cfg.clone()).unwrap();
-    let row = receive(&engine, 7);
-    let id = record_id(&row).to_owned();
-    let plan = engine
-        .irc_control(&id, &query("dismiss"))
-        .unwrap()
-        .get("plan_id")
-        .unwrap()
-        .as_str()
-        .unwrap()
-        .to_owned();
-    drop(engine);
-    let before = bytes(&cfg.store_dir);
-    let out = Command::new(env!("CARGO_BIN_EXE_mynou"))
-        .args(["irc-control", &id, "--action", "dismiss", "--dir"])
-        .arg(&dir.0)
-        .output()
-        .unwrap();
-    assert!(
-        out.status.success(),
-        "{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    assert_eq!(
-        json::parse(std::str::from_utf8(&out.stdout).unwrap())
-            .unwrap()
-            .get("plan_id")
-            .unwrap()
-            .as_str(),
-        Some(plan.as_str())
-    );
-    assert_eq!(bytes(&cfg.store_dir), before);
-    let out = Command::new(env!("CARGO_BIN_EXE_mynou"))
-        .args([
-            "irc-control",
-            &id,
-            "--action",
-            "dismiss",
-            "--apply",
-            "--plan-id",
-            &plan,
-            "--dir",
-        ])
-        .arg(&dir.0)
-        .output()
-        .unwrap();
-    assert!(!out.status.success());
-    assert!(String::from_utf8_lossy(&out.stderr).contains("running Mynou"));
-    assert_eq!(bytes(&cfg.store_dir), before);
-    let mut cfg = cfg;
-    cfg.listen = "127.0.0.1:0".into();
-    let server = Server::open(cfg);
-    home_support::serve_here(&dir.0, &server.authority);
-    let out = Command::new(env!("CARGO_BIN_EXE_mynou"))
-        .env("MYNOU_API_TOKEN", TOKEN)
-        .args([
-            "irc-control",
-            &id,
-            "--action",
-            "dismiss",
-            "--apply",
-            "--plan-id",
-            &plan,
-            "--dir",
-        ])
-        .arg(&dir.0)
-        .output()
-        .unwrap();
-    assert!(
-        out.status.success(),
-        "{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    assert_eq!(
-        server
-            .engine
-            .irc_announcement(&id)
-            .unwrap()
-            .get("decision")
-            .unwrap()
-            .as_str(),
-        Some("dismissed")
-    );
-    no_jobs(&server.engine);
-}
-
-#[test]
-fn protected_api_and_offline_cli_follow_the_same_chronological_cursor() {
+fn protected_api_follows_a_chronological_cursor() {
     let dir = Directory::new();
     let cfg = config(&dir.0);
     let server = Server::open(cfg.clone());
@@ -224,21 +108,4 @@ fn protected_api_and_offline_cli_follow_the_same_chronological_cursor() {
         400
     );
     assert_eq!(get("/api/irc/announcements?after=broken").status, 400);
-    drop(server);
-    home_support::save_settings(&dir.0, &value("irc://127.0.0.1:1"));
-    let before = bytes(&cfg.store_dir);
-    let out = Command::new(env!("CARGO_BIN_EXE_mynou"))
-        .args(["announcements", "--after", &cursor, "--limit", "1", "--dir"])
-        .arg(&dir.0)
-        .output()
-        .unwrap();
-    assert!(
-        out.status.success(),
-        "{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    let cli = json::parse(std::str::from_utf8(&out.stdout).unwrap()).unwrap();
-    assert_eq!(cli.get("announcements"), second.get("announcements"));
-    assert_eq!(cli.get("next_cursor"), second.get("next_cursor"));
-    assert_eq!(bytes(&cfg.store_dir), before);
 }
