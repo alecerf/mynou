@@ -362,6 +362,40 @@ fn corrupted_and_inconsistent_control_files_are_rejected_without_rewriting_them(
 }
 
 #[test]
+fn counters_checkpoint_in_the_catalog_without_rewriting_the_command_fence() {
+    let scratch = Scratch::new();
+    let torrent = Torrent::single(&scratch.0, "counter-checkpoint.bin", payload(BLOCK * 8, 71));
+    let seed = Seeder::open(&scratch.0.join("seed"), &[&torrent]);
+    let cfg = client_config(&scratch.0.join("client"), false);
+    let client = Client::open(cfg.clone()).unwrap();
+    client
+        .ensure(&torrent.magnet(seed.client.listen_port()))
+        .unwrap();
+    let path = cfg.state_dir.join(format!("{}.control", torrent.id));
+    let command_fence = fs::read(&path).unwrap();
+    torrent.assert_files(&ready(&client, &torrent.id));
+    drop(client);
+    assert_eq!(
+        fs::read(&path).unwrap(),
+        command_fence,
+        "historical counters belong to the catalog checkpoint"
+    );
+    let resumed = Client::open(cfg).unwrap();
+    torrent.assert_files(&ready(&resumed, &torrent.id));
+    assert_eq!(
+        counter(&resumed.transfer(&torrent.id).unwrap(), "downloaded_bytes"),
+        torrent.total as u64
+    );
+    resumed.set_priority(&torrent.id, 77).unwrap();
+    let updated = TorrentControl::decode(&fs::read(path).unwrap()).unwrap();
+    assert_eq!(
+        updated.priority, 77,
+        "commands still write their durable fence"
+    );
+    assert_eq!(updated.downloaded_bytes, torrent.total as u64);
+}
+
+#[test]
 fn actual_payload_counters_persist_after_download_and_seed_restart() {
     let scratch = Scratch::new();
     let torrent = Torrent::single(&scratch.0, "counters.bin", payload(BLOCK * 5 + 31, 19));
@@ -638,6 +672,59 @@ fn a_global_upload_cap_is_shared_across_incoming_peers() {
     );
     first.assert_files(&ready(&first_client, &first.id));
     second.assert_files(&ready(&second_client, &second.id));
+}
+
+#[test]
+fn a_download_in_progress_serves_its_verified_pieces_and_metadata() {
+    let scratch = Scratch::new();
+    let torrent = Torrent::single(&scratch.0, "relay.bin", payload(BLOCK * 64, 9));
+    let seed = Seeder::open(&scratch.0.join("seed"), &[&torrent]);
+    // The relay downloads slowly and uploads what it has verified so far.
+    let relay = Client::open_with_policy(
+        client_config(&scratch.0.join("relay"), true),
+        policy(r#"{"download_limit_bps":131072}"#),
+    )
+    .unwrap();
+    relay
+        .ensure(&torrent.magnet(seed.client.listen_port()))
+        .unwrap();
+    wait(|| counter(&relay.transfer(&torrent.id).unwrap(), "verified_bytes") >= 4 * BLOCK as u64);
+    // The leecher knows only the relay, needs metadata from it, and never
+    // unchokes it.
+    let leecher = Client::open(client_config(&scratch.0.join("leecher"), false)).unwrap();
+    leecher
+        .ensure(&torrent.magnet(relay.listen_port()))
+        .unwrap();
+    wait(|| counter(&leecher.transfer(&torrent.id).unwrap(), "downloaded_bytes") > 0);
+    assert!(
+        !relay.check(&torrent.id).unwrap().ready,
+        "The relay finished before it served anything"
+    );
+    assert!(counter(&relay.transfer(&torrent.id).unwrap(), "uploaded_bytes") > 0);
+    torrent.assert_files(&ready(&relay, &torrent.id));
+    torrent.assert_files(&ready(&leecher, &torrent.id));
+}
+
+#[test]
+fn the_last_pieces_left_to_a_stalled_peer_are_fetched_from_another() {
+    let scratch = Scratch::new();
+    let torrent = Torrent::single(&scratch.0, "endgame.bin", payload(BLOCK * 32, 11));
+    let fast = Seeder::open(&scratch.0.join("fast"), &[&torrent]);
+    let stalled = Seeder::open_with_policy(
+        &scratch.0.join("stalled"),
+        &[&torrent],
+        policy(r#"{"upload_limit_bps":1}"#),
+    );
+    let client = Client::open(client_config(&scratch.0.join("client"), false)).unwrap();
+    let source = format!(
+        "{}&x.pe=127.0.0.1:{}",
+        torrent.magnet(fast.client.listen_port()),
+        stalled.client.listen_port()
+    );
+    client.ensure(&source).unwrap();
+    // Without a second copy, the pieces claimed by the stalled seed would
+    // wait for their two-minute deadline.
+    torrent.assert_files(&ready(&client, &torrent.id));
 }
 
 #[test]

@@ -125,6 +125,7 @@ pub fn inspect_metadata(
                     download_gate: gate.clone(),
                     local_download_gate: gate.clone(),
                     network,
+                    serving: None,
                 },
                 attempt_end,
             )

@@ -95,22 +95,18 @@ impl Sha1 {
             *b = *a;
             *a = t;
         };
-        for i in 0..20 {
-            let f = d ^ (b & (c ^ d));
-            round(i, f, 0x5a827999, [&mut a, &mut b, &mut c, &mut d, &mut e]);
+        // Literal schedule indices let the optimizer keep the sixteen words
+        // in registers instead of dynamically indexing a stack array for
+        // every round. The round function and FIPS arithmetic are unchanged.
+        macro_rules! rounds {
+            ($mix:expr, $constant:expr; $($i:literal),+) => {
+                $(round($i, $mix, $constant, [&mut a, &mut b, &mut c, &mut d, &mut e]);)+
+            };
         }
-        for i in 20..40 {
-            let f = b ^ c ^ d;
-            round(i, f, 0x6ed9eba1, [&mut a, &mut b, &mut c, &mut d, &mut e]);
-        }
-        for i in 40..60 {
-            let f = (b & c) | (d & (b | c));
-            round(i, f, 0x8f1bbcdc, [&mut a, &mut b, &mut c, &mut d, &mut e]);
-        }
-        for i in 60..80 {
-            let f = b ^ c ^ d;
-            round(i, f, 0xca62c1d6, [&mut a, &mut b, &mut c, &mut d, &mut e]);
-        }
+        rounds!(d ^ (b & (c ^ d)), 0x5a827999; 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19);
+        rounds!(b ^ c ^ d, 0x6ed9eba1; 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39);
+        rounds!((b & c) | (d & (b | c)), 0x8f1bbcdc; 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59);
+        rounds!(b ^ c ^ d, 0xca62c1d6; 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79);
         for (s, x) in state.iter_mut().zip([a, b, c, d, e]) {
             *s = s.wrapping_add(x);
         }

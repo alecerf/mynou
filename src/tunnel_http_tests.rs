@@ -498,6 +498,7 @@ fn full_queue_is_fail_fast_and_dropped_last_owner_joins() {
         cancelled: Arc::new(AtomicBool::new(false)),
         generation: Arc::new(AtomicU64::new(1)),
         publication: Arc::new(RwLock::new(())),
+        signals: Arc::default(),
         thread: Mutex::new(None),
     };
     for _ in 0..QUEUE {
@@ -582,6 +583,7 @@ fn stream_operations_wait_for_queue_space_until_their_deadline() {
         cancelled: Arc::new(AtomicBool::new(false)),
         generation: Arc::new(AtomicU64::new(1)),
         publication: Arc::new(RwLock::new(())),
+        signals: Arc::default(),
         thread: Mutex::new(None),
     };
     for _ in 0..QUEUE {

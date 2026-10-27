@@ -11,6 +11,8 @@ mod index;
 mod inspection;
 #[path = "torrent/metainfo.rs"]
 mod metainfo;
+#[path = "torrent/mse.rs"]
+mod mse;
 #[path = "torrent/parallel.rs"]
 mod parallel;
 #[path = "torrent/queue.rs"]
@@ -638,6 +640,20 @@ fn peer_id() -> Result<[u8; 20]> {
 }
 
 fn piece_order(meta: &Meta, priorities: &BTreeMap<usize, FilePriority>) -> Vec<usize> {
+    let ranks = piece_ranks(meta, priorities);
+    let mut order = Vec::with_capacity(meta.count());
+    for rank in (0..=2).rev() {
+        order.extend(
+            ranks
+                .iter()
+                .enumerate()
+                .filter_map(|(index, value)| (*value == rank).then_some(index)),
+        );
+    }
+    order
+}
+/// Each piece's priority: the highest of the files it holds data of.
+fn piece_ranks(meta: &Meta, priorities: &BTreeMap<usize, FilePriority>) -> Vec<u8> {
     let mut ranks = vec![0u8; meta.count()];
     for (index, file) in meta
         .files
@@ -652,16 +668,7 @@ fn piece_order(meta: &Meta, priorities: &BTreeMap<usize, FilePriority>) -> Vec<u
             *value = (*value).max(rank);
         }
     }
-    let mut order = Vec::with_capacity(meta.count());
-    for rank in (0..=2).rev() {
-        order.extend(
-            ranks
-                .iter()
-                .enumerate()
-                .filter_map(|(index, value)| (*value == rank).then_some(index)),
-        );
-    }
-    order
+    ranks
 }
 fn verified_piece_bytes(meta: &Meta, index: usize) -> u64 {
     let start = index as u64 * meta.piece_length as u64;
@@ -758,10 +765,22 @@ fn persist_control(config: &DownloadConfig, job: &mut Job) -> Result<()> {
     let control = snapshot_control(job);
     let encoded = control.encode()?;
     if encoded != job.saved_control {
-        atomic_write(
-            &config.state_dir.join(format!("{}.control", job.status.id)),
-            &encoded,
-        )?;
+        // The catalog checkpoint durably owns counters. The sidecar remains
+        // the write-before-publication fence for commands and stricter seed
+        // limits; copying historical counters there too doubled each save.
+        let command_changed =
+            TorrentControl::decode(&job.saved_control).map_or(true, |mut saved| {
+                saved.downloaded_bytes = control.downloaded_bytes;
+                saved.uploaded_bytes = control.uploaded_bytes;
+                saved.seed_elapsed_secs = control.seed_elapsed_secs;
+                saved != control
+            });
+        if job.index.is_none() || command_changed {
+            atomic_write(
+                &config.state_dir.join(format!("{}.control", job.status.id)),
+                &encoded,
+            )?;
+        }
         job.saved_control = encoded;
     }
     job.control = control;
@@ -1910,6 +1929,9 @@ impl Client {
                 return Err(error);
             }
         }
+        if let Some(manager) = &self.manager {
+            manager.thread().unpark();
+        }
         Ok(status)
     }
 
@@ -2562,6 +2584,12 @@ impl Drop for Client {
                 job.cancel.store(true, Ordering::Release);
             }
         }
+        if let Some(handle) = &self.manager {
+            handle.thread().unpark();
+        }
+        if let Some(handle) = &self.listener {
+            handle.thread().unpark();
+        }
         if let Some(handle) = self.manager.take() {
             let _ = handle.join();
         }
@@ -2948,7 +2976,7 @@ fn manager_loop(
         if policy.network.generation().is_err() {
             // Keep controls and verified data available for a new protected
             // engine; generation loss is not a failed transfer.
-            thread::sleep(Duration::from_millis(30));
+            thread::park_timeout(Duration::from_millis(30));
             continue;
         }
         if index
@@ -3278,7 +3306,7 @@ fn manager_loop(
             }
             flushed = Instant::now();
         }
-        thread::sleep(Duration::from_millis(30));
+        thread::park_timeout(Duration::from_millis(30));
     }
     if let Ok(jobs) = jobs.lock() {
         for job in jobs.values() {
@@ -3527,6 +3555,7 @@ fn download_sequential(
                         .download_gate
                         .clone(),
                     network: &*policy.network,
+                    serving: None,
                 },
             ) {
                 Ok(p) => p,
@@ -3610,7 +3639,7 @@ fn download_sequential(
                 }) else {
                     break;
                 };
-                match peer.fetch_piece(m, i, &mut || None, stop) {
+                match peer.fetch_piece(m, i, &mut |_| None, stop) {
                     Ok(data) => {
                         let _publication = policy.network.publication()?;
                         write_piece(m, &base, i, &data)?;
@@ -3949,7 +3978,44 @@ fn persist_meta(config: &DownloadConfig, id: &str, meta: &Meta) -> Result<()> {
         encoded.extend_from_slice(&meta.info);
     }
     encoded.push(b'e');
-    atomic_write(&config.state_dir.join(format!("{id}.torrent")), &encoded)
+    let path = config.state_dir.join(format!("{id}.torrent"));
+    mkdir_private(&config.state_dir)?;
+    match fs::symlink_metadata(&path) {
+        Ok(inspected) => {
+            private_state_file(&inspected)?;
+            if inspected.len() == encoded.len() as u64 {
+                let mut file = crate::store::open_inspected(&path, &inspected)
+                    .map_err(|_| "Could not open persisted torrent metadata")?;
+                private_state_file(
+                    &file
+                        .metadata()
+                        .map_err(|_| "Could not inspect torrent metadata")?,
+                )?;
+                let mut buffer = [0; 8192];
+                let mut unchanged = true;
+                for chunk in encoded.chunks(buffer.len()) {
+                    file.read_exact(&mut buffer[..chunk.len()])
+                        .map_err(|_| "Could not read persisted torrent metadata")?;
+                    if &buffer[..chunk.len()] != chunk {
+                        unchanged = false;
+                        break;
+                    }
+                }
+                let after = fs::symlink_metadata(&path)
+                    .map_err(|_| "Torrent metadata changed while reading")?;
+                private_state_file(&after)?;
+                if !crate::store::same_inode(&inspected, &after) {
+                    return Err("Torrent metadata changed while reading".into());
+                }
+                if unchanged && after.len() == encoded.len() as u64 {
+                    return Ok(());
+                }
+            }
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(_) => return Err("Could not inspect torrent metadata".into()),
+    }
+    atomic_write(&path, &encoded)
 }
 
 fn listen_loop(
@@ -3995,7 +4061,7 @@ fn listen_loop(
             }
             Ok(_) => {}
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                thread::sleep(Duration::from_millis(20))
+                thread::park_timeout(Duration::from_millis(20))
             }
             Err(_) => break,
         }
@@ -4099,8 +4165,23 @@ fn serve_peer(
         Some(stop),
         Instant::now() + Duration::from_secs(5),
     )?;
-    if incoming[0] != 19 || &incoming[1..20] != b"BitTorrent protocol" {
-        return Err("Invalid incoming handshake".into());
+    let plaintext =
+        |incoming: &[u8; 68]| incoming[0] == 19 && &incoming[1..20] == b"BitTorrent protocol";
+    if !plaintext(&incoming) {
+        // Anything else may be an encrypted handshake for a torrent we hold.
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let find = |marker: &[u8; 20]| {
+            index
+                .lock()
+                .map_err(|_| "Native transfer index lock is poisoned")?
+                .wire_matching(|wire| mse::torrent_marker(wire) == *marker)
+        };
+        let (encrypted, expected) = mse::respond(stream, &incoming, find, Some(stop), deadline)?;
+        stream = encrypted;
+        wire::read_exact_deadline(&mut stream, &mut incoming, Some(stop), deadline)?;
+        if !plaintext(&incoming) || incoming[28..48] != expected {
+            return Err("Invalid incoming handshake".into());
+        }
     }
     let mut hash = [0; 20];
     hash.copy_from_slice(&incoming[28..48]);
@@ -4484,6 +4565,60 @@ mod control_runtime_tests {
     use super::*;
 
     #[test]
+    fn unchanged_metadata_skips_durable_rewrites_and_rejects_a_swapped_file() {
+        let root = std::env::temp_dir().join(format!(
+            "mynou-meta-flush-{}",
+            hex(&crate::crypto::random_bytes::<8>().unwrap())
+        ));
+        fs::create_dir(&root).unwrap();
+        let mut config = discovery_configuration();
+        config.state_dir = root.clone();
+        let info = discovery::value_dict(&[
+            (b"name", Value::Bytes(b"payload.bin".to_vec())),
+            (b"length", Value::Int(BLOCK as i64)),
+            (b"piece length", Value::Int(BLOCK as i64)),
+            (b"pieces", Value::Bytes(vec![0; 20])),
+        ]);
+        let mut meta = Meta::parse(&crate::bencode::encode(&discovery::value_dict(&[(
+            b"info", info,
+        )])))
+        .unwrap();
+        let id = hex(&meta.v1.unwrap());
+        persist_meta(&config, &id, &meta).unwrap();
+        let initial_flushes = crate::store::flushes();
+        persist_meta(&config, &id, &meta).unwrap();
+        assert_eq!(
+            crate::store::flushes(),
+            initial_flushes,
+            "unchanged metadata already has durable storage"
+        );
+        meta.trackers.push("http://127.0.0.1:1/announce".into());
+        persist_meta(&config, &id, &meta).unwrap();
+        assert!(crate::store::flushes() > initial_flushes);
+        let path = root.join(format!("{id}.torrent"));
+        assert_eq!(
+            Meta::parse(&fs::read(&path).unwrap()).unwrap().trackers,
+            meta.trackers
+        );
+        let outside = root.join("unrelated");
+        fs::write(&outside, b"must remain unchanged").unwrap();
+        crate::store::BEFORE_PRIVATE_OPEN.with(|hook| {
+            let (path, outside) = (path.clone(), outside.clone());
+            *hook.borrow_mut() = Some(Box::new(move |opening| {
+                if opening == path {
+                    fs::remove_file(&path).unwrap();
+                    std::os::unix::fs::symlink(&outside, &path).unwrap();
+                }
+            }));
+        });
+        let swapped = persist_meta(&config, &id, &meta);
+        crate::store::BEFORE_PRIVATE_OPEN.with(|hook| *hook.borrow_mut() = None);
+        assert!(swapped.is_err());
+        assert_eq!(fs::read(outside).unwrap(), b"must remain unchanged");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn restored_magnet_parser_cannot_fetch_metadata_locations() {
         let root = std::env::temp_dir().join(format!(
             "mynou-restored-magnet-{}",
@@ -4762,6 +4897,29 @@ mod control_runtime_tests {
         queue.advance(&index, &mut scan, Some(&admission)).unwrap();
         assert!(queue.allowed(&first));
         assert!(!queue.allowed(&second));
+        drop(index);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn an_encrypted_handshake_finds_its_torrent_past_the_first_index_page() {
+        let root = std::env::temp_dir().join(format!(
+            "mynou-wire-marker-{}",
+            hex(&crate::crypto::random_bytes::<8>().unwrap())
+        ));
+        let mut config = discovery_configuration();
+        config.state_dir = root.join("state");
+        config.data_dir = root.join("data");
+        mkdir_private(&config.state_dir).unwrap();
+        mkdir_private(&config.data_dir).unwrap();
+        let mut index = index::TransferIndex::open(&mut config).unwrap();
+        for n in 1..=202u8 {
+            index.save(&discovery_job(n, 0)).unwrap();
+        }
+        let marker = mse::torrent_marker(&[202; 20]);
+        let found = index.wire_matching(|wire| mse::torrent_marker(wire) == marker);
+        assert_eq!(found.unwrap(), Some([202; 20]));
+        assert_eq!(index.wire_matching(|_| false).unwrap(), None);
         drop(index);
         fs::remove_dir_all(root).unwrap();
     }

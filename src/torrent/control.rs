@@ -14,6 +14,7 @@ const MAX_FILES: usize = 100_000;
 const MAX_CONTROL_BYTES: usize = 4 * 1024 * 1024;
 const CONTROL_MAGIC: &[u8; 8] = b"MYNOUC01";
 const BLOCK_BYTES: u64 = 16 * 1024;
+const MAX_BURST_BYTES: u64 = 256 * 1024;
 const NANOS_PER_SECOND: u128 = 1_000_000_000;
 const MAX_WAITERS: usize = 1_024;
 const CANCELLATION_INTERVAL: Duration = Duration::from_millis(100);
@@ -392,7 +393,8 @@ impl TorrentControl {
     }
 }
 
-/// One block of burst capacity is shared by every caller, independent of rate.
+/// Start with one block. Fast rates retain up to 5 ms of earned credit to
+/// absorb scheduler oversleep, capped at 256 KiB shared by every caller.
 /// Credits use byte-nanoseconds so fractional bytes are never rounded away.
 struct TokenBucket {
     rate: u64,
@@ -413,10 +415,9 @@ impl TokenBucket {
         let accrued = now_nanos
             .saturating_sub(self.at_nanos)
             .saturating_mul(u128::from(self.rate));
-        self.credit = self
-            .credit
-            .saturating_add(accrued)
-            .min(u128::from(BLOCK_BYTES) * NANOS_PER_SECOND);
+        self.credit = self.credit.saturating_add(accrued).min(
+            u128::from((self.rate / 200).clamp(BLOCK_BYTES, MAX_BURST_BYTES)) * NANOS_PER_SECOND,
+        );
         self.at_nanos = self.at_nanos.max(now_nanos);
     }
 
@@ -480,9 +481,17 @@ struct GateState {
 /// every 100 ms while waiting for shared credits or another caller's turn.
 pub struct RateGate {
     limit: AtomicU64,
+    users: AtomicU64,
     epoch: Instant,
     state: Mutex<GateState>,
     changed: Condvar,
+}
+
+struct RateParticipant<'a>(&'a RateGate);
+impl Drop for RateParticipant<'_> {
+    fn drop(&mut self) {
+        self.0.users.fetch_sub(1, Ordering::AcqRel);
+    }
 }
 
 struct GateWaiter<'a> {
@@ -523,6 +532,7 @@ impl RateGate {
     fn with_rate(limit: u64) -> Self {
         Self {
             limit: AtomicU64::new(limit),
+            users: AtomicU64::new(0),
             epoch: Instant::now(),
             changed: Condvar::new(),
             state: Mutex::new(GateState {
@@ -542,6 +552,23 @@ impl RateGate {
 
     pub fn limit(&self) -> u64 {
         self.limit.load(Ordering::Acquire)
+    }
+
+    /// Count a payload reader while it owns a piece, including credit waits.
+    /// This also covers readers present when an unlimited gate gains a limit.
+    pub fn participate(&self) -> impl Drop + '_ {
+        self.users.fetch_add(1, Ordering::AcqRel);
+        RateParticipant(self)
+    }
+
+    /// Size a reader's batch from its share, while reservations still enforce
+    /// the whole rate. Otherwise many peers could each bank 100 ms of the
+    /// aggregate quota before sending anything. A limited share stays nonzero.
+    pub fn share(&self) -> u64 {
+        match self.limit() {
+            0 => 0,
+            rate => (rate / self.users.load(Ordering::Acquire).max(1)).max(1),
+        }
     }
 
     pub fn set_limit(&self, limit: u64) -> Result<()> {
@@ -612,6 +639,64 @@ impl RateGate {
                 .map_err(|_| "Payload rate gate is unavailable after a panic")?
                 .0;
         }
+    }
+
+    /// Take immediately available credit, without waiting behind outstanding
+    /// network responses. A failed attempt debits neither gate and never jumps
+    /// ahead of a queued caller of a limited gate.
+    pub fn try_reserve_pair(
+        first: &Self,
+        second: &Self,
+        bytes: u64,
+        cancel: &AtomicBool,
+    ) -> Result<bool> {
+        if bytes > BLOCK_BYTES {
+            return Err("A payload reservation cannot exceed one 16 KiB block".into());
+        }
+        if cancel.load(Ordering::Acquire) {
+            return Err("Payload reservation cancelled".into());
+        }
+        if bytes == 0 || (first.limit() == 0 && second.limit() == 0) {
+            return Ok(true);
+        }
+        let (first, second) = if std::ptr::from_ref(first) < std::ptr::from_ref(second) {
+            (first, second)
+        } else {
+            (second, first)
+        };
+        let mut a = first
+            .state
+            .lock()
+            .map_err(|_| "Payload rate gate is unavailable after a panic")?;
+        if cancel.load(Ordering::Acquire) {
+            return Err("Payload reservation cancelled".into());
+        }
+        if std::ptr::eq(first, second) {
+            return Ok((a.bucket.rate == 0 || a.waiters.is_empty())
+                && a.bucket
+                    .take(bytes, first.epoch.elapsed().as_nanos())
+                    .is_none());
+        }
+        let mut b = second
+            .state
+            .lock()
+            .map_err(|_| "Payload rate gate is unavailable after a panic")?;
+        if cancel.load(Ordering::Acquire) {
+            return Err("Payload reservation cancelled".into());
+        }
+        if (a.bucket.rate != 0 && !a.waiters.is_empty())
+            || (b.bucket.rate != 0 && !b.waiters.is_empty())
+        {
+            return Ok(false);
+        }
+        Ok(TokenBucket::take_pair(
+            &mut a.bucket,
+            &mut b.bucket,
+            bytes,
+            first.epoch.elapsed().as_nanos(),
+            second.epoch.elapsed().as_nanos(),
+        )
+        .is_none())
     }
 
     /// Reserve one payload block against both gates without banking credits in
@@ -826,6 +911,57 @@ mod tests {
     }
 
     #[test]
+    fn active_readers_share_batch_credit_and_release_it_on_drop() {
+        let gate = RateGate::new(16 << 20).unwrap();
+        let first = gate.participate();
+        assert_eq!(gate.share(), 16 << 20);
+        let second = gate.participate();
+        assert_eq!(gate.share(), 8 << 20);
+        let third = gate.participate();
+        assert!(gate.share() * 3 <= gate.limit());
+        drop(third);
+        drop(second);
+        assert_eq!(gate.share(), 16 << 20);
+        gate.set_limit(1).unwrap();
+        let second = gate.participate();
+        assert_eq!(gate.share(), 1, "a small limited share is never unlimited");
+        gate.set_limit(0).unwrap();
+        assert_eq!(gate.share(), 0);
+        drop(second);
+        drop(first);
+        assert_eq!(gate.users.load(Ordering::Acquire), 0);
+    }
+
+    #[test]
+    fn immediate_pair_preserves_credit_fifo_aliasing_and_cancellation() {
+        let first = RateGate::new(1).unwrap();
+        let second = RateGate::new(1).unwrap();
+        let cancel = AtomicBool::new(false);
+        let burst = u128::from(BLOCK_BYTES) * NANOS_PER_SECOND;
+        first.state.lock().unwrap().bucket.credit = 0;
+        assert!(!RateGate::try_reserve_pair(&first, &second, BLOCK_BYTES, &cancel).unwrap());
+        assert_eq!(second.state.lock().unwrap().bucket.credit, burst);
+        {
+            let mut state = first.state.lock().unwrap();
+            state.bucket.credit = burst;
+            state.waiters.push_back(42);
+        }
+        assert!(!RateGate::try_reserve_pair(&second, &first, BLOCK_BYTES, &cancel).unwrap());
+        assert_eq!(first.state.lock().unwrap().bucket.credit, burst);
+        assert_eq!(second.state.lock().unwrap().bucket.credit, burst);
+        first.state.lock().unwrap().waiters.clear();
+        assert!(RateGate::try_reserve_pair(&first, &second, BLOCK_BYTES, &cancel).unwrap());
+        assert_eq!(first.state.lock().unwrap().bucket.credit, 0);
+        assert_eq!(second.state.lock().unwrap().bucket.credit, 0);
+        let same = RateGate::new(1).unwrap();
+        assert!(RateGate::try_reserve_pair(&same, &same, BLOCK_BYTES, &cancel).unwrap());
+        assert!(!RateGate::try_reserve_pair(&same, &same, BLOCK_BYTES, &cancel).unwrap());
+        assert!(RateGate::try_reserve_pair(&same, &same, BLOCK_BYTES + 1, &cancel).is_err());
+        cancel.store(true, Ordering::Release);
+        assert!(RateGate::try_reserve_pair(&first, &second, BLOCK_BYTES, &cancel).is_err());
+    }
+
+    #[test]
     fn policy_defaults_bounds_and_numeric_json_round_trip() {
         assert_eq!(
             TransferPolicy::from_json(&Value::object()).unwrap(),
@@ -982,6 +1118,25 @@ mod tests {
             FilePriority::Low < FilePriority::Normal && FilePriority::Normal < FilePriority::High
         );
         assert!(FilePriority::from_json(&Value::Number(2.0)).is_err());
+    }
+
+    #[test]
+    fn fast_bucket_retains_fractional_credit_after_an_overslept_wait() {
+        let rate = 16 << 20;
+        let mut bucket = TokenBucket::new(rate);
+        assert_eq!(bucket.take(BLOCK_BYTES, 0), None);
+        let delayed_wakeup = 1_500_000;
+        assert_eq!(bucket.take(BLOCK_BYTES, delayed_wakeup), None);
+        assert_eq!(
+            bucket.credit,
+            u128::from(rate) * delayed_wakeup - u128::from(BLOCK_BYTES) * NANOS_PER_SECOND,
+            "a late wake must not discard earned fractional-block credit"
+        );
+        bucket.advance(NANOS_PER_SECOND);
+        assert!(
+            bucket.credit <= 256 * 1024 * NANOS_PER_SECOND,
+            "burst capacity stays bounded across all callers"
+        );
     }
 
     #[test]

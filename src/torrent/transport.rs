@@ -116,6 +116,7 @@ impl NetworkListener for DirectListener {
     fn accept(&self) -> io::Result<(Box<dyn NetworkStream>, SocketAddr)> {
         let (stream, address) = self.listener.accept()?;
         crate::net::blocking(&stream).map_err(io::Error::other)?;
+        stream.set_nodelay(true)?;
         Ok((Box::new(stream), address))
     }
 
