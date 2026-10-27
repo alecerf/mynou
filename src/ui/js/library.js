@@ -1,4 +1,4 @@
-import { label, dateTime, toneOf, layoutOf, qualityOf, episodeCode, mediaLabel, mediaLine, yesNo, JOB_ICONS, jobTone } from './format.js';
+import { label, dateTime, toneOf, qualityOf, episodeCode, mediaLabel, mediaLine, yesNo, JOB_ICONS, jobTone } from './format.js';
 import { $, h, icon, reconcile } from './dom.js';
 import { Motion } from './motion.js';
 import { quality, factList, technical, openDetail, act, skeleton } from './components.js';
@@ -20,20 +20,14 @@ export function createMediaCard() {
 /** The tone of a cover; its detail sheet opens on the same one. */
 export const coverTone = (title) => toneOf(title, 8);
 
-/** A typographic cover: one of a few compositions and tones, chosen from the
-    title, with its year as the large mark when it has one. */
+/** A typographic cover: the title on a quiet tone chosen from it, the year above. */
 export function paintCover(el, title, index, year) {
   const cover = $('.cover', el);
   cover.dataset.tone = coverTone(title);
-  cover.dataset.layout = layoutOf(title);
   cover.setAttribute('aria-label', `Open ${title}`);
-  const big = $('.cover-title', el);
-  big.textContent = title;
-  // Alternate a serif italic and a tall sans so a wall of covers stays varied.
-  big.classList.toggle('serif', Number(toneOf(`${title}.`)) % 2 === 1);
+  $('.cover-title', el).textContent = title;
   $('.cover-index', el).textContent = index;
-  // The monogram composition shows the first letter; the others the year.
-  $('.cover-mark', el).textContent = cover.dataset.layout === '3' ? [...title.trim()][0] ?? '' : Number(year) ? String(year) : '';
+  $('.cover-mark', el).textContent = Number(year) ? String(year) : '';
 }
 
 function libraryState(item) {
@@ -159,7 +153,7 @@ views.library = {
     const matches = { '': () => true, movie: (e) => e.type === 'film', series: (e) => e.type === 'show' };
     for (const tab of $('#library-tabs').children) {
       tab.setAttribute('aria-pressed', String(tab.dataset.kind === libraryFilter.kind));
-      $('span', tab).textContent = String(entries.filter(matches[tab.dataset.kind]).length).padStart(2, '0');
+      $('span', tab).textContent = String(entries.filter(matches[tab.dataset.kind]).length);
     }
     for (const toggle of $('#view-library .view-toggle').children) toggle.setAttribute('aria-pressed', String(toggle.dataset.layout === libraryFilter.layout));
     const meta = $('#library-meta');

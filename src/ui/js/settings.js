@@ -3,39 +3,44 @@ import { $, h, icon } from './dom.js';
 import { toast, act, skeleton } from './components.js';
 import { Motion } from './motion.js';
 import { link } from './link.js';
-import { data, views, itemsOf } from './store.js';
+import { data, views, itemsOf, currentParam } from './store.js';
 import { INDEXER_ERRORS, plexError, indexerReports } from './sources.js';
 
 // The settings document keeps every field; the groups below edit the common
 // ones in place and leave the others untouched. Saving sends the whole document,
 // which the service validates and applies by restarting its engine.
-// A group is [title, description, fields]; a field is [path, label, type, options]: `hint` explains it, `when` names the
+// Settings come in pages, #settings/<page>, all in one form so a change on one
+// page survives a visit to another until it is saved or discarded.
+const SETTING_PAGES = [
+  ['library', 'Library'], ['downloads', 'Downloads'], ['vpn', 'VPN'], ['indexers', 'Indexers'], ['services', 'Plex & TMDB'],
+];
+// A group is [page, title, description, fields]; a field is [path, label, type, options]: `hint` explains it, `when` names the
 // switch it depends on, `scale` and `unit` show a stored number in friendlier
 // units, and `zero` is what an empty field means.
 const MB = 1_000_000;
 const SETTING_GROUPS = [
-  ['Library', 'Where finished films and series are filed.', [
+  ['library', 'Library', 'Where finished films and series are filed.', [
     ['library.movies_root', 'Movies folder', 'text'],
     ['library.series_root', 'Series folder', 'text'],
   ]],
-  ['Downloads', 'How the built-in client fetches releases.', [
+  ['downloads', 'Downloads', 'How the built-in client fetches releases.', [
     ['downloads.data_dir', 'Download folder', 'text'],
     ['downloads.max_active', 'Downloads at once', 'number'],
+    ['downloads.max_peers', 'Peers per download', 'number', { hint: 'More peers, faster downloads. Up to 256, shared between active downloads.' }],
     ['downloads.download_limit_bps', 'Download speed limit', 'number', { scale: MB, unit: 'MB/s', zero: 'No limit' }],
     ['downloads.upload_limit_bps', 'Upload speed limit', 'number', { scale: MB, unit: 'MB/s', zero: 'No limit' }],
   ]],
-  ['Plex', 'Your server and its watchlist.', [
+  ['services', 'Plex', 'Your server and its watchlist.', [
     ['plex.url', 'Server address', 'text'],
     ['plex.token_env', 'Token', 'secret'],
     ['plex.movies_section', 'Movies section', 'text', { hint: 'The library number shown in Plex.' }],
     ['plex.series_section', 'Series section', 'text'],
     ['plex.watchlist', 'Watchlist', 'sync'],
   ]],
-  ['TMDB', 'Titles, years and episode lists.', [
+  ['services', 'TMDB', 'Titles, years and episode lists.', [
     ['catalog.token_env', 'Read access token', 'secret'],
-    ['catalog.api_key_env', 'Or API key', 'secret'],
   ]],
-  ['Automation', 'What Mynou does on its own.', [
+  ['library', 'Automation', 'What Mynou does on its own.', [
     ['monitoring.enabled', 'Look for better versions', 'check', { hint: 'Replaces a film or episode when a better release appears.' }],
     ['monitoring.interval_secs', 'Check every', 'number', { when: 'monitoring.enabled', scale: 60, unit: 'min' }],
     ['series_packs.enabled', 'Prefer season packs', 'check'],
@@ -158,7 +163,7 @@ function readSettingsForm() {
     const name = String(settingValue(path) ?? '');
     return typed.has(name) || secretSource(name) !== 'missing';
   };
-  for (const [path, on] of [['plex.enabled', present('plex.token_env')], ['catalog.enabled', present('catalog.token_env') || present('catalog.api_key_env')]]) {
+  for (const [path, on] of [['plex.enabled', present('plex.token_env')], ['catalog.enabled', present('catalog.token_env')]]) {
     if (on !== Boolean(settingValue(path))) setPath(document, path, on);
   }
   document.indexers = [...$('#settings-indexers').children].map((row) => {
@@ -209,6 +214,97 @@ async function saveSettings(document) {
   toast(reply.restart_required ? 'Settings saved; restart Mynou to apply them' : 'Settings applied');
 }
 
+// VPN: its controls apply at once, outside the settings document and Save.
+const VPN_STATES = {
+  protected: ['Protected', 'ok'], connecting: ['Connecting', 'warn'], reconnecting: ['Reconnecting', 'warn'],
+  disabled: ['Off', 'warn'], blocked: ['Blocked', 'bad'], error: ['Error', 'bad'],
+};
+const VPN_DONE = { enable: 'VPN turned on: connecting', disable: 'VPN off: torrents use your own connection' };
+const VPN_REASONS = {
+  GaveUp: 'The VPN server never answered. Check the profile, or try another server.',
+  Expired: 'The session expired.', Failed: 'The tunnel failed.', EndpointChanged: 'The server address changed.',
+  Cancelled: 'Stopped.', Exhausted: 'Every reconnection failed.',
+};
+const VPN_RESTARTING = 'Retiring previous engine generation';
+const VPN_REVOKED = 'Profile revoked by operator';
+const vpnControl = (body) => link.call('POST', '/api/vpn/control', body);
+
+function vpnRows() {
+  const label = (text) => h('span', {}, text, h('span', { class: 'badge' }));
+  return [
+    h('div', { class: 'setting-row toggle', dataset: { vpn: 'state' } },
+      h('div', { class: 'setting-label' }, label('Tunnel'), h('p', { class: 'hint' })),
+      h('div', { class: 'buttons' },
+        h('button', { type: 'button', class: 'secondary', dataset: { vpnAct: 'enable' } }, 'Turn on'),
+        h('button', { type: 'button', class: 'ghost danger', dataset: { vpnAct: 'disable' } }, 'Turn off'))),
+    h('div', { class: 'setting-row toggle', dataset: { vpn: 'profile' } },
+      h('div', { class: 'setting-label' }, label('WireGuard profile'), h('p', { class: 'hint' }, 'The WireGuard .conf file from your provider.')),
+      h('button', { type: 'button', class: 'secondary', dataset: { vpnAct: 'import' } }),
+      h('input', { type: 'file', accept: '.conf', hidden: true, dataset: { vpn: 'file' } })),
+    h('div', { class: 'setting-row toggle', dataset: { vpn: 'forwarding' } },
+      h('div', { class: 'setting-label' }, h('label', { htmlFor: 'vpn-forwarding' }, 'Open a port for seeding'), h('p', { class: 'hint' })),
+      h('input', { id: 'vpn-forwarding', type: 'checkbox', class: 'switch' })),
+  ];
+}
+
+/** The tunnel as the last status push reports it. */
+function paintVpn() {
+  const list = $('#settings-vpn');
+  if (!list.childElementCount) list.replaceChildren(...vpnRows());
+  const vpn = data.get('status')?.data?.vpn;
+  const row = (name) => $(`[data-vpn="${name}"]`, list);
+  const external = vpn?.state === 'external';
+  const profile = Boolean(vpn?.profile_present);
+  const revoked = vpn?.reason === VPN_REVOKED;
+  const [state, tone] = !vpn ? ['…', 'warn'] : external ? ['Not managed here', 'warn']
+    : vpn.reason === VPN_RESTARTING ? ['Restarting', 'warn'] : VPN_STATES[vpn.state] ?? [sentence(vpn.state), 'warn'];
+  const badge = $('.badge', row('state'));
+  badge.textContent = state;
+  badge.dataset.tone = tone;
+  const age = Number(vpn?.handshake_age_secs);
+  $('.hint', row('state')).textContent = external ? 'This Mynou uses an outside network; it runs no VPN of its own.'
+    : vpn?.state === 'protected' ? (Number.isFinite(age) && vpn.handshake_age_secs !== null ? `Last handshake ${age} s ago.` : 'Connected.')
+    : vpn?.state === 'disabled' ? (profile ? 'Torrents use your own connection.' : 'Import a profile to protect your torrents.')
+    : vpn?.state === 'connecting' ? 'Waiting for the VPN server to answer.'
+    : vpn?.reason && vpn.reason !== VPN_RESTARTING ? VPN_REASONS[vpn.reason] ?? vpn.reason : '';
+  // A failed tunnel is retried from here: turning it off would send torrents direct.
+  const failed = vpn?.enabled && !revoked && (vpn.state === 'error' || (vpn.state === 'blocked' && vpn.reason !== VPN_RESTARTING));
+  const enable = $('[data-vpn-act="enable"]', list);
+  enable.hidden = external || !profile || (vpn.enabled && !revoked && !failed);
+  enable.textContent = failed ? 'Try again' : 'Turn on';
+  $('[data-vpn-act="disable"]', list).hidden = external || !vpn?.enabled;
+  row('profile').hidden = !vpn || external;
+  const imported = $('.badge', row('profile'));
+  imported.textContent = profile ? 'Imported' : 'Not imported';
+  imported.dataset.tone = profile ? 'ok' : 'warn';
+  $('[data-vpn-act="import"]', list).textContent = profile ? 'Replace' : 'Import a .conf';
+  row('forwarding').hidden = !profile || external;
+  const forwarding = $('#vpn-forwarding');
+  if (!forwarding.disabled) forwarding.checked = Boolean(vpn?.forwarding) && vpn.forwarding !== 'disabled';
+  const hint = $('.hint', row('forwarding'));
+  hint.textContent = {
+    active: `Port ${vpn?.forwarded_port} is open to other peers.`,
+    acquiring: 'Asking the VPN server for a port…',
+    unavailable: `Unavailable: ${vpn?.forwarding_reason ?? 'the server refused'}.`,
+  }[vpn?.forwarding] ?? 'Needs a server with port forwarding (NAT-PMP), such as Proton P2P servers.';
+  hint.classList.toggle('bad', vpn?.forwarding === 'unavailable');
+}
+
+/** Shows the groups of the page in the hash; the first page by default. */
+function showPage() {
+  const wanted = currentParam();
+  const page = SETTING_PAGES.some(([id]) => id === wanted) ? wanted : SETTING_PAGES[0][0];
+  for (const link of $('#settings-nav').children) {
+    if (link.dataset.page === page) link.setAttribute('aria-current', 'page'); else link.removeAttribute('aria-current');
+  }
+  let first = true;
+  for (const group of $('#settings-form').querySelectorAll('.setting-group[data-page]')) {
+    group.hidden = group.dataset.page !== page;
+    group.classList.toggle('first', !group.hidden && first);
+    if (!group.hidden) first = false;
+  }
+}
+
 async function saveSecret(name, value) {
   const reply = await link.call('POST', '/api/secrets', { name, value });
   settings.secrets = itemsOf(reply.secrets);
@@ -216,6 +312,8 @@ async function saveSecret(name, value) {
 
 views.settings = {
   init() {
+    $('#settings-nav').replaceChildren(...SETTING_PAGES.map(([page, title]) =>
+      h('a', { href: `#settings/${page}`, dataset: { page } }, title)));
     const form = $('#settings-form');
     const dirty = () => {
       const bar = $('#save-bar');
@@ -234,6 +332,37 @@ views.settings = {
       });
     });
     $('#settings-discard').addEventListener('click', () => this.paint());
+    const vpn = $('#settings-vpn');
+    // VPN controls apply at once: they never mark the settings unsaved.
+    vpn.addEventListener('input', (event) => event.stopPropagation());
+    vpn.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-vpn-act]');
+      if (!button) return;
+      const action = button.dataset.vpnAct;
+      if (action === 'import') { $('[data-vpn="file"]', vpn).click(); return; }
+      if (action === 'disable' && !confirm('Turn off the VPN? Torrents will then use your own connection.')) return;
+      act(button, () => vpnControl({ action }), VPN_DONE[action]);
+    });
+    vpn.addEventListener('change', (event) => {
+      event.stopPropagation();
+      const input = event.target;
+      if (input.dataset.vpn === 'file') {
+        const file = input.files[0];
+        input.value = '';
+        if (!file) return;
+        act($('[data-vpn-act="import"]', vpn), async () => {
+          if (file.size > 16_384) throw new Error('This is not a WireGuard profile: it is larger than 16 KB');
+          await vpnControl({ action: 'import', profile: await file.text() });
+        }, 'Profile imported: connecting');
+      } else if (input.id === 'vpn-forwarding') {
+        const on = input.checked;
+        input.disabled = true;
+        vpnControl({ action: on ? 'enable-forwarding' : 'disable-forwarding' })
+          .then(() => toast(on ? 'Asking the VPN server for a port' : 'Port closed'))
+          .catch((e) => { input.checked = !on; toast(e.message, 'bad'); })
+          .finally(() => { input.disabled = false; });
+      }
+    });
     $('#indexer-add').addEventListener('click', () => {
       const row = indexerRow({ kind: 'torznab', enabled: true });
       $('#settings-indexers').append(row);
@@ -254,6 +383,7 @@ views.settings = {
     });
   },
   render() {
+    showPage();
     // Live updates never overwrite fields being edited.
     if (!settings.report && !$('#settings-groups').childElementCount) {
       $('#settings-form').setAttribute('aria-busy', 'true');
@@ -271,18 +401,20 @@ views.settings = {
     $('#settings-form').removeAttribute('aria-busy');
     settingsState([report.applying && 'A change is being applied.', report.restart_required && 'The listen address changes at the next start.'].filter(Boolean).join(' '));
     if (report.error) toast(report.error, 'bad');
-    $('#settings-groups').replaceChildren(...SETTING_GROUPS.map(([title, about, fields]) =>
-      h('section', { class: 'setting-group' },
+    $('#settings-groups').replaceChildren(...SETTING_GROUPS.map(([page, title, about, fields]) =>
+      h('section', { class: 'setting-group', dataset: { page } },
         h('div', { class: 'setting-intro' }, h('h2', {}, title), h('p', { class: 'hint' }, about)),
         h('div', { class: 'setting-list' }, fields.map(settingRow)))));
     // Saved indexers keep their position, which is also the order of the live reports.
     $('#settings-indexers').replaceChildren(...itemsOf(settings.document.indexers).map((indexer, i) => Object.assign(indexerRow(indexer), { _saved: i })));
     $('#save-bar').hidden = true;
     syncDependents();
+    showPage();
     this.paintLive();
   },
   /** States that change while the page is open; inputs are never touched. */
   paintLive() {
+    paintVpn();
     const reports = indexerReports();
     for (const row of $('#settings-indexers').children) {
       const state = $('[data-live="indexer"]', row);

@@ -7,8 +7,10 @@ import { link } from './link.js';
 export const data = new Map();      // topic -> { status, data, at }
 export const views = {};            // name -> { render(), show() }
 let current = '';             // the view on screen
+let param = '';               // what follows the view in the hash: #transfers/ID
 export const currentView = () => current;
-export function setCurrentView(name) { current = name; }
+export const currentParam = () => param;
+export function setCurrentView(name, value = '') { current = name; param = value; }
 
 export const itemsOf = (value) => {
   if (Array.isArray(value)) return value;

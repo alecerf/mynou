@@ -552,6 +552,42 @@ impl Engine {
         self.transfer(&status.id)
     }
 
+    /// Removes a transfer, and its downloaded files when asked. The requests
+    /// still waiting on it are cancelled first, so none starts it again; the
+    /// ones already in the library keep their imported files.
+    pub fn remove_transfer(&self, id: &str, delete_files: bool) -> Result<Value> {
+        if self.read_only {
+            return Err("Read-only preview cannot remove a transfer".into());
+        }
+        let client = self.native_client()?;
+        let mut owners = Vec::new();
+        let mut after: Option<String> = None;
+        loop {
+            let (jobs, next) = lock(&self.store)?.transfer_jobs_page(id, after.as_deref(), 200)?;
+            owners.extend(jobs);
+            after = next;
+            if after.is_none() {
+                break;
+            }
+        }
+        if owners.iter().any(|job| job.state == "importing") {
+            return Err(
+                "Mynou is adding this download to the library; remove it once that is done".into(),
+            );
+        }
+        let mut cancelled = 0_u32;
+        for job in owners {
+            if !matches!(job.state.as_str(), "ready" | "cancelled") {
+                self.cancel(&job.id)?;
+                cancelled += 1;
+            }
+        }
+        client.remove(id, delete_files)?;
+        let mut value = self.transfer(id)?;
+        value.insert("cancelled_requests", cancelled);
+        Ok(value)
+    }
+
     pub fn resume_transfer(&self, id: &str) -> Result<Value> {
         self.native_client()?.resume(id)?;
         self.transfer(id)

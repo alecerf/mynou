@@ -15,6 +15,7 @@ const LABELS = {
     queued_seed: 'Waiting to seed', seed_limited: 'Seeding goal reached', paused: 'Paused', failed: 'Failed',
   },
   kind: { movie: 'Film', episode: 'Episode', series: 'Series' },
+  priority: { low: 'Low priority', normal: 'In progress', high: 'High priority' },
   upgrade: {
     same_acquisition: 'Already the chosen release', upgrade_available: 'Upgrade available', entry_changed: 'Changed during the check',
     upgrade_pending: 'Upgrade on its way', imports_missing: 'File missing', cutoff_reached: 'Quality goal reached',
@@ -72,11 +73,8 @@ const hashOf = (text) => {
   for (const char of String(text)) hash = (hash * 31 + char.codePointAt(0)) >>> 0;
   return hash;
 };
-/** A stable tone for a typographic cover, chosen from its title. Tones 0–6 are
-    dark and carry white text; covers also use 7, a paper tone with ink text. */
-export const toneOf = (text, count = 7) => String(hashOf(text) % count);
-/** A stable cover composition (0–4), so a wall of covers stays varied. */
-export const layoutOf = (text) => String(hashOf(`${text}#`) % 5);
+/** A stable tone for a typographic cover, chosen from its title. */
+export const toneOf = (text, count = 8) => String(hashOf(text) % count);
 
 /** Quality traits read from a recorded release title. Nothing is guessed beyond its words. */
 export function qualityOf(title) {

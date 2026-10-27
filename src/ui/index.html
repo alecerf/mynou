@@ -19,7 +19,6 @@
   <link rel="modulepreload" href="/js/store.js">
   <link rel="modulepreload" href="/js/sources.js">
   <link rel="modulepreload" href="/js/router.js">
-  <link rel="modulepreload" href="/js/art.js">
   <link rel="modulepreload" href="/js/dashboard.js">
   <link rel="modulepreload" href="/js/library.js">
   <link rel="modulepreload" href="/js/jobs.js">
@@ -46,6 +45,7 @@
     <symbol id="i-pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></symbol>
     <symbol id="i-play" viewBox="0 0 24 24"><path d="m8 5 12 7-12 7Z"/></symbol>
     <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 3h4M6 7l1 13h10l1-13M10 11v6M14 11v6"/></symbol>
     <symbol id="i-retry" viewBox="0 0 24 24"><path d="M20 8a8 8 0 1 0 0 8M20 3v5h-5"/></symbol>
     <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3 2 20h20Z"/><path d="M12 10v4M12 17h.01"/></symbol>
     <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/></symbol>
@@ -61,7 +61,8 @@
   <a class="skip" href="#main">Skip to content</a>
 
   <aside class="sidebar">
-    <a class="brand" href="#dashboard" aria-label="Mynou home"><svg class="logo" aria-hidden="true"><use href="#i-logo"></use></svg><span>mynou<span class="brand-period">.</span></span></a>
+    <a class="brand" href="#dashboard" aria-label="Mynou home"><svg class="logo" aria-hidden="true"><use href="#i-logo"></use></svg><span>mynou</span></a>
+    <a class="nav-link request-button" href="#requests" data-view="requests"><svg class="icon" aria-hidden="true"><use href="#i-requests"></use></svg><span>New request</span></a>
     <nav id="nav" aria-label="Views"><span id="nav-indicator" class="nav-indicator" aria-hidden="true"></span></nav>
     <div class="sidebar-bottom">
       <div id="theme" class="theme-switch" role="group" aria-label="Theme">
@@ -78,25 +79,24 @@
       <p class="breadcrumb"><a class="mobile-brand" href="#dashboard" aria-label="Mynou home"><svg class="logo" aria-hidden="true"><use href="#i-logo"></use></svg></a></p>
       <div class="tools">
         <output id="link-mobile" class="link-dot" data-state="connecting" aria-hidden="true"></output>
-        <a class="primary request-button" href="#requests" data-view="requests"><svg class="icon" aria-hidden="true"><use href="#i-requests"></use></svg><span>New request</span></a>
+        <a class="request-button" href="#requests" data-view="requests" aria-label="New request"><svg class="icon" aria-hidden="true"><use href="#i-requests"></use></svg></a>
       </div>
     </header>
 
     <main id="main" tabindex="-1">
       <section id="view-dashboard" class="view" aria-labelledby="t-dashboard" hidden>
-        <div id="ambient" class="ambient" aria-hidden="true"></div>
         <header class="page-heading">
           <div>
-            <h1 id="t-dashboard"><span id="greeting">The evening</span><br>is <em>yours.</em></h1>
+            <h1 id="t-dashboard">Overview</h1>
           </div>
         </header>
         <div id="alerts" class="alerts"></div>
         <dl id="stats" class="summary-strip"></dl>
-        <div class="section-heading"><h2>On their way</h2></div>
+        <div class="section-heading"><h2>In progress</h2></div>
         <div id="in-motion" class="in-motion"></div>
         <div class="dashboard-bottom">
           <section aria-labelledby="t-fresh">
-            <div class="section-heading"><h2 id="t-fresh">Freshly collected</h2><a class="text-link" href="#library">The library <svg class="icon" aria-hidden="true"><use href="#i-arrow"></use></svg></a></div>
+            <div class="section-heading"><h2 id="t-fresh">Recently added</h2><a class="text-link" href="#library">Library <svg class="icon" aria-hidden="true"><use href="#i-arrow"></use></svg></a></div>
             <div id="fresh" class="recent-grid"></div>
           </section>
           <section aria-labelledby="t-recent">
@@ -109,7 +109,7 @@
       <section id="view-library" class="view" aria-labelledby="t-library" hidden>
         <header class="page-heading">
           <div>
-            <h1 id="t-library">The <em>collection.</em></h1>
+            <h1 id="t-library">Library</h1>
           </div>
           <button type="button" id="check-upgrades" class="secondary"><svg class="icon" aria-hidden="true"><use href="#i-sync"></use></svg><span>Check for upgrades</span></button>
         </header>
@@ -135,7 +135,7 @@
       <section id="view-requests" class="view" aria-labelledby="t-requests" hidden>
         <header class="page-heading">
           <div>
-            <h1 id="t-requests">Ask for <em>something.</em></h1>
+            <h1 id="t-requests">New request</h1>
             <p class="intro">Find a film or a series. Once it is added, Mynou looks for it on your indexers by itself.</p>
           </div>
         </header>
@@ -167,13 +167,17 @@
       </section>
 
       <section id="view-transfers" class="view compact" aria-labelledby="t-transfers" hidden>
-        <header class="page-heading">
-          <div>
-            <h1 id="t-transfers">Transfers</h1>
-          </div>
-        </header>
-        <ol id="transfers" class="activity-list"></ol>
-        <div class="actions"><button id="transfers-more" type="button" hidden>Load more transfers</button></div>
+        <div id="transfers-list">
+          <header class="page-heading">
+            <div>
+              <h1 id="t-transfers">Transfers</h1>
+            </div>
+            <button type="button" id="torrent-add" class="secondary"><svg class="icon" aria-hidden="true"><use href="#i-requests"></use></svg><span>Add a torrent</span></button>
+          </header>
+          <ol id="transfers" class="activity-list"></ol>
+          <div class="actions"><button id="transfers-more" type="button" hidden>Load more transfers</button></div>
+        </div>
+        <div id="transfer-page" class="transfer-page" hidden></div>
       </section>
 
       <section id="view-settings" class="view compact" aria-labelledby="t-settings" hidden>
@@ -183,9 +187,15 @@
             <p id="settings-state" class="intro" role="status" hidden></p>
           </div>
         </header>
+        <div class="settings-layout">
+        <nav id="settings-nav" class="settings-nav" aria-label="Settings pages"></nav>
         <form id="settings-form" class="settings" autocomplete="off">
           <div id="settings-groups"></div>
-          <section class="setting-group">
+          <section class="setting-group" data-page="vpn">
+            <div class="setting-intro"><h2>VPN</h2><p class="hint">Torrents go through your WireGuard tunnel. Plex, TMDB and this page do not.</p></div>
+            <div id="settings-vpn" class="setting-list"></div>
+          </section>
+          <section class="setting-group" data-page="indexers">
             <div class="setting-intro"><h2>Indexers</h2><p class="hint">Where Mynou looks for releases.</p></div>
             <div class="setting-list">
               <ol id="settings-indexers"></ol>
@@ -198,6 +208,7 @@
             <button type="submit" class="primary">Save</button>
           </div>
         </form>
+        </div>
       </section>
     </main>
 
