@@ -19,3 +19,12 @@ series, **Choose a release** lists what the indexers offer with why each
 release was kept or rejected, and downloads the one you pick (`POST /api/grab`,
 `POST /api/series/ID/search` and `/grab`;
 [details](/docs/selection.md#choose-a-release-by-hand), #370).
+
+## Added: TLS 1.2 for trackers and indexers without TLS 1.3
+
+Mynou now reaches HTTPS servers that offer only TLS 1.2: ECDHE with X25519 or
+P-256, AES-128-GCM or ChaCha20-Poly1305, secure renegotiation required and the
+extended master secret whenever the server offers it. There is no session
+resumption or renegotiation, a TLS 1.3 server's downgrade sentinel is refused,
+and the certificate and host name are validated as with TLS 1.3
+([details](/docs/limits.md)).

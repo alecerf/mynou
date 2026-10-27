@@ -10,7 +10,9 @@ mod rsa;
 
 use crate::Result;
 use der::{Reader, bit_string, boolean, positive_integer, sequence};
-pub use ecc::{verify_ecdsa_p256_sha256, verify_ecdsa_p384_sha384};
+pub use ecc::{
+    p256_public_key, p256_shared_secret, verify_ecdsa_p256_sha256, verify_ecdsa_p384_sha384,
+};
 #[cfg(test)]
 pub(crate) use rsa::sign_pss_sha256_for_test;
 pub use rsa::{verify_pkcs1_sha256, verify_pkcs1_sha384, verify_pss_sha256, verify_pss_sha384};
