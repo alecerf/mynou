@@ -92,7 +92,7 @@ fn preview_is_read_only_and_application_is_idempotent_without_hiding_the_import(
     assert_eq!(children(&engine, &original.id).len(), 1);
     assert_eq!(
         fs::read(&original.imports[0]).unwrap(),
-        include_bytes!("../examples/demo.mp4")
+        include_bytes!("fixtures/demo.mp4")
     );
 
     let cfg = engine.config.clone();
@@ -449,7 +449,7 @@ struct Seeder {
 
 impl Seeder {
     fn open(directory: &Path) -> Self {
-        Self::with_bytes(directory, include_bytes!("../examples/demo.mp4"))
+        Self::with_bytes(directory, include_bytes!("fixtures/demo.mp4"))
     }
 
     fn with_bytes(directory: &Path, bytes: &[u8]) -> Self {
@@ -531,7 +531,7 @@ fn verified_torrent_with_invalid_media_cannot_replace_the_existing_import() {
     assert_eq!(library_ids(&engine), [original.id]);
     assert_eq!(
         fs::read(&original.imports[0]).unwrap(),
-        include_bytes!("../examples/demo.mp4")
+        include_bytes!("fixtures/demo.mp4")
     );
 }
 
@@ -570,7 +570,7 @@ fn native_upgrade_imports_a_distinct_version_and_retains_both_files_after_restar
     for imported in [&original.imports[0], &ready.imports[0]] {
         assert_eq!(
             fs::read(imported).unwrap(),
-            include_bytes!("../examples/demo.mp4")
+            include_bytes!("fixtures/demo.mp4")
         );
     }
     assert_eq!(
@@ -795,9 +795,6 @@ fn plex_must_confirm_the_mapped_new_version_before_an_upgrade_becomes_current() 
     let ready = run_until(&engine, &child.id, "ready");
     assert_eq!(library_ids(&engine), [child.id]);
     for path in [&original.imports[0], &ready.imports[0]] {
-        assert_eq!(
-            fs::read(path).unwrap(),
-            include_bytes!("../examples/demo.mp4")
-        );
+        assert_eq!(fs::read(path).unwrap(), include_bytes!("fixtures/demo.mp4"));
     }
 }

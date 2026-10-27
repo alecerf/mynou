@@ -404,7 +404,7 @@ fn reviewed_new_demand_reaches_one_verified_native_import_and_survives_restart()
     let torrent = Torrent::single(
         &dir.0.join("source"),
         "Fixture.Movie.2024.1080p.mp4",
-        include_bytes!("../examples/demo.mp4").to_vec(),
+        include_bytes!("fixtures/demo.mp4").to_vec(),
     );
     let seed = Seeder::open(&dir.0.join("seed"), &[&torrent]);
     let cfg = config::from_json(&value(&c, &a, seed.client.listen_port()), &dir.0).unwrap();
@@ -440,7 +440,7 @@ fn reviewed_new_demand_reaches_one_verified_native_import_and_survives_restart()
     assert_eq!(ready.imports.len(), 1);
     assert_eq!(
         fs::read(&ready.imports[0]).unwrap(),
-        include_bytes!("../examples/demo.mp4")
+        include_bytes!("fixtures/demo.mp4")
     );
     assert!(ready.irc_origin.is_some());
     assert_eq!(ready.requester.as_ref().unwrap().account_id, "alice");

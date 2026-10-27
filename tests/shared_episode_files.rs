@@ -37,7 +37,7 @@ fn torrent(directory: &Directory, tag: &str) -> Torrent {
         vec![
             (
                 "shared.mp4".into(),
-                include_bytes!("../examples/demo.mp4").to_vec(),
+                include_bytes!("fixtures/demo.mp4").to_vec(),
             ),
             ("boundary.bin".into(), payload(BLOCK * 2, 29)),
             ("untouched.txt".into(), payload(BLOCK * 8, 43)),
@@ -300,7 +300,7 @@ fn simultaneous_workers_import_one_range_path_and_block_individual_upgrades() {
     assert!(saved[0].imports[0].contains("S01E01-E02"));
     assert_eq!(
         fs::read(&saved[0].imports[0]).unwrap(),
-        include_bytes!("../examples/demo.mp4")
+        include_bytes!("fixtures/demo.mp4")
     );
     let files = snapshot(&cfg.series_root);
     assert_eq!(
@@ -552,7 +552,7 @@ fn plex_confirms_the_same_exact_import_separately_for_each_canonical_owner() {
         .shared_file
         .unwrap();
     fs::create_dir_all(std::path::Path::new(&binding.import_path).parent().unwrap()).unwrap();
-    fs::write(&binding.import_path, include_bytes!("../examples/demo.mp4")).unwrap();
+    fs::write(&binding.import_path, include_bytes!("fixtures/demo.mp4")).unwrap();
     for id in &ids {
         let mut store = lock(&engine.store).unwrap();
         let mut job = store.get(id).unwrap().unwrap();
@@ -748,7 +748,7 @@ fn retained_shared_import_uses_its_binding_after_the_library_root_changes() {
     let binding = owners[0].shared_file.as_ref().unwrap();
     let path = std::path::Path::new(&binding.import_path);
     fs::create_dir_all(path.parent().unwrap()).unwrap();
-    let bytes = include_bytes!("../examples/demo.mp4");
+    let bytes = include_bytes!("fixtures/demo.mp4");
     fs::write(path, bytes).unwrap();
     for mut owner in owners.clone() {
         owner.state = "imported".into();

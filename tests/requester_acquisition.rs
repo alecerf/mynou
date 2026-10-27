@@ -72,7 +72,7 @@ fn opt_in_precedes_native_acquisition_and_captured_route_survives_edit_restart_a
     let directory = Directory::new();
     let accounts = Accounts::open();
     let provider = Provider::open();
-    let bytes = include_bytes!("../examples/demo.mp4").to_vec();
+    let bytes = include_bytes!("fixtures/demo.mp4").to_vec();
     let torrent = Torrent::single(
         &directory.0.join("source"),
         "Fixture.Movie.1080p.mp4",

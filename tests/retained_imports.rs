@@ -45,7 +45,7 @@ fn restarted_imports_fail_safely_with_plex_disabled_or_stale_indexed_paths() {
             cfg.requesters.accounts.clear();
             cfg.max_attempts = 1;
             let source = directory.0.join("source.mp4");
-            let bytes = include_bytes!("../examples/demo.mp4");
+            let bytes = include_bytes!("fixtures/demo.mp4");
             fs::write(&source, bytes).unwrap();
             let engine = Engine::open(cfg.clone()).unwrap();
             let mut req = request(7, "Fixture Movie");
@@ -142,12 +142,12 @@ fn captured_ready_reuse_requires_files_but_pending_sharing_remains_compatible() 
         engine.sync_requesters().unwrap();
         let initial = job(&engine, "alice");
         let source = directory.0.join("source.mp4");
-        fs::write(&source, include_bytes!("../examples/demo.mp4")).unwrap();
+        fs::write(&source, include_bytes!("fixtures/demo.mp4")).unwrap();
         if matches!(case, "foreign" | "parent") {
             let root = Path::new(&initial.requester.as_ref().unwrap().capture.movies_root);
             fs::create_dir_all(root).unwrap();
             let outside = root.parent().unwrap().join("outside.mp4");
-            fs::write(&outside, include_bytes!("../examples/demo.mp4")).unwrap();
+            fs::write(&outside, include_bytes!("fixtures/demo.mp4")).unwrap();
             let mut completed = initial.clone();
             completed.state = "ready".into();
             completed.progress = 1.0;
@@ -201,7 +201,7 @@ fn resumed_operator_imports_cannot_escape_the_configured_destination() {
         cfg.downloads_enabled = false;
         cfg.max_attempts = 1;
         let source = directory.0.join("source.mp4");
-        fs::write(&source, include_bytes!("../examples/demo.mp4")).unwrap();
+        fs::write(&source, include_bytes!("fixtures/demo.mp4")).unwrap();
         let engine = Engine::open_for_management(cfg.clone()).unwrap();
         let mut req = request(7, "Fixture Movie");
         req.source_path = Some(source.to_str().unwrap().into());
@@ -257,7 +257,7 @@ fn file_removed_during_plex_confirmation_never_produces_ready_outcomes() {
     let mut imported = job(&engine, "alice");
     let path = cfg.movies_root.join("retained-fixture.mp4");
     fs::create_dir_all(&cfg.movies_root).unwrap();
-    fs::write(&path, include_bytes!("../examples/demo.mp4")).unwrap();
+    fs::write(&path, include_bytes!("fixtures/demo.mp4")).unwrap();
     imported.imports = vec![path.to_str().unwrap().into()];
     imported.state = "imported".into();
     lock(&engine.store)
@@ -343,6 +343,6 @@ fn an_unsafe_retained_upgrade_does_not_replace_its_valid_parent() {
     assert_eq!(library_ids(&engine), [parent.id]);
     assert_eq!(
         fs::read(&parent.imports[0]).unwrap(),
-        include_bytes!("../examples/demo.mp4")
+        include_bytes!("fixtures/demo.mp4")
     );
 }

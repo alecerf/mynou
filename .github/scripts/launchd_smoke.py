@@ -2,7 +2,9 @@
 """Opt-in native launchd fixture: synthetic state, isolated HOME and unique label.
 
 Never points at a real data directory or installs the default service label.
-Run manually on a logged-in macOS account, passing a built Mynou binary.
+Run manually on a logged-in macOS account, passing a built Mynou binary. A first
+start listens on 127.0.0.1:8787 before its settings move it elsewhere, so stop
+any Mynou using that port first.
 """
 import argparse
 import json
@@ -26,7 +28,14 @@ def main():
     label = f"org.mynou.fixture.{os.getpid()}"
     domain = f"gui/{os.getuid()}"
     subprocess.run(["/bin/launchctl", "print", domain], check=True, stdout=subprocess.DEVNULL)
-    token = None
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+    def api(address, method, path, body=None):
+        request = urllib.request.Request(f"http://{address}{path}", method=method,
+            data=None if body is None else json.dumps(body).encode(),
+            headers={} if body is None else {"Content-Type": "application/json"})
+        with opener.open(request, timeout=10) as response:
+            return json.loads(response.read())
     with tempfile.TemporaryDirectory(prefix="mynou-launchd-", dir="/private/tmp") as temporary:
         root = Path(temporary)
         # launchd cannot read a developer checkout in Documents without macOS
@@ -36,16 +45,13 @@ def main():
         home = root / "home"
         (home / "Library" / "LaunchAgents").mkdir(parents=True)
         env = {**os.environ, "HOME": str(home)}
-        env.pop("MYNOU_API_TOKEN", None)
-        def cli(*words, ok=True, stdin=None):
-            output = subprocess.run([str(binary), *words, "--dir", str(root)], env=env, input=stdin,
+        def cli(*words, ok=True):
+            output = subprocess.run([str(binary), *words, "--dir", str(root)], env=env,
                                     cwd=root, capture_output=True, text=True, timeout=150)
             if ok:
                 assert output.returncode == 0, output.stderr
             else:
                 assert output.returncode != 0
-            if token and words[0] != "token":
-                assert token not in output.stdout + output.stderr
             return output
 
         def service(action, ok=True):
@@ -66,7 +72,23 @@ def main():
                 time.sleep(0.1)
             raise AssertionError("fixture condition timed out")
 
-        value = json.loads(cli("settings").stdout)
+        # Settings live in the store: a first foreground start creates it, and
+        # its API saves the fixture's settings for the service to start with.
+        first = subprocess.Popen([str(binary), "serve", "--dir", str(root)], env=env, cwd=root,
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        endpoint = root / "state" / "endpoint"
+        wait(lambda: first.poll() is not None or (endpoint.exists() and endpoint.read_text().strip()),
+             seconds=60)
+        assert first.poll() is None, "the first start failed: is 127.0.0.1:8787 in use?"
+        initial = endpoint.read_text().strip()
+        def started():
+            try:
+                with opener.open(f"http://{initial}/readyz", timeout=1) as response:
+                    return response.status == 200
+            except (OSError, urllib.error.URLError):
+                return False
+        wait(started, seconds=60)
+        value = api(initial, "GET", "/api/settings")["settings"]
         with socket.socket() as bound:
             bound.bind(("127.0.0.1", 0))
             address = f"127.0.0.1:{bound.getsockname()[1]}"
@@ -79,9 +101,9 @@ def main():
         value["downloads"]["dht"] = False
         value["downloads"]["pex"] = False
         value["downloads"]["listen_port"] = 0
-        cli("settings", "--save", stdin=json.dumps(value))
-        token = cli("token", "--reset").stdout.splitlines()[0]
-        env["MYNOU_API_TOKEN"] = token
+        api(initial, "POST", "/api/settings", {"settings": value})
+        api(initial, "POST", "/api/shutdown", {})
+        assert first.wait(timeout=60) == 0
         for name in ("state/jobs", "state/transfers", "movies", "series", "downloads"):
             (root / name).mkdir(parents=True, exist_ok=True)
         sentinel = root / "downloads" / "keep.bin"
@@ -114,13 +136,9 @@ def main():
             wait(healthy)
             print("PASS supervised crash restart (60-second throttle)", flush=True)
 
-            # Even a valid token must not shut down a different API process.
-            request = urllib.request.Request(f"http://{address}/api/shutdown",
-                data=json.dumps({"expected_pid": pid() + 1}).encode(),
-                headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}, method="POST")
-            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+            # A shutdown naming another process must not stop this one.
             try:
-                opener.open(request, timeout=5)
+                api(address, "POST", "/api/shutdown", {"expected_pid": pid() + 1})
                 raise AssertionError("wrong-process shutdown accepted")
             except urllib.error.HTTPError as error:
                 assert error.code == 400
@@ -140,16 +158,15 @@ def main():
             service("uninstall")
             assert not registration.exists()
             assert sentinel.read_bytes() == b"preserved synthetic payload"
-            assert json.loads(cli("settings").stdout)["listen"] == address
             shutil.rmtree(root / "state")
             shutil.copytree(root / "backup-state", root / "state")
             service("install")
             wait(healthy)
+            assert api(address, "GET", "/api/settings")["settings"]["listen"] == address
             service("uninstall")
             assert sentinel.read_bytes() == b"preserved synthetic payload"
             for log in (root / ".mynou-service").glob("*.log"):
                 assert log.stat().st_size <= 65536
-                assert token not in log.read_text()
             print("PASS identity fence, graceful stop/start, missing-volume refusal, uninstall, preservation and offline rollback", flush=True)
         finally:
             # Only this fixture's unique label can be forcibly unloaded on failure.

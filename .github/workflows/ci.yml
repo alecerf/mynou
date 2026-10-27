@@ -126,7 +126,7 @@ jobs:
             target/debug/mynou
             target/debug/mynou-ci-test-build.jsonl
             target/debug/mynou-ci-test-timings.json
-          key: ${{ runner.os }}-${{ runner.arch }}-${{ github.repository }}-rust-1.99.1-tests-v2-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/**', 'build.rs', 'src/**', 'tests/**', 'examples/**', '.github/workflows/ci.yml') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-${{ github.repository }}-rust-1.99.1-tests-v2-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/**', 'build.rs', 'src/**', 'tests/**', '.github/workflows/ci.yml') }}
       - name: Verify the dependency graph
         id: metadata
         run: |
@@ -215,7 +215,7 @@ jobs:
         with:
           path: |
             target/aarch64-apple-darwin/release/mynou
-          key: ${{ runner.os }}-${{ runner.arch }}-rust-1.99.1-release-v1-aarch64-apple-darwin-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/**', 'build.rs', 'src/**', 'examples/**', '.github/workflows/ci.yml') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-rust-1.99.1-release-v1-aarch64-apple-darwin-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/**', 'build.rs', 'src/**', '.github/workflows/ci.yml') }}
       - name: Install Rust 1.99.1 and target
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
@@ -235,19 +235,47 @@ jobs:
           version=$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["package"]["version"])')
           test "$("$binary" --version)" = "mynou $version — Rust std, 0 dependencies"
           shasum -a 256 "$binary"
-      - name: Run the standalone demonstration
+      - name: Start the release binary and reach its API
         if: needs.changes.outputs.release != 'true'
         run: |
-          demo_root=$(cd "$RUNNER_TEMP" && pwd -P)
-          target/aarch64-apple-darwin/release/mynou demo --dir "$demo_root/mynou-demo" > "$RUNNER_TEMP/mynou-demo.json"
-          cat "$RUNNER_TEMP/mynou-demo.json"
-          python3 - "$RUNNER_TEMP/mynou-demo.json" <<'DEMO'
-          import json, sys
-          with open(sys.argv[1]) as stream:
-              result = json.load(stream)
-          assert result["job"]["state"] == "ready"
-          assert result["plex_scan_confirmed"] is True
-          DEMO
+          data_root=$(cd "$RUNNER_TEMP" && pwd -P)/mynou-smoke
+          python3 - target/aarch64-apple-darwin/release/mynou "$data_root" <<'SMOKE'
+          import json, subprocess, sys, time, urllib.error, urllib.request
+          from pathlib import Path
+          binary, data = sys.argv[1], Path(sys.argv[2])
+          service = subprocess.Popen([binary, "serve", "--dir", str(data)])
+          def call(method, path, host=None, body=None):
+              request = urllib.request.Request(base + path, method=method, data=body)
+              if host:
+                  request.add_header("Host", host)
+              if body is not None:
+                  request.add_header("Content-Type", "application/json")
+              try:
+                  with urllib.request.urlopen(request, timeout=10) as response:
+                      return response.status, response.read()
+              except urllib.error.HTTPError as error:
+                  return error.code, error.read()
+          try:
+              endpoint = data / "state/endpoint"
+              deadline = time.monotonic() + 60
+              while not endpoint.exists() or not endpoint.read_text().strip():
+                  assert service.poll() is None and time.monotonic() < deadline, "no endpoint"
+                  time.sleep(0.2)
+              base = "http://" + endpoint.read_text().strip()
+              while call("GET", "/readyz")[0] != 200:
+                  assert service.poll() is None and time.monotonic() < deadline, "not ready"
+                  time.sleep(0.2)
+              status, body = call("GET", "/api/status")
+              assert status == 200 and json.loads(body)["version"], body
+              status, body = call("GET", "/")
+              assert status == 200 and b"<title>" in body, status
+              assert call("GET", "/api/status", host="evil.example")[0] == 403
+              assert call("POST", "/api/shutdown", body=b"{}")[0] in (200, 202)
+              assert service.wait(timeout=60) == 0, "unclean exit"
+          finally:
+              if service.poll() is None:
+                  service.kill()
+          SMOKE
       - name: Preserve the executable for packaging
         uses: actions/upload-artifact@v7.0.2
         with:

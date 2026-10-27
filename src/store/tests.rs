@@ -2333,7 +2333,7 @@ fn captured_feed_routes_reach_jobs_and_library_beyond_the_former_prefix() {
         let directory = Directory::new();
         let imported = directory.0.join("synthetic-import.mp4");
         fs::copy(
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/demo.mp4"),
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/demo.mp4"),
             &imported,
         )
         .unwrap();
@@ -4355,7 +4355,7 @@ fn library_pass_freshness_excludes_manual_preview_failure_and_stop() {
     engine.stopped.store(false, Ordering::Release);
     // A valid local import reaches search; absent indexers make it unavailable.
     let path = directory.0.join("synthetic.mp4");
-    fs::write(&path, include_bytes!("../../examples/demo.mp4")).unwrap();
+    fs::write(&path, include_bytes!("../../tests/fixtures/demo.mp4")).unwrap();
     let mut job = monitored_fixture(1, 0);
     job.imports = vec![path.to_str().unwrap().into()];
     bulk(&mut lock(&engine.store).unwrap(), vec![job.clone()]);

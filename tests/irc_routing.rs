@@ -23,7 +23,7 @@ fn movie(dir: &Directory, name: &str) -> Torrent {
     Torrent::single(
         &dir.0.join("source"),
         name,
-        include_bytes!("../examples/demo.mp4").to_vec(),
+        include_bytes!("fixtures/demo.mp4").to_vec(),
     )
 }
 fn routing(report: &Value) -> bool {
@@ -152,7 +152,7 @@ fn admitted_jobs_wait_for_irc_and_metadata_precedes_selective_payload_and_exact_
     assert_eq!(origin.file, "Fixture.Movie.2024.1080p.mp4");
     assert_eq!(
         origin.file_length,
-        include_bytes!("../examples/demo.mp4").len() as u64
+        include_bytes!("fixtures/demo.mp4").len() as u64
     );
     assert_eq!(
         route_phase(&engine.irc_announcement(row_id(&row)).unwrap()),
@@ -173,7 +173,7 @@ fn admitted_jobs_wait_for_irc_and_metadata_precedes_selective_payload_and_exact_
     assert_eq!(ready.imports.len(), 1);
     assert_eq!(
         fs::read(&ready.imports[0]).unwrap(),
-        include_bytes!("../examples/demo.mp4")
+        include_bytes!("fixtures/demo.mp4")
     );
     let before = irc_support::bytes(&cfg.store_dir);
     assert!(
@@ -318,7 +318,7 @@ fn ambiguous_or_wrong_metadata_never_reserves_or_requests_payload() {
                 .map(|n| {
                     (
                         PathBuf::from(n),
-                        include_bytes!("../examples/demo.mp4").to_vec(),
+                        include_bytes!("fixtures/demo.mp4").to_vec(),
                     )
                 })
                 .collect(),
@@ -720,7 +720,7 @@ fn admitted_requester_routes_keep_their_capture_through_import_and_restart() {
     );
     assert_eq!(
         fs::read(&ready.imports[0]).unwrap(),
-        include_bytes!("../examples/demo.mp4")
+        include_bytes!("fixtures/demo.mp4")
     );
 }
 

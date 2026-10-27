@@ -769,7 +769,7 @@ fn approved_numbering_does_not_rewrite_ready_library_records_or_imported_bytes()
         .unwrap();
     let id = id(&record);
     let source = directory.0.join("original-S01E01.mp4");
-    fs::write(&source, include_bytes!("../examples/demo.mp4")).unwrap();
+    fs::write(&source, include_bytes!("fixtures/demo.mp4")).unwrap();
     let mut request = request();
     request.kind = "episode".into();
     request.season = 1;
@@ -819,7 +819,7 @@ fn approved_numbering_does_not_rewrite_ready_library_records_or_imported_bytes()
     assert_eq!(library_support::files(&cfg.series_root), imports);
     assert_eq!(
         fs::read(&source).unwrap(),
-        include_bytes!("../examples/demo.mp4")
+        include_bytes!("fixtures/demo.mp4")
     );
 }
 

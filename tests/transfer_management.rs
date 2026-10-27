@@ -980,7 +980,7 @@ fn authenticated_pause_is_durable_during_engine_polling_and_explicit_resume_comp
     let torrent = Torrent::single(
         &scratch.0,
         "pause.mp4",
-        include_bytes!("../examples/demo.mp4").to_vec(),
+        include_bytes!("fixtures/demo.mp4").to_vec(),
     );
     let seed = Seeder::open(&scratch.0.join("seed"), &[&torrent]);
     let proxy = RecordingProxy::open(seed.client.listen_port());
@@ -1044,7 +1044,7 @@ fn authenticated_pause_is_durable_during_engine_polling_and_explicit_resume_comp
         .unwrap();
     assert_eq!(
         fs::read(&imported.imports[0]).unwrap(),
-        include_bytes!("../examples/demo.mp4")
+        include_bytes!("fixtures/demo.mp4")
     );
 }
 
@@ -1175,7 +1175,7 @@ fn shared_requests_expose_one_transfer_and_apply_controls_to_both_requests() {
     let torrent = Torrent::single(
         &scratch.0,
         "shared.mp4",
-        include_bytes!("../examples/demo.mp4").to_vec(),
+        include_bytes!("fixtures/demo.mp4").to_vec(),
     );
     let seed = Seeder::open(&scratch.0.join("seed"), &[&torrent]);
     let proxy = RecordingProxy::open(seed.client.listen_port());
@@ -1258,7 +1258,7 @@ fn shared_requests_expose_one_transfer_and_apply_controls_to_both_requests() {
         .unwrap();
     assert_eq!(
         fs::read(&active.imports[0]).unwrap(),
-        include_bytes!("../examples/demo.mp4")
+        include_bytes!("fixtures/demo.mp4")
     );
     let (status, snapshot) = server.call("GET", &base, Some(TOKEN), None);
     assert_eq!(status, 200);

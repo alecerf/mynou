@@ -191,7 +191,7 @@ fn setup_with(json_source: bool) -> Setup {
     let torrent = Torrent::single(
         &dir.0.join("source"),
         NAME,
-        include_bytes!("../examples/demo.mp4").to_vec(),
+        include_bytes!("fixtures/demo.mp4").to_vec(),
     );
     let fixture = Fixture::new();
     let cfg = configuration_with(&dir.0.join("engine"), &fixture.url, json_source);
@@ -355,7 +355,7 @@ fn private_release_downloads(s: Setup) {
     let ready = run_until(&s.engine, &s.job, "ready");
     assert_eq!(
         fs::read(&ready.imports[0]).unwrap(),
-        include_bytes!("../examples/demo.mp4")
+        include_bytes!("fixtures/demo.mp4")
     );
     assert!(s.fixture.hits("/tracker/announce") >= 1);
     // The indexer link and its key are never kept; the passkey stays in the

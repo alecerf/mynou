@@ -23,7 +23,7 @@ class SelectionTests(unittest.TestCase):
 
     def test_rust_inputs_and_embedded_assets(self):
         for path in ["src/lib.rs", "src/pki/fixtures/root.der", "src/ui/app.css",
-                     "examples/demo.mp4", "Cargo.lock", "rust-toolchain.toml", ".cargo/config.toml"]:
+                     "Cargo.lock", "rust-toolchain.toml", ".cargo/config.toml"]:
             with self.subTest(path=path):
                 work = ci.select([path])
                 self.assertTrue(work["tests"] and work["build"])
@@ -33,7 +33,7 @@ class SelectionTests(unittest.TestCase):
         self.assertIn("javascript-typescript", ci.select(["src/ui/app.js"])["languages"])
 
     def test_tests_only_do_not_build_or_package(self):
-        work = ci.select(["tests/regression.rs", "tests/fixtures/data.json"])
+        work = ci.select(["tests/regression.rs", "tests/fixtures/data.json", "tests/fixtures/demo.mp4"])
         self.assertTrue(work["tests"])
         self.assertFalse(work["build"])
 

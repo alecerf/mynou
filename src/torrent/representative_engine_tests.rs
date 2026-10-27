@@ -230,7 +230,11 @@ impl Fixture {
         let gateway = crate::tunnel_http::tests::NatPmp::start(&pair.server, 53186);
         let operator = crate::vpn::tests::load_operator(&config, pair.client.clone());
         let source_file = root.join("synthetic.mp4");
-        fs::write(&source_file, include_bytes!("../../examples/demo.mp4")).unwrap();
+        fs::write(
+            &source_file,
+            include_bytes!("../../tests/fixtures/demo.mp4"),
+        )
+        .unwrap();
         Self {
             config,
             started: AtomicBool::new(false),
@@ -343,7 +347,7 @@ impl Fixture {
             assert_eq!(job.imports.len(), 1);
             assert_eq!(
                 fs::read(&job.imports[0]).unwrap(),
-                include_bytes!("../../examples/demo.mp4")
+                include_bytes!("../../tests/fixtures/demo.mp4")
             );
             let import_us = at.elapsed().as_micros();
             let release = if kind == "movie" {
@@ -483,7 +487,7 @@ impl Fixture {
             assert_eq!(job.imports.len(), 1);
             assert_eq!(
                 fs::read(&job.imports[0]).unwrap(),
-                include_bytes!("../../examples/demo.mp4")
+                include_bytes!("../../tests/fixtures/demo.mp4")
             );
         }
         self.metrics.lock().unwrap().renewals =

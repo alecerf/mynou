@@ -66,7 +66,7 @@ fn identified(title: &str, tmdb_id: u64) -> Request {
 /// An owned 1080p import with a TMDB identity, so it can be bound.
 fn import(engine: &Arc<Engine>, directory: &Path, title: &str, tmdb_id: u64) -> Job {
     let source = directory.join(format!("{}.mp4", title.replace(' ', "-")));
-    fs::write(&source, include_bytes!("../examples/demo.mp4")).unwrap();
+    fs::write(&source, include_bytes!("fixtures/demo.mp4")).unwrap();
     let mut request = identified(title, tmdb_id);
     request.source_path = Some(source.to_str().unwrap().into());
     let id = engine.submit(request).unwrap().remove(0).id;

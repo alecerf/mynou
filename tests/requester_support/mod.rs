@@ -332,7 +332,7 @@ pub fn ready(engine: &Engine, id: &str) -> Job {
     };
     let path = PathBuf::from(root).join(format!("fixture-{id}.mp4"));
     fs::create_dir_all(path.parent().unwrap()).unwrap();
-    fs::write(&path, include_bytes!("../../examples/demo.mp4")).unwrap();
+    fs::write(&path, include_bytes!("../fixtures/demo.mp4")).unwrap();
     job.imports = vec![path.to_str().unwrap().into()];
     job.state = "ready".into();
     job.progress = 1.0;

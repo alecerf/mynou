@@ -39,7 +39,7 @@ cat >> "$notes" <<EOF
 <!-- mynou-ci-release -->
 Mynou $version uses Rust 1.99.1 and the standard library only: no Cargo dependencies, unsafe code, FFI, or external programs at runtime.
 
-This release was built and published by [GitHub Actions]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID) after dependency, formatting, Clippy, test and native demonstration checks passed on macOS.
+This release was built and published by [GitHub Actions]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID) after dependency, formatting, Clippy, test and native start checks passed on macOS.
 
 Release assets contain only the native macOS Apple Silicon executable and one \`SHA256SUMS\` manifest. Verify the manifest entry before installation; the [verification guide]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$tag/docs/validation.md#verify-release-assets) explains how. GitHub's native source downloads remain available.
 

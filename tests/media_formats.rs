@@ -59,7 +59,7 @@ fn wave_format() -> Vec<u8> {
 
 #[test]
 fn bundled_mp4_is_analyzed_without_ffprobe() {
-    let media = analyze(&Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/demo.mp4"))
+    let media = analyze(&Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/demo.mp4"))
         .expect("example MP4");
     assert_eq!(media.container, "mp4");
     assert_eq!(media.title, "Mynou Demo!");
@@ -81,8 +81,8 @@ fn bundled_mp4_is_analyzed_without_ffprobe() {
 
 #[test]
 fn mp4_extended_mdat_skips_four_gibibytes() {
-    let source =
-        fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/demo.mp4")).expect("example");
+    let source = fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/demo.mp4"))
+        .expect("example");
     let mut at = 0;
     let mut ftyp = Vec::new();
     let mut moov = Vec::new();
@@ -346,7 +346,7 @@ fn matroska_webm_known_and_unknown_segment_sizes() {
 #[test]
 fn bounded_parsers_do_not_panic_on_mutated_headers() {
     let original =
-        fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/demo.mp4")).unwrap();
+        fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/demo.mp4")).unwrap();
     let fixture = Fixture::new("mutated.mp4", &[]);
     let mut state = 0x9e37_79b9_u64;
     for turn in 0..512 {
