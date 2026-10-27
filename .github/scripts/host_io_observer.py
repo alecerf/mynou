@@ -54,6 +54,8 @@ FIXTURES = (
     "irc::tunnel_tests::irc_announcement_routes_through_tunnel_metadata_without_workers",
     "irc::tunnel_tests::cancellation_during_irc_metadata_refuses_routing_and_later_announcements",
     "vpn::tests::forwarded_port_is_listened_on_in_the_tunnel_then_renewed_changed_and_lost",
+    "tunnel_http::tests::network::an_ipv6_tunnel_resolves_ipv4_first_and_reaches_ipv6_peers",
+    "tunnel_http::tests::network::an_ipv4_tunnel_never_asks_for_aaaa",
 )
 NEGATIVE = "torrent::tunnel_tests::host_io_observer_negative_controls"
 

@@ -43,11 +43,15 @@ thread.
 
 Inbound, a datagram longer than a WireGuard data message or empty is dropped
 before any work. The rest goes to `Peer::receive` with the observed source and the
-load verdict. Authenticated plaintext is dispatched by its IPv4 protocol to the
-UDP table (17) or the TCP stack (6); each validates the whole packet and drops the
-transport padding. ICMP (1) is offered to the TCP stack first, then to the UDP
-table if no flow matched; only validated destination-unreachable advice that
-quotes a packet we sent applies (see [ICMP advice](/docs/netstack.md#icmp-advice-and-fragment-policy)).
+load verdict. Authenticated plaintext is dispatched by its IPv4 protocol or IPv6
+next header to the UDP table (17) or the TCP stack (6); each validates the whole
+packet and drops the transport padding. IPv6 is dispatched only when the
+configuration has an inner IPv6 address; otherwise it is rejected. ICMP (1) and
+ICMPv6 (58) advice is offered to the TCP stack first, then to the UDP table if no
+flow matched; only validated advice that quotes a packet we sent applies (see
+[ICMP advice](/docs/netstack.md#icmp-advice-and-fragment-policy)). A valid ICMPv6
+echo request is answered with the next timer run; at most eight replies wait,
+further requests are dropped.
 Invalid ICMP is counted in `inner_rejected`, unmatched or revoked advice in
 `inner_dropped`. Every other protocol is counted in `inner_rejected` and refused.
 The DNS client falls back to the shared TCP stack when a resolver sets TC, using

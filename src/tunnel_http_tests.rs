@@ -1,13 +1,15 @@
 use super::*;
-use crate::{crypto::x25519_public_key, net::HttpClient, netstack::Ipv4Config};
+use crate::{crypto::x25519_public_key, net::HttpClient, netstack::IpConfig};
 use std::{
     collections::BTreeMap,
-    net::{SocketAddr, UdpSocket},
+    net::{Ipv4Addr, SocketAddr, UdpSocket},
     sync::atomic::AtomicUsize,
 };
 
 const CLIENT: Ipv4Addr = Ipv4Addr::new(10, 7, 0, 2);
 const SERVER: Ipv4Addr = Ipv4Addr::new(10, 7, 0, 1);
+const CLIENT6: std::net::Ipv6Addr = std::net::Ipv6Addr::new(0xfd00, 7, 0, 0, 0, 0, 0, 2);
+const SERVER6: std::net::Ipv6Addr = std::net::Ipv6Addr::new(0xfd00, 7, 0, 0, 0, 0, 0, 1);
 const CLIENT_KEY: [u8; 32] = [13; 32];
 const SERVER_KEY: [u8; 32] = [27; 32];
 
@@ -55,7 +57,7 @@ fn end() -> Instant {
     Instant::now() + Duration::from_secs(5)
 }
 fn config(endpoint: SocketAddr, server: bool) -> TunnelConfig {
-    let ip = Ipv4Config::new(
+    let ip = IpConfig::new(
         if server { SERVER } else { CLIENT },
         Ipv4Addr::UNSPECIFIED,
         0,
@@ -67,7 +69,7 @@ fn config(endpoint: SocketAddr, server: bool) -> TunnelConfig {
         Endpoint::Address(endpoint),
         ip,
     )
-    .with_dns(vec![SERVER]);
+    .with_dns(vec![SERVER.into()]);
     config.bind = "127.0.0.1:0".parse().unwrap();
     config.initiate = !server;
     config.psk = Some([51; 32]);
@@ -212,7 +214,7 @@ impl Fixture {
                             echoes.push((flow, Vec::new()));
                         }
                         for port in dial.lock().unwrap().drain(..) {
-                            if let Ok(flow) = tunnel.tcp_connect(CLIENT, port) {
+                            if let Ok(flow) = tunnel.tcp_connect(CLIENT.into(), port) {
                                 echoes.push((flow, b"inbound-hello".to_vec()));
                             }
                         }
@@ -491,6 +493,7 @@ fn full_queue_is_fail_fast_and_dropped_last_owner_joins() {
     let (sender, receiver) = mpsc::sync_channel(QUEUE);
     let owner = Owner {
         identity: 1,
+        ipv6: false,
         sender,
         cancelled: Arc::new(AtomicBool::new(false)),
         generation: Arc::new(AtomicU64::new(1)),
@@ -574,6 +577,7 @@ fn stream_operations_wait_for_queue_space_until_their_deadline() {
     let (sender, receiver) = mpsc::sync_channel(QUEUE);
     let owner = Owner {
         identity: 1,
+        ipv6: false,
         sender,
         cancelled: Arc::new(AtomicBool::new(false)),
         generation: Arc::new(AtomicU64::new(1)),
@@ -925,8 +929,16 @@ impl Pair {
                         let mut answer = query.payload[..2].to_vec();
                         answer.extend_from_slice(&[0x81, 0x80, 0, 1, 0, 1, 0, 0, 0, 0]);
                         answer.extend_from_slice(&query.payload[12..]);
-                        answer.extend_from_slice(&[0xc0, 0x0c, 0, 1, 0, 1, 0, 0, 0, 60, 0, 4]);
-                        answer.extend_from_slice(&SERVER.octets());
+                        // AAAA questions get the server's IPv6 address.
+                        let tail = query.payload.len().saturating_sub(4);
+                        if query.payload[tail..tail + 2] == [0, 28] {
+                            answer
+                                .extend_from_slice(&[0xc0, 0x0c, 0, 28, 0, 1, 0, 0, 0, 60, 0, 16]);
+                            answer.extend_from_slice(&SERVER6.octets());
+                        } else {
+                            answer.extend_from_slice(&[0xc0, 0x0c, 0, 1, 0, 1, 0, 0, 0, 60, 0, 4]);
+                            answer.extend_from_slice(&SERVER.octets());
+                        }
                         r.tunnel
                             .udp_send_to(socket, (query.source, query.source_port), &answer)
                             .map_err(failed)?;

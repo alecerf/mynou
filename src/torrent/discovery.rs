@@ -373,6 +373,9 @@ fn udp_announce(
 
 // A bounded iterative Kademlia lookup. Unknown metadata only performs get_peers;
 // announcing is allowed after the caller established that the torrent is public.
+// The IPv6 DHT (BEP 32) is a separate network: when the routers or seeds have
+// IPv6 addresses and the network gives an IPv6 socket, it is searched at the
+// same time and its peers are added.
 pub fn dht_lookup(
     network: &dyn Network,
     hash: &[u8; 20],
@@ -385,7 +388,8 @@ pub fn dht_lookup(
         .datagram(false)
         .map_err(|_| "Could not create DHT socket")?;
     let deadline = Instant::now() + Duration::from_secs(8);
-    let mut nodes: Vec<SocketAddr> = seeds.iter().copied().filter(SocketAddr::is_ipv4).collect();
+    let (mut nodes, mut nodes6): (Vec<SocketAddr>, Vec<SocketAddr>) =
+        seeds.iter().partition(|seed| seed.is_ipv4());
     if seeds.is_empty() {
         for host in [
             "router.bittorrent.com:6881",
@@ -393,11 +397,29 @@ pub fn dht_lookup(
             "dht.transmissionbt.com:6881",
         ] {
             if let Ok(addresses) = network.resolve(host, deadline) {
-                nodes.extend(addresses.into_iter().filter(SocketAddr::is_ipv4).take(2));
+                let (v4, v6): (Vec<_>, Vec<_>) =
+                    addresses.into_iter().partition(SocketAddr::is_ipv4);
+                nodes.extend(v4.into_iter().take(2));
+                nodes6.extend(v6.into_iter().take(2));
             }
         }
     }
-    dht_search(&*socket, hash, port, announce, stop, nodes, deadline)
+    let socket6 = (!nodes6.is_empty())
+        .then(|| network.datagram(true).ok())
+        .flatten();
+    std::thread::scope(|scope| {
+        let ipv6 = socket6.map(|socket6| {
+            scope.spawn(move || dht_search(&*socket6, hash, port, announce, stop, nodes6, deadline))
+        });
+        let mut peers = dht_search(&*socket, hash, port, announce, stop, nodes, deadline)?;
+        if let Some(Ok(Ok(more))) = ipv6.map(|search| search.join()) {
+            peers.extend(more);
+            peers.sort_unstable();
+            peers.dedup();
+            peers.truncate(DHT_PEERS);
+        }
+        Ok(peers)
+    })
 }
 
 /// Queries in flight at once, and the closest responders a lookup settles on (BEP 5).
@@ -426,6 +448,8 @@ fn distance(id: &[u8], hash: &[u8; 20]) -> [u8; 20] {
 /// An iterative Kademlia lookup: the closest unqueried nodes are asked, a few
 /// at a time, until the closest responders have all answered. Peers come from
 /// every answer; the announcement goes to the closest nodes that gave a token.
+/// The seed nodes name the DHT: IPv6 ones search the IPv6 DHT, which answers
+/// with `nodes6` (BEP 32).
 fn dht_search(
     socket: &dyn NetworkDatagram,
     hash: &[u8; 20],
@@ -439,6 +463,12 @@ fn dht_search(
         .set_read_timeout(Some(Duration::from_millis(100)))
         .map_err(|_| "Could not configure DHT timeout")?;
     let id = crate::crypto::random_bytes::<20>()?;
+    let ipv6 = nodes.first().is_some_and(SocketAddr::is_ipv6);
+    let (nodes_key, width): (&[u8], usize) = if ipv6 {
+        (b"nodes6", 38)
+    } else {
+        (b"nodes", 26)
+    };
     let mut candidates: BTreeSet<([u8; 20], SocketAddr)> =
         nodes.into_iter().map(|node| (UNKNOWN, node)).collect();
     let mut queried = BTreeSet::new();
@@ -500,18 +530,19 @@ fn dht_search(
             {
                 if let Some(Value::List(values)) = field(r, b"values") {
                     for value in values.iter().take(200) {
+                        // Compact IPv4 or, from the IPv6 DHT, IPv6 peers.
                         if let Ok(raw) = super::metainfo::bytes(value)
-                            && let Ok(found) = decode_peers(raw, false)
+                            && let Ok(found) = decode_peers(raw, raw.len() == 18)
                         {
                             peers.extend(found);
                         }
                     }
                 }
-                if let Some(raw) = value_bytes(field(r, b"nodes"))
-                    && raw.len() % 26 == 0
+                if let Some(raw) = value_bytes(field(r, nodes_key))
+                    && raw.len() % width == 0
                 {
-                    for node in raw.as_chunks::<26>().0.iter().take(32) {
-                        if let Ok(found) = decode_peers(&node[20..], false) {
+                    for node in raw.chunks_exact(width).take(32) {
+                        if let Ok(found) = decode_peers(&node[20..], ipv6) {
                             for address in found {
                                 if !queried.contains(&address) {
                                     candidates.insert((distance(&node[..20], hash), address));
@@ -663,12 +694,14 @@ mod tests {
         }
     }
 
-    /// A non-socket torrent network: names resolve from a fixed table, the one
-    /// datagram socket is a `Memory`, and HTTP answers with a canned response.
-    /// It records every request, so a test sees each network operation.
+    /// A non-socket torrent network: names resolve from a fixed table, the
+    /// datagram sockets are `Memory`s, and HTTP answers with a canned response.
+    /// It records every request, so a test sees each network operation. The
+    /// IPv6 socket answers every query with one IPv6 peer.
     struct Fake {
         names: Vec<(&'static str, SocketAddr)>,
         socket: Arc<Memory>,
+        socket6: Arc<Memory>,
         http_reply: Vec<u8>,
         resolved: Mutex<Vec<String>>,
         datagrams: Mutex<Vec<bool>>,
@@ -680,6 +713,21 @@ mod tests {
             Self {
                 names,
                 socket: Arc::new(Memory::new(responder)),
+                socket6: Arc::new(Memory::new(Box::new(|packet, target| {
+                    let query = crate::bencode::parse(packet).unwrap();
+                    let t = value_bytes(field(&query, b"t")).unwrap().to_vec();
+                    let mut peer = "2001:db8::9".parse::<Ipv6Addr>().unwrap().octets().to_vec();
+                    peer.extend_from_slice(&6881u16.to_be_bytes());
+                    let reply = dict(&[
+                        (b"t", Value::Bytes(t)),
+                        (b"y", Value::Bytes(b"r".to_vec())),
+                        (
+                            b"r",
+                            dict(&[(b"values", Value::List(vec![Value::Bytes(peer)]))]),
+                        ),
+                    ]);
+                    vec![(crate::bencode::encode(&reply), target)]
+                }))),
                 http_reply: Vec::new(),
                 resolved: Mutex::new(Vec::new()),
                 datagrams: Mutex::new(Vec::new()),
@@ -770,7 +818,11 @@ mod tests {
 
         fn datagram(&self, ipv6: bool) -> Result<Box<dyn NetworkDatagram>> {
             self.datagrams.lock().unwrap().push(ipv6);
-            Ok(Box::new(self.socket.clone()))
+            Ok(Box::new(if ipv6 {
+                self.socket6.clone()
+            } else {
+                self.socket.clone()
+            }))
         }
 
         fn http(&self) -> crate::net::HttpClient {
@@ -858,6 +910,56 @@ mod tests {
         .unwrap_err();
         assert!(unanswered.to_string().contains("did not respond"));
         assert_eq!(silent.sent().len(), 2);
+    }
+
+    #[test]
+    fn the_ipv6_dht_follows_nodes6_and_ignores_ipv4_nodes() {
+        let first: SocketAddr = "[2001:db8::10]:6881".parse().unwrap();
+        let second: SocketAddr = "[2001:db8::11]:6881".parse().unwrap();
+        let socket = Memory::new(Box::new(move |packet, target| {
+            let query = crate::bencode::parse(packet).unwrap();
+            let t = value_bytes(field(&query, b"t")).unwrap().to_vec();
+            let mut peer = "2001:db8::9".parse::<Ipv6Addr>().unwrap().octets().to_vec();
+            peer.push(0x1a);
+            peer.push(if target == first { 0xe1 } else { 0xe2 });
+            let mut node6 = vec![1; 20];
+            node6.extend_from_slice(&"2001:db8::11".parse::<Ipv6Addr>().unwrap().octets());
+            node6.extend_from_slice(&[0x1a, 0xe1]);
+            let mut node4 = vec![2; 20];
+            node4.extend_from_slice(&[192, 0, 2, 12, 0x1a, 0xe1]);
+            let reply = dict(&[
+                (b"t", Value::Bytes(t)),
+                (b"y", Value::Bytes(b"r".to_vec())),
+                (
+                    b"r",
+                    dict(&[
+                        (b"nodes", Value::Bytes(node4)),
+                        (b"nodes6", Value::Bytes(node6)),
+                        (b"values", Value::List(vec![Value::Bytes(peer)])),
+                    ]),
+                ),
+            ]);
+            vec![(crate::bencode::encode(&reply), target)]
+        }));
+        let peers = dht_search(
+            &socket,
+            &[7; 20],
+            6882,
+            false,
+            &AtomicBool::new(false),
+            vec![first],
+            Instant::now() + Duration::from_secs(5),
+        )
+        .unwrap();
+        let targets: Vec<_> = socket.sent().iter().map(|(_, target)| *target).collect();
+        assert_eq!(targets, vec![first, second]);
+        assert_eq!(
+            peers,
+            vec![
+                "[2001:db8::9]:6881".parse().unwrap(),
+                "[2001:db8::9]:6882".parse().unwrap()
+            ]
+        );
     }
 
     #[test]
@@ -1049,7 +1151,9 @@ mod tests {
             &[],
         )
         .unwrap();
-        assert_eq!(peers, vec!["203.0.113.9:6881".parse().unwrap()]);
+        // The IPv6 router is searched in the IPv6 DHT, over its own socket.
+        let peers6: SocketAddr = "[2001:db8::9]:6881".parse().unwrap();
+        assert_eq!(peers, vec!["203.0.113.9:6881".parse().unwrap(), peers6]);
         assert_eq!(
             *network.resolved.lock().unwrap(),
             [
@@ -1058,9 +1162,11 @@ mod tests {
                 "dht.transmissionbt.com:6881"
             ]
         );
-        assert_eq!(*network.datagrams.lock().unwrap(), [false]);
+        assert_eq!(*network.datagrams.lock().unwrap(), [false, true]);
         let targets: Vec<_> = network.socket.sent().iter().map(|(_, to)| *to).collect();
         assert_eq!(targets, vec![router]);
+        let targets: Vec<_> = network.socket6.sent().iter().map(|(_, to)| *to).collect();
+        assert_eq!(targets, vec!["[2001:db8::1]:6881".parse().unwrap()]);
 
         // Explicit seeds need no name resolution.
         let seeded = Fake::new(Vec::new(), Box::new(|_, _| Vec::new()));

@@ -3,12 +3,12 @@
 //! No host resolution, sockets, persistence or protection activation.
 
 use crate::{
-    netstack::{Ipv4Config, MAX_MTU, MAX_RESOLVERS, MIN_MTU},
+    netstack::{IPV6_MIN_MTU, IpConfig, MAX_MTU, MAX_RESOLVERS, MIN_MTU},
     tunnel::{Endpoint, TunnelConfig},
 };
 use std::{
     fmt,
-    net::{Ipv4Addr, Ipv6Addr, SocketAddrV4},
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddrV4},
     time::Duration,
 };
 
@@ -71,11 +71,13 @@ pub struct Profile {
     secret: [u8; 32],
     public: [u8; 32],
     psk: Option<[u8; 32]>,
-    ip: Ipv4Config,
+    ip: IpConfig,
     prefix: u8,
     dns: Vec<Ipv4Addr>,
-    /// IPv6 settings of the profile, kept for its private document: the tunnel
-    /// itself carries IPv4 only, and nothing falls back to the host's IPv6.
+    /// IPv6 settings of the profile. The tunnel carries IPv6 when the profile
+    /// has an IPv6 address, the `::/0` route and an MTU of at least 1280;
+    /// otherwise they are only kept for its private document. Nothing ever
+    /// falls back to the host's IPv6.
     ipv6: Ipv6Settings,
     mtu: usize,
     endpoint: SocketAddrV4,
@@ -83,9 +85,14 @@ pub struct Profile {
 }
 
 impl Profile {
-    /// Inner DNS servers; the first is also the NAT-PMP forwarding gateway.
+    /// Inner IPv4 DNS servers; the first is also the NAT-PMP forwarding gateway.
     pub fn dns(&self) -> &[Ipv4Addr] {
         &self.dns
+    }
+
+    /// Whether the tunnel of this profile carries IPv6.
+    pub fn ipv6(&self) -> bool {
+        self.ip.local_ipv6().is_some()
     }
 
     /// Retained interface CIDR prefix; AllowedIPs independently supplies the route.
@@ -165,7 +172,15 @@ impl Profile {
         // Keep the tunnel's TCP bounds; only the profile's MTU changes.
         config.tcp.mtu = self.mtu;
         config.keepalive = self.keepalive;
-        config.with_dns(self.dns)
+        // IPv6 resolvers answer inside the tunnel only when it carries IPv6.
+        let ipv6 = self.ipv6();
+        let resolvers = self
+            .dns
+            .into_iter()
+            .map(IpAddr::V4)
+            .chain(self.ipv6.dns.into_iter().map(IpAddr::V6).filter(|_| ipv6))
+            .collect();
+        config.with_dns(resolvers)
     }
 }
 
@@ -336,8 +351,9 @@ pub fn parse(input: &str) -> Result<Profile, ProfileError> {
         }
     }
     let (address, prefix) = ipv4_address.ok_or_else(|| invalid(1))?;
-    let ip = Ipv4Config::new(address, Ipv4Addr::UNSPECIFIED, 0).map_err(|_| invalid(1))?;
-    // IPv4 resolvers answer inside the tunnel; IPv6 ones are kept for later.
+    let mut ip = IpConfig::new(address, Ipv4Addr::UNSPECIFIED, 0).map_err(|_| invalid(1))?;
+    // IPv4 resolvers always answer inside the tunnel; IPv6 ones when it
+    // carries IPv6.
     let mut dns = Vec::new();
     for value in required(2)?.1.split(',') {
         if dns.len() + ipv6_settings.dns.len() == MAX_RESOLVERS {
@@ -383,6 +399,15 @@ pub fn parse(input: &str) -> Result<Profile, ProfileError> {
         ["0.0.0.0/0", "::/0"] => true,
         _ => return Err(invalid(6)),
     };
+    // An address the stack cannot own, such as link-local, leaves the
+    // tunnel IPv4 only rather than refusing a profile accepted before.
+    if let Some((address, _)) = ipv6_settings.address
+        && ipv6_settings.route
+        && mtu >= IPV6_MIN_MTU
+        && let Ok(dual) = ip.with_ipv6(address, Ipv6Addr::UNSPECIFIED, 0)
+    {
+        ip = dual;
+    }
     let endpoint: SocketAddrV4 = required(7)?.1.parse().map_err(|_| invalid(7))?;
     if endpoint.port() == 0 || ipv4(&endpoint.ip().to_string()).is_none() {
         return Err(invalid(7));

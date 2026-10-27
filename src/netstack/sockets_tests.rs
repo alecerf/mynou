@@ -1,13 +1,14 @@
 use super::*;
 use crate::netstack::MAX_MTU;
 use crate::netstack::support::{Failing, Script};
+use std::net::Ipv4Addr;
 
 const G: u64 = 7;
 const LOCAL: Ipv4Addr = Ipv4Addr::new(10, 64, 0, 2);
 const PEER: Ipv4Addr = Ipv4Addr::new(203, 0, 113, 9);
 
-fn config() -> Ipv4Config {
-    Ipv4Config::new(LOCAL, Ipv4Addr::UNSPECIFIED, 0).unwrap()
+fn config() -> IpConfig {
+    IpConfig::new(LOCAL, Ipv4Addr::UNSPECIFIED, 0).unwrap()
 }
 
 fn table(limits: Limits) -> UdpSockets {
@@ -86,7 +87,7 @@ fn closed_handles_stay_dead_after_the_port_is_reused() {
     assert_ne!(old, new);
     assert_eq!(sockets.recv(G, old), Err(SocketError::Closed));
     assert_eq!(
-        sockets.connect(G, old, (PEER, 53)),
+        sockets.connect(G, old, (PEER.into(), 53)),
         Err(SocketError::Closed)
     );
     assert_eq!(sockets.recv(G, new), Ok(None));
@@ -98,7 +99,7 @@ fn datagrams_are_queued_in_order_and_accounted() {
     let handle = sockets.bind(G, 4000, &mut Failing).unwrap();
     for payload in [&b"one"[..], b"two", b""] {
         assert_eq!(
-            sockets.deliver(G, PEER, 53, 4000, payload),
+            sockets.deliver(G, PEER.into(), 53, 4000, payload),
             Delivery::Queued
         );
     }
@@ -112,7 +113,7 @@ fn datagrams_are_queued_in_order_and_accounted() {
     sockets.close(G, handle).unwrap();
     assert_eq!(sockets.queued(), 0);
     assert_eq!(
-        sockets.deliver(G, PEER, 53, 4000, b"late"),
+        sockets.deliver(G, PEER.into(), 53, 4000, b"late"),
         Delivery::NoSocket
     );
 }
@@ -127,15 +128,33 @@ fn per_socket_and_global_queues_are_bounded() {
     let mut sockets = table(limits);
     let first = sockets.bind(G, 4000, &mut Failing).unwrap();
     let second = sockets.bind(G, 4001, &mut Failing).unwrap();
-    assert_eq!(sockets.deliver(G, PEER, 1, 4000, b"a"), Delivery::Queued);
-    assert_eq!(sockets.deliver(G, PEER, 1, 4000, b"b"), Delivery::Queued);
-    assert_eq!(sockets.deliver(G, PEER, 1, 4000, b"c"), Delivery::QueueFull);
-    assert_eq!(sockets.deliver(G, PEER, 1, 4001, b"d"), Delivery::Queued);
-    assert_eq!(sockets.deliver(G, PEER, 1, 4001, b"e"), Delivery::QueueFull);
+    assert_eq!(
+        sockets.deliver(G, PEER.into(), 1, 4000, b"a"),
+        Delivery::Queued
+    );
+    assert_eq!(
+        sockets.deliver(G, PEER.into(), 1, 4000, b"b"),
+        Delivery::Queued
+    );
+    assert_eq!(
+        sockets.deliver(G, PEER.into(), 1, 4000, b"c"),
+        Delivery::QueueFull
+    );
+    assert_eq!(
+        sockets.deliver(G, PEER.into(), 1, 4001, b"d"),
+        Delivery::Queued
+    );
+    assert_eq!(
+        sockets.deliver(G, PEER.into(), 1, 4001, b"e"),
+        Delivery::QueueFull
+    );
     assert_eq!(sockets.queued(), 3);
     // Draining one frees exactly one slot, for any socket.
     sockets.recv(G, first).unwrap().unwrap();
-    assert_eq!(sockets.deliver(G, PEER, 1, 4001, b"f"), Delivery::Queued);
+    assert_eq!(
+        sockets.deliver(G, PEER.into(), 1, 4001, b"f"),
+        Delivery::Queued
+    );
     assert_eq!(sockets.recv(G, second).unwrap().unwrap().payload, b"d");
 }
 
@@ -143,17 +162,26 @@ fn per_socket_and_global_queues_are_bounded() {
 fn a_connected_socket_filters_other_remotes() {
     let mut sockets = table(Limits::default());
     let handle = sockets.bind(G, 4000, &mut Failing).unwrap();
-    sockets.connect(G, handle, (PEER, 53)).unwrap();
+    sockets.connect(G, handle, (PEER.into(), 53)).unwrap();
     let other = Ipv4Addr::new(203, 0, 113, 10);
     assert_eq!(
-        sockets.deliver(G, other, 53, 4000, b"x"),
+        sockets.deliver(G, other.into(), 53, 4000, b"x"),
         Delivery::Filtered
     );
-    assert_eq!(sockets.deliver(G, PEER, 54, 4000, b"x"), Delivery::Filtered);
+    assert_eq!(
+        sockets.deliver(G, PEER.into(), 54, 4000, b"x"),
+        Delivery::Filtered
+    );
     assert_eq!(sockets.queued(), 0);
-    assert_eq!(sockets.deliver(G, PEER, 53, 4000, b"x"), Delivery::Queued);
-    sockets.connect(G, handle, (other, 53)).unwrap();
-    assert_eq!(sockets.deliver(G, PEER, 53, 4000, b"y"), Delivery::Filtered);
+    assert_eq!(
+        sockets.deliver(G, PEER.into(), 53, 4000, b"x"),
+        Delivery::Queued
+    );
+    sockets.connect(G, handle, (other.into(), 53)).unwrap();
+    assert_eq!(
+        sockets.deliver(G, PEER.into(), 53, 4000, b"y"),
+        Delivery::Filtered
+    );
 }
 
 #[test]
@@ -161,9 +189,16 @@ fn send_builds_a_checked_packet_from_the_socket_port() {
     let mut sockets = table(Limits::default());
     let handle = sockets.bind(G, 4000, &mut Failing).unwrap();
     let packet = sockets
-        .send(G, handle, LOCAL, (PEER, 53), b"query", MAX_MTU)
+        .send(
+            G,
+            handle,
+            LOCAL.into(),
+            (PEER.into(), 53),
+            b"query",
+            MAX_MTU,
+        )
         .unwrap();
-    let remote = Ipv4Config::new(PEER, Ipv4Addr::UNSPECIFIED, 0).unwrap();
+    let remote = IpConfig::new(PEER, Ipv4Addr::UNSPECIFIED, 0).unwrap();
     let ip = ipv4::parse(&remote, &packet).unwrap();
     let datagram = udp::parse(ip.source, ip.destination, ip.payload).unwrap();
     assert_eq!((ip.source, ip.destination), (LOCAL, PEER));
@@ -172,13 +207,20 @@ fn send_builds_a_checked_packet_from_the_socket_port() {
         (4000, 53)
     );
     assert_eq!(datagram.payload, b"query");
-    sockets.connect(G, handle, (PEER, 53)).unwrap();
+    sockets.connect(G, handle, (PEER.into(), 53)).unwrap();
     assert_eq!(
-        sockets.send(G, handle, LOCAL, (PEER, 54), b"x", MAX_MTU),
+        sockets.send(G, handle, LOCAL.into(), (PEER.into(), 54), b"x", MAX_MTU),
         Err(SocketError::Remote)
     );
     assert_eq!(
-        sockets.send(G, handle, LOCAL, (PEER, 53), &[0; 1397], MAX_MTU),
+        sockets.send(
+            G,
+            handle,
+            LOCAL.into(),
+            (PEER.into(), 53),
+            &[0; 1397],
+            MAX_MTU
+        ),
         Err(SocketError::Build(ipv4::BuildError::TooLarge))
     );
 }
@@ -223,7 +265,7 @@ fn ingest_validates_both_layers_before_delivery() {
 fn a_different_generation_revokes_everything_irreversibly() {
     let mut sockets = table(Limits::default());
     let handle = sockets.bind(G, 4000, &mut Failing).unwrap();
-    sockets.deliver(G, PEER, 1, 4000, b"x");
+    sockets.deliver(G, PEER.into(), 1, 4000, b"x");
     assert_eq!(sockets.recv(G + 1, handle), Err(SocketError::Revoked));
     assert_eq!((sockets.len(), sockets.queued()), (0, 0));
     assert_eq!(sockets.recv(G, handle), Err(SocketError::Revoked));
@@ -231,7 +273,10 @@ fn a_different_generation_revokes_everything_irreversibly() {
         sockets.bind(G, 4000, &mut Failing),
         Err(SocketError::Revoked)
     );
-    assert_eq!(sockets.deliver(G, PEER, 1, 4000, b"x"), Delivery::Revoked);
+    assert_eq!(
+        sockets.deliver(G, PEER.into(), 1, 4000, b"x"),
+        Delivery::Revoked
+    );
     assert_eq!(
         sockets.ingest(G, &config(), &inbound(1, 4000, b"x")),
         Ingest::Delivered(Delivery::Revoked)
@@ -247,11 +292,11 @@ fn stale_generation_blocks_every_operation() {
         match operation {
             0 => assert_eq!(sockets.close(stale, handle), Err(SocketError::Revoked)),
             1 => assert_eq!(
-                sockets.connect(stale, handle, (PEER, 1)),
+                sockets.connect(stale, handle, (PEER.into(), 1)),
                 Err(SocketError::Revoked)
             ),
             2 => assert_eq!(
-                sockets.deliver(stale, PEER, 1, 4000, b""),
+                sockets.deliver(stale, PEER.into(), 1, 4000, b""),
                 Delivery::Revoked
             ),
             3 => assert_eq!(
@@ -259,7 +304,7 @@ fn stale_generation_blocks_every_operation() {
                 Err(SocketError::Revoked)
             ),
             _ => assert_eq!(
-                sockets.send(stale, handle, LOCAL, (PEER, 1), b"", MAX_MTU),
+                sockets.send(stale, handle, LOCAL.into(), (PEER.into(), 1), b"", MAX_MTU),
                 Err(SocketError::Revoked)
             ),
         }
@@ -271,10 +316,13 @@ fn stale_generation_blocks_every_operation() {
 fn explicit_revocation_drops_queues() {
     let mut sockets = table(Limits::default());
     sockets.bind(G, 4000, &mut Failing).unwrap();
-    sockets.deliver(G, PEER, 1, 4000, b"x");
+    sockets.deliver(G, PEER.into(), 1, 4000, b"x");
     sockets.revoke();
     assert_eq!((sockets.len(), sockets.queued()), (0, 0));
-    assert_eq!(sockets.deliver(G, PEER, 1, 4000, b"x"), Delivery::Revoked);
+    assert_eq!(
+        sockets.deliver(G, PEER.into(), 1, 4000, b"x"),
+        Delivery::Revoked
+    );
 }
 
 #[test]
@@ -284,13 +332,20 @@ fn icmp_udp_matches_only_the_last_connected_transmission_and_caps_mtu() {
     let local = Ipv4Addr::new(10, 64, 0, 2);
     let remote = Ipv4Addr::new(192, 0, 2, 1);
     let router = Ipv4Addr::new(192, 0, 2, 2);
-    let ip = Ipv4Config::new(local, Ipv4Addr::UNSPECIFIED, 0).unwrap();
+    let ip = IpConfig::new(local, Ipv4Addr::UNSPECIFIED, 0).unwrap();
     let mut sockets = UdpSockets::new(Limits::default(), 1);
     let mut entropy = Script::new(&[1]);
     let socket = sockets.bind(1, 10000, &mut entropy).unwrap();
-    sockets.connect(1, socket, (remote, 53)).unwrap();
+    sockets.connect(1, socket, (remote.into(), 53)).unwrap();
     let packet = sockets
-        .send(1, socket, local, (remote, 53), &[7; 1200], MAX_MTU)
+        .send(
+            1,
+            socket,
+            local.into(),
+            (remote.into(), 53),
+            &[7; 1200],
+            MAX_MTU,
+        )
         .unwrap();
     let advice = icmp_unreachable(router, &packet, 4, 800);
     for length in 0..advice.len() {
@@ -313,11 +368,25 @@ fn icmp_udp_matches_only_the_last_connected_transmission_and_caps_mtu() {
     );
     assert_eq!(sockets.ingest_icmp(1, &ip, &advice), IcmpIngest::Dropped);
     assert_eq!(
-        sockets.send(1, socket, local, (remote, 53), &[7; 773], MAX_MTU),
+        sockets.send(
+            1,
+            socket,
+            local.into(),
+            (remote.into(), 53),
+            &[7; 773],
+            MAX_MTU
+        ),
         Err(SocketError::Build(ipv4::BuildError::TooLarge))
     );
     let packet = sockets
-        .send(1, socket, local, (remote, 53), b"query", MAX_MTU)
+        .send(
+            1,
+            socket,
+            local.into(),
+            (remote.into(), 53),
+            b"query",
+            MAX_MTU,
+        )
         .unwrap();
     let error = icmp_unreachable(router, &packet, 3, 0);
     assert_eq!(
@@ -328,7 +397,7 @@ fn icmp_udp_matches_only_the_last_connected_transmission_and_caps_mtu() {
     assert_eq!(sockets.recv(1, socket), Ok(None));
     sockets.close(1, socket).unwrap();
     let socket = sockets.bind(1, 10000, &mut entropy).unwrap();
-    sockets.connect(1, socket, (remote, 53)).unwrap();
+    sockets.connect(1, socket, (remote.into(), 53)).unwrap();
     assert_eq!(sockets.ingest_icmp(1, &ip, &error), IcmpIngest::Dropped);
     assert_eq!(sockets.ingest_icmp(2, &ip, &error), IcmpIngest::Revoked);
     assert!(sockets.is_empty());

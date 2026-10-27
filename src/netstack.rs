@@ -1,4 +1,4 @@
-//! Offline inner IPv4/UDP/TCP codecs, virtual UDP sockets, a bounded DNS stub
+//! Offline inner IPv4/IPv6/UDP/TCP codecs, virtual UDP sockets, a bounded DNS stub
 //! client and virtual TCP flows. Pure and std only: no sockets, threads, clock
 //! reads or tunnel coupling. The caller passes a captured generation and a
 //! monotonic elapsed time, and moves inner IP datagrams in and out. This is
@@ -11,8 +11,12 @@ use std::time::Duration;
 mod dns;
 #[path = "netstack/icmp.rs"]
 mod icmp;
+#[path = "netstack/ip.rs"]
+mod ip;
 #[path = "netstack/ipv4.rs"]
 mod ipv4;
+#[path = "netstack/ipv6.rs"]
+mod ipv6;
 #[path = "netstack/sockets.rs"]
 mod sockets;
 #[path = "netstack/stream.rs"]
@@ -24,12 +28,20 @@ mod udp;
 
 pub use dns::{
     Answer, DnsClient, DnsConfig, DnsError, Failure, Finished, MAX_ADDRESSES, MAX_DNS_MESSAGE,
-    MAX_NAME, MAX_RESOLVERS, Poll, QueryId, Reply, ReplyError, parse_response,
+    MAX_NAME, MAX_RESOLVERS, Poll, QueryId, Record, Reply, ReplyError, parse_response,
+    parse_response_for,
 };
-pub use icmp::{Effect as IcmpEffect, Error as IcmpError, Ingest as IcmpIngest, PROTOCOL_ICMP};
+pub use icmp::{
+    Effect as IcmpEffect, Error as IcmpError, Ingest as IcmpIngest, PROTOCOL_ICMP,
+    echo_reply as icmp_echo_reply,
+};
+pub use ip::IpConfig;
 pub use ipv4::{
-    BuildError, DEFAULT_TTL, HEADER_LEN as IPV4_HEADER_LEN, Ipv4Config, MAX_MTU, MAX_OPTION_BYTES,
-    MIN_MTU, PROTOCOL_TCP, PROTOCOL_UDP, Packet, PacketError, checksum, parse as parse_ipv4,
+    BuildError, DEFAULT_TTL, HEADER_LEN as IPV4_HEADER_LEN, MAX_MTU, MAX_OPTION_BYTES, MIN_MTU,
+    PROTOCOL_TCP, PROTOCOL_UDP, Packet, PacketError, checksum, parse as parse_ipv4,
+};
+pub use ipv6::{
+    HEADER_LEN as IPV6_HEADER_LEN, MIN_MTU as IPV6_MIN_MTU, PROTOCOL_ICMPV6, build as build_ipv6,
 };
 pub use sockets::{
     Delivery, EPHEMERAL_START, Handle, Ingest, Limits, Received, SocketError, UdpSockets,

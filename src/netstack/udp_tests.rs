@@ -1,12 +1,13 @@
 use super::*;
-use crate::netstack::ipv4::{self, Ipv4Config, MAX_MTU, PacketError};
+use crate::netstack::ipv4::{self, IpConfig, MAX_MTU, PacketError};
 use crate::netstack::support::{address, binary, fixtures, number};
+use std::net::Ipv4Addr;
 
 const LOCAL: Ipv4Addr = Ipv4Addr::new(10, 64, 0, 2);
 const REMOTE: Ipv4Addr = Ipv4Addr::new(203, 0, 113, 9);
 
-fn config(local: Ipv4Addr) -> Ipv4Config {
-    Ipv4Config::new(local, Ipv4Addr::UNSPECIFIED, 0).unwrap()
+fn config(local: Ipv4Addr) -> IpConfig {
+    IpConfig::new(local, Ipv4Addr::UNSPECIFIED, 0).unwrap()
 }
 
 /// A bare UDP segment from the builder, with the IPv4 header removed.

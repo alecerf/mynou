@@ -40,8 +40,9 @@ Network implementation and does not certify a custom network as protected.
 
 Plex, catalog, indexer searches, the IRC session itself and management traffic
 keep their existing ordinary-network behavior. The native tunnel uses only its
-literal IPv4 outer endpoint on the host; tunnel policy carries private IPv4
-inside, refuses unusable IPv4 and IPv6, ignores proxies and never falls back.
+literal IPv4 outer endpoint on the host; tunnel policy carries private
+addresses inside, carries IPv6 only when the profile routes it, refuses
+unusable addresses, ignores proxies and never falls back.
 See [the tunnel adapter](tunnel-network.md) for supported destinations and limits.
 
 ## Publication and revocation

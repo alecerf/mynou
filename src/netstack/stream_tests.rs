@@ -1,7 +1,9 @@
 use super::*;
 use crate::Result;
+use crate::netstack::ipv4;
 use crate::netstack::ipv4::{MAX_MTU, parse_protocol};
 use crate::netstack::support::Failing;
+use std::net::Ipv4Addr;
 
 const G: u64 = 9;
 const CLIENT: Ipv4Addr = Ipv4Addr::new(10, 64, 0, 2);
@@ -41,8 +43,8 @@ impl Entropy for Draws {
     }
 }
 
-fn ip(local: Ipv4Addr) -> Ipv4Config {
-    Ipv4Config::new(local, Ipv4Addr::UNSPECIFIED, 0).unwrap()
+fn ip(local: Ipv4Addr) -> IpConfig {
+    IpConfig::new(local, Ipv4Addr::UNSPECIFIED, 0).unwrap()
 }
 
 fn config(local: Ipv4Addr) -> TcpConfig {
@@ -284,7 +286,7 @@ fn configuration_is_validated() {
 
 #[test]
 fn connect_validates_the_endpoint_before_drawing_randomness() {
-    let ip = Ipv4Config::new(CLIENT, Ipv4Addr::new(203, 0, 113, 0), 24).unwrap();
+    let ip = IpConfig::new(CLIENT, Ipv4Addr::new(203, 0, 113, 0), 24).unwrap();
     let mut client = stack(TcpConfig::new(ip, MAX_MTU), &[0, 1]);
     for (address, port) in [
         (SERVER, 0),
@@ -336,9 +338,9 @@ fn handshake_and_data_both_ways() {
     let (mut pair, client, server, _) = established();
     assert_eq!(pair.a.state(G, client), Ok(State::Established));
     assert_eq!(pair.b.state(G, server), Ok(State::Established));
-    assert_eq!(client.remote(), (SERVER, PORT));
+    assert_eq!(client.remote(), (SERVER.into(), PORT));
     assert_eq!(client.local_port(), CLIENT_PORT);
-    assert_eq!(server.remote(), (CLIENT, CLIENT_PORT));
+    assert_eq!(server.remote(), (CLIENT.into(), CLIENT_PORT));
     assert_eq!(server.local_port(), PORT);
     let mut buffer = [0u8; 8];
     assert_eq!(pair.a.recv(G, client, &mut buffer), Ok(Read::WouldBlock));
@@ -817,7 +819,7 @@ fn the_backlog_bounds_half_open_and_unaccepted_flows() {
     assert_eq!(pair.b.dropped(), 1);
     // Accepting frees a slot, and the retransmitted SYN gets in.
     let accepted = pair.b.accept(G, listener).unwrap().unwrap();
-    assert_eq!(accepted.remote(), (CLIENT, EPHEMERAL_START));
+    assert_eq!(accepted.remote(), (CLIENT.into(), EPHEMERAL_START));
     pair.now = Duration::from_secs(1);
     pair.pump();
     assert_eq!(pair.a.state(G, third), Ok(State::Established));

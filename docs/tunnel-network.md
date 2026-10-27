@@ -24,21 +24,24 @@ let socket = network.datagram(false)?;
 
 | `Network` call | Through the tunnel |
 | --- | --- |
-| `connect` | Virtual TCP to a usable IPv4 address, bounded by the timeout. |
-| `resolve` | `host:port` through the tunnel DNS client only; a literal IPv4 needs no lookup. At most 16 answers; expired deadlines fail for literals too. |
-| `datagram` | A virtual UDP socket on a random ephemeral port. IPv6 is refused. |
+| `connect` | Virtual TCP to a usable IPv4 address, or IPv6 address when the tunnel carries IPv6, bounded by the timeout. |
+| `resolve` | `host:port` through the tunnel DNS client only, IPv4 addresses first then IPv6 ones; a literal address (IPv6 in brackets) needs no lookup. At most 16 answers; expired deadlines fail for literals too. |
+| `datagram` | A virtual UDP socket on a random ephemeral port, for both families. Asking for IPv6 fails when the tunnel carries IPv4 only. |
 | `http` | The shared HTTP client over the generation-bound [tunnel connector](tunnel-http.md). |
 | `listen` | A virtual TCP listener. Port 0 picks a random free port from 49152 upwards (at most 32 tries). `accept` does not block: `WouldBlock` when no peer is waiting. |
 
 Destinations follow the [tunnel HTTP policy](tunnel-http.md#destination-and-http-policy):
-IPv6 literals and answers, zero ports, and unspecified, loopback, link-local,
-multicast, reserved and broadcast IPv4 are refused, both for connections and
-for datagram targets. Private IPv4 is reached inside the tunnel only.
+zero ports, unusable IPv4 and IPv6 addresses, and every IPv6 address while the
+tunnel carries IPv4 only, are refused, both for connections and for datagram
+targets. Private addresses are reached inside the tunnel only. The tunnel
+carries IPv6 when the [profile](wireguard-profiles.md) has an IPv6 address and
+the `::/0` route.
 
-`listen` accepts `0.0.0.0` and `127.0.0.1`. Both name the virtual tunnel
-interface: the listener is reachable only through the tunnel, and nothing is
-bound on the Mac. The metadata inspection port reservation, which uses
-`127.0.0.1`, therefore reserves a virtual port. Other addresses and IPv6 are
+`listen` accepts `0.0.0.0` and `127.0.0.1`, and `::` and `::1` when the tunnel
+carries IPv6. They all name the virtual tunnel interface: the listener accepts
+both families the tunnel carries, is reachable only through the tunnel, and
+nothing is bound on the Mac. The metadata inspection port reservation, which
+uses `127.0.0.1`, therefore reserves a virtual port. Other addresses are
 refused.
 
 Datagrams behave like an OS socket: a long datagram is truncated to the
@@ -47,7 +50,8 @@ read timeout (20 seconds when none is set). A send can fail when the tunnel's
 outbound queue is full; it is not retried. Before copying a send payload or
 queueing a command, the adapter rejects payloads larger than the stack's maximum
 unfragmented IPv4 UDP payload (maximum MTU minus IPv4 and UDP headers). The
-native socket also applies the configured MTU and any smaller path MTU.
+native socket also applies the configured MTU, any smaller path MTU and the
+20 bytes the IPv6 header adds.
 
 Resolution requires an ASCII decimal nonzero port; signs and whitespace are
 rejected before DNS. The supplied deadline is checked before resolution and
@@ -78,8 +82,11 @@ truncation and a bounded empty read, tracker HTTP with a redirect, refused
 destinations, names and listener addresses, generation replacement and
 cancellation of every handle type, and reclamation of dropped sockets and
 listeners. The relay sees only WireGuard messages: peer and tracker payloads
-and names are absent from it. This is a synthetic loopback fixture, not
-production isolation evidence.
+and names are absent from it. A dual-stack pair resolves a name to its IPv4
+then IPv6 address and exchanges TCP with an IPv6 virtual listener; an IPv4-only
+pair sends no AAAA query and refuses IPv6. Both run under the
+[host I/O observer](host-io-observer.md#ipv6-in-the-tunnel-372). This is a
+synthetic loopback fixture, not production isolation evidence.
 
 The [torrent acceptance record](torrent-transport.md#acceptance-evidence) covers
 engine construction, generation publication fences, actual BitTorrent metadata

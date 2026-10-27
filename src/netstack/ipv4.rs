@@ -1,8 +1,9 @@
 //! Strict inner IPv4 header codec for the offline userspace stack. Only plain UDP
 //! datagrams or TCP segments (the caller names which) for the configured inner
-//! address are accepted; IPv6, fragments, unknown options and everything else are
-//! rejected explicitly.
+//! address are accepted; fragments, unknown options and everything else are
+//! rejected explicitly. IPv6 has its own codec beside this one.
 
+pub(super) use super::ip::IpConfig;
 use std::net::Ipv4Addr;
 
 pub const HEADER_LEN: usize = 20;
@@ -20,39 +21,6 @@ const DONT_FRAGMENT: u16 = 0x4000;
 // Reserved flag, more-fragments and offset: only DF may be set.
 const FRAGMENT_BITS: u16 = 0xbfff;
 
-/// The inner address this stack owns and the sources it accepts, which is the
-/// peer's `AllowedIPs` network (`0.0.0.0/0` for the default route).
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub struct Ipv4Config {
-    local: Ipv4Addr,
-    allowed: Ipv4Addr,
-    prefix: u8,
-}
-
-impl Ipv4Config {
-    pub fn new(local: Ipv4Addr, allowed: Ipv4Addr, prefix: u8) -> Result<Self, PacketError> {
-        if prefix > 32 || unroutable(local) {
-            return Err(PacketError::Config);
-        }
-        Ok(Self {
-            local,
-            allowed,
-            prefix,
-        })
-    }
-
-    pub fn local(&self) -> Ipv4Addr {
-        self.local
-    }
-
-    pub(super) fn allows(&self, source: Ipv4Addr) -> bool {
-        let mask = u32::MAX
-            .checked_shl(32 - u32::from(self.prefix))
-            .unwrap_or(0);
-        u32::from(source) & mask == u32::from(self.allowed) & mask
-    }
-}
-
 /// Addresses that are never a valid inner unicast peer: this host network,
 /// loopback, multicast, broadcast and the reserved class E.
 pub(super) fn unroutable(address: Ipv4Addr) -> bool {
@@ -66,7 +34,7 @@ pub(super) fn unroutable(address: Ipv4Addr) -> bool {
 pub enum PacketError {
     Config,
     Truncated,
-    /// An IPv6 packet: not supported.
+    /// An IPv6 packet while the stack has no IPv6 address.
     Ipv6,
     Version,
     HeaderLength,
@@ -75,8 +43,11 @@ pub enum PacketError {
     TotalLength,
     Checksum,
     Ttl,
-    /// More-fragments set or a nonzero offset; there is no reassembly.
+    /// More-fragments set or a nonzero offset, or an IPv6 fragment header;
+    /// there is no reassembly.
     Fragment,
+    /// An IPv6 extension header other than a fragment header.
+    Extension,
     Protocol(u8),
     Source,
     Destination,
@@ -124,13 +95,13 @@ pub fn checksum(bytes: &[u8]) -> u16 {
     !fold(sum(bytes, 0))
 }
 
-pub fn parse<'a>(config: &Ipv4Config, bytes: &'a [u8]) -> Result<Packet<'a>, PacketError> {
+pub fn parse<'a>(config: &IpConfig, bytes: &'a [u8]) -> Result<Packet<'a>, PacketError> {
     parse_protocol(config, bytes, PROTOCOL_UDP)
 }
 
 /// [`parse`] for one transport protocol; any other protocol number is rejected.
 pub(super) fn parse_protocol<'a>(
-    config: &Ipv4Config,
+    config: &IpConfig,
     bytes: &'a [u8],
     expected: u8,
 ) -> Result<Packet<'a>, PacketError> {
@@ -175,10 +146,10 @@ pub(super) fn parse_protocol<'a>(
     }
     let source = Ipv4Addr::new(bytes[12], bytes[13], bytes[14], bytes[15]);
     let destination = Ipv4Addr::new(bytes[16], bytes[17], bytes[18], bytes[19]);
-    if destination != config.local {
+    if destination != config.local() {
         return Err(PacketError::Destination);
     }
-    if unroutable(source) || source == config.local || !config.allows(source) {
+    if unroutable(source) || source == config.local() || !config.allows(source) {
         return Err(PacketError::Source);
     }
     Ok(Packet {

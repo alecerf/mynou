@@ -1,10 +1,10 @@
-//! Inner UDP codec over the strict IPv4 layer: exact length, pseudo-header
-//! checksum with the RFC 768 zero rule, and builders bounded by a caller MTU.
+//! Inner UDP codec over the strict IPv4 and IPv6 layers: exact length,
+//! pseudo-header checksum with the RFC 768 zero rule over IPv4 only, and
+//! builders bounded by a caller MTU.
 
-use super::ipv4::{
-    self, BuildError, HEADER_LEN as IPV4_HEADER_LEN, PROTOCOL_UDP, check_mtu, fold, sum,
-};
-use std::net::Ipv4Addr;
+use super::ip::{self, pseudo_sum};
+use super::ipv4::{BuildError, HEADER_LEN as IPV4_HEADER_LEN, PROTOCOL_UDP, check_mtu, fold, sum};
+use std::net::IpAddr;
 
 pub const HEADER_LEN: usize = 8;
 
@@ -26,22 +26,20 @@ pub struct Datagram<'a> {
 }
 
 /// Pseudo-header and segment sum; the segment is last so its odd tail is padded.
-fn segment_sum(source: Ipv4Addr, destination: Ipv4Addr, segment: &[u8]) -> u16 {
-    let mut pseudo = [0u8; 12];
-    pseudo[..4].copy_from_slice(&source.octets());
-    pseudo[4..8].copy_from_slice(&destination.octets());
-    pseudo[9] = PROTOCOL_UDP;
-    pseudo[10..].copy_from_slice(&(segment.len() as u16).to_be_bytes());
-    fold(sum(segment, sum(&pseudo, 0)))
+fn segment_sum(source: IpAddr, destination: IpAddr, segment: &[u8]) -> u16 {
+    let pseudo = pseudo_sum(source, destination, PROTOCOL_UDP, segment.len());
+    fold(sum(segment, pseudo))
 }
 
-/// Parses an IP payload that already passed [`ipv4::parse`]. A zero checksum
-/// field means the sender computed none, which RFC 768 allows over IPv4.
+/// Parses an IP payload that already passed IP validation. A zero checksum
+/// field means the sender computed none, which RFC 768 allows over IPv4 and
+/// RFC 8200 forbids over IPv6.
 pub fn parse(
-    source: Ipv4Addr,
-    destination: Ipv4Addr,
+    source: impl Into<IpAddr>,
+    destination: impl Into<IpAddr>,
     bytes: &[u8],
 ) -> Result<Datagram<'_>, DatagramError> {
+    let (source, destination) = (source.into(), destination.into());
     if bytes.len() < HEADER_LEN {
         return Err(DatagramError::Truncated);
     }
@@ -53,7 +51,8 @@ pub fn parse(
     if source_port == 0 || destination_port == 0 {
         return Err(DatagramError::Port);
     }
-    if bytes[6..8] != [0, 0] && segment_sum(source, destination, bytes) != 0xffff {
+    let unchecked = bytes[6..8] == [0, 0] && source.is_ipv4();
+    if !unchecked && segment_sum(source, destination, bytes) != 0xffff {
         return Err(DatagramError::Checksum);
     }
     Ok(Datagram {
@@ -63,22 +62,24 @@ pub fn parse(
     })
 }
 
-/// The largest UDP payload an `mtu` carries.
+/// The largest UDP payload an `mtu` carries over IPv4; IPv6 carries 20 less.
 pub fn max_payload(mtu: usize) -> Result<usize, BuildError> {
     check_mtu(mtu)?;
     Ok(mtu - IPV4_HEADER_LEN - HEADER_LEN)
 }
 
-/// Builds a complete inner IPv4/UDP packet of at most `mtu` bytes.
+/// Builds a complete inner IPv4/UDP or IPv6/UDP packet of at most `mtu` bytes.
 pub fn build(
-    source: Ipv4Addr,
-    destination: Ipv4Addr,
+    source: impl Into<IpAddr>,
+    destination: impl Into<IpAddr>,
     source_port: u16,
     destination_port: u16,
     payload: &[u8],
     mtu: usize,
 ) -> Result<Vec<u8>, BuildError> {
-    if payload.len() > max_payload(mtu)? {
+    let (source, destination) = (source.into(), destination.into());
+    check_mtu(mtu)?;
+    if ip::header_len(destination) + HEADER_LEN + payload.len() > mtu {
         return Err(BuildError::TooLarge);
     }
     if source_port == 0 || destination_port == 0 {
@@ -96,7 +97,7 @@ pub fn build(
         value => value,
     };
     segment[6..8].copy_from_slice(&value.to_be_bytes());
-    ipv4::build(source, destination, PROTOCOL_UDP, &segment, mtu)
+    ip::build(source, destination, PROTOCOL_UDP, &segment, mtu)
 }
 
 #[cfg(test)]

@@ -1,5 +1,5 @@
 //! Offline virtual TCP: a bounded flow table with client connect and listeners
-//! over the strict inner IPv4/TCP codecs. Every call carries the caller's captured
+//! over the strict inner IPv4, IPv6 and TCP codecs. Every call carries the caller's captured
 //! generation (and, when time matters, a monotonic elapsed time); a different
 //! generation or a clock that moves backwards irreversibly revokes the stack and
 //! drops every flow, listener and buffered byte. There is no I/O, thread or clock
@@ -7,7 +7,8 @@
 //! out with [`TcpStack::poll`].
 
 use super::icmp::{self, Effect as IcmpEffect, Ingest as IcmpIngest};
-use super::ipv4::{self, BuildError, Ipv4Config, PROTOCOL_TCP, PacketError, check_mtu, unroutable};
+use super::ip::{self, IpConfig};
+use super::ipv4::{BuildError, PROTOCOL_TCP, PacketError, check_mtu};
 use super::tcp::{
     self, ACK, DEFAULT_PEER_MSS, FIN, Header, MAX_WINDOW_SCALE, PSH, RST, SACK_BLOCKS, SYN,
     Segment, SegmentError,
@@ -15,7 +16,7 @@ use super::tcp::{
 use super::{EPHEMERAL_START, Fence};
 use crate::wireguard::Entropy;
 use std::collections::{BTreeMap, VecDeque};
-use std::net::Ipv4Addr;
+use std::net::IpAddr;
 use std::time::Duration;
 
 const EPHEMERAL_COUNT: u16 = 16384;
@@ -24,14 +25,17 @@ const PORT_ATTEMPTS: usize = 32;
 const MAX_WINDOW: usize = 65535;
 /// The largest receive buffer: a scaled window stays under half the sequence space.
 const MAX_RECEIVE_BUFFER: usize = 1 << 24;
-/// IPv4 and TCP headers without options.
-const HEADERS: usize = 40;
+/// The IP and TCP headers without options in front of a segment to `remote`.
+fn headers(remote: IpAddr) -> usize {
+    ip::header_len(remote) + tcp::HEADER_LEN
+}
 
 /// Explicit bounds. Every queue, table and timer here is limited by one of them.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct TcpConfig {
-    pub ip: Ipv4Config,
-    /// The inner datagram budget; the MSS is `mtu - 40`.
+    pub ip: IpConfig,
+    /// The inner datagram budget; the MSS is `mtu - 40` over IPv4 and
+    /// `mtu - 60` over IPv6.
     pub mtu: usize,
     pub flows: usize,
     pub listeners: usize,
@@ -70,7 +74,7 @@ pub struct TcpConfig {
 }
 
 impl TcpConfig {
-    pub fn new(ip: Ipv4Config, mtu: usize) -> Self {
+    pub fn new(ip: IpConfig, mtu: usize) -> Self {
         Self {
             ip,
             mtu,
@@ -95,8 +99,8 @@ impl TcpConfig {
         }
     }
 
-    fn mss(&self) -> usize {
-        self.mtu - HEADERS
+    fn mss(&self, remote: IpAddr) -> usize {
+        self.mtu - headers(remote)
     }
 
     /// The smallest shift whose scaled window covers the receive buffer.
@@ -111,7 +115,13 @@ impl TcpConfig {
     fn validate(&self) -> Result<(), TcpError> {
         let hour = Duration::from_secs(3600);
         let timer = |value: Duration| !value.is_zero() && value <= hour;
+        // An IPv6 path carries at least 1280 bytes.
+        let ipv6 = self
+            .ip
+            .local_ipv6()
+            .is_none_or(|local| self.mtu >= ip::min_mtu(IpAddr::V6(local)));
         let valid = check_mtu(self.mtu).is_ok()
+            && ipv6
             && (1..=1024).contains(&self.flows)
             && (1..=64).contains(&self.listeners)
             && (1..=1024).contains(&self.backlog)
@@ -201,7 +211,7 @@ impl FlowHandle {
         self.key.0
     }
 
-    pub fn remote(&self) -> (Ipv4Addr, u16) {
+    pub fn remote(&self) -> (IpAddr, u16) {
         (self.key.1, self.key.2)
     }
 }
@@ -266,7 +276,7 @@ pub struct Poll {
 }
 
 /// (local port, remote address, remote port)
-type Key = (u16, Ipv4Addr, u16);
+type Key = (u16, IpAddr, u16);
 
 struct Listener {
     serial: u64,
@@ -509,7 +519,7 @@ impl<E: Entropy> TcpStack<E> {
         Ok(u32::from_be_bytes(bytes))
     }
 
-    fn ephemeral(&mut self, remote: (Ipv4Addr, u16)) -> Result<u16, TcpError> {
+    fn ephemeral(&mut self, remote: (IpAddr, u16)) -> Result<u16, TcpError> {
         for _ in 0..PORT_ATTEMPTS {
             let raw = self.entropy.bytes::<2>().map_err(TcpError::Entropy)?;
             let port = EPHEMERAL_START + u16::from_be_bytes(raw) % EPHEMERAL_COUNT;
@@ -537,8 +547,15 @@ impl<E: Entropy> TcpStack<E> {
         }
     }
 
-    fn new_flow(&mut self, state: State, iss: u32, peer_mss: Option<u16>, window: u16) -> Flow {
-        let mss = usize::from(peer_mss.unwrap_or(DEFAULT_PEER_MSS)).min(self.config.mss());
+    fn new_flow(
+        &mut self,
+        remote: IpAddr,
+        state: State,
+        iss: u32,
+        peer_mss: Option<u16>,
+        window: u16,
+    ) -> Flow {
+        let mss = usize::from(peer_mss.unwrap_or(DEFAULT_PEER_MSS)).min(self.config.mss(remote));
         let serial = self.next_serial();
         Flow {
             serial,
@@ -665,12 +682,12 @@ impl<E: Entropy> TcpStack<E> {
         &mut self,
         generation: u64,
         now: Duration,
-        remote: Ipv4Addr,
+        remote: impl Into<IpAddr>,
         remote_port: u16,
     ) -> Result<FlowHandle, TcpError> {
+        let remote = remote.into();
         self.admit(generation, now)?;
-        let ip = self.config.ip;
-        if remote_port == 0 || unroutable(remote) || remote == ip.local() || !ip.allows(remote) {
+        if remote_port == 0 || !self.config.ip.peer(remote) {
             return Err(TcpError::Endpoint);
         }
         if self.flows.len() >= self.config.flows {
@@ -678,7 +695,7 @@ impl<E: Entropy> TcpStack<E> {
         }
         let port = self.ephemeral((remote, remote_port))?;
         let iss = self.draw()?;
-        let flow = self.new_flow(State::SynSent, iss, None, 0);
+        let flow = self.new_flow(remote, State::SynSent, iss, None, 0);
         let handle = FlowHandle {
             key: (port, remote, remote_port),
             serial: flow.serial,
@@ -841,13 +858,8 @@ impl<E: Entropy> TcpStack<E> {
     }
 
     fn packet(&self, key: Key, header: Header, payload: &[u8]) -> Result<Vec<u8>, BuildError> {
-        tcp::build(
-            self.config.ip.local(),
-            key.1,
-            &header,
-            payload,
-            self.config.mtu,
-        )
+        let local = self.config.ip.source(key.1).ok_or(BuildError::Source)?;
+        tcp::build(local, key.1, &header, payload, self.config.mtu)
     }
 
     /// Queues a payload-free control segment, or counts it when the outbox is full.
@@ -935,11 +947,11 @@ impl<E: Entropy> TcpStack<E> {
             // 576-byte floor, so handshakes are never resegmented; rewinding
             // one would leave its sequence space outstanding with no timer.
             let handshake = matches!(flow.state, State::SynSent | State::SynReceived);
-            let plausible = !handshake && advice.total <= HEADERS + flow.mss;
+            let plausible = !handshake && advice.total <= headers(advice.remote) + flow.mss;
             match advice.reduction(flow.path_mtu).filter(|_| plausible) {
                 Some(mtu) => {
                     flow.path_mtu = mtu;
-                    flow.mss = flow.mss.min(mtu - HEADERS);
+                    flow.mss = flow.mss.min(mtu - headers(advice.remote));
                     // Re-segment queued bytes at the new MSS, preserving stream
                     // offsets, congestion/window bounds and retransmission caps.
                     self.collapse(&mut flow);
@@ -958,12 +970,12 @@ impl<E: Entropy> TcpStack<E> {
         outcome
     }
 
-    /// Parses one inbound inner IPv4 packet and applies its TCP segment.
+    /// Parses one inbound inner IPv4 or IPv6 packet and applies its TCP segment.
     pub fn ingest(&mut self, generation: u64, now: Duration, bytes: &[u8]) -> Ingest {
         if self.admit(generation, now).is_err() {
             return Ingest::Revoked;
         }
-        let packet = match ipv4::parse_protocol(&self.config.ip, bytes, PROTOCOL_TCP) {
+        let packet = match ip::parse_protocol(&self.config.ip, bytes, PROTOCOL_TCP) {
             Ok(packet) => packet,
             Err(error) => {
                 self.rejected = self.rejected.saturating_add(1);
@@ -1021,7 +1033,7 @@ impl<E: Entropy> TcpStack<E> {
         let Ok(iss) = self.draw() else {
             return Ingest::Dropped(Discard::Entropy);
         };
-        let mut flow = self.new_flow(State::SynReceived, iss, segment.mss, segment.window);
+        let mut flow = self.new_flow(key.1, State::SynReceived, iss, segment.mss, segment.window);
         flow.listener = Some(key.0);
         flow.accepted = false;
         flow.irs = segment.sequence;
@@ -1182,7 +1194,7 @@ impl<E: Entropy> TcpStack<E> {
             flow.rcv_scale = self.config.window_shift();
         }
         flow.sack = segment.sack_permitted;
-        flow.mss = usize::from(segment.mss.unwrap_or(DEFAULT_PEER_MSS)).min(self.config.mss());
+        flow.mss = usize::from(segment.mss.unwrap_or(DEFAULT_PEER_MSS)).min(self.config.mss(key.1));
         flow.cwnd = (4 * flow.mss).min(self.config.send_buffer);
         flow.state = State::Established;
         flow.syn_pending = false;
@@ -1635,7 +1647,7 @@ impl<E: Entropy> TcpStack<E> {
             flags: if synchronized { SYN | ACK } else { SYN },
             // The window of a SYN is never scaled.
             window: self.window(flow).min(MAX_WINDOW as u32) as u16,
-            mss: Some((flow.path_mtu - HEADERS) as u16),
+            mss: Some((flow.path_mtu - headers(key.1)) as u16),
             // A SYN-ACK only answers a SYN that offered scaling.
             window_scale: (!synchronized || flow.scaling).then(|| self.config.window_shift()),
             sack_permitted: !synchronized || flow.sack,

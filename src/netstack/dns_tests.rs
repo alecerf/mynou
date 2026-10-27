@@ -4,6 +4,7 @@ use crate::netstack::support::{Failing, Script, binary, fixtures, icmp_unreachab
 use crate::netstack::{
     Delivery, EPHEMERAL_START, IcmpEffect, IcmpIngest, Ingest, Limits, MAX_MTU, build_udp,
 };
+use std::net::{IpAddr, Ipv4Addr};
 use std::sync::OnceLock;
 
 const G: u64 = 3;
@@ -34,12 +35,13 @@ fn vector(case: &str) -> Vec<u8> {
     binary(row, "message")
 }
 
-fn ip() -> Ipv4Config {
-    Ipv4Config::new(LOCAL, Ipv4Addr::UNSPECIFIED, 0).unwrap()
+fn ip() -> IpConfig {
+    IpConfig::new(LOCAL, Ipv4Addr::UNSPECIFIED, 0).unwrap()
 }
 
 fn config(resolvers: &[Ipv4Addr]) -> DnsConfig {
-    DnsConfig::new(ip(), resolvers.to_vec(), MAX_MTU)
+    let resolvers = resolvers.iter().copied().map(IpAddr::V4).collect();
+    DnsConfig::new(ip(), resolvers, MAX_MTU)
 }
 
 struct Rig {
@@ -112,7 +114,7 @@ fn filtered() -> Ingest {
 
 fn answer(addresses: &[Ipv4Addr], ttl: Duration) -> Result<Answer, Failure> {
     Ok(Answer {
-        addresses: addresses.to_vec(),
+        addresses: addresses.iter().copied().map(IpAddr::V4).collect(),
         ttl,
     })
 }
@@ -184,7 +186,7 @@ fn independent_reply_vectors() {
         match text(row, "expect") {
             "answers" => {
                 let addresses = row.get("addresses").unwrap().as_array().unwrap();
-                let addresses: Vec<Ipv4Addr> = addresses
+                let addresses: Vec<IpAddr> = addresses
                     .iter()
                     .map(|item| item.as_str().unwrap().parse().unwrap())
                     .collect();
@@ -286,7 +288,7 @@ fn cname_chains_are_followed_but_bounded() {
     assert_eq!(
         parse(&reply(3, &chain)),
         Ok(Reply::Addresses {
-            addresses: vec![Ipv4Addr::new(198, 51, 100, 1)],
+            addresses: vec![Ipv4Addr::new(198, 51, 100, 1).into()],
             ttl: 20
         })
     );
@@ -684,7 +686,7 @@ fn cancel_frees_the_socket_and_is_idempotent() {
 
 #[test]
 fn configuration_is_validated() {
-    let too_many = vec![
+    let too_many = [
         R1,
         R2,
         Ipv4Addr::new(10, 2, 0, 3),
@@ -695,10 +697,10 @@ fn configuration_is_validated() {
         match edit {
             0 => {}
             1 => config.resolvers.clear(),
-            2 => config.resolvers = vec![R1; 2],
-            3 => config.resolvers = too_many.clone(),
-            4 => config.resolvers = vec![Ipv4Addr::UNSPECIFIED],
-            5 => config.resolvers = vec![Ipv4Addr::LOCALHOST],
+            2 => config.resolvers = vec![R1.into(); 2],
+            3 => config.resolvers = too_many.iter().copied().map(IpAddr::V4).collect(),
+            4 => config.resolvers = vec![Ipv4Addr::UNSPECIFIED.into()],
+            5 => config.resolvers = vec![Ipv4Addr::LOCALHOST.into()],
             6 => config.mtu = 100,
             7 => config.mtu = MAX_MTU + 1,
             8 => config.attempts = 0,
@@ -743,7 +745,7 @@ fn fallback() -> (Rig, TcpStack<Script>, FlowHandle, QueryId) {
     let poll = rig.poll(Duration::ZERO);
     assert!(poll.finished.is_empty());
     assert_eq!(rig.client.pending(), 1);
-    let server_ip = Ipv4Config::new(R1, Ipv4Addr::UNSPECIFIED, 0).unwrap();
+    let server_ip = IpConfig::new(R1, Ipv4Addr::UNSPECIFIED, 0).unwrap();
     let mut server = TcpStack::new(
         crate::netstack::TcpConfig::new(server_ip, MAX_MTU),
         Script::new(&[456]),
@@ -894,7 +896,7 @@ fn truncated_rig(config: DnsConfig) -> (Rig, QueryId) {
 fn a_resolver_refusing_tcp_reports_refused_not_aborted() {
     // No listener: the resolver answers the SYN with an RST.
     let (mut rig, id) = truncated_rig(config(&[R1]));
-    let server_ip = Ipv4Config::new(R1, Ipv4Addr::UNSPECIFIED, 0).unwrap();
+    let server_ip = IpConfig::new(R1, Ipv4Addr::UNSPECIFIED, 0).unwrap();
     let mut server = TcpStack::new(
         crate::netstack::TcpConfig::new(server_ip, MAX_MTU),
         Script::new(&[456]),

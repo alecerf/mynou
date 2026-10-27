@@ -6,7 +6,7 @@
 //! docs/wireguard-interop.md for the scenarios, the evidence and the limits.
 
 use mynou::crypto::{blake2s, keyed_blake2s, x25519_public_key};
-use mynou::netstack::Ipv4Config;
+use mynou::netstack::IpConfig;
 use mynou::tunnel::{Clock, Endpoint, Stats, Tunnel, TunnelConfig, TunnelState};
 use mynou::wireguard::{Entropy, OsEntropy};
 use std::cell::Cell;
@@ -453,7 +453,7 @@ impl Side<'_> {
 
     fn start(&self, clock: Offset) -> Result<Mynou, String> {
         let ip =
-            Ipv4Config::new(MYNOU_INNER, PEER_INNER, 32).map_err(|error| format!("{error:?}"))?;
+            IpConfig::new(MYNOU_INNER, PEER_INNER, 32).map_err(|error| format!("{error:?}"))?;
         let mut config = TunnelConfig::new(
             self.keys.secret,
             self.peer_public,
@@ -557,7 +557,11 @@ fn exchange(tunnel: &mut Mynou, peer_first: bool) -> Result<String, String> {
     let to_mynou = format!("to-mynou {}", nonce());
     let send_to_peer = |tunnel: &mut Mynou| -> Result<Duration, String> {
         tunnel
-            .udp_send_to(virtual_socket, (PEER_INNER, port), to_peer.as_bytes())
+            .udp_send_to(
+                virtual_socket,
+                (PEER_INNER.into(), port),
+                to_peer.as_bytes(),
+            )
             .map_err(|error| format!("udp_send_to: {error:?}"))?;
         let mut buffer = [0u8; 256];
         pump_until(
@@ -696,7 +700,7 @@ fn psk_mismatch_mynou_initiator(harness: &mut Harness) -> Outcome {
     // Queued without a session; it must never come out of the tunnel.
     let _ = tunnel.udp_send_to(
         virtual_socket,
-        (PEER_INNER, inner_port(&inner)?),
+        (PEER_INNER.into(), inner_port(&inner)?),
         b"must-not-arrive",
     );
     refused(&mut tunnel, REFUSAL_WINDOW)?;

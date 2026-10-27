@@ -4418,16 +4418,20 @@ fn serve_peer(
                     && !meta.private
                     && let Some(ext) = pex_id
                 {
-                    let mut compact = Vec::new();
-                    for peer in known_peers.iter().filter(|p| p.is_ipv4()).take(100) {
-                        if let std::net::IpAddr::V4(ip) = peer.ip() {
-                            compact.extend_from_slice(&ip.octets());
-                            compact.extend_from_slice(&peer.port().to_be_bytes());
-                        }
+                    let (mut compact, mut compact6) = (Vec::new(), Vec::new());
+                    for peer in known_peers.iter().take(100) {
+                        let (list, ip) = match peer.ip() {
+                            std::net::IpAddr::V4(ip) => (&mut compact, ip.octets().to_vec()),
+                            std::net::IpAddr::V6(ip) => (&mut compact6, ip.octets().to_vec()),
+                        };
+                        list.extend_from_slice(&ip);
+                        list.extend_from_slice(&peer.port().to_be_bytes());
                     }
                     let value = discovery::value_dict(&[
                         (b"added", Value::Bytes(compact.clone())),
                         (b"added.f", Value::Bytes(vec![0; compact.len() / 6])),
+                        (b"added6", Value::Bytes(compact6.clone())),
+                        (b"added6.f", Value::Bytes(vec![0; compact6.len() / 18])),
                     ]);
                     let mut pex = vec![ext];
                     pex.extend(crate::bencode::encode(&value));

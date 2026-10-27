@@ -77,13 +77,19 @@ A profile can therefore be imported before any torrent leaves, now that it is
 imported through the running service
 ([details](/docs/wireguard-operator.md#state-and-recovery)).
 
-## Changed: WireGuard profiles with IPv6 are accepted
+## Added: IPv6 through the WireGuard VPN
 
 A provider profile may add an IPv6 address, IPv6 resolvers and `::/0` to its
-IPv4 settings. They are kept in the stored profile, but the tunnel still
-carries IPv4 only: those entries are not used, and no IPv6 traffic falls back
-to the host network
-([details](/docs/wireguard-profiles.md)).
+IPv4 settings. With all three and an MTU of at least 1280, the VPN now carries
+IPv6 too: torrents reach IPv6 peers from trackers, the DHT and PEX, trackers and
+names that only have IPv6 addresses work, and names are looked up for IPv4 and
+IPv6 addresses through the tunnel, IPv4 first. The DHT searches the IPv6 DHT
+beside the IPv4 one, with or without the VPN, and peers are shared with
+`added6` in PEX. **Settings → VPN** says whether IPv6 is on, as does `ipv6` in
+`GET /api/vpn`. Profiles without IPv6 work as before, and no IPv6 traffic ever
+leaves through your own connection while the VPN is required. The VPN server
+itself is still reached over IPv4, and port forwarding stays IPv4 only
+([details](/docs/tunnel-http.md#destination-and-http-policy), #372).
 
 ## Changed: Faster downloads through the VPN
 

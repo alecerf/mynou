@@ -263,7 +263,7 @@ function paintVpn() {
   badge.dataset.tone = tone;
   const age = Number(vpn?.handshake_age_secs);
   $('.hint', row('state')).textContent = external ? 'This Mynou uses an outside network; it runs no VPN of its own.'
-    : vpn?.state === 'protected' ? (Number.isFinite(age) && vpn.handshake_age_secs !== null ? `Last handshake ${age} s ago.` : 'Connected.')
+    : vpn?.state === 'protected' ? `${vpn.ipv6 ? 'IPv4 and IPv6.' : 'IPv4 only.'} ${Number.isFinite(age) && vpn.handshake_age_secs !== null ? `Last handshake ${age} s ago.` : 'Connected.'}`
     : vpn?.state === 'disabled' ? (profile ? 'Torrents use your own connection.' : 'Import a profile to protect your torrents.')
     : vpn?.state === 'connecting' ? 'Waiting for the VPN server to answer.'
     : vpn?.state === 'unchosen' ? 'Torrents wait until you choose: import a WireGuard profile, or use your own connection.'

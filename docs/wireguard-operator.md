@@ -49,8 +49,10 @@ workers, cannot use Direct while the persisted intent requires protection.
 Startup exposes status and VPN controls while workers and the torrent listener
 wait for a protected generation. Plex, catalog and management keep their existing
 ordinary network boundary. Only the outer VPN UDP uses the ordinary torrent
-path. Endpoint hostnames, inner IPv6 and IPv6 outer endpoints are unsupported;
-tracker/peer DNS goes through the configured inner resolvers.
+path. Endpoint hostnames and IPv6 outer endpoints are unsupported; inner IPv6
+is carried when the profile routes it (see [profiles](wireguard-profiles.md)),
+and the status reports `ipv6: true` while such a tunnel is protected.
+Tracker/peer DNS goes through the configured inner resolvers.
 
 The service owns one immutable engine network. On session loss it closes
 admission, finishes old API requests, stops/joins workers and drops the old
