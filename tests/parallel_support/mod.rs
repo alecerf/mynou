@@ -422,7 +422,16 @@ impl Drop for Peer {
     }
 }
 
-fn exact(stream: &mut TcpStream, mut bytes: &mut [u8], stopped: &AtomicBool) -> io::Result<()> {
+fn exact(
+    stream: &mut TcpStream,
+    mut bytes: &mut [u8],
+    ahead: &mut Vec<u8>,
+    stopped: &AtomicBool,
+) -> io::Result<()> {
+    let taken = ahead.len().min(bytes.len());
+    bytes[..taken].copy_from_slice(&ahead[..taken]);
+    ahead.drain(..taken);
+    bytes = &mut bytes[taken..];
     let deadline = Instant::now() + Duration::from_secs(20);
     while !bytes.is_empty() {
         if stopped.load(Ordering::Acquire) || Instant::now() >= deadline {
@@ -450,14 +459,20 @@ fn send(stream: &mut TcpStream, id: u8, payload: &[u8]) -> io::Result<()> {
     stream.write_all(payload)
 }
 
-fn connected(stream: &TcpStream, stopped: &AtomicBool) -> io::Result<()> {
+// Reads what the client sent ahead, such as its next request, instead of
+// peeking: unread data would hide the close of a retired connection.
+fn connected(stream: &mut TcpStream, ahead: &mut Vec<u8>, stopped: &AtomicBool) -> io::Result<()> {
     if stopped.load(Ordering::Acquire) {
         return Err(io::ErrorKind::Interrupted.into());
     }
-    let mut byte = [0];
-    match stream.peek(&mut byte) {
+    let mut buffer = [0; 1024];
+    match stream.read(&mut buffer) {
         Ok(0) => Err(io::ErrorKind::UnexpectedEof.into()),
-        Ok(_) => Ok(()),
+        Ok(length) if ahead.len() + length > 64 * 1024 => Err(io::ErrorKind::InvalidData.into()),
+        Ok(length) => {
+            ahead.extend_from_slice(&buffer[..length]);
+            Ok(())
+        }
         Err(error)
             if matches!(
                 error.kind(),
@@ -474,8 +489,9 @@ fn serve(mut stream: TcpStream, context: &Connection) -> io::Result<()> {
     stream.set_read_timeout(Some(Duration::from_millis(20)))?;
     stream.set_write_timeout(Some(Duration::from_millis(250)))?;
     stream.set_nodelay(true)?;
+    let mut ahead = Vec::new();
     let mut handshake = [0; 68];
-    exact(&mut stream, &mut handshake, &context.stopped)?;
+    exact(&mut stream, &mut handshake, &mut ahead, &context.stopped)?;
     if handshake[0] != 19
         || &handshake[1..20] != b"BitTorrent protocol"
         || handshake[28..48] != context.torrent.wire_hash
@@ -484,7 +500,7 @@ fn serve(mut stream: TcpStream, context: &Connection) -> io::Result<()> {
     }
     if matches!(context.mode, Mode::StallHandshake) {
         loop {
-            connected(&stream, &context.stopped)?;
+            connected(&mut stream, &mut ahead, &context.stopped)?;
             thread::sleep(Duration::from_millis(5));
         }
     }
@@ -500,7 +516,7 @@ fn serve(mut stream: TcpStream, context: &Connection) -> io::Result<()> {
     send(&mut stream, 1, &[])?;
     loop {
         let mut header = [0; 4];
-        exact(&mut stream, &mut header, &context.stopped)?;
+        exact(&mut stream, &mut header, &mut ahead, &context.stopped)?;
         let length = u32::from_be_bytes(header) as usize;
         if length == 0 {
             continue;
@@ -509,7 +525,7 @@ fn serve(mut stream: TcpStream, context: &Connection) -> io::Result<()> {
             return Err(io::ErrorKind::InvalidData.into());
         }
         let mut message = vec![0; length];
-        exact(&mut stream, &mut message, &context.stopped)?;
+        exact(&mut stream, &mut message, &mut ahead, &context.stopped)?;
         if message[0] == 21 {
             context.proofs.fetch_add(1, Ordering::Relaxed);
             let Some(proof) = context.torrent.proof(&message[1..]) else {
@@ -533,7 +549,7 @@ fn serve(mut stream: TcpStream, context: &Connection) -> io::Result<()> {
         context.requests.lock().unwrap().push(piece);
         let deadline = Instant::now() + context.delay;
         while !context.enabled.load(Ordering::Acquire) || Instant::now() < deadline {
-            connected(&stream, &context.stopped)?;
+            connected(&mut stream, &mut ahead, &context.stopped)?;
             thread::sleep(Duration::from_millis(2));
         }
         let mut payload = message[1..9].to_vec();
