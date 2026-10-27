@@ -985,7 +985,9 @@ pub(super) fn download(
             "Selected files verified and available; torrent is incomplete"
         }
         .into();
-        Ok(())
+        // The seed queue reads readiness from the index: save it now rather
+        // than at the next periodic save, up to 30 seconds later.
+        super::persist_index(job)
     })
 }
 

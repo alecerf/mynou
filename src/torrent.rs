@@ -3313,6 +3313,7 @@ fn update(
     {
         return Err("Download interrupted".into());
     }
+    let completed = ready && !job.status.ready;
     job.status.progress = progress;
     job.status.ready = ready;
     if ready {
@@ -3335,6 +3336,11 @@ fn update(
     }
     if ready {
         job.status.available_files = job.status.files.clone();
+    }
+    // The seed queue reads readiness from the index: save a completion now
+    // rather than at the next periodic save, up to 30 seconds later.
+    if completed {
+        persist_index(job)?;
     }
     Ok(())
 }
