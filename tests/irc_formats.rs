@@ -314,7 +314,7 @@ fn a_text_candidate_enters_the_existing_verified_native_import_path() {
     let torrent = transfer_support::Torrent::single(
         &dir.0.join("source"),
         "Fixture.Movie.2024.1080p.mp4",
-        include_bytes!("../examples/demo.mp4").to_vec(),
+        include_bytes!("fixtures/demo.mp4").to_vec(),
     );
     let seed = transfer_support::Seeder::open(&dir.0.join("seed"), &[&torrent]);
     let mut cfg =
@@ -356,7 +356,7 @@ fn a_text_candidate_enters_the_existing_verified_native_import_path() {
     assert_eq!(ready.imports.len(), 1);
     assert_eq!(
         fs::read(&ready.imports[0]).unwrap(),
-        include_bytes!("../examples/demo.mp4")
+        include_bytes!("fixtures/demo.mp4")
     );
     drop(engine);
     let engine = Engine::open(cfg).unwrap();

@@ -1,8 +1,8 @@
 # Install and run Mynou on macOS
 
 Mynou ships as one executable for Apple Silicon Macs (`macos-arm64`). It needs no
-Rust or other download or media program. CI builds it and runs the local
-acquisition and import demo on macOS 26; earlier macOS versions have not been
+Rust or other download or media program. CI builds it and starts it on
+macOS 26; earlier macOS versions have not been
 verified. There is no Intel, Linux or Docker build.
 
 ## Download and verify

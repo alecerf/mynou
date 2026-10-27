@@ -125,7 +125,7 @@ fn submit(server: &Server, request: &Request) -> String {
 fn authenticated_api_import_dedup_events_and_restart() {
     let directory = Directory::new();
     let source = directory.0.join("source.mp4");
-    let bytes = include_bytes!("../examples/demo.mp4");
+    let bytes = include_bytes!("fixtures/demo.mp4");
     fs::write(&source, bytes).unwrap();
     let config = local_config(&directory.0);
     let server = Server::open(config.clone());
@@ -261,7 +261,7 @@ fn cancellation_invalidates_lease_and_retry_recovers_failure() {
     assert_eq!(failed.get("state").and_then(Value::as_str), Some("failed"));
     assert_eq!(failed.get("attempts").and_then(Value::as_u64), Some(1));
     assert!(failed.get("last_error").and_then(Value::as_str).is_some());
-    fs::write(&source, include_bytes!("../examples/demo.mp4")).unwrap();
+    fs::write(&source, include_bytes!("fixtures/demo.mp4")).unwrap();
     assert_eq!(
         server
             .call("POST", &format!("/api/jobs/{id}/retry"), Some(TOKEN), None)
@@ -285,7 +285,7 @@ fn cancellation_invalidates_lease_and_retry_recovers_failure() {
 fn api_rejects_ambiguous_requests_and_non_json_media_types() {
     let directory = Directory::new();
     let source = directory.0.join("source.mp4");
-    fs::write(&source, include_bytes!("../examples/demo.mp4")).unwrap();
+    fs::write(&source, include_bytes!("fixtures/demo.mp4")).unwrap();
     let server = Server::open(local_config(&directory.0));
     let mut request = local_request(&source, "Ambiguous");
     request.source_url = Some("http://127.0.0.1/source.torrent".into());
@@ -411,7 +411,7 @@ fn cancellation_during_metadata_fetch_pauses_native_transfer_and_survives_restar
     use mynou::crypto;
     use std::collections::BTreeMap;
 
-    let bytes = include_bytes!("../examples/demo.mp4");
+    let bytes = include_bytes!("fixtures/demo.mp4");
     let info = B::Dict(BTreeMap::from([
         (b"length".to_vec(), B::Int(bytes.len() as i64)),
         (b"name".to_vec(), B::Bytes(b"Delayed.Demo.mp4".to_vec())),

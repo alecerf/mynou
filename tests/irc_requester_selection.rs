@@ -45,7 +45,7 @@ fn fixture(dir: &Directory) -> Torrent {
     Torrent::single(
         &dir.0.join("source"),
         "Fixture.Movie.2024.1080p.mp4",
-        include_bytes!("../examples/demo.mp4").to_vec(),
+        include_bytes!("fixtures/demo.mp4").to_vec(),
     )
 }
 fn shared(engine: &Engine, accounts: &Accounts) -> String {
@@ -190,7 +190,7 @@ fn a_compatible_selected_coowner_routes_one_native_import_under_the_creators_cap
     assert_eq!(ready.imports.len(), 1);
     assert_eq!(
         fs::read(&ready.imports[0]).unwrap(),
-        include_bytes!("../examples/demo.mp4")
+        include_bytes!("fixtures/demo.mp4")
     );
     let before = irc_support::bytes(&cfg.store_dir);
     assert!(

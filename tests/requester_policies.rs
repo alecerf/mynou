@@ -227,7 +227,7 @@ fn uncaptured_operator_jobs_require_verified_ready_imports_and_compatible_qualit
                         let outside = dir.0.join("outside");
                         fs::create_dir_all(&outside).unwrap();
                         let source = outside.join("fixture.mp4");
-                        fs::write(&source, include_bytes!("../examples/demo.mp4")).unwrap();
+                        fs::write(&source, include_bytes!("fixtures/demo.mp4")).unwrap();
                         if case == "symlink_file" {
                             std::os::unix::fs::symlink(source, &path).unwrap();
                         } else {
@@ -237,7 +237,7 @@ fn uncaptured_operator_jobs_require_verified_ready_imports_and_compatible_qualit
                 }
                 _ => {
                     fs::create_dir_all(path.parent().unwrap()).unwrap();
-                    fs::write(&path, include_bytes!("../examples/demo.mp4")).unwrap();
+                    fs::write(&path, include_bytes!("fixtures/demo.mp4")).unwrap();
                 }
             }
             operator.state = "ready".into();

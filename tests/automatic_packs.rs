@@ -36,7 +36,7 @@ fn torrent(directory: &Directory, name: &str, episodes: &[u32]) -> Torrent {
         .map(|n| {
             (
                 PathBuf::from(format!("S01E{n:02}.mp4")),
-                include_bytes!("../examples/demo.mp4").to_vec(),
+                include_bytes!("fixtures/demo.mp4").to_vec(),
             )
         })
         .collect();
@@ -171,7 +171,7 @@ fn magnet_preview_requests_only_metadata_then_bound_jobs_import_from_one_partial
         let ready = run_until(&engine, &job.id, "ready");
         assert_eq!(
             fs::read(&ready.imports[0]).unwrap(),
-            include_bytes!("../examples/demo.mp4")
+            include_bytes!("fixtures/demo.mp4")
         );
         assert!(ready.release.is_none());
     }

@@ -55,7 +55,7 @@ fn imported_group(engine: &Engine, series: &str, pair: &Pair) -> (Vec<Job>, Vec<
         .unwrap();
     assert_eq!(worker.join().unwrap().len(), 2);
 
-    let video = include_bytes!("../../examples/demo.mp4").to_vec();
+    let video = include_bytes!("../../tests/fixtures/demo.mp4").to_vec();
     let mut store = lock(&engine.store).unwrap();
     let owners = store.list().unwrap();
     let import = owners[0].shared_file.as_ref().unwrap().import_path.clone();

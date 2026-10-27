@@ -44,7 +44,7 @@ fn jobs(value: &Value) -> Vec<String> {
         .collect()
 }
 fn torrent(directory: &Directory, count: u32) -> Torrent {
-    let media = include_bytes!("../examples/demo.mp4").to_vec();
+    let media = include_bytes!("fixtures/demo.mp4").to_vec();
     let mut files: Vec<_> = (1..=count)
         .map(|n| (PathBuf::from(format!("{n:03}.mp4")), media.clone()))
         .collect();
@@ -91,7 +91,7 @@ fn two_absolute_named_episodes_share_one_verified_pack_and_survive_restart() {
         );
         assert_eq!(
             fs::read(&ready.imports[0]).unwrap(),
-            include_bytes!("../examples/demo.mp4")
+            include_bytes!("fixtures/demo.mp4")
         );
         assert!(ready.imports[0].contains(&format!("S01E{:02}", n + 1)));
         // The import must not give the native payload a second name: the
@@ -137,7 +137,7 @@ fn two_absolute_named_episodes_share_one_verified_pack_and_survive_restart() {
 fn mapped_episodes_import_from_a_partial_torrent_and_cancellation_retains_shared_interests() {
     let directory = Directory::new();
     let catalog = catalog(2);
-    let media = include_bytes!("../examples/demo.mp4").to_vec();
+    let media = include_bytes!("fixtures/demo.mp4").to_vec();
     let torrent = Torrent::multiple(
         &directory.0.join("metadata"),
         "Pack",
@@ -179,7 +179,7 @@ fn mapped_episodes_import_from_a_partial_torrent_and_cancellation_retains_shared
     let imported = run_until(&engine, &ids[1], "ready");
     assert_eq!(
         fs::read(&imported.imports[0]).unwrap(),
-        include_bytes!("../examples/demo.mp4")
+        include_bytes!("fixtures/demo.mp4")
     );
     assert_eq!(
         lock(&engine.store)
@@ -194,7 +194,7 @@ fn mapped_episodes_import_from_a_partial_torrent_and_cancellation_retains_shared
     assert_eq!(native.get("ready"), Some(&Value::Bool(false)));
     assert_eq!(native.get("selected_ready"), Some(&Value::Bool(true)));
     assert_eq!(native.get("user_paused"), Some(&Value::Bool(false)));
-    let required = (2 * include_bytes!("../examples/demo.mp4").len())
+    let required = (2 * include_bytes!("fixtures/demo.mp4").len())
         .div_ceil(transfer_support::BLOCK)
         * transfer_support::BLOCK;
     assert_eq!(
@@ -259,7 +259,7 @@ fn absent_mapped_file_never_falls_back_to_another_video() {
     assert_eq!(repaired.download_id.as_deref(), Some(torrent.id.as_str()));
     assert_eq!(
         fs::read(&repaired.imports[0]).unwrap(),
-        include_bytes!("../examples/demo.mp4")
+        include_bytes!("fixtures/demo.mp4")
     );
     assert_eq!(engine.transfers().unwrap().as_array().unwrap().len(), 1);
     assert!(engine.remap_pack(&job.id, "Pack/other.mp4".into()).is_err());

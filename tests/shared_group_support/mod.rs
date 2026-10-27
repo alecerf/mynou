@@ -93,7 +93,7 @@ impl Fixture {
     }
 }
 pub fn video(directory: &Directory, tag: &str, marker: u8) -> Torrent {
-    let mut bytes = include_bytes!("../../examples/demo.mp4").to_vec();
+    let mut bytes = include_bytes!("../fixtures/demo.mp4").to_vec();
     if marker != 0 {
         bytes.extend_from_slice(&[
             0, 0, 0, 16, b'f', b'r', b'e', b'e', marker, 0, 0, 0, 0, 0, 0, 0,

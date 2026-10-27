@@ -11,7 +11,7 @@ commit only: an earlier green run does not validate later changes.
 
 | Workflow | Runs on | Purpose |
 | --- | --- | --- |
-| Mynou CI | Pull requests; manual dispatch; a pushed `v<version>` tag | Select tests, macOS arm64 build/demo and packaging from the diff; manual runs validate everything, releases only build and publish |
+| Mynou CI | Pull requests; manual dispatch; a pushed `v<version>` tag | Select tests, macOS arm64 build, start check and packaging from the diff; manual runs validate everything, releases only build and publish |
 | Repository checks | Pull requests; manual dispatch | Python tooling and scheduler tests when their inputs change |
 | Release policy | Pull requests | Version changes only in a release PR |
 | CodeQL | Pull requests, pushes to `trunk`, weekly schedule, manual dispatch | Required security analysis; Rust and JavaScript selected by diff |
@@ -26,7 +26,7 @@ run on an Apple Silicon `macos-26` runner. A small Linux **decide** job runs
 beside the checks. The native CI does not run for a commit pushed to `trunk`: protection
 requires an up-to-date branch and signed fast-forward integration, so `trunk` holds the tree its
 pull request already validated. A release changes nothing but the version, so
-its PR and the tag `v<version>` run no tests, demo or Rust and JavaScript
+its PR and the tag `v<version>` run no tests, start check or Rust and JavaScript
 CodeQL: they build the tagged commit, check the binary's architecture and
 version, package and publish. The release job publishes only when the tag
 equals the `Cargo.toml` version (the binary reports that version), the commit is
@@ -40,8 +40,11 @@ on `trunk`, and it raised the version over its parent. A failed decision publish
    using the physical runner directory as temporary directory because Mynou refuses the
    symbolic link behind macOS's default one.
 2. **build** produces the published `aarch64-apple-darwin` executable. CI checks
-   that the binary has the exact target architecture and runs the standalone
-   demo, which must reach `ready` with simulated Plex confirmation.
+   that the binary has the exact target architecture, then starts it on an
+   empty data directory: it must become ready, answer `GET /api/status` and
+   the web interface, refuse a request naming another host and stop cleanly on
+   `POST /api/shutdown`. The complete acquisition path is covered by the test
+   harnesses, which use `tests/fixtures/demo.mp4`.
 3. **package** waits for the build and any selected validation of the same
    commit. It checks
    the release script's syntax, copies the checked executable under its release
@@ -63,10 +66,10 @@ PR selection compares the merge base with the current PR head, using the full
 history and both sides of renames/deletions. It has no GitHub path-filter
 300-file limit. The checks run against the usual checkout merge commit.
 
-| Changed inputs | Rust validation | Native build/demo + package | Python checks |
+| Changed inputs | Rust validation | Native build/start + package | Python checks |
 | --- | --- | --- | --- |
 | Markdown under `docs/`, root Markdown files, issue templates | Skip | Skip | Skip |
-| `src/**`, `examples/**`, Cargo manifests/lockfile, Rust toolchain/configuration, `build.rs` | Run | Run | Skip |
+| `src/**`, Cargo manifests/lockfile, Rust toolchain/configuration, `build.rs` | Run | Run | Skip |
 | `tests/**` only | Run | Skip | Skip |
 | CI scheduler, release tooling, interoperability driver, Python tests | Skip | Skip | Run |
 | Crypto fixture generator | Run | Skip | Run |
@@ -74,11 +77,12 @@ history and both sides of renames/deletions. It has no GitHub path-filter
 | Native CI workflow or shared selector | Run | Run | Run |
 | Other workflows/actions | Skip | Skip | Run |
 | Unknown inputs | Run | Run | Run |
-| Release: only the package version in `Cargo.toml`/`Cargo.lock`, with `docs/releases/unreleased.md` deleted, or a version tag | Skip | Build + package, no demo | Skip |
+| Release: only the package version in `Cargo.toml`/`Cargo.lock`, with `docs/releases/unreleased.md` deleted, or a version tag | Skip | Build + package, no start check | Skip |
 | Manual dispatch | Run | Run | Run when that workflow is dispatched |
 
-The selection is additive. Embedded UI files, certificates and demo media are
-build/test inputs even when no `.rs` file changes. Test-only changes do not
+The selection is additive. Embedded UI files and certificates are build/test
+inputs even when no `.rs` file changes; test media under `tests/` are test
+inputs only. Test-only changes do not
 produce an unused release artifact. A packaging-only change checks the native
 binary and its reported version before packaging. A release keeps the build,
 binary, version and publication checks; on its PR, CodeQL scans only the
@@ -162,10 +166,10 @@ builds omit debug symbols; debug assertions and overflow checks stay enabled.
 Only successful runs on `trunk` (a manual dispatch there) save caches, and pull
 requests restore them only when one exists, so a cold cache costs a PR about 80
 seconds in parallel jobs. Keys
-are exact fingerprints of the manifests, sources, tests, examples and workflow,
+are exact fingerprints of the manifests, sources, tests and workflow,
 with no partial-key fallback. The test cache holds
 compiled harnesses, their build manifest and timing history; every test still
-runs. Release caches hold only the target binary; its checks and demo still run.
+runs. Release caches hold only the target binary; its checks and start check still run.
 Caches never contain a journal, downloads, a library or personal configuration,
 and they never authorize a release.
 

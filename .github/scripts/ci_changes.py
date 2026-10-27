@@ -14,7 +14,7 @@ VERSION_LINE = re.compile(r'[+-]version = "[0-9]+\.[0-9]+\.[0-9]+"')
 
 def release(pull_request):
     """A release only builds and publishes a tree trunk already validated: no
-    tests and no demonstration. The branch rules require the CodeQL app on pull
+    tests and no start check. The branch rules require the CodeQL app on pull
     requests, so the quick Actions scan stays there."""
     return {"tests": False, "build": True, "tooling": False, "release": True,
             "languages": ["actions"] if pull_request else []}
@@ -27,7 +27,7 @@ def select(paths, full=False, pull_request=True):
         languages.update(("rust", "javascript-typescript"))
     for path in paths:
         rust = path.endswith(".rs") or path in RUST_CONFIG or path.startswith(".cargo/")
-        product = (rust and not path.startswith("tests/")) or path.startswith(("src/", "examples/"))
+        product = (rust and not path.startswith("tests/")) or path.startswith("src/")
         control = path in CONTROL
         ci = path == ".github/workflows/ci.yml"
         native_fixture = path in {".github/scripts/crypto_fixtures.py",

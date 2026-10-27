@@ -23,7 +23,7 @@ def label_names(item):
     return {label["name"] for label in item.get("labels", [])}
 
 
-PRODUCT_DIRS = ("src/", "examples/", ".cargo/")
+PRODUCT_DIRS = ("src/", ".cargo/")
 PRODUCT_FILES = {"build.rs", "rust-toolchain.toml"}
 MANIFESTS = {"Cargo.toml", "Cargo.lock"}
 UNRELEASED = "docs/releases/unreleased.md"
