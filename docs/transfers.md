@@ -2,14 +2,14 @@
 
 Mynou downloads and seeds with its own BitTorrent engine. This guide covers
 peer concurrency, transfer controls, selective downloads for packs, bandwidth
-limits and seeding policies. None of these controls deletes downloads or
-library imports. Protocol support and bounds are listed in
+limits and seeding policies. Only **Remove** deletes downloaded files, and
+only when asked; no control deletes library imports. Protocol support and bounds are listed in
 [limits](limits.md#bittorrent).
 
 Several requests can share one transfer (the same torrent). Transfer controls
 use the native transfer ID, 40 or 64 hexadecimal characters, which differs from
-request (job) IDs, and they affect every request using that transfer. Transfer
-commands need the running service.
+request (job) IDs, and they affect every request using that transfer. The web
+interface's **Transfers** view and the routes below need the running service.
 
 ## Peers and concurrency
 
@@ -67,30 +67,45 @@ peers start while discovery continues. A magnet's metadata must be
 authenticated before payload transfer starts and before its private flag is
 known.
 
+## Add a torrent by hand
+
+**Add a torrent** in Transfers takes a magnet link, the http(s) URL of a
+.torrent file or the file itself:
+
+| Body of `POST /api/torrents` | Source |
+| --- | --- |
+| `{"source": "magnet:?xt=..."}` | A magnet link or a .torrent URL |
+| `{"torrent": "BASE64"}` | The bytes of a .torrent file, up to 768 KiB |
+
+Mynou reads the release name (from the magnet, or from the file list within
+30 seconds) and matches it with the library, with the identity rules of
+[automatic selection](selection.md):
+
+- a film or an episode, followed or requested, takes the torrent as its chosen
+  release, and the answer carries its `job`;
+- a season pack of a followed series fills the season's missing aired episodes,
+  as an [automatic pack](packs.md) does, and the answer carries its `pack`;
+- anything else, no match or several, downloads as a plain transfer: the answer
+  names its `transfer_id` and a `note` saying why nothing matched.
+
+An uploaded file is kept under `state/manual` in the data directory for as
+long as its transfer.
+
 ## Inspect, pause and prioritize
 
-```sh
-mynou torrents --limit 50
-mynou torrents --limit 50 --after CURSOR
-mynou torrent ID
-mynou pause ID
-mynou resume ID
-mynou torrent-priority ID --priority 100
-mynou file-priority ID --file 0 --priority high
-```
-
-| CLI | API |
+| Action | API |
 | --- | --- |
-| `torrents`, `torrent ID` | `GET /api/transfers`, `GET /api/transfers/ID` |
-| `pause ID`, `resume ID` | `POST /api/transfers/ID/pause`, `POST /api/transfers/ID/resume` with `{}` |
-| `torrent-priority ID --priority N` | `POST /api/transfers/ID/priority` with `{"priority": 100}` |
-| `file-priority ID --file N --priority P` | `POST /api/transfers/ID/files` with `{"index": 0, "priority": "high"}` |
-| `torrent-select ID --selection JSON` | `POST /api/transfers/ID/selection` |
-| `torrent-policy ID --policy JSON` | `POST /api/transfers/ID/policy` |
+| List, details | `GET /api/transfers`, `GET /api/transfers/ID` |
+| Pause, resume | `POST /api/transfers/ID/pause`, `POST /api/transfers/ID/resume` with `{}` |
+| Queue priority | `POST /api/transfers/ID/priority` with `{"priority": 100}` |
+| File priority | `POST /api/transfers/ID/files` with `{"index": 0, "priority": "high"}` |
+| Selection | `POST /api/transfers/ID/selection` |
+| Seeding policy | `POST /api/transfers/ID/policy` |
+| Remove | `POST /api/transfers/ID/remove` with `{"delete_files": false}` |
 
-`torrents` and `GET /api/transfers` return an object with `transfers`, `next`,
+`GET /api/transfers` returns an object with `transfers`, `next`,
 `total` and `sequence`, replacing the former complete array. A page has 50
-transfers by default; `limit` accepts 1 to 200. Continue with `--after` or
+transfers by default; `limit` accepts 1 to 200. Continue with
 `GET /api/transfers?limit=50&after=CURSOR` until `next` is null. Transfers are
 ordered by priority, then FIFO. The web interface offers **Load more transfers**.
 Point controls work for retained transfers outside the displayed page. Request
@@ -112,25 +127,30 @@ response uses zero.
   are needed; there is no `skip`. Use the `index` from the transfer listing: it
   is the original metadata index, so padding files leave gaps. A v1 piece shared
   by several files takes the highest of their priorities.
+- **Remove** stops the transfer and forgets it, with its downloaded files when
+  `delete_files` is true. Requests still waiting on it are cancelled first, so
+  none starts it again; films and episodes already in the library keep their
+  imported files. A transfer whose download is being imported cannot be
+  removed until the import ends.
+
+A transfer's details in the web interface follow its trackers (host only,
+never the passkey in their path) and the peers of a running download live, over
+the WebSocket topic `transfer:ID`.
 
 ## Selective acquisition
 
 Ordinary requests download every file. Mapped [season packs](packs.md) record
 the exact files they need before payload starts, and requests sharing a
 transfer keep the union of their files. Selections only grow: an ordinary
-request for the same torrent, **Download all files** or `torrent-select`
-expands them, and cancellation never removes interests or bytes.
-
-```sh
-mynou torrent-select ID --selection '{"indices":[0,2]}'
-mynou torrent-select ID --selection '{"all":true}'
-```
+request for the same torrent, **Download all files** or
+`POST /api/transfers/ID/selection` expands them, and cancellation never removes
+interests or bytes. The body is `{"indices": [0, 2]}` or `{"all": true}`.
 
 Choose exactly one of `indices` (original non-padding metadata indices) or
 `all: true`. Expansion keeps the pause, priority and policy; resume explicitly
 if the transfer is paused.
 
-`torrent ID` distinguishes the states:
+`GET /api/transfers/ID` distinguishes the states:
 
 | Field | Meaning |
 | --- | --- |
@@ -157,23 +177,19 @@ rules apply.
 ## Manual cross-seeding
 
 Enable `downloads.seed`, then explicitly supply a v1 torrent and the ID of a
-fully verified ordinary native transfer:
-
-```sh
-mynou cross-seed SOURCE_ID --torrent ./candidate.torrent
-mynou torrent CANDIDATE_ID
-```
+fully verified ordinary native transfer, with
+`POST /api/transfers/SOURCE_ID/cross-seed`.
 
 Every candidate piece must verify from the existing bytes before any announce
 or peer advertisement. No media file, copy, link or library import is created.
 Default mapping pairs non-padding files in metadata order; names may differ
 but every pair must have equal size. For reordered files or a subset of the
 completed source, supply original source file indices in candidate non-padding
-order, for example `--mapping '[2,0]'`. Inspect source indices with `torrent`.
-Missing mappings, duplicate indices, size mismatches and existing swarms fail.
+order, for example `"mapping": [2, 0]`. Inspect source indices with
+`GET /api/transfers/SOURCE_ID`. Missing mappings, duplicate indices, size
+mismatches and existing swarms fail.
 
-The API is `POST /api/transfers/SOURCE_ID/cross-seed` with
-`{"metadata_hex":"...","mapping":[2,0]}`; `mapping` is optional. Send the
+The body is `{"metadata_hex":"...","mapping":[2,0]}`; `mapping` is optional. Send the
 hexadecimal torrent bytes, never a server path. The first increment supports
 distinct-infohash v1 candidates only, up to 256 KiB metadata and 1024 metadata
 files. V2/hybrid candidates and chained reuse are excluded;
@@ -275,19 +291,13 @@ later is found by its completion search. Up to 2,048 entry identities are kept
 per source. Deleting the store makes discovery start over; registered
 cross-seeds are kept.
 
-```sh
-mynou cross-seed-discovery
-mynou cross-seed-discovery --run --dry-run
-mynou cross-seed-discovery --run --indexer tracker-b --transfer ID
-```
-
-| CLI | API |
+| Action | API |
 | --- | --- |
-| `cross-seed-discovery` | `GET /api/cross-seed/discovery` |
-| `cross-seed-discovery --run [...]` | `POST /api/cross-seed/discovery/run` with `{"dry_run": true, "force": false, "indexer": "ID", "transfer": "ID"}` (all optional) |
+| Status | `GET /api/cross-seed/discovery` |
+| Run a pass now | `POST /api/cross-seed/discovery/run` with `{"dry_run": true, "force": false, "indexer": "ID", "transfer": "ID"}` (all optional) |
 
-`--dry-run` downloads and maps candidates but registers and remembers
-nothing. `--force` ignores the feed schedule and search delays, not the source's
+`dry_run` downloads and maps candidates but registers and remembers
+nothing. `force` ignores the feed schedule and search delays, not the source's
 rate limits. The status lists the enabled sources and their schedule, counters,
 recent outcomes and registered cross-seeds. Reports name only transfer
 identities, source IDs and fixed reasons, never titles, links or credentials:
@@ -330,16 +340,12 @@ after changing them. Rate limits apply to all transfers together and count
 torrent payload only: protocol, tracker and other traffic is not included. They
 always apply, even under a per-transfer policy.
 
-To override the seeding defaults or add tighter rates for one transfer:
-
-```sh
-mynou torrent-policy ID --policy '{"upload_limit_bps": 1048576}'
-mynou torrent-policy ID --policy 'null'
-```
-
-The API body is `{"policy": {...}}` or `{"policy": null}`. A policy is a
+To override the seeding defaults or add tighter rates for one transfer, send
+`POST /api/transfers/ID/policy` with `{"policy": {...}}`, or
+`{"policy": null}` to remove the override. A policy is a
 **complete replacement**, not a patch: omitted rates become `0` and omitted
-seeding fields become `null`. The example above therefore removes the default
+seeding fields become `null`. `{"policy": {"upload_limit_bps": 1048576}}`
+therefore removes the default
 ratio and time limits for that transfer; include them to keep them. `null`
 removes the override and restores the configured defaults.
 

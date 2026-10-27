@@ -121,7 +121,9 @@ a DHT client and PEX reception. Peer data uses TCP only.
   and HTTP CONNECT proxies (`HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`); local
   management commands bypass the proxy. HTTP/2 and HTTP/3 are not supported.
 - The API accepts HTTP/1.1 requests with a declared content length and bodies
-  up to 1 MiB; it rejects chunked request bodies and ambiguous headers.
+  up to 1 MiB; it rejects chunked request bodies and ambiguous headers. It has
+  no sign-in: `listen` must be a loopback address, and a request must name
+  loopback in its `Host` and carry no other site's `Origin`.
 - The TLS client supports TLS 1.3 with X25519 and ChaCha20-Poly1305/SHA-256,
   and TLS 1.2 for servers without it: ECDHE with X25519 or P-256,
   AES-128-GCM or ChaCha20-Poly1305 with the SHA-256 PRF, secure renegotiation
@@ -202,7 +204,7 @@ IRC announcements:
 - Retained announcement identities live in `announcements.idx` without a total
   record or byte limit. Duplicate suppression survives restart without pruning.
   Point reads and listing pages (200 rows, 4 MiB) bound each operation; follow
-  `next_cursor` with `--after` or API `after` beyond the compatibility offset
+  `next_cursor` as `after` beyond the compatibility offset
   window of 1,000 rows. Legacy snapshots remain bounded to 1,000 rows / 8 MiB
   during migration. Counters and source health reset when the service restarts.
   Routing scans one 200-row pending page per turn (plus an empty wrap probe)
@@ -279,7 +281,7 @@ IRC announcements:
   opaque `next` cursor; each page repeats the live search, so a page can differ
   if an indexer changed in between. Identical results from one source share a
   candidate ID and are listed once, while `candidate_count` counts every result.
-- Explicit `--url` and `--path` sources are not searched or ranked.
+- Explicit `source_url` and `source_path` sources are not searched or ranked.
 - At most 100,000 per-title profile bindings, in `profiles.idx`, keyed by TMDB
   ID; requests without a TMDB ID cannot be bound. A preview covers one title.
 
@@ -387,10 +389,6 @@ IRC announcements:
   ([listings](inventory-storage.md#listings-and-cursors)). Network/JSON response limits still apply to unusually large records.
   The settings document remains limited to 1 MiB. See
   [job migration and recovery](inventory-storage.md#job-storage).
-- Offline listings and previews open storage read-only: they create nothing,
-  change no permissions, repair nothing and still exclude a concurrent writer.
-  After an interrupted write they ask for writable recovery, which the next
-  service start performs.
 - Jobs/history, library tips, series, requester demand, feeds, source policies,
   IRC announcements and native transfers use private checksummed disk indexes
   with write-ahead recovery. Retained inventories have no fixed total count or
@@ -401,7 +399,7 @@ IRC announcements:
   [storage overview](inventory-storage.md). Checksums detect corruption; they do
   not authenticate against someone who can rewrite the files. After an uncertain
   write, reads and writes of that index pause until writable recovery on restart.
-- `mynou status` and `GET /api/status` report per-store sizes and recovery state,
+- `GET /api/status` reports per-store sizes and recovery state,
   with unavailable counts for busy or failed stores. Common backlog/freshness
   diagnostics are delivered; increasing-size native macOS arm64 disk/time/RSS
   evidence, remaining intentional bounds and the acceptance mapping are linked

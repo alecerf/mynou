@@ -5,19 +5,15 @@ release. A replacement becomes current only after its download, import and
 required Plex confirmation complete; until then the earlier import stays
 current. Earlier files and downloads always stay on disk.
 
-Single movies and episodes use the commands below. Episodes that share one
+Single movies and episodes use the routes below. Episodes that share one
 video file are upgraded as a whole group; see
 [shared groups](#upgrade-a-shared-group).
 
 ## Inspect the owned library
 
-```sh
-mynou library
-```
-
-The API equivalent is `GET /api/library`. Both return a page envelope with
-`library`, `next` and `total`. Use `--limit 1..200` and `--after CURSOR` in the
-CLI, or `limit` and `after` query parameters in the API, until `next` is null.
+`GET /api/library` returns a page envelope with `library`, `next` and
+`total`. Use the `limit` (1 to 200) and `after` query parameters until `next`
+is null.
 The view lists current ready imports
 owned by Mynou: job ID, media identity, recorded release, monitoring state,
 whether a baseline is required, whether the imported files are present and any
@@ -25,24 +21,14 @@ pending upgrade. It is not an inventory of Plex or a scan of existing library
 folders. A request skipped because Plex already had the title does not create an
 owned import.
 
-When the service is stopped, `library` and upgrade previews open the job index
-read-only: they create nothing and repair nothing. After an interrupted write,
-they report that writable recovery is required; start the service once, then
-preview again.
-
 ## Record a missing baseline
 
 An upgrade compares a candidate with the release title recorded when the import
-was acquired. Automatic acquisitions record it; explicit `--url` or `--path`
-submissions and older jobs may not have one. Mynou never guesses it from a file
-name. If you know the release, record it once:
-
-```sh
-mynou baseline ID --release-title "Example.Movie.2026.720p.WEB-DL.H264.English"
-```
-
-The API equivalent is `POST /api/library/ID/baseline` with
-`{"release_title": "..."}`. Use the current entry's job ID. The title must
+was acquired. Automatic acquisitions and releases chosen by hand record it;
+requests with an explicit URL or path and older jobs may not have one. Mynou never guesses it from a file
+name. If you know the release, record it once with
+`POST /api/library/ID/baseline` and
+`{"release_title": "Example.Movie.2026.720p.WEB-DL.H264.English"}`. Use the current entry's job ID. The title must
 identify the same movie or episode, and the import must be present, safe and
 contain a declared video stream. A baseline only fills a missing value; it never
 replaces a recorded one. It is your claim, not proof of the file's tracks or
@@ -50,20 +36,13 @@ quality, and it may fall outside today's profile.
 
 ## Preview and apply upgrades
 
-```sh
-mynou upgrades
-mynou upgrades --apply
-mynou monitor ID
-mynou unmonitor ID
-```
-
-`upgrades` previews decisions for monitored entries. It contacts your sources
-but writes nothing, queues nothing and does not change check times. `--apply`
-records the decisions and queues the replacements without waiting for them.
-Manual passes ignore the polling interval, so you can check again right after
-changing a profile. The API equivalents are `POST /api/upgrades` with
-`{"apply": false}` (the default) or `{"apply": true}`, and
-`POST /api/library/ID/monitor` with `{"enabled": true}`.
+`POST /api/upgrades` with `{"apply": false}` (the default) previews decisions
+for monitored entries. It contacts your sources but writes nothing, queues
+nothing and does not change check times. `{"apply": true}` records the
+decisions and queues the replacements without waiting for them. Manual passes
+ignore the polling interval, so you can check again right after changing a
+profile. `POST /api/library/ID/monitor` with `{"enabled": true}` or
+`{"enabled": false}` monitors an entry or stops monitoring it.
 
 Both the baseline and the candidates are judged with the **current** profile
 for that movie or episode:
@@ -153,17 +132,18 @@ Episodes that share one video
 ([shared videos](packs.md#one-video-for-several-episodes)) cannot be upgraded
 or given a baseline individually; upgrade reports show
 `shared_group_upgrade_required` and scans never search these groups. Instead,
-review the whole group with `library-group`, using any owner's job ID. Every
+review the whole group with `POST /api/library/OWNER_ID/group`, using any
+owner's job ID. Every
 owner must be ready and current, and the operation always covers the complete
 recorded range.
 
-To record a missing baseline for the whole group, create `baseline.json`:
+To record a missing baseline for the whole group, send:
 
 ```json
 {"action": "baseline", "release_title": "Example.Series.S01.720p.WEB-DL"}
 ```
 
-To replace the video, create `replacement.json`:
+To replace the video, send:
 
 ```json
 {
@@ -174,13 +154,8 @@ To replace the video, create `replacement.json`:
 }
 ```
 
-Preview, then apply the reviewed plan with a running service:
-
-```sh
-mynou library-group OWNER_ID --mapping replacement.json
-mynou library-group OWNER_ID --mapping replacement.json --apply \
-  --plan-id REVIEWED_PLAN_ID
-```
+Send it to `POST /api/library/OWNER_ID/group` to preview, then again with
+`"apply": true` and the reviewed `"plan_id"` to apply.
 
 A replacement requires every owner to be monitored and a consistent group
 baseline, and follows the same quality rules as single upgrades. Empty
@@ -195,8 +170,7 @@ and the metadata must contain exactly one non-empty video at `file_path`.
 Preview authenticates the torrent metadata without downloading payload or
 recording jobs. Apply authenticates it again and checks that nothing changed:
 owners, monitoring, release, source, hash, path and import files. Otherwise
-run a new preview. The API equivalent is `POST /api/library/OWNER_ID/group` with
-the same fields, plus `"apply": true` and `"plan_id"` to apply.
+run a new preview.
 
 The new video downloads, imports once and must be confirmed in Plex for every
 owner. Confirmed owners wait in the `staged` state; the last confirmation

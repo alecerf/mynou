@@ -32,7 +32,7 @@ them.
 ## Request flow
 
 ```text
-CLI / API            Plex watchlists   IRC announcements
+Web UI / API         Plex watchlists   IRC announcements
         |                    |                  |
         +------------- Requests ----------------+
                            |
@@ -133,5 +133,5 @@ CLI / API            Plex watchlists   IRC announcements
   on the same listener: the client offers the `mynou.v1` subprotocol, the
   origin must match the host, and at most eight sockets may be open. Calls reach the same `route` function as HTTP, and subscribed
   topics are pushed only when their serialized value changes.
-- `demo` runs the end-to-end demonstration with synthetic media, a loopback peer
-  and simulated Plex and indexer services.
+- `manual` adds a torrent given by hand: its release name is matched with the
+  library like an automatic selection, or it downloads as a plain transfer.

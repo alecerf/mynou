@@ -60,8 +60,7 @@ old receipts/cursors remain associated with the old source. Review the new
 configuration before restart. New sources establish a fresh feed baseline.
 Do not erase state to force a policy change through.
 
-`mynou indexers`, `mynou feeds` and `mynou irc` (and their API counterparts)
-report `protection` and `protection_ready` per source without endpoints, credentials,
+`GET /api/indexers`, `GET /api/feeds` and `GET /api/irc` report `protection` and `protection_ready` per source without endpoints, credentials,
 cookies or network generation tokens. Readiness describes transport authority,
 not a successful source login or a provider connectivity guarantee.
 

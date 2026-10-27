@@ -11,9 +11,9 @@ configuration and data for rollback; this work does not alter that deployment.
 ## Supported installation
 
 The tested target is macOS 26 on Apple Silicon. Use the single executable from
-a release containing the accepted changes, following the checksum and local
-demo steps in the [macOS installation guide](macos.md#download-and-verify).
-An older release with the same command names does not establish acceptance.
+a release containing the accepted changes, following the checksum
+steps in the [macOS installation guide](macos.md#download-and-verify).
+An older release with the same version name pattern does not establish acceptance.
 No kernel tunnel, root privileges, route changes, extra daemon or runtime helper
 is needed by Mynou. The privileged route changes in CI are test instrumentation
 on a disposable runner; they are never installation steps.
@@ -31,11 +31,8 @@ Provider forwarding supports opt-in NAT-PMP, delivered by #223 / PR #331,
 following ProtonVPN's documented P2P method. Generate a WireGuard profile with
 NAT-PMP enabled at the provider and use its first inner DNS server as the
 gateway; no provider is inferred from a name. After importing the profile,
-enable forwarding if that supported method applies:
-
-```sh
-mynou vpn --action enable-forwarding
-```
+enable forwarding if that supported method applies, with **Open a port for
+seeding** on the **VPN** page of **Settings**.
 
 The protected generation requests and renews its lease through virtual UDP.
 The listener and announces use the granted TCP port; an unavailable/expired
@@ -62,8 +59,7 @@ Gluetun-protected source requires this explicit setting on every indexer and IRC
 source; an omitted field preserves ordinary discovery behavior. See
 [protected sources](protected-sources.md) for configuration, readiness and recovery.
 Plex, catalog and the management API retain ordinary/LAN networking. The local
-API is plain HTTP: retain authenticated loopback access or a trusted TLS reverse
-proxy for remote management. Protected connectors ignore environment HTTP proxies.
+API is plain HTTP and answers only this machine, without signing in. Protected connectors ignore environment HTTP proxies.
 
 The host sends outer encrypted UDP to the configured literal VPN endpoint.
 The VPN server and the ISP can see the outer connection's source IP. The VPN
@@ -89,43 +85,26 @@ file selection, user pauses and priorities. Never delete or rebuild transfer
 state to enable the VPN. Do not import SQLite data from the former Go release;
 there is no supported importer.
 
-For an existing Rust installation, use its original configuration and data;
-do not run `init` over them. For a fresh installation, follow
-[configure and start](macos.md#configure-and-start) through configuration creation,
-then import the VPN profile **before the first `serve`**. A store with no VPN
-intent uses Direct for backward compatibility.
+For an existing Rust installation, use its original configuration and data.
+For a fresh installation, follow [configure and start](macos.md#configure-and-start).
+A store with no VPN intent uses Direct for backward compatibility, and the
+profile is imported into the running service: import it **before the first
+request**. An existing installation's retained transfers start with the
+service, before a profile can be imported; this release has no way to import
+one while the service is stopped.
 
-Keep the profile in a trusted private directory, at a physical absolute path
-with no symlink components or `..`. Its regular file must have mode 0400 or
-0600 and one hard link. Do not paste profile contents into arguments, shell
-history, issues or logs. Import while the new service is stopped:
-
-```sh
-mynou doctor
-mynou vpn --action import --profile /private/path/tunnel.conf
-mynou vpn
-```
-
-Replace the placeholder with your trusted physical profile path. Import
-validates the supported subset and saves private enabled intent in
-`store_dir/vpn.conf`. Offline import makes no VPN connection. Confirm enabled
-intent and a stored profile before starting; `blocked` before startup is
-expected. An import error must be resolved before continuing. Never treat a
-missing profile as permission to start unprotected.
+Keep the profile in a trusted private directory and do not paste its contents
+into issues or logs. Import it from the **VPN** page of **Settings** (or
+`POST /api/vpn/control`, see the [operator reference](wireguard-operator.md)).
+Import validates the supported subset and saves private enabled intent in
+`store_dir/vpn.conf`. An import error must be resolved before continuing.
+Never treat a missing profile as permission to run unprotected.
 
 ## Start and verify
 
-```sh
-mynou serve
-```
-
-In another terminal using the same configuration:
-
-```sh
-mynou vpn
-mynou healthcheck
-mynou status
-```
+Start the service (`mynou serve`, or the [service](macos-service.md)), import
+the profile, then check `GET /api/vpn` and `GET /api/status`, or the **VPN**
+page.
 
 The service exposes local management while torrent work waits for a protected
 generation. Expect `connecting`, then `protected` with enabled intent, a stored
@@ -139,13 +118,9 @@ authorized to transfer and check verified completion and expected retained
 selection/pause state. With a controlled peer/tracker, check that the observed
 source is the provider's egress. This operator check complements CI; it does
 not replace attempted-I/O observation or establish universal provider behavior.
-Test an explicit revoke during that controlled workload:
-
-```sh
-mynou vpn --action revoke
-mynou vpn
-mynou vpn --action reconnect
-```
+Test an explicit revoke during that controlled workload: send
+`{"action":"revoke"}`, then `{"action":"reconnect"}`, to `POST /api/vpn/control`,
+checking `GET /api/vpn` between them.
 
 Revocation persists blocked intent and never requests Direct. Confirm protected
 recovery before proceeding. Restart once with the same configuration and confirm
@@ -159,7 +134,7 @@ downloader behind its existing Gluetun protection. Do not share live state
 between versions, overwrite newly verified data with an older backup, or open
 a migrated store with an incompatible older executable. Restore only from a
 consistent compatible backup when required by the release's storage notes.
-`mynou vpn --action disable` explicitly requests Direct and is not a protected
+Turning the VPN off (`{"action":"disable"}`) explicitly requests Direct and is not a protected
 rollback procedure.
 
 CI exercises synthetic peers and services, including real loss/restoration of

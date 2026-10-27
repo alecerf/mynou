@@ -8,8 +8,9 @@ same profiles to compare a recorded release with new candidates; see
 
 ## Configure profiles
 
-Add an optional `selection` object to the settings with
-`mynou settings --save`:
+Add an optional `selection` object to the settings document. The web interface
+keeps it as it is; to change it, read the document from `GET /api/settings`
+and send it back whole as `{"settings": {...}}` to `POST /api/settings`:
 
 ```json
 {
@@ -68,22 +69,16 @@ few titles while the global profiles stay at `hd`. A binding names a configured
 profile and the TMDB ID of the movie or series; a series binding applies to all
 its episodes and season packs.
 
-```sh
-mynou title-profile --kind movie --tmdb-id 603 --profile uhd
-mynou title-profile --kind movie --tmdb-id 603 --profile uhd --apply --plan-id PLAN_ID
-mynou title-profile --kind series --tmdb-id 1399 --clear
-mynou title-profiles
-```
+| Action | API |
+| --- | --- |
+| Bind | `POST /api/title-profiles/control` with `{"action": "set", "kind": "movie", "tmdb_id": 603, "profile": "uhd"}` |
+| Unbind | The same with `{"action": "clear", "kind": "series", "tmdb_id": 1399}` |
+| List | `GET /api/title-profiles?limit=N&after=CURSOR`, pages of up to 200 bindings in kind and TMDB order (100 by default) |
 
-Every change is reviewed: without `--apply` the command previews it and prints a
-`plan_id`; pass that ID with `--apply` to save it. A plan expires when any
-binding or the configured profiles change. Changes require the running service;
-previews and listings also work offline, read-only. The API equivalents are
-`POST /api/title-profiles/control` with
-`{"action": "set", "kind": "movie", "tmdb_id": 603, "profile": "uhd"}` (or
-`"clear"`, plus `"apply": true` and `"plan_id"`) and
-`GET /api/title-profiles?limit=N&after=CURSOR`, pages of up to 200 bindings in
-kind and TMDB order (100 by default).
+Every change is reviewed: without `"apply": true` the call previews it and
+returns a `plan_id`; send the same body again with `"apply": true` and that
+`"plan_id"` to save it. A plan expires when any binding or the configured
+profiles change.
 
 The profile used for a movie or an episode is, in order:
 
@@ -99,8 +94,7 @@ in the settings changes the bound titles too. If the profile is removed, the
 title's searches fail with `unknown profile` until you rebind or clear it; Mynou
 never falls back to the global profile. This also applies when a requester
 captured an older definition under the same name; its captured destination is
-preserved. Requests without a TMDB ID, such as a
-`submit` without `--tmdb-id`, cannot be bound.
+preserved. Requests without a TMDB ID cannot be bound.
 
 A change applies to work that has not selected a release yet and to later
 upgrade checks. A release already selected, downloading or imported is kept,
@@ -146,36 +140,30 @@ order never bypasses a profile, and when nothing is accepted Mynou does not
 fall back to a rejected release. Strict title, year and episode matching still
 applies: a profile cannot turn an unrelated release into a match.
 
-A request with an explicit source (`submit --url` or `submit --path`) is your
+A request with an explicit source (`source_url` or `source_path`) is your
 own choice: profiles apply only to automatic searches.
 
 ## Preview a search
 
-```sh
-mynou search --title "Example Movie" --year 2026
-mynou search --title "Example Series" --kind episode --season 1 --episode 2
-```
-
+`POST /api/search` (optionally `POST /api/search?limit=N&after=CURSOR`) takes
+the same object as `POST /api/jobs`, for example
+`{"kind": "episode", "title": "Example Series", "year": 2026, "season": 1, "episode": 2}`.
 A preview contacts your sources but records no request, writes nothing to the
 journal and starts no download. The report lists accepted and rejected
 candidates with their attributes, ranks and reasons, opaque candidate IDs and
 `selected_candidate_id` for the proposed winner. It never includes acquisition
 URLs or credentials. Candidates are listed best first in pages of 100
-(`--limit` 1 to 200): `candidate_count` is the total, `reported_count` the rows
+(`limit` 1 to 200): `candidate_count` is the total, `reported_count` the rows
 of this page and `next` an opaque cursor for the following page, passed back as
-`--after CURSOR` (`null` on the last page). Each page repeats the live search,
+`after` (`null` on the last page). Each page repeats the live search,
 so a candidate can move between pages if a source changed meanwhile; the winner
 is always chosen from every candidate, not only the page.
 Per-source counts show configured, successful and failed responses, and a
 partially failed search can still choose from the sources that answered.
 
-The API equivalent is `POST /api/search` (optionally
-`POST /api/search?limit=N&after=CURSOR`) with the same object as
-`POST /api/jobs`, for example
-`{"kind": "episode", "title": "Example Series", "year": 2026, "season": 1, "episode": 2}`.
 A body containing `source_url` or `source_path` returns `manual_override: true`
 without searching or echoing the source. `GET /api/profiles` returns the
-configured profiles, and `mynou doctor` shows the active profile names.
+configured profiles.
 
 ## Choose a release by hand
 

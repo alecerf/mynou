@@ -5,7 +5,7 @@ currently protected tunnel generation. It is the `Tunnel` counterpart of
 `Direct` in [#221](https://github.com/alecerf/mynou/issues/221), delivered by
 [#302](https://github.com/alecerf/mynou/issues/302). It runs on the same
 [native owner](tunnel-http.md) as the HTTP connector. The library engine accepts it through `Engine::open_with_network`; see the
-[construction and publication contract](torrent-transport.md). CLI/API VPN
+[construction and publication contract](torrent-transport.md). API VPN
 activation and the complete isolation evidence remain pending.
 
 ```rust,no_run

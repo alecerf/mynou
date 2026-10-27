@@ -6,13 +6,13 @@ instead, each with its own profiles and library destination. When compatible
 accounts ask for the same movie or episode, one download serves all of them.
 Without requester accounts, the single-watchlist behavior is unchanged.
 
-The operator API token remains the only management authority. Requester tokens only read their account's identity and watchlist;
+Only the local API manages Mynou. Requester tokens only read their account's identity and watchlist;
 the server token still confirms and refreshes the library.
 
 ## Bind accounts
 
-Add an optional `requesters` section to the settings with
-`mynou settings --save`:
+Add an optional `requesters` section to the settings document, sent whole as
+`{"settings": {...}}` to `POST /api/settings`:
 
 ```json
 {
@@ -68,34 +68,24 @@ new profiles and destination. Already
 admitted requests keep their captured policy. Disabling an account stops new
 admissions; use `remove` to withdraw existing demand.
 
-```sh
-mynou requesters
-mynou requester alice --limit 100
-mynou requester alice --after CURSOR --limit 100
-mynou requester-sync
-mynou requester-control alice --mapping policy.json
-mynou requester-control alice --mapping policy.json --apply \
-  --plan-id PLAN_ID
-```
-
-A control file contains `action` and either `policy` or a `demand_id`:
+A control (`POST /api/requesters/ACCOUNT/control`) contains `action` and
+either `policy` or a `demand_id`:
 
 - `policy` sets the account's policy, as above.
 - `remove` withdraws one demand of this account only. Removed demand stays
   recorded and polls never revive it.
 - `retry` restarts one failed or cancelled acquisition of this account.
 
-Every control is previewed first; applying needs the returned `plan_id` and the
-running service, and a changed account, policy or demand requires a new
-preview. Previews can read offline storage without writing. `requester-sync`
-polls every account now and needs the service.
+Every control is previewed first; applying needs the returned `plan_id`, and a
+changed account, policy or demand requires a new preview. Previews write
+nothing. `POST /api/requesters/sync` polls every account now.
 
 | Route | Purpose |
 | --- | --- |
 | `GET /api/requesters` | Accounts and poll results |
 | `GET /api/requesters/ACCOUNT?limit=100&after=CURSOR` | One account and a page of demand (`next` continues; omit `after` first) |
 | `POST /api/requesters/sync` | Poll all accounts, with `{}` |
-| `POST /api/requesters/ACCOUNT/control` | Same object as the control file; add `"apply": true` and `"plan_id"` to apply |
+| `POST /api/requesters/ACCOUNT/control` | A control as above; add `"apply": true` and `"plan_id"` to apply |
 
 ## How demand is handled
 

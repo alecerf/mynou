@@ -91,7 +91,7 @@ explicit. Reading a range that needs unknown counts returns an upgrade error
 instead of a partial count or a scan. Opening an index does not migrate it.
 An ordinary write can fill counts along the path it already changes; completing
 legacy counts is an explicit `prepare_range_counts(budget)` operation used by
-writable series and job-store startup. There is no separate CLI migration command.
+writable series and job-store startup. There is no separate migration command.
 
 The caller repeats this operation until it returns `true`, with a branch-page
 budget of 1–256. Each batch stages at most budget plus tree height branch pages;
@@ -213,7 +213,7 @@ accepted as empty instances of this format.
 
 ## Storage diagnostics and errors
 
-`mynou status` and `GET /api/status` include `storage`, one entry per index:
+`GET /api/status` includes `storage`, one entry per index:
 `jobs`, `series`, `requesters`, `announcements`, `sources`, `feeds` and
 `transfers`. Each entry has a `state` (`index`, `empty`, `needs_migration`,
 `legacy`, `migrating`, `not_open`, or `busy` when a long operation holds the
@@ -293,7 +293,7 @@ including any recovery artifacts; a partial copy is not a backup.
 ## Listings and cursors
 
 Every inventory listing returns a cursor page: pass the previous page's `next`
-as `after` (CLI `--after`) and stop when `next` is null. `limit` is 1 to 200
+as `after` and stop when `next` is null. `limit` is 1 to 200
 (50 by default, 100 for search candidates and IRC history), and each page also
 stops at its byte budget. Order is stable: a later write never moves rows of an
 older page, so following `next` under concurrent writes visits each remaining
@@ -305,18 +305,18 @@ stale rather than silently restarting. Other cursors are positions: removing the
 row they name does not invalidate them. `total` counts the whole listing when its
 index keeps a counter.
 
-| Listing | API / CLI | Order | Count |
+| Listing | API | Order | Count |
 | --- | --- | --- | --- |
-| Jobs | `GET /api/jobs`, `mynou jobs` | newest first; `q`, `state` filters | `total` |
-| Library | `GET /api/library`, `mynou library` | newest first; `q`, `state` filters | `total` |
-| Series | `GET /api/series`, `mynou series` | identifier | `total` |
-| Calendar | `GET /api/calendar`, `mynou calendar` | air date, at most 367 days | `total`, null when not cheap |
-| Requester demand | `GET /api/requesters/ID`, `mynou requester` | ledger order | `total` |
-| Retained feeds | `GET /api/feeds/retained`, `mynou feeds --retained` | identifier | `total` (string) |
-| IRC history | `GET /api/irc/announcements`, `mynou announcements` | chronological | `total` |
-| Transfers | `GET /api/transfers`, `mynou torrents` | priority, then FIFO | `total` |
+| Jobs | `GET /api/jobs` | newest first; `q`, `state` filters | `total` |
+| Library | `GET /api/library` | newest first; `q`, `state` filters | `total` |
+| Series | `GET /api/series` | identifier | `total` |
+| Calendar | `GET /api/calendar` | air date, at most 367 days | `total`, null when not cheap |
+| Requester demand | `GET /api/requesters/ID` | ledger order | `total` |
+| Retained feeds | `GET /api/feeds/retained` | identifier | `total` (string) |
+| IRC history | `GET /api/irc/announcements` | chronological | `total` |
+| Transfers | `GET /api/transfers` | priority, then FIFO | `total` |
 | Requests of a transfer | `GET /api/transfers/ID` | identifier (`request_ids_next`) | — |
-| Search candidates | `POST /api/search`, `mynou search` | live search ranking | — |
+| Search candidates | `POST /api/search` | live search ranking | — |
 
 The requester and IRC history listings still accept a legacy `offset` (at most
 10,000 and 1,000) for old callers; only `after` reaches every row. IRC history
@@ -332,8 +332,7 @@ examines a bounded oldest-first window and reports `limited` when more remain.
 `GET /api/jobs` and `GET /api/library` accept `q`, a percent-encoded text of at
 most 128 characters matched case-insensitively against the title, release name,
 state and identifier, and `state` (`queued`, `processing`, `downloading`,
-`importing`, `ready`, `failed` or `cancelled`). On the command line they are
-`--query TEXT` and `--state STATE`. A filtered request examines at most 1,000
+`importing`, `ready`, `failed` or `cancelled`). A filtered request examines at most 1,000
 rows after its cursor and returns the matches, `scanned` (rows examined) and
 `next`, the cursor of the last examined row. A page can therefore hold fewer
 matches than its limit, or none, while `next` continues the search: follow it
@@ -353,13 +352,13 @@ with an error), `done` and `total` records (null when unknown in advance) and
 `resumed` when it continued an interrupted attempt. Reports never contain paths,
 titles or identifiers.
 
-Commands that open storage with write access print progress on standard error
-(each stage change, then about once a second). `mynou serve` binds the API
+`mynou serve` prints progress on standard error while it opens storage with
+write access (each stage change, then about once a second). It binds the API
 before opening storage: while it opens and migrates, `/healthz` answers
-`starting`, `/readyz` answers 503, an authenticated `GET /api/status` (or
-`mynou status`) returns `{"status":"starting","migrations":[...]}`, and every
-other route, including the web interface and `/ws`, answers 401 without the API
-token and 503 with it. Once storage is open, `GET /api/status` keeps the
+`starting`, `/readyz` answers 503, `GET /api/status` returns
+`{"status":"starting","migrations":[...]}`, and every other route, including
+the web interface and `/ws`, answers 503. A request from another site's page or
+naming another host answers 403, as always. Once storage is open, `GET /api/status` keeps the
 `migrations` of this start. An interrupted migration resumes from its last
 durable batch on the next writable start, which then reports `resumed`.
 
@@ -512,9 +511,8 @@ latest 1,000 events are retained per job; consecutive lease-renewal events fold
 into the latest heartbeat. Migration preserves every event retained by the
 previous globally bounded history, including maximum-size messages.
 
-`mynou jobs` and `mynou library` accept `--limit 1..200` and `--after CURSOR`,
-and `--query`/`--state` to [search](#searching-jobs-and-the-library).
-`GET /api/jobs` and `GET /api/library` accept `limit`, `after`, `q` and `state` and return
+`GET /api/jobs` and `GET /api/library` accept `limit` (1 to 200), `after`, and
+`q` and `state` to [search](#searching-jobs-and-the-library), and return
 `jobs`/`library`, `next` (null at the end), and `total`, plus a string `sequence` identifying changes. WebSocket requests use the
 same routes; live topics send the first page, and the embedded interface loads
 older pages on demand. Loaded tails refresh in place when records change; page membership changes and
@@ -647,8 +645,7 @@ requested pages and explicit changed-record patches remain in memory. Demand
 manifests bind checked chunks; account, media, admission, outcome and IRC-origin
 references and counters change atomically with their primary records.
 
-`mynou requester ACCOUNT --limit 1..200 --after CURSOR` and
-`GET /api/requesters/ACCOUNT?limit=200&after=CURSOR` return `demands`, `next`,
+`GET /api/requesters/ACCOUNT?limit=200&after=CURSOR` (`limit` 1 to 200) returns `demands`, `next`,
 `total` and a string `sequence`. Start without `after`; use `next` until null.
 Offsets remain available up to 10,000. Cursors are live key scans: concurrent
 insertions before the cursor may require restarting the listing. Pages hold at
@@ -715,8 +712,7 @@ reads and reconciles only active baselines. Configuration still allows at most
 [source policies](#source-policy-storage) use their own index, with no fixed
 retained-policy count or aggregate-byte cap.
 
-`mynou feeds --retained --limit 1..200 --after CURSOR` and
-`GET /api/feeds/retained?limit=200&after=CURSOR` list retained summaries, including
+`GET /api/feeds/retained?limit=200&after=CURSOR` (`limit` 1 to 200) lists retained summaries, including
 unconfigured historical sources. Start without `after`, then follow `next` until
 null. `total` and `sequence` are decimal strings. These are live key scans:
 concurrent inserts before the cursor need a new listing. Pages hold at most
@@ -799,7 +795,7 @@ watched source, with at most 200 private captured entries and 4 MiB of encoded
 payload. Each entry has its own checked object, binding source, generation and
 ordinal. Candidates include the titles and acquisition URLs necessary for replay;
 URLs may carry private access tokens, like saved job acquisition URLs. Headers,
-cookies and standalone credential values are never captured. CLI/API diagnostics
+cookies and standalone credential values are never captured. API diagnostics
 show only counts, age and phase. An announcement outside the capture bounds (a
 control character in its title, or a title and address too large once encoded)
 is counted as skipped and never blocks the entries polled with it.
@@ -832,7 +828,7 @@ persisted pause reports an error; startup settles it under the disabled policy.
 
 The format-1 upgrade atomically changes the header and adds empty routing/schedule
 metadata without enumerating retained records. Earlier binaries reject format 2.
-Until that first writable start, read-only commands refuse the format-1 index.
+Until that first writable start, read-only opens refuse the format-1 index.
 Before upgrading, keep a complete stopped-store backup if format-1 downgrade is
 needed; restoring it loses subsequent observations and captured work. Restoring
 legacy snapshots has the older limitations described above.
@@ -881,12 +877,11 @@ Chronological, pending and recovery tables change atomically with each record;
 startup cross-checks reservations and requester/job provenance in bounded pages
 before downloads start. An announcement alone never creates demand.
 
-`mynou announcements --limit 200` and
-`GET /api/irc/announcements?limit=200` return newest-first pages with `total`,
-`announcements` and `next_cursor`. Pass that cursor with `--after CURSOR` or
-`after=CURSOR` until it is null. Pages hold at most 200 rows and 4 MiB of stored
+`GET /api/irc/announcements?limit=200` returns newest-first pages with `total`,
+`announcements` and `next_cursor`. Pass that cursor as `after=CURSOR` until it
+is null. Pages hold at most 200 rows and 4 MiB of stored
 record data. These are live scans: new arrivals ahead of the cursor require a
-new listing. The older `--offset`/`offset` interface remains available up to
+new listing. The older `offset` parameter remains available up to
 1,000 rows; use a cursor for the complete history. A decision or receipt never
 requires a whole-history clone. Transient retry state stays bounded and is not
 part of retained duplicate suppression.
@@ -923,7 +918,7 @@ before upgrade is the safest recovery point.
 
 ### Series backlog and pass freshness
 
-`GET /api/status` and `mynou status` expose `inventory.series` alongside the
+`GET /api/status` exposes `inventory.series` alongside the
 existing `storage` sizes. This is the first store integration of #246 (#271);
 library monitoring is described below. A ready reading contains:
 
@@ -967,7 +962,7 @@ successful-pass timestamp until a new successful background pass completes.
 
 ### Library backlog and pass freshness
 
-`GET /api/status` and `mynou status` also expose `inventory.library` (#273),
+`GET /api/status` also exposes `inventory.library` (#273),
 using the same decimal-string fields as series: `due`, `oldest_due_at`,
 `oldest_due_age_secs` and `last_completed_pass_at`. The unit is an eligible
 current library tip, as defined by [indexed library monitoring](#indexed-library-monitoring).
@@ -1018,7 +1013,7 @@ links its measured acceptance through #217 and [the evidence record](inventory-g
 
 ### Job backlog and claim-scan freshness
 
-`GET /api/status` and `mynou status` expose `inventory.jobs` (#275) using the
+`GET /api/status` exposes `inventory.jobs` (#275) using the
 same decimal-string fields as series/library. The scheduled unit, explicitly
 reported as `unit: job_claim_scan`, is one bounded claim attempt: at most one
 promotion page and 256 examined queue entries. It measures the scheduler's

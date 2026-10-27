@@ -70,7 +70,7 @@ and log keys from the resulting `TunnelConfig`. Safe Rust does not guarantee
 key zeroization after disposal; no constant-time or audited-crypto claim is made.
 
 The parser accepts in-memory text. The separate read-only API below loads private
-files; the operator layer separately implements durable import and CLI/API controls.
+files; the operator layer separately implements durable import and API controls.
 Passing validation alone does not establish a protected connection.
 
 ## Read a private file

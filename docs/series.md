@@ -6,51 +6,42 @@ usual selection, download, import and Plex confirmation. Future and unresolved
 episodes stay in the plan and in the calendar.
 
 Before tracking a series, enable the catalog (`catalog.enabled` with a TMDB
-token or API key) and configure your sources and episode profile. Plex
+read access token) and configure your sources and episode profile. Plex
 watchlists can create series records, but Plex is optional for manual tracking.
 
 ## Track and manage
 
-These commands need the running service:
+Follow a series from **New request** in the web interface, or with
+`POST /api/series` while the service runs; the [routes](#calendar-and-api)
+below list, change and refresh records.
 
-```sh
-mynou track-series --title "Example Series" --year 2026 --tmdb-id 123
-mynou series
-mynou series --limit 50 --after ID
-mynou series ID
-mynou series-unmonitor ID
-mynou series-monitor ID
-mynou episode-unmonitor ID --season 1 --episode 2
-mynou episode-monitor ID --season 1 --episode 2
-mynou series-refresh ID
-mynou calendar --from 2026-10-01 --to 2026-10-31 --series-id ID
-```
-
-`mynou series` prints one page object, `{"series": [...], "next": ID or null,
-"total": N}`: 50 records by default, or `--limit` (1 to 200) after the record `--after
-ID`. Pass `next` as `--after` for the following page. There is no limit on how many
+`GET /api/series` returns one page object, `{"series": [...], "next": ID or
+null, "total": N}`: 50 records by default, or `?limit=N` (1 to 200) after the
+record `after=ID`. Pass `next` as `after` for the following page. There is no limit on how many
 series you track: records are stored on disk, not in one in-memory snapshot (see
 [storage](inventory-storage.md#series-storage)). The web interface shows the first
 50 and loads more on request.
 
 `ID` is the series record's 32-character identifier, distinct from job and
-transfer IDs. `--tmdb-id` is optional when the title and year identify one
-series. `--season N` limits the record to one regular season (omitted or `0`
-means all seasons) and `--episode N` narrows it further.
+transfer IDs. `tmdb_id` is optional when the title and year identify one
+series. `season` in the request limits the record to one regular season
+(omitted or `0` means all seasons) and `episode` narrows it further.
 
-New records monitor all known dated regular episodes. Options:
+New records monitor all known dated regular episodes. Options of
+`POST /api/series`:
 
-- `--unmonitored` keeps the plan without requesting anything, for example
+- `"enabled": false` keeps the plan without requesting anything, for example
   before choosing [numbering](#episode-numbering) or a
   [season pack](packs.md).
-- `--future-only` starts monitoring at today's UTC date, including today.
-- `--include-specials` adds catalog season zero.
+- `"future_only": true` starts monitoring at today's UTC date, including today.
+- `"include_specials": true` adds catalog season zero.
 
 Tracking the same series and scope again reuses the existing record and keeps
 its settings; it does not re-enable a record you disabled. A settings change
-makes the record due for the next background pass; `series-refresh` checks it
-immediately. `submit --kind series` and Plex show watchlist entries also create
-series records. Removing a show from the Plex watchlist does not stop its
+makes the record due for the next background pass; a refresh
+(`POST /api/series/ID/refresh`) checks it immediately. A series request
+(`POST /api/jobs` with `"kind": "series"`) and Plex show watchlist entries also
+create series records. Removing a show from the Plex watchlist does not stop its
 monitoring: unmonitor it explicitly. Monitoring controls never cancel requests
 or delete files.
 
@@ -139,8 +130,7 @@ directory. The first start with write access after upgrading from 0.23 or
 earlier migrates `series.json`: it is validated, copied unchanged to
 `series.legacy-<digest>.json`, rebuilt into the new store, verified and then
 replaced by a marker that older versions refuse. An interrupted migration resumes
-on the next start. Offline commands that only read storage do not migrate; they
-report that the store must be migrated first. To go back to an older version,
+on the next start. To go back to an older version,
 restore the preserved copy as described in
 [the storage notes](inventory-storage.md#downgrade-and-recovery); changes made
 after the migration are not in it.
@@ -158,15 +148,11 @@ decision can keep `S01E01`, accept catalog `S01E10` and search source absolute
 `13`. New requests import as `S01E01`; existing requests keep the source label
 captured when they were created, through retries and upgrades.
 
-Preview the current comparison (this works offline, read-only):
-
-```sh
-mynou series-numbering SERIES_ID
-```
+Preview the current comparison with `POST /api/series/SERIES_ID/numbering`
+and an empty `changes` array; a preview writes nothing.
 
 The report shows each known ID's `canonical`, `catalog` and `source` labels,
-`issues`, `resolved` and a `plan_id`. To change labels, write `numbering.json`
-with only a `changes` array:
+`issues`, `resolved` and a `plan_id`. To change labels, send a `changes` array:
 
 ```json
 {
@@ -189,20 +175,13 @@ with only a `changes` array:
 `season` plus `episode` or `absolute` alone, and must not duplicate another
 episode's label. Unchanged episodes keep their accepted values, by default the
 original library number. To restore a source label, choose the original
-season and episode explicitly. Then preview and apply with a running service:
-
-```sh
-mynou series-numbering SERIES_ID --mapping numbering.json
-mynou series-numbering SERIES_ID --mapping numbering.json --apply \
-  --plan-id PLAN_ID_FROM_PREVIEW
-```
+season and episode explicitly. Preview the changes first, then send them again
+with `"apply": true` and the preview's `"plan_id"`.
 
 Apply fetches the catalog again and refuses changed metadata, settings or
 choices; unresolved proposals are never saved. It records labels and the
 accepted plan but creates no requests: monitoring or a refresh then requests
-aired episodes as usual. The API equivalent is
-`POST /api/series/SERIES_ID/numbering` with `changes`, plus `"apply": true` and
-`"plan_id"` to apply.
+aired episodes as usual.
 
 With a saved source label, searches send that season and episode (JSON and
 Torznab), or add the padded absolute number to the search term (JSON also
@@ -211,9 +190,9 @@ contain exactly that single `SxxExx` or `NxNN` label, or for absolute labels a
 single number right after the series title and optional year, such as
 `Example Series 013 1080p`. Absolute titles without a saved choice, chained
 labels, ranges and conflicting labels do not match. In a multi-file torrent,
-exactly one file name must match the saved label. `search` and `submit` also
-accept `--source-numbering JSON` (API `source_numbering`) for one explicit
-episode request without changing a series.
+exactly one file name must match the saved label. A search or a request also
+accepts `source_numbering` for one explicit episode request without changing a
+series.
 
 Imports and Plex confirmation use the library numbers: configure Plex's episode
 order to match them. A replacement catalog ID can never take a retained number,
