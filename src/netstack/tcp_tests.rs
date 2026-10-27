@@ -18,6 +18,9 @@ fn header(flags: u8) -> Header {
         flags,
         window: 4096,
         mss: None,
+        window_scale: None,
+        sack_permitted: false,
+        sack: [None; 3],
     }
 }
 
@@ -72,6 +75,9 @@ fn independent_reference_packets() {
                     flags: parsed.flags,
                     window: parsed.window,
                     mss: parsed.mss,
+                    window_scale: parsed.window_scale,
+                    sack_permitted: parsed.sack_permitted,
+                    sack: [None; 3],
                 },
                 parsed.payload,
                 MAX_MTU,
@@ -151,12 +157,15 @@ fn every_header_field_is_checked() {
         tamper(&mut bytes, |bytes| bytes[range].copy_from_slice(&[0, 0]));
         assert_eq!(parse(REMOTE, LOCAL, &bytes), Err(SegmentError::Port));
     }
+    // Reserved bits, AE, ECN-echo and CWR are ignored (RFC 9293 3.1).
+    for (index, value) in [(12, 0x51), (12, 0x5e), (13, ACK | 0x40), (13, ACK | 0x80)] {
+        let mut bytes = good.clone();
+        tamper(&mut bytes, |bytes| bytes[index] = value);
+        let parsed = parse(REMOTE, LOCAL, &bytes).expect("ignored bits");
+        assert_eq!(parsed.flags, ACK, "byte {index} = {value:#x}");
+    }
     for (index, value, expected) in [
-        (12, 0x51, SegmentError::Flags),
-        (12, 0x58, SegmentError::Flags),
         (13, ACK | 0x20, SegmentError::Flags),
-        (13, ACK | 0x40, SegmentError::Flags),
-        (13, ACK | 0x80, SegmentError::Flags),
         (13, SYN | FIN, SegmentError::Flags),
         (13, SYN | RST, SegmentError::Flags),
         (13, FIN | RST, SegmentError::Flags),

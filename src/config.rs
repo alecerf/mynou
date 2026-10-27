@@ -139,7 +139,7 @@ pub fn default_json() -> Value {
                 ("pex", true.into()),
                 ("max_active", n(2)),
                 ("max_seeding", n(0)),
-                ("max_peers", n(4)),
+                ("max_peers", n(50)),
                 ("download_limit_bps", n(0)),
                 ("upload_limit_bps", n(0)),
                 ("seed_ratio_milli", Value::Null),
@@ -493,7 +493,7 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
     }
     let workers = number(v, "workers", 2, 32)? as usize;
     let max_active = number(d, "max_active", 2, u32::MAX as u64)? as usize;
-    let max_peers = number(d, "max_peers", 4, 8)? as usize;
+    let max_peers = number(d, "max_peers", 50, 256)? as usize;
     let poll_interval_ms = number(v, "poll_interval_ms", 500, 3600000)?;
     let lease_duration_secs = number(v, "lease_duration_secs", 60, 86400)?;
     if workers == 0 || max_peers == 0 || poll_interval_ms < 10 || lease_duration_secs < 5 {

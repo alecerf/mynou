@@ -150,6 +150,8 @@ struct Seen {
     acknowledgment: u32,
     flags: u8,
     mss: Option<u16>,
+    window: u16,
+    window_scale: Option<u8>,
     payload: Vec<u8>,
 }
 
@@ -161,6 +163,8 @@ fn seen(packet: &[u8], to: Ipv4Addr) -> Seen {
         acknowledgment: segment.acknowledgment,
         flags: segment.flags,
         mss: segment.mss,
+        window: segment.window,
+        window_scale: segment.window_scale,
         payload: segment.payload.to_vec(),
     }
 }
@@ -180,6 +184,9 @@ fn forge(
         flags: fields.2,
         window: 1000,
         mss: None,
+        window_scale: None,
+        sack_permitted: false,
+        sack: [None; 3],
     };
     tcp::build(from.0, to.0, &header, payload, MAX_MTU).unwrap()
 }
@@ -217,7 +224,7 @@ fn configuration_is_validated() {
             ..good
         },
         TcpConfig {
-            receive_buffer: 70000,
+            receive_buffer: (1 << 24) + 1,
             ..good
         },
         TcpConfig {
@@ -229,7 +236,7 @@ fn configuration_is_validated() {
             ..good
         },
         TcpConfig {
-            reorder_segments: 65,
+            reorder_segments: 1025,
             ..good
         },
         TcpConfig { burst: 0, ..good },
@@ -530,6 +537,118 @@ fn reordered_and_duplicated_segments_arrive_once_and_in_order() {
         Ingest::Dropped(Discard::Window)
     );
     assert_eq!(read(&mut pair.b, server), b"");
+}
+
+#[test]
+fn a_delayed_ack_waits_for_a_second_segment_or_the_delay() {
+    let mut b = config(SERVER);
+    b.ack_delay = Some(Duration::from_millis(20));
+    let (mut pair, client, _, _) = established_with(config(CLIENT), b, (CLIENT_ISS, SERVER_ISS));
+    let mss = pair.a.flows[&client.key].mss;
+    pair.a.send(G, client, &pattern(mss)).unwrap();
+    let lone = pair.a.poll(G, pair.now).unwrap().send;
+    pair.b.ingest(G, pair.now, &lone[0]);
+    let held = pair.b.poll(G, pair.now).unwrap();
+    assert!(held.send.is_empty());
+    assert_eq!(held.next, Some(pair.now + Duration::from_millis(20)));
+    let later = pair.now + Duration::from_millis(20);
+    assert_eq!(pair.b.poll(G, later).unwrap().send.len(), 1);
+    // Two full segments are acknowledged at once.
+    pair.a.send(G, client, &pattern(2 * mss)).unwrap();
+    for packet in pair.a.poll(G, later).unwrap().send {
+        pair.b.ingest(G, later, &packet);
+    }
+    let acks = pair.b.poll(G, later).unwrap().send;
+    assert_eq!(acks.len(), 1);
+    assert_eq!(
+        seen(&acks[0], CLIENT).acknowledgment,
+        pair.a.flows[&client.key].snd_max
+    );
+}
+
+/// The (left, right) edges of the SACK option in a raw packet.
+fn sack_option(packet: &[u8]) -> Vec<(u32, u32)> {
+    let tcp = &packet[20..];
+    let options = &tcp[20..usize::from(tcp[12] >> 4) * 4];
+    let mut index = 0;
+    while index < options.len() {
+        match options[index] {
+            0 => break,
+            1 => index += 1,
+            kind => {
+                let length = usize::from(options[index + 1]);
+                if kind == 5 {
+                    return options[index + 2..index + length]
+                        .chunks(8)
+                        .map(|edge| {
+                            let word = |at: usize| {
+                                u32::from_be_bytes(edge[at..at + 4].try_into().unwrap())
+                            };
+                            (word(0), word(4))
+                        })
+                        .collect();
+                }
+                index += length;
+            }
+        }
+    }
+    Vec::new()
+}
+
+#[test]
+fn out_of_order_segments_draw_an_immediate_ack_with_sack_blocks() {
+    let (mut pair, client, server, _) = established();
+    let mss = pair.a.flows[&client.key].mss as u32;
+    assert!(pair.a.flows[&client.key].sack && pair.b.flows[&server.key].sack);
+    let data = pattern(4 * mss as usize);
+    pair.a.send(G, client, &data).unwrap();
+    let packets = pair.a.poll(G, pair.now).unwrap().send;
+    assert_eq!(packets.len(), 4);
+    let start = seen(&packets[0], SERVER).sequence;
+    // Segments 0 and 2 are lost: 1 and 3 arrive in one pump.
+    for index in [1, 3] {
+        pair.b.ingest(G, pair.now, &packets[index]);
+    }
+    // One ACK reports both arrivals: a SACK sender counts SACKed bytes.
+    let acks = pair.b.poll(G, pair.now).unwrap().send;
+    assert_eq!(acks.len(), 1);
+    let edge = |segments: u32| start.wrapping_add(segments * mss);
+    assert_eq!(seen(&acks[0], CLIENT).acknowledgment, start);
+    // The range holding the latest arrival comes first.
+    assert_eq!(
+        sack_option(&acks[0]),
+        [(edge(3), edge(4)), (edge(1), edge(2))]
+    );
+    pair.b.ingest(G, pair.now, &packets[0]);
+    let ack = pair.b.poll(G, pair.now).unwrap().send.remove(0);
+    assert_eq!(seen(&ack, CLIENT).acknowledgment, edge(2));
+    assert_eq!(sack_option(&ack), [(edge(3), edge(4))]);
+    pair.b.ingest(G, pair.now, &packets[2]);
+    let ack = pair.b.poll(G, pair.now).unwrap().send.remove(0);
+    assert_eq!(seen(&ack, CLIENT).acknowledgment, edge(4));
+    assert!(sack_option(&ack).is_empty());
+    assert!(read(&mut pair.b, server) == data);
+    assert_eq!(pair.b.flows[&server.key].reordered, 0);
+}
+
+#[test]
+fn without_sack_each_out_of_order_segment_draws_its_own_duplicate_ack() {
+    let (mut pair, client, server, _) = established();
+    pair.b.flows.get_mut(&server.key).unwrap().sack = false;
+    pair.a.send(G, client, &pattern(4 * 1384)).unwrap();
+    let packets = pair.a.poll(G, pair.now).unwrap().send;
+    for packet in &packets[1..] {
+        pair.b.ingest(G, pair.now, packet);
+    }
+    let acks = pair.b.poll(G, pair.now).unwrap().send;
+    assert_eq!(acks.len(), 3);
+    for ack in &acks {
+        assert_eq!(
+            seen(ack, CLIENT).acknowledgment,
+            seen(&packets[0], SERVER).sequence
+        );
+        assert!(sack_option(ack).is_empty());
+    }
 }
 
 #[test]
@@ -898,6 +1017,9 @@ fn a_peer_mss_limits_the_segments_sent() {
         flags: SYN,
         window: 65535,
         mss: Some(100),
+        window_scale: None,
+        sack_permitted: false,
+        sack: [None; 3],
     };
     let packet = tcp::build(CLIENT, SERVER, &syn, &[], MAX_MTU).unwrap();
     assert_eq!(server.ingest(G, T0, &packet), Ingest::Handshake);
@@ -907,6 +1029,9 @@ fn a_peer_mss_limits_the_segments_sent() {
     assert_eq!(reply.sequence, SERVER_ISS);
     assert_eq!(reply.acknowledgment, 101);
     assert_eq!(reply.mss, Some(1384));
+    // A SYN without window scaling or SACK gets neither back.
+    assert_eq!(reply.window_scale, None);
+    assert!(sack_option(&synack[0]).is_empty() && !server.flows.values().any(|flow| flow.sack));
     syn.flags = ACK;
     syn.mss = None;
     syn.sequence = 101;
@@ -1111,6 +1236,9 @@ fn invalid_datagrams_are_counted_and_rejected() {
             flags: ACK,
             window: 1,
             mss: None,
+            window_scale: None,
+            sack_permitted: false,
+            sack: [None; 3],
         },
         b"",
         MAX_MTU,
@@ -1547,6 +1675,50 @@ fn the_unscaled_window_caps_flight_after_congestion_warmup() {
     // With 100 ms RTT, this window alone caps one stream at 655350 B/s
     // (5.2428 Mbit/s), regardless of a larger send buffer or burst setting.
     assert_eq!(flight * 10, 655350);
+}
+
+#[test]
+fn a_negotiated_window_scale_lifts_the_unscaled_cap() {
+    let mut a = config(CLIENT);
+    a.send_buffer = 1 << 20;
+    a.burst = 64;
+    let mut b = config(SERVER);
+    b.receive_buffer = 1 << 20;
+    let mut pair = Pair::with(a, b, &[0, CLIENT_ISS], &[SERVER_ISS]);
+    let listener = pair.b.listen(G, PORT).unwrap();
+    let client = pair.a.connect(G, T0, SERVER, PORT).unwrap();
+    let syn = pair.a.poll(G, T0).unwrap().send.remove(0);
+    // The SYN offers our shift; its own window is never scaled.
+    assert_eq!(seen(&syn, SERVER).window_scale, Some(0));
+    pair.b.ingest(G, T0, &syn);
+    let synack = pair.b.poll(G, T0).unwrap().send.remove(0);
+    let reply = seen(&synack, CLIENT);
+    assert_eq!((reply.window_scale, reply.window), (Some(5), 65535));
+    pair.a.ingest(G, T0, &synack);
+    pair.pump();
+    let server = pair.b.accept(G, listener).unwrap().unwrap();
+    for _ in 0..64 {
+        pair.a.send(G, client, &[1; 32768]).unwrap();
+        pair.pump();
+        assert_eq!(read(&mut pair.b, server).len(), 32768);
+        pair.pump();
+    }
+    // Reads no longer re-announce a window this large, so the sender keeps
+    // the one it last heard, still far above the unscaled cap.
+    assert!(pair.a.flows[&client.key].snd_wnd > 1 << 19);
+    pair.a.send(G, client, &[7; 1 << 19]).unwrap();
+    let mut flight = 0;
+    loop {
+        let burst = pair.a.poll(G, T0).unwrap().send;
+        if burst.is_empty() {
+            break;
+        }
+        flight += burst
+            .iter()
+            .map(|packet| seen(packet, SERVER).payload.len())
+            .sum::<usize>();
+    }
+    assert!(flight > 65535, "{flight}");
 }
 
 #[test]

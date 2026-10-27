@@ -3,10 +3,14 @@
 //! No host resolution, sockets, persistence or protection activation.
 
 use crate::{
-    netstack::{Ipv4Config, MAX_MTU, MAX_RESOLVERS, MIN_MTU, TcpConfig},
+    netstack::{Ipv4Config, MAX_MTU, MAX_RESOLVERS, MIN_MTU},
     tunnel::{Endpoint, TunnelConfig},
 };
-use std::{fmt, net::Ipv4Addr, net::SocketAddrV4, time::Duration};
+use std::{
+    fmt,
+    net::{Ipv4Addr, Ipv6Addr, SocketAddrV4},
+    time::Duration,
+};
 
 #[path = "profile_file.rs"]
 mod file;
@@ -70,6 +74,9 @@ pub struct Profile {
     ip: Ipv4Config,
     prefix: u8,
     dns: Vec<Ipv4Addr>,
+    /// IPv6 settings of the profile, kept for its private document: the tunnel
+    /// itself carries IPv4 only, and nothing falls back to the host's IPv6.
+    ipv6: Ipv6Settings,
     mtu: usize,
     endpoint: SocketAddrV4,
     keepalive: Option<Duration>,
@@ -112,16 +119,25 @@ impl Profile {
             }
             text
         }
+        let mut address = format!("{}/{}", self.ip.local(), self.prefix);
+        if let Some((ip, prefix)) = self.ipv6.address {
+            address.push_str(&format!(", {ip}/{prefix}"));
+        }
+        let dns = self
+            .dns
+            .iter()
+            .map(ToString::to_string)
+            .chain(self.ipv6.dns.iter().map(ToString::to_string))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let route = if self.ipv6.route {
+            "0.0.0.0/0, ::/0"
+        } else {
+            "0.0.0.0/0"
+        };
         let mut text = format!(
-            "[Interface]\nPrivateKey = {}\nAddress = {}/{}\nDNS = {}\nMTU = {}\n[Peer]\nPublicKey = {}\nAllowedIPs = 0.0.0.0/0\nEndpoint = {}\n",
+            "[Interface]\nPrivateKey = {}\nAddress = {address}\nDNS = {dns}\nMTU = {}\n[Peer]\nPublicKey = {}\nAllowedIPs = {route}\nEndpoint = {}\n",
             key(&self.secret),
-            self.ip.local(),
-            self.prefix,
-            self.dns
-                .iter()
-                .map(ToString::to_string)
-                .collect::<Vec<_>>()
-                .join(", "),
             self.mtu,
             key(&self.public),
             self.endpoint
@@ -146,10 +162,18 @@ impl Profile {
         );
         config.psk = self.psk;
         config.mtu = self.mtu;
-        config.tcp = TcpConfig::new(ip, self.mtu);
+        // Keep the tunnel's TCP bounds; only the profile's MTU changes.
+        config.tcp.mtu = self.mtu;
         config.keepalive = self.keepalive;
         config.with_dns(self.dns)
     }
+}
+
+#[derive(Default)]
+struct Ipv6Settings {
+    address: Option<(Ipv6Addr, u8)>,
+    dns: Vec<Ipv6Addr>,
+    route: bool,
 }
 
 const FIELDS: [&str; 9] = [
@@ -172,6 +196,13 @@ fn ipv4(value: &str) -> Option<Ipv4Addr> {
     let address: Ipv4Addr = value.parse().ok()?;
     let first = address.octets()[0];
     (first != 0 && first != 127 && first < 224).then_some(address)
+}
+
+/// A unicast IPv6 address: not unspecified, loopback or multicast.
+fn ipv6(value: &str) -> Option<Ipv6Addr> {
+    let address: Ipv6Addr = value.parse().ok()?;
+    (!address.is_unspecified() && !address.is_loopback() && !address.is_multicast())
+        .then_some(address)
 }
 
 /// Canonical standard base64, exactly 32 bytes (one final '='; no ignored bytes).
@@ -282,22 +313,52 @@ pub fn parse(input: &str) -> Result<Profile, ProfileError> {
     let secret = key(required(0)?.1)
         .filter(|key| *key != [0; 32])
         .ok_or_else(|| invalid(0))?;
-    let (address, prefix) = required(1)?.1.split_once('/').ok_or_else(|| invalid(1))?;
-    let address = ipv4(address).ok_or_else(|| invalid(1))?;
+    // One IPv4 address, and at most one IPv6 address beside it.
+    let mut ipv4_address = None;
+    let mut ipv6_settings = Ipv6Settings::default();
+    for value in required(1)?.1.split(',') {
+        let (address, prefix) = value.trim().split_once('/').ok_or_else(|| invalid(1))?;
+        let prefix = decimal(prefix).ok_or_else(|| invalid(1))?;
+        if let Some(address) = ipv4(address) {
+            if prefix > 32 || ipv4_address.replace((address, prefix as u8)).is_some() {
+                return Err(invalid(1));
+            }
+        } else {
+            let address = ipv6(address).ok_or_else(|| invalid(1))?;
+            if prefix > 128
+                || ipv6_settings
+                    .address
+                    .replace((address, prefix as u8))
+                    .is_some()
+            {
+                return Err(invalid(1));
+            }
+        }
+    }
+    let (address, prefix) = ipv4_address.ok_or_else(|| invalid(1))?;
     let ip = Ipv4Config::new(address, Ipv4Addr::UNSPECIFIED, 0).map_err(|_| invalid(1))?;
-    let prefix = decimal(prefix)
-        .filter(|n| *n <= 32)
-        .ok_or_else(|| invalid(1))? as u8;
+    // IPv4 resolvers answer inside the tunnel; IPv6 ones are kept for later.
     let mut dns = Vec::new();
     for value in required(2)?.1.split(',') {
-        if dns.len() == MAX_RESOLVERS {
+        if dns.len() + ipv6_settings.dns.len() == MAX_RESOLVERS {
             return Err(invalid(2));
         }
-        let resolver = ipv4(value.trim()).ok_or_else(|| invalid(2))?;
-        if dns.contains(&resolver) {
-            return Err(invalid(2));
+        let value = value.trim();
+        if let Some(resolver) = ipv4(value) {
+            if dns.contains(&resolver) {
+                return Err(invalid(2));
+            }
+            dns.push(resolver);
+        } else {
+            let resolver = ipv6(value).ok_or_else(|| invalid(2))?;
+            if ipv6_settings.dns.contains(&resolver) {
+                return Err(invalid(2));
+            }
+            ipv6_settings.dns.push(resolver);
         }
-        dns.push(resolver);
+    }
+    if dns.is_empty() {
+        return Err(invalid(2));
     }
     let mtu = match fields[3] {
         Some((_, value)) => decimal(value)
@@ -314,9 +375,14 @@ pub fn parse(input: &str) -> Result<Profile, ProfileError> {
     let psk = fields[5]
         .map(|(_, value)| key(value).ok_or_else(|| invalid(5)))
         .transpose()?;
-    if required(6)?.1 != "0.0.0.0/0" {
-        return Err(invalid(6));
-    }
+    // The full IPv4 route, optionally with the full IPv6 route.
+    let mut routes: Vec<_> = required(6)?.1.split(',').map(str::trim).collect();
+    routes.sort_unstable();
+    ipv6_settings.route = match routes.as_slice() {
+        ["0.0.0.0/0"] => false,
+        ["0.0.0.0/0", "::/0"] => true,
+        _ => return Err(invalid(6)),
+    };
     let endpoint: SocketAddrV4 = required(7)?.1.parse().map_err(|_| invalid(7))?;
     if endpoint.port() == 0 || ipv4(&endpoint.ip().to_string()).is_none() {
         return Err(invalid(7));
@@ -338,6 +404,7 @@ pub fn parse(input: &str) -> Result<Profile, ProfileError> {
         ip,
         prefix,
         dns,
+        ipv6: ipv6_settings,
         mtu,
         endpoint,
         keepalive,

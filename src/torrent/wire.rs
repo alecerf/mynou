@@ -44,6 +44,54 @@ pub struct Peer {
     piece_count: Option<usize>,
     bitfield_received: bool,
     availability_known: bool,
+    ahead: Option<Blocks>,
+}
+
+/// An incoming connection whose handshake named a torrent being downloaded,
+/// handed to that download before this side answers.
+pub struct Inbound {
+    pub stream: Box<dyn NetworkStream>,
+    pub address: SocketAddr,
+    pub hash: [u8; 20],
+    pub extensions: bool,
+}
+
+/// Blocks requested at once from an unlimited peer. A piece requested ahead
+/// of the current one therefore never has more outstanding.
+pub const PIPELINE: usize = 16;
+
+/// One piece's blocks: requested in order, stored as they arrive.
+struct Blocks {
+    index: usize,
+    size: usize,
+    data: Vec<u8>,
+    received: Vec<bool>,
+    next: usize,
+    pending: usize,
+}
+
+impl Blocks {
+    /// A piece requested ahead holds only the blocks it can have requested
+    /// until it becomes the current piece.
+    fn new(meta: &Meta, index: usize, v2_wire: bool, ahead: bool) -> Self {
+        let size = meta.wire_piece_size(index, v2_wire);
+        let length = meta.piece_size(index);
+        Self {
+            index,
+            size,
+            data: vec![
+                0;
+                if ahead {
+                    length.min(PIPELINE * BLOCK)
+                } else {
+                    length
+                }
+            ],
+            received: vec![false; size.div_ceil(BLOCK)],
+            next: 0,
+            pending: 0,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -180,11 +228,19 @@ fn write_message_deadline(
     stop: Option<&AtomicBool>,
     deadline: Instant,
 ) -> Result<()> {
+    write_all_deadline(stream, &frame(id, payload)?, stop, deadline)
+}
+/// A length-prefixed message in one buffer: written at once, it leaves in one
+/// segment instead of one per part, which matters most over the VPN where
+/// every segment is its own encrypted datagram.
+fn frame(id: u8, payload: &[u8]) -> Result<Vec<u8>> {
     let length = u32::try_from(payload.len().checked_add(1).ok_or("Message is too large")?)
         .map_err(|_| "Message is too large")?;
-    write_all_deadline(stream, &length.to_be_bytes(), stop, deadline)?;
-    write_all_deadline(stream, &[id], stop, deadline)?;
-    write_all_deadline(stream, payload, stop, deadline)
+    let mut message = Vec::with_capacity(5 + payload.len());
+    message.extend_from_slice(&length.to_be_bytes());
+    message.push(id);
+    message.extend_from_slice(payload);
+    Ok(message)
 }
 /// Count payload bytes only after the socket accepts them, including a partial
 /// write before a later network failure. Protocol headers are never charged.
@@ -202,9 +258,11 @@ pub fn write_payload_message(
         .and_then(|n| u32::try_from(n).ok())
         .ok_or("Message is too large")?;
     let deadline = Instant::now() + Duration::from_secs(15);
-    write_all_deadline(stream, &length.to_be_bytes(), Some(stop), deadline)?;
-    write_all_deadline(stream, &[7], Some(stop), deadline)?;
-    write_all_deadline(stream, header, Some(stop), deadline)?;
+    let mut prefix = Vec::with_capacity(5 + header.len());
+    prefix.extend_from_slice(&length.to_be_bytes());
+    prefix.push(7);
+    prefix.extend_from_slice(header);
+    write_all_deadline(stream, &prefix, Some(stop), deadline)?;
     stream
         .set_write_timeout(Some(Duration::from_millis(100)))
         .map_err(|_| "Could not configure peer writes")?;
@@ -258,7 +316,19 @@ pub fn read_message(
     stream: &mut dyn NetworkStream,
     stop: Option<&AtomicBool>,
 ) -> Result<(u8, Vec<u8>)> {
-    read_message_deadline(stream, stop, Instant::now() + Duration::from_secs(15))
+    read_bounded(
+        stream,
+        stop,
+        Instant::now() + Duration::from_secs(15),
+        message_limit(None),
+    )
+}
+
+/// The largest message a peer may send. Once the piece count is known it is a
+/// block, a bitfield, a proof or a PEX list, never metadata-sized: a download
+/// connection then holds well under a megabyte instead of `MAX_META`.
+pub fn message_limit(piece_count: Option<usize>) -> usize {
+    piece_count.map_or(MAX_META, |count| count.div_ceil(8).max(64 * 1024)) + 1024
 }
 
 fn read_message_deadline(
@@ -266,13 +336,22 @@ fn read_message_deadline(
     stop: Option<&AtomicBool>,
     deadline: Instant,
 ) -> Result<(u8, Vec<u8>)> {
+    read_bounded(stream, stop, deadline, message_limit(None))
+}
+
+fn read_bounded(
+    stream: &mut dyn NetworkStream,
+    stop: Option<&AtomicBool>,
+    deadline: Instant,
+    limit: usize,
+) -> Result<(u8, Vec<u8>)> {
     let mut length = [0; 4];
     read_exact_deadline(stream, &mut length, stop, deadline)?;
     let length = u32::from_be_bytes(length) as usize;
     if length == 0 {
         return Ok((255, Vec::new()));
     }
-    if length > MAX_META + 1024 {
+    if length > limit {
         return Err("Peer message is too large".into());
     }
     let mut payload = vec![0; length];
@@ -400,6 +479,61 @@ impl Peer {
             .unwrap_or(Instant::now() + Duration::from_secs(5))
             .min(Instant::now() + Duration::from_secs(5));
         let extensions = handshake_deadline(&mut *stream, hash, id, true, stop, deadline)?;
+        let settings = PeerSettings {
+            meta,
+            port,
+            pex,
+            v2_wire,
+            counters,
+            download_gate,
+            local_download_gate,
+            network,
+        };
+        Self::open(stream, extensions, settings, stop, deadline)
+    }
+
+    /// Answers an incoming peer whose handshake was already read, then asks
+    /// for its pieces as an outgoing connection would.
+    pub fn accept(
+        inbound: Inbound,
+        id: &[u8; 20],
+        settings: PeerSettings<'_>,
+        stop: &AtomicBool,
+    ) -> Result<Self> {
+        let Inbound {
+            mut stream,
+            hash,
+            extensions,
+            ..
+        } = inbound;
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut packet = [0u8; 68];
+        packet[0] = 19;
+        packet[1..20].copy_from_slice(b"BitTorrent protocol");
+        packet[25] = 0x10;
+        packet[28..48].copy_from_slice(&hash);
+        packet[48..].copy_from_slice(id);
+        write_all_deadline(&mut *stream, &packet, Some(stop), deadline)?;
+        Self::open(stream, extensions, settings, Some(stop), deadline)
+    }
+
+    fn open(
+        mut stream: Box<dyn NetworkStream>,
+        extensions: bool,
+        settings: PeerSettings<'_>,
+        stop: Option<&AtomicBool>,
+        deadline: Instant,
+    ) -> Result<Self> {
+        let PeerSettings {
+            meta,
+            port,
+            pex,
+            v2_wire,
+            counters,
+            download_gate,
+            local_download_gate,
+            ..
+        } = settings;
         if extensions {
             write_message_deadline(
                 &mut *stream,
@@ -427,6 +561,7 @@ impl Peer {
             piece_count: meta.map(Meta::count),
             bitfield_received: false,
             availability_known: false,
+            ahead: None,
         })
     }
 
@@ -443,7 +578,12 @@ impl Peer {
             if !self.choked {
                 return Ok(());
             }
-            let (id, payload) = read_message_deadline(&mut *self.stream, Some(stop), deadline)?;
+            let (id, payload) = read_bounded(
+                &mut *self.stream,
+                Some(stop),
+                deadline,
+                message_limit(self.piece_count),
+            )?;
             self.ancillary(id, &payload)?;
         }
         Err("Peer keeps the download choked".into())
@@ -460,6 +600,16 @@ impl Peer {
                     .bitfield
                     .get(index / 8)
                     .is_some_and(|byte| byte & (0x80 >> (index % 8)) != 0))
+    }
+
+    /// One message, within what this peer may send at this point.
+    fn read(&mut self, stop: &AtomicBool) -> Result<(u8, Vec<u8>)> {
+        read_bounded(
+            &mut *self.stream,
+            Some(stop),
+            Instant::now() + Duration::from_secs(15),
+            message_limit(self.piece_count),
+        )
     }
 
     fn bind_metadata(&mut self, meta: &Meta) -> Result<()> {
@@ -666,30 +816,75 @@ impl Peer {
         self.bind_metadata(&meta)?;
         Ok(meta)
     }
+    /// A verified piece, first fetching its v2 hash from the peer when the
+    /// metadata lacks it. `upcoming` names the piece to fetch next, if known:
+    /// its first blocks are requested while this one's last blocks arrive, and
+    /// the next call must then be for that piece.
     pub fn fetch_piece(
         &mut self,
         meta: &mut Meta,
         index: usize,
+        upcoming: &mut dyn FnMut() -> Option<usize>,
         stop: &AtomicBool,
     ) -> Result<Vec<u8>> {
+        self.ready_for(meta, index, stop)?;
+        if needs_hashes(meta, index) {
+            self.fetch_hashes(meta, index, stop)?;
+        }
+        self.download_piece(meta, index, upcoming, stop)
+    }
+    /// A piece whose hash the metadata already holds: shared metadata stays unchanged.
+    pub fn fetch_known_piece(
+        &mut self,
+        meta: &Meta,
+        index: usize,
+        upcoming: &mut dyn FnMut() -> Option<usize>,
+        stop: &AtomicBool,
+    ) -> Result<Vec<u8>> {
+        self.ready_for(meta, index, stop)?;
+        if needs_hashes(meta, index) {
+            return Err("V2 hash mismatch".into());
+        }
+        self.download_piece(meta, index, upcoming, stop)
+    }
+    fn ready_for(&mut self, meta: &Meta, index: usize, stop: &AtomicBool) -> Result<()> {
         if index >= meta.count() {
             return Err("Invalid piece index".into());
+        }
+        if self
+            .ahead
+            .as_ref()
+            .is_some_and(|ahead| ahead.index != index)
+        {
+            return Err("Peer pipeline skipped a requested piece".into());
+        }
+        // A choking peer discards the requests sent ahead.
+        if self.choked && self.ahead.take().is_some() {
+            return Err("Peer choked a pipelined piece".into());
         }
         self.prepare_download(meta, stop)?;
         if !self.has_piece(index) {
             return Err("Peer does not advertise the requested piece".into());
         }
-        if meta.v2.is_some() && meta.v2_pieces[index].is_none() && meta.pieces[index].is_none() {
-            self.fetch_hashes(meta, index, stop)?;
-        }
-        let n = meta.wire_piece_size(index, self.v2_wire);
-        let mut data = vec![0; meta.piece_size(index)];
-        let mut received = vec![false; n.div_ceil(BLOCK)];
-        let mut next = 0usize;
-        let mut pending = 0usize;
+        Ok(())
+    }
+    fn download_piece(
+        &mut self,
+        meta: &Meta,
+        index: usize,
+        upcoming: &mut dyn FnMut() -> Option<usize>,
+        stop: &AtomicBool,
+    ) -> Result<Vec<u8>> {
+        let mut current = match self.ahead.take() {
+            Some(mut ahead) => {
+                ahead.data.resize(meta.piece_size(index), 0);
+                ahead
+            }
+            None => Blocks::new(meta, index, self.v2_wire, false),
+        };
         let mut deadline = Instant::now() + Duration::from_secs(120);
-        let mut messages = received.len() * 8 + 256;
-        while received.iter().any(|v| !v) {
+        let mut messages = current.received.len() * 8 + 256;
+        while current.received.iter().any(|v| !v) {
             if Instant::now() >= deadline || messages == 0 {
                 return Err("Peer did not provide the requested piece".into());
             }
@@ -701,13 +896,52 @@ impl Peer {
             // next reservation never leaves old responses unread in a pipeline.
             let pipeline =
                 if self.download_gate.limit() == 0 && self.local_download_gate.limit() == 0 {
-                    16
+                    PIPELINE
                 } else {
                     1
                 };
-            while next < received.len() && pending < pipeline {
-                let offset = next * BLOCK;
-                let length = (n - offset).min(BLOCK);
+            // The requests of one round leave in one write. Once this piece
+            // is all requested, the pipeline continues into the next one, so it
+            // does not drain for a round trip at every piece boundary.
+            let mut requests = Vec::new();
+            loop {
+                let ahead = self.ahead.as_ref().map_or(0, |ahead| ahead.pending);
+                if current.pending + ahead >= pipeline {
+                    break;
+                }
+                if current.next == current.received.len() && pipeline > 1 && self.ahead.is_none() {
+                    // Only a piece whose hash is known goes ahead: fetching a
+                    // v2 proof reads messages outside this loop.
+                    match upcoming() {
+                        Some(next)
+                            if next != index
+                                && next < meta.count()
+                                && self.has_piece(next)
+                                && !needs_hashes(meta, next) =>
+                        {
+                            self.ahead = Some(Blocks::new(meta, next, self.v2_wire, true));
+                        }
+                        _ => break,
+                    }
+                }
+                let target = if current.next < current.received.len() {
+                    &mut current
+                } else {
+                    // A slow last block must not let the next piece outgrow
+                    // the blocks it holds while ahead.
+                    match self.ahead.as_mut() {
+                        Some(ahead)
+                            if pipeline > 1
+                                && ahead.next < ahead.received.len()
+                                && ahead.next * BLOCK < ahead.data.len() =>
+                        {
+                            ahead
+                        }
+                        _ => break,
+                    }
+                };
+                let offset = target.next * BLOCK;
+                let length = (target.size - offset).min(BLOCK);
                 let waiting = Instant::now();
                 reserve_payload(
                     &mut *self.stream,
@@ -722,15 +956,23 @@ impl Peer {
                     .checked_add(waiting.elapsed())
                     .ok_or("Peer deadline overflow")?;
                 let mut request = Vec::with_capacity(12);
-                request.extend_from_slice(&(index as u32).to_be_bytes());
+                request.extend_from_slice(&(target.index as u32).to_be_bytes());
                 request.extend_from_slice(&(offset as u32).to_be_bytes());
                 request.extend_from_slice(&(length as u32).to_be_bytes());
-                write_message(&mut *self.stream, 6, &request, Some(stop))?;
-                next += 1;
-                pending += 1;
+                requests.extend(frame(6, &request)?);
+                target.next += 1;
+                target.pending += 1;
+            }
+            if !requests.is_empty() {
+                write_all_deadline(
+                    &mut *self.stream,
+                    &requests,
+                    Some(stop),
+                    Instant::now() + Duration::from_secs(15),
+                )?;
             }
             let reading = Instant::now();
-            let (id, payload) = read_message(&mut *self.stream, Some(stop))?;
+            let (id, payload) = self.read(stop)?;
             if id == 255 && reading.elapsed() >= Duration::from_secs(1) {
                 // A deliberately paced peer keeps its connection alive while
                 // waiting for payload credit. Rapid keepalives still consume
@@ -753,24 +995,35 @@ impl Peer {
                         .try_into()
                         .map_err(|_| "Invalid piece offset")?,
                 ) as usize;
-                if piece != index
-                    || !offset.is_multiple_of(BLOCK)
-                    || offset >= n
-                    || payload.len() - 8 != (n - offset).min(BLOCK)
-                    || offset / BLOCK >= next
-                {
+                let target = if piece == current.index {
+                    Some(&mut current)
+                } else {
+                    self.ahead.as_mut().filter(|ahead| ahead.index == piece)
+                };
+                let Some(target) = target.filter(|target| {
+                    offset.is_multiple_of(BLOCK)
+                        && offset < target.size
+                        && payload.len() - 8 == (target.size - offset).min(BLOCK)
+                        && offset / BLOCK < target.next
+                }) else {
                     return Err("Unsolicited or inconsistent piece block".into());
-                }
+                };
                 super::add_payload(&self.counters.downloaded, (payload.len() - 8) as u64);
-                if !received[offset / BLOCK] {
-                    data[offset..offset + payload.len() - 8].copy_from_slice(&payload[8..]);
-                    received[offset / BLOCK] = true;
-                    pending -= 1;
+                if !target.received[offset / BLOCK] {
+                    target.data[offset..offset + payload.len() - 8].copy_from_slice(&payload[8..]);
+                    target.received[offset / BLOCK] = true;
+                    target.pending -= 1;
+                    // A block of the next piece is that piece's progress,
+                    // not a message this one waited through.
+                    if piece != index {
+                        messages += 1;
+                    }
                 }
             } else {
                 self.ancillary(id, &payload)?;
             }
         }
+        let data = current.data;
         if !meta.verify(index, &data) {
             return Err("Piece hash mismatch".into());
         }
@@ -790,6 +1043,14 @@ impl Peer {
         }
         Ok(data)
     }
+}
+
+/// Whether a piece of a v2 torrent has no hash yet, to be asked of a peer.
+pub fn needs_hashes(meta: &Meta, index: usize) -> bool {
+    meta.v2.is_some() && meta.v2_pieces[index].is_none() && meta.pieces[index].is_none()
+}
+
+impl Peer {
     pub fn fetch_hashes(&mut self, meta: &mut Meta, piece: usize, stop: &AtomicBool) -> Result<()> {
         let file = meta.v2_file(piece).ok_or("Missing v2 file")?.clone();
         let root = file.root.ok_or("Missing v2 root")?;
@@ -815,7 +1076,7 @@ impl Peer {
             if stop.load(Ordering::Relaxed) {
                 return Err("Download interrupted".into());
             }
-            let (id, payload) = read_message(&mut *self.stream, Some(stop))?;
+            let (id, payload) = self.read(stop)?;
             if id == 23 && payload == request {
                 return Err("Peer rejected v2 proof request".into());
             }
@@ -982,6 +1243,7 @@ mod tests {
                 piece_count: meta.map(Meta::count),
                 bitfield_received: false,
                 availability_known: false,
+                ahead: None,
             },
             remote,
         )
@@ -1146,6 +1408,108 @@ mod tests {
     }
 
     #[test]
+    fn an_incoming_peer_is_answered_and_asked_for_pieces() {
+        let meta = three_piece_meta();
+        let (peer, mut remote) = peer_pair(None);
+        let inbound = Inbound {
+            stream: peer.stream,
+            address: remote.local_addr().expect("address"),
+            hash: [7; 20],
+            extensions: false,
+        };
+        let settings = PeerSettings {
+            meta: Some(&meta),
+            port: 6881,
+            pex: false,
+            v2_wire: false,
+            counters: Arc::new(super::super::TransferCounters::default()),
+            download_gate: Arc::new(super::super::RateGate::default()),
+            local_download_gate: Arc::new(super::super::RateGate::default()),
+            network: &crate::torrent::transport::Direct,
+        };
+        let peer =
+            Peer::accept(inbound, &[9; 20], settings, &AtomicBool::new(false)).expect("answered");
+        assert!(peer.choked && !peer.extensions);
+        let mut answer = [0; 68];
+        std::io::Read::read_exact(&mut remote, &mut answer).expect("handshake");
+        assert_eq!(&answer[1..20], b"BitTorrent protocol");
+        assert_eq!(answer[28..48], [7; 20], "the hash the peer asked for");
+        assert_eq!(answer[48..], [9; 20]);
+        assert_eq!(read_message(&mut remote, None).expect("interest").0, 2);
+    }
+
+    #[test]
+    fn the_next_piece_is_requested_before_the_current_one_arrives() {
+        let payload: Vec<u8> = (0..BLOCK * 6).map(|index| (index % 251) as u8).collect();
+        let hashes: Vec<u8> = payload
+            .chunks(BLOCK * 2)
+            .flat_map(crate::crypto::sha1)
+            .collect();
+        let info = value_dict(&[
+            (b"name", Value::Bytes(b"pipeline.bin".to_vec())),
+            (b"piece length", Value::Int((BLOCK * 2) as i64)),
+            (b"length", Value::Int(payload.len() as i64)),
+            (b"pieces", Value::Bytes(hashes)),
+        ]);
+        let meta = Meta::parse(&crate::bencode::encode(&value_dict(&[(b"info", info)])))
+            .expect("synthetic metadata");
+        let (mut peer, mut remote) = peer_pair(Some(&meta));
+        peer.choked = false;
+        let blocks = payload.clone();
+        let server = std::thread::spawn(move || {
+            // Every request arrives before any block is sent.
+            let mut requested = Vec::new();
+            for _ in 0..4 {
+                let (id, request) = read_message(&mut remote, None).expect("block request");
+                assert_eq!(id, 6);
+                let field = |at: usize| {
+                    u32::from_be_bytes(request[at..at + 4].try_into().unwrap()) as usize
+                };
+                requested.push((field(0), field(4)));
+            }
+            for (piece, offset) in &requested {
+                let start = piece * BLOCK * 2 + offset;
+                let mut block = Vec::new();
+                block.extend_from_slice(&(*piece as u32).to_be_bytes());
+                block.extend_from_slice(&(*offset as u32).to_be_bytes());
+                block.extend_from_slice(&blocks[start..start + BLOCK]);
+                write_message(&mut remote, 7, &block, None).expect("block");
+            }
+            let mut later = Vec::new();
+            while let Ok((id, _)) = read_message(&mut remote, None) {
+                later.push(id);
+            }
+            (requested, later)
+        });
+        let stop = AtomicBool::new(false);
+        let first = peer
+            .fetch_known_piece(&meta, 0, &mut || Some(1), &stop)
+            .expect("first piece");
+        let second = peer
+            .fetch_known_piece(&meta, 1, &mut || None, &stop)
+            .expect("piece requested ahead");
+        drop(peer);
+        let (requested, later) = server.join().expect("server");
+        assert_eq!(first, payload[..BLOCK * 2]);
+        assert_eq!(second, payload[BLOCK * 2..BLOCK * 4]);
+        assert_eq!(requested, [(0, 0), (0, BLOCK), (1, 0), (1, BLOCK)]);
+        assert_eq!(
+            later,
+            [4, 4],
+            "only HAVE follows: nothing is requested twice"
+        );
+
+        // The piece requested ahead must be the next one fetched.
+        let (mut peer, _remote) = peer_pair(Some(&meta));
+        peer.choked = false;
+        peer.ahead = Some(Blocks::new(&meta, 1, false, true));
+        assert!(
+            peer.fetch_known_piece(&meta, 2, &mut || None, &stop)
+                .is_err()
+        );
+    }
+
+    #[test]
     fn verified_final_piece_survives_a_failed_have_announcement() {
         use std::net::{Shutdown, TcpListener};
         for length in [32, BLOCK * 3 + 5] {
@@ -1218,8 +1582,9 @@ mod tests {
                 piece_count: Some(meta.count()),
                 bitfield_received: false,
                 availability_known: false,
+                ahead: None,
             };
-            let result = peer.fetch_piece(&mut meta, 0, &AtomicBool::new(false));
+            let result = peer.fetch_piece(&mut meta, 0, &mut || None, &AtomicBool::new(false));
             let _ = finished.send(());
             server.join().expect("server");
             assert_eq!(result.expect("verified piece is retained"), expected);

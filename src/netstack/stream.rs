@@ -8,7 +8,10 @@
 
 use super::icmp::{self, Effect as IcmpEffect, Ingest as IcmpIngest};
 use super::ipv4::{self, BuildError, Ipv4Config, PROTOCOL_TCP, PacketError, check_mtu, unroutable};
-use super::tcp::{self, ACK, DEFAULT_PEER_MSS, FIN, Header, PSH, RST, SYN, Segment, SegmentError};
+use super::tcp::{
+    self, ACK, DEFAULT_PEER_MSS, FIN, Header, MAX_WINDOW_SCALE, PSH, RST, SACK_BLOCKS, SYN,
+    Segment, SegmentError,
+};
 use super::{EPHEMERAL_START, Fence};
 use crate::wireguard::Entropy;
 use std::collections::{BTreeMap, VecDeque};
@@ -17,7 +20,10 @@ use std::time::Duration;
 
 const EPHEMERAL_COUNT: u16 = 16384;
 const PORT_ATTEMPTS: usize = 32;
+/// The window field without scaling.
 const MAX_WINDOW: usize = 65535;
+/// The largest receive buffer: a scaled window stays under half the sequence space.
+const MAX_RECEIVE_BUFFER: usize = 1 << 24;
 /// IPv4 and TCP headers without options.
 const HEADERS: usize = 40;
 
@@ -33,11 +39,12 @@ pub struct TcpConfig {
     pub backlog: usize,
     /// Unacknowledged plus unsent bytes per flow.
     pub send_buffer: usize,
-    /// Unread bytes per flow; also the largest advertised window (65535).
+    /// Unread bytes per flow; also the largest advertised window. Above 65535
+    /// it needs a peer that negotiates window scaling (RFC 7323).
     pub receive_buffer: usize,
     /// Send, receive and out-of-order bytes over all flows.
     pub total_buffer: usize,
-    /// Out-of-order segments kept per flow.
+    /// Out-of-order segments kept per flow, within the receive window.
     pub reorder_segments: usize,
     /// Segments one flow may emit per poll.
     pub burst: usize,
@@ -54,6 +61,12 @@ pub struct TcpConfig {
     pub linger: Duration,
     /// How long a zero window may stall queued data.
     pub persist_limit: Duration,
+    /// How long in-order data may wait for more before it is acknowledged;
+    /// `None` acknowledges every arrival at once.
+    pub ack_delay: Option<Duration>,
+    /// Full-sized segments one delayed acknowledgment may cover. RFC 5681
+    /// asks for two; more halves the datagrams a busy receiver sends again.
+    pub ack_segments: usize,
 }
 
 impl TcpConfig {
@@ -61,12 +74,12 @@ impl TcpConfig {
         Self {
             ip,
             mtu,
-            flows: 64,
+            flows: 256,
             listeners: 8,
             backlog: 16,
             send_buffer: 65536,
             receive_buffer: 65535,
-            total_buffer: 4 * 1024 * 1024,
+            total_buffer: 32 * 1024 * 1024,
             reorder_segments: 16,
             burst: 16,
             outbox: 64,
@@ -77,11 +90,22 @@ impl TcpConfig {
             time_wait: Duration::from_secs(30),
             linger: Duration::from_secs(30),
             persist_limit: Duration::from_secs(120),
+            ack_delay: None,
+            ack_segments: 2,
         }
     }
 
     fn mss(&self) -> usize {
         self.mtu - HEADERS
+    }
+
+    /// The smallest shift whose scaled window covers the receive buffer.
+    fn window_shift(&self) -> u8 {
+        let mut shift = 0;
+        while MAX_WINDOW << shift < self.receive_buffer && shift < MAX_WINDOW_SCALE {
+            shift += 1;
+        }
+        shift
     }
 
     fn validate(&self) -> Result<(), TcpError> {
@@ -92,9 +116,9 @@ impl TcpConfig {
             && (1..=64).contains(&self.listeners)
             && (1..=1024).contains(&self.backlog)
             && (1024..=1 << 20).contains(&self.send_buffer)
-            && (1024..=MAX_WINDOW).contains(&self.receive_buffer)
+            && (1024..=MAX_RECEIVE_BUFFER).contains(&self.receive_buffer)
             && (self.send_buffer + self.receive_buffer..=1 << 30).contains(&self.total_buffer)
-            && self.reorder_segments <= 64
+            && self.reorder_segments <= 1024
             && (1..=64).contains(&self.burst)
             && (1..=1024).contains(&self.outbox)
             && timer(self.initial_rto)
@@ -106,7 +130,12 @@ impl TcpConfig {
             && (1..=8).contains(&self.syn_retries)
             && timer(self.time_wait)
             && timer(self.linger)
-            && timer(self.persist_limit);
+            && timer(self.persist_limit)
+            && (1..=16).contains(&self.ack_segments)
+            // RFC 9293 section 3.8.6.3: under half a second.
+            && self
+                .ack_delay
+                .is_none_or(|delay| !delay.is_zero() && delay < Duration::from_millis(500));
         if valid { Ok(()) } else { Err(TcpError::Config) }
     }
 }
@@ -262,18 +291,40 @@ struct Flow {
     /// The highest sequence number ever sent; `snd_nxt` rewinds on retransmission.
     snd_max: u32,
     snd_wnd: u32,
+    /// The peer's window shift; zero unless both SYNs carried the option.
+    snd_scale: u8,
+    /// Our window shift, once the peer agreed to scaling.
+    rcv_scale: u8,
+    /// The peer's SYN offered window scaling.
+    scaling: bool,
     wl1: u32,
     wl2: u32,
     rcv_nxt: u32,
     /// Bytes from `snd_una`: unacknowledged first, then unsent.
     send: VecDeque<u8>,
     recv: VecDeque<u8>,
-    reorder: Vec<(u32, Vec<u8>)>,
+    /// Out-of-order segments in sequence order; every one starts after `rcv_nxt`.
+    reorder: VecDeque<(u32, Vec<u8>)>,
+    /// Bytes held in `reorder`.
+    reordered: usize,
+    /// The start of the latest out-of-order segment, reported first in SACK.
+    recent: Option<u32>,
+    /// Both SYNs carried SACK-permitted.
+    sack: bool,
+    /// Out-of-order segments since the last acknowledgment, each owed its own
+    /// duplicate ACK so the sender can fast-retransmit (RFC 5681 section 4.2).
+    duplicates: u8,
     close_requested: bool,
     /// The sequence number of our FIN, fixed when sending is shut down.
     fin_seq: Option<u32>,
     fin_received: bool,
     ack_due: bool,
+    /// In-order bytes received since the last acknowledgment.
+    unacked: usize,
+    /// When a delayed acknowledgment is due.
+    delayed_ack: Option<Duration>,
+    /// The right edge of the window last advertised.
+    rcv_adv: u32,
     syn_pending: bool,
     probe: bool,
     cwnd: usize,
@@ -298,8 +349,49 @@ impl Flow {
     }
 
     fn bytes(&self) -> usize {
-        let reordered: usize = self.reorder.iter().map(|(_, data)| data.len()).sum();
-        self.send.len() + self.recv.len() + reordered
+        self.send.len() + self.recv.len() + self.reordered
+    }
+
+    fn forget_reordered(&mut self) {
+        self.reorder = VecDeque::new();
+        self.reordered = 0;
+        self.recent = None;
+        self.duplicates = 0;
+    }
+
+    /// Up to three received ranges beyond `rcv_nxt`, the latest one first.
+    fn sack_blocks(&self) -> [Option<(u32, u32)>; SACK_BLOCKS] {
+        let mut blocks = [None; SACK_BLOCKS];
+        if !self.sack {
+            return blocks;
+        }
+        let mut ranges: Vec<(u32, u32)> = Vec::new();
+        for (sequence, data) in &self.reorder {
+            let end = sequence.wrapping_add(data.len() as u32);
+            match ranges.last_mut() {
+                Some(last) if le(*sequence, last.1) => {
+                    if lt(last.1, end) {
+                        last.1 = end;
+                    }
+                }
+                _ => ranges.push((*sequence, end)),
+            }
+        }
+        let latest = self.recent.and_then(|recent| {
+            ranges
+                .iter()
+                .position(|(left, right)| le(*left, recent) && lt(recent, *right))
+        });
+        let first = latest.map(|index| ranges[index]);
+        let rest = ranges
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| Some(*index) != latest)
+            .map(|(_, range)| *range);
+        for (slot, range) in blocks.iter_mut().zip(first.into_iter().chain(rest)) {
+            *slot = Some(range);
+        }
+        blocks
     }
 }
 
@@ -463,16 +555,26 @@ impl<E: Entropy> TcpStack<E> {
             snd_nxt: iss.wrapping_add(1),
             snd_max: iss.wrapping_add(1),
             snd_wnd: u32::from(window),
+            snd_scale: 0,
+            rcv_scale: 0,
+            scaling: false,
             wl1: 0,
             wl2: iss,
             rcv_nxt: 0,
             send: VecDeque::new(),
             recv: VecDeque::new(),
-            reorder: Vec::new(),
+            reorder: VecDeque::new(),
+            reordered: 0,
+            recent: None,
+            sack: false,
+            duplicates: 0,
             close_requested: false,
             fin_seq: None,
             fin_received: false,
             ack_due: false,
+            unacked: 0,
+            delayed_ack: None,
+            rcv_adv: 0,
             syn_pending: true,
             probe: false,
             cwnd: (4 * mss).min(self.config.send_buffer),
@@ -628,6 +730,12 @@ impl<E: Entropy> TcpStack<E> {
         Ok(taken)
     }
 
+    /// Received bytes that [`recv`](Self::recv) can return now.
+    pub fn readable(&mut self, generation: u64, handle: FlowHandle) -> Result<usize, TcpError> {
+        self.admit_generation(generation)?;
+        Ok(self.flow(handle)?.recv.len())
+    }
+
     /// Reads received bytes in order.
     pub fn recv(
         &mut self,
@@ -639,17 +747,32 @@ impl<E: Entropy> TcpStack<E> {
         let capacity = self.config.receive_buffer;
         let flow = self.flow(handle)?;
         if !flow.recv.is_empty() && !buffer.is_empty() {
-            let before = capacity.saturating_sub(flow.recv.len());
             let count = buffer.len().min(flow.recv.len());
-            for (slot, byte) in buffer.iter_mut().zip(flow.recv.drain(..count)) {
-                *slot = byte;
-            }
-            // Announce a window that opened by a worthwhile amount.
-            let opened = capacity
+            let (front, back) = flow.recv.as_slices();
+            let split = count.min(front.len());
+            buffer[..split].copy_from_slice(&front[..split]);
+            buffer[split..count].copy_from_slice(&back[..count - split]);
+            flow.recv.drain(..count);
+            // As Linux does, announce the opened window only when the sender
+            // may be held back by what it was last told: at most half the
+            // buffer remains, and the window at least doubles it by a
+            // worthwhile amount. A large window is not re-announced per read.
+            let remaining = if lt(flow.rcv_nxt, flow.rcv_adv) {
+                flow.rcv_adv.wrapping_sub(flow.rcv_nxt) as usize
+            } else {
+                0
+            };
+            let window = capacity
                 .saturating_sub(flow.recv.len())
-                .saturating_sub(before);
+                .min(MAX_WINDOW << flow.rcv_scale)
+                >> flow.rcv_scale
+                << flow.rcv_scale;
             let worthwhile = flow.mss.min(capacity / 2);
-            if flow.state != State::Closed && opened >= worthwhile {
+            if flow.state != State::Closed
+                && 2 * remaining <= capacity
+                && window >= 2 * remaining
+                && window - remaining >= worthwhile
+            {
                 flow.ack_due = true;
             }
             return Ok(Read::Data(count));
@@ -705,9 +828,16 @@ impl<E: Entropy> TcpStack<E> {
         self.control(key, flow.snd_nxt, flow.rcv_nxt, RST | ACK);
     }
 
-    fn advertised(&self, flow: &Flow) -> u16 {
+    /// The receive window in bytes. Its right edge only moves left when the
+    /// advertised field rounds it down to a scaled unit.
+    fn window(&self, flow: &Flow) -> u32 {
         let free = self.config.receive_buffer.saturating_sub(flow.recv.len());
-        free.min(MAX_WINDOW) as u16
+        free.min(MAX_WINDOW << flow.rcv_scale) as u32
+    }
+
+    /// The window field of a non-SYN segment, rounded down to a scaled unit.
+    fn advertised(&self, flow: &Flow) -> u16 {
+        (self.window(flow) >> flow.rcv_scale) as u16
     }
 
     fn packet(&self, key: Key, header: Header, payload: &[u8]) -> Result<Vec<u8>, BuildError> {
@@ -734,6 +864,9 @@ impl<E: Entropy> TcpStack<E> {
             flags,
             window: 0,
             mss: None,
+            window_scale: None,
+            sack_permitted: false,
+            sack: [None; SACK_BLOCKS],
         };
         if let Ok(packet) = self.packet(key, header, &[]) {
             self.outbox.push_back(packet);
@@ -894,6 +1027,12 @@ impl<E: Entropy> TcpStack<E> {
         flow.irs = segment.sequence;
         flow.rcv_nxt = segment.sequence.wrapping_add(1);
         flow.wl1 = segment.sequence;
+        if let Some(shift) = segment.window_scale {
+            flow.scaling = true;
+            flow.snd_scale = shift;
+            flow.rcv_scale = self.config.window_shift();
+        }
+        flow.sack = segment.sack_permitted;
         self.flows.insert(key, flow);
         Ingest::Handshake
     }
@@ -925,7 +1064,7 @@ impl<E: Entropy> TcpStack<E> {
             return Ingest::Dropped(Discard::State);
         }
         let space = segment.space();
-        let window = u32::from(self.advertised(flow));
+        let window = self.window(flow);
         let acceptable = if space == 0 {
             if window == 0 {
                 segment.sequence == flow.rcv_nxt
@@ -973,7 +1112,7 @@ impl<E: Entropy> TcpStack<E> {
                 return Ingest::Dropped(Discard::Ack);
             }
             flow.snd_una = acknowledgment;
-            flow.snd_wnd = u32::from(segment.window);
+            flow.snd_wnd = u32::from(segment.window) << flow.snd_scale;
             flow.wl1 = segment.sequence;
             flow.wl2 = acknowledgment;
             flow.state = State::Established;
@@ -1033,9 +1172,16 @@ impl<E: Entropy> TcpStack<E> {
         flow.irs = segment.sequence;
         flow.rcv_nxt = segment.sequence.wrapping_add(1);
         flow.snd_una = segment.acknowledgment;
+        // The window of a SYN is never scaled.
         flow.snd_wnd = u32::from(segment.window);
         flow.wl1 = segment.sequence;
         flow.wl2 = segment.acknowledgment;
+        if let Some(shift) = segment.window_scale {
+            flow.scaling = true;
+            flow.snd_scale = shift;
+            flow.rcv_scale = self.config.window_shift();
+        }
+        flow.sack = segment.sack_permitted;
         flow.mss = usize::from(segment.mss.unwrap_or(DEFAULT_PEER_MSS)).min(self.config.mss());
         flow.cwnd = (4 * flow.mss).min(self.config.send_buffer);
         flow.state = State::Established;
@@ -1057,7 +1203,7 @@ impl<E: Entropy> TcpStack<E> {
         flow.failure = Some(failure);
         flow.send = VecDeque::new();
         flow.recv = VecDeque::new();
-        flow.reorder = Vec::new();
+        flow.forget_reordered();
         flow.deadline = None;
         flow.ack_due = false;
         flow.syn_pending = false;
@@ -1074,7 +1220,7 @@ impl<E: Entropy> TcpStack<E> {
     fn finish(&self, flow: &mut Flow, now: Duration) {
         flow.state = State::Closed;
         flow.send = VecDeque::new();
-        flow.reorder = Vec::new();
+        flow.forget_reordered();
         flow.deadline = None;
         flow.ack_due = false;
         flow.expires = Some(now.saturating_add(self.config.linger));
@@ -1163,7 +1309,7 @@ impl<E: Entropy> TcpStack<E> {
             && segment.flags & FIN == 0
             && flow.snd_una != flow.snd_max
             && flow.snd_wnd != 0
-            && u32::from(segment.window) == flow.snd_wnd
+            && u32::from(segment.window) << flow.snd_scale == flow.snd_wnd
         {
             flow.dup_acks += 1;
             if flow.dup_acks == 3 {
@@ -1175,7 +1321,7 @@ impl<E: Entropy> TcpStack<E> {
             && (lt(flow.wl1, segment.sequence)
                 || (flow.wl1 == segment.sequence && le(flow.wl2, acknowledgment)));
         if fresh {
-            flow.snd_wnd = u32::from(segment.window);
+            flow.snd_wnd = u32::from(segment.window) << flow.snd_scale;
             flow.wl1 = segment.sequence;
             flow.wl2 = acknowledgment;
             if flow.snd_wnd > 0 {
@@ -1213,7 +1359,7 @@ impl<E: Entropy> TcpStack<E> {
     fn time_wait(&self, flow: &mut Flow, now: Duration) {
         flow.state = State::TimeWait;
         flow.send = VecDeque::new();
-        flow.reorder = Vec::new();
+        flow.forget_reordered();
         flow.deadline = None;
         flow.expires = Some(now.saturating_add(self.config.time_wait));
     }
@@ -1233,28 +1379,51 @@ impl<E: Entropy> TcpStack<E> {
             sequence = flow.rcv_nxt;
         }
         let offset = sequence.wrapping_sub(flow.rcv_nxt) as usize;
-        let room = usize::from(self.advertised(flow)).saturating_sub(offset);
+        let room = (self.window(flow) as usize).saturating_sub(offset);
         let mut fin = segment.flags & FIN != 0;
-        if data.len() > room {
+        let trimmed = data.len() > room;
+        if trimmed {
             data = &data[..room];
             fin = false;
         }
         if !data.is_empty() {
-            flow.ack_due = true;
             let fits = self.buffered() + flow.bytes() + data.len() <= self.config.total_buffer;
+            let mut delay = false;
             if accepts && fits {
                 if offset == 0 {
+                    let filled = !flow.reorder.is_empty();
                     flow.recv.extend(data);
                     flow.rcv_nxt = flow.rcv_nxt.wrapping_add(data.len() as u32);
                     self.merge(flow);
+                    flow.unacked += data.len();
+                    // RFC 5681 section 4.2: acknowledge at least every second
+                    // full-sized segment, and at once when a hole fills.
+                    delay =
+                        !filled && !trimmed && flow.unacked < self.config.ack_segments * flow.mss;
                 } else {
-                    let queued: usize = flow.reorder.iter().map(|(_, held)| held.len()).sum();
-                    if flow.reorder.len() < self.config.reorder_segments
-                        && queued + data.len() <= self.config.receive_buffer
+                    flow.duplicates = flow.duplicates.saturating_add(1);
+                    flow.recent = Some(sequence);
+                    let rcv_nxt = flow.rcv_nxt;
+                    let at = flow.reorder.partition_point(|(held, _)| {
+                        (held.wrapping_sub(rcv_nxt) as usize) < offset
+                    });
+                    let repeated = flow
+                        .reorder
+                        .get(at)
+                        .is_some_and(|(held, kept)| *held == sequence && kept.len() >= data.len());
+                    if !repeated
+                        && flow.reorder.len() < self.config.reorder_segments
+                        && flow.reordered + data.len() <= self.config.receive_buffer
                     {
-                        flow.reorder.push((sequence, data.to_vec()));
+                        flow.reorder.insert(at, (sequence, data.to_vec()));
+                        flow.reordered += data.len();
                     }
                 }
+            }
+            if let Some(wait) = self.config.ack_delay.filter(|_| delay) {
+                flow.delayed_ack.get_or_insert(now.saturating_add(wait));
+            } else {
+                flow.ack_due = true;
             }
         }
         if fin && fin_at == flow.rcv_nxt && accepts {
@@ -1272,23 +1441,26 @@ impl<E: Entropy> TcpStack<E> {
 
     /// Moves out-of-order segments that became contiguous into the stream.
     fn merge(&self, flow: &mut Flow) {
-        loop {
-            let next = flow.reorder.iter().position(|(sequence, data)| {
-                le(*sequence, flow.rcv_nxt)
-                    && lt(flow.rcv_nxt, sequence.wrapping_add(data.len() as u32))
-            });
-            let Some(index) = next else { break };
-            let (sequence, data) = flow.reorder.swap_remove(index);
-            let skip = flow.rcv_nxt.wrapping_sub(sequence) as usize;
-            let room = self.config.receive_buffer.saturating_sub(flow.recv.len());
-            let fresh = &data[skip..];
-            let taken = fresh.len().min(room);
-            flow.recv.extend(&fresh[..taken]);
-            flow.rcv_nxt = flow.rcv_nxt.wrapping_add(taken as u32);
+        while flow
+            .reorder
+            .front()
+            .is_some_and(|(sequence, _)| le(*sequence, flow.rcv_nxt))
+        {
+            let (sequence, data) = flow.reorder.pop_front().expect("front segment");
+            flow.reordered -= data.len();
+            let end = sequence.wrapping_add(data.len() as u32);
+            if lt(flow.rcv_nxt, end) {
+                let skip = flow.rcv_nxt.wrapping_sub(sequence) as usize;
+                let room = self.config.receive_buffer.saturating_sub(flow.recv.len());
+                let fresh = &data[skip..];
+                let taken = fresh.len().min(room);
+                flow.recv.extend(&fresh[..taken]);
+                flow.rcv_nxt = flow.rcv_nxt.wrapping_add(taken as u32);
+            }
         }
-        let rcv_nxt = flow.rcv_nxt;
-        flow.reorder
-            .retain(|(sequence, data)| lt(rcv_nxt, sequence.wrapping_add(data.len() as u32)));
+        if flow.reorder.is_empty() {
+            flow.recent = None;
+        }
     }
 
     /// Emits due segments and runs timers. `next` is when to poll again.
@@ -1297,19 +1469,21 @@ impl<E: Entropy> TcpStack<E> {
         let mut poll = Poll::default();
         poll.send.extend(self.outbox.drain(..));
         let mut next: Option<Duration> = None;
-        let keys: Vec<Key> = self.flows.keys().copied().collect();
-        for key in keys {
-            let Some(mut flow) = self.flows.remove(&key) else {
-                continue;
-            };
-            match self.advance(key, &mut flow, now, &mut poll.send) {
-                Step::Gone => self.forget_ready(key, &flow),
+        // Advancing a flow never touches the table, so it stays in place.
+        let mut flows = std::mem::take(&mut self.flows);
+        flows.retain(
+            |key, flow| match self.advance(*key, flow, now, &mut poll.send) {
+                Step::Gone => {
+                    self.forget_ready(*key, flow);
+                    false
+                }
                 Step::Alive(wake) => {
                     next = [next, wake].into_iter().flatten().min();
-                    self.flows.insert(key, flow);
+                    true
                 }
-            }
-        }
+            },
+        );
+        self.flows = flows;
         // Timers of control packets queued while advancing leave next time.
         poll.send.extend(self.outbox.drain(..));
         poll.next = next;
@@ -1344,6 +1518,9 @@ impl<E: Entropy> TcpStack<E> {
             | State::LastAck => more = self.transmit(key, flow, now, out),
             State::FinWait2 | State::TimeWait | State::Closed => {}
         }
+        if flow.delayed_ack.is_some_and(|at| now >= at) {
+            flow.ack_due = true;
+        }
         if flow.ack_due
             && out.len() == before
             && !matches!(
@@ -1359,19 +1536,45 @@ impl<E: Entropy> TcpStack<E> {
                 flags: ACK,
                 window: self.advertised(flow),
                 mss: None,
+                window_scale: None,
+                sack_permitted: false,
+                sack: flow.sack_blocks(),
             };
+            self.note_window(flow, header.window);
             if let Ok(packet) = self.packet(key, header, &[]) {
+                // Without SACK the sender counts duplicate ACKs, and
+                // identical copies still count. With SACK, one ACK reports
+                // every arrival: senders count SACKed bytes, not ACKs.
+                let copies = if flow.sack { 1 } else { flow.duplicates };
+                for _ in 1..copies.min(self.config.burst as u8) {
+                    out.push(packet.clone());
+                }
                 out.push(packet);
             }
         }
         if flow.ack_due && !matches!(flow.state, State::SynSent | State::SynReceived) {
             flow.ack_due = false;
+            flow.duplicates = 0;
+            flow.unacked = 0;
+            flow.delayed_ack = None;
         }
-        let wake = [flow.deadline, flow.expires, more.then_some(now)]
-            .into_iter()
-            .flatten()
-            .min();
+        let wake = [
+            flow.deadline,
+            flow.expires,
+            flow.delayed_ack,
+            more.then_some(now),
+        ]
+        .into_iter()
+        .flatten()
+        .min();
         Step::Alive(wake)
+    }
+
+    /// Records the right edge a sent window field announces.
+    fn note_window(&self, flow: &mut Flow, field: u16) {
+        flow.rcv_adv = flow
+            .rcv_nxt
+            .wrapping_add(u32::from(field) << flow.rcv_scale);
     }
 
     fn backoff(&self, flow: &mut Flow) {
@@ -1430,9 +1633,15 @@ impl<E: Entropy> TcpStack<E> {
             sequence: flow.iss,
             acknowledgment: if synchronized { flow.rcv_nxt } else { 0 },
             flags: if synchronized { SYN | ACK } else { SYN },
-            window: self.advertised(flow),
+            // The window of a SYN is never scaled.
+            window: self.window(flow).min(MAX_WINDOW as u32) as u16,
             mss: Some((flow.path_mtu - HEADERS) as u16),
+            // A SYN-ACK only answers a SYN that offered scaling.
+            window_scale: (!synchronized || flow.scaling).then(|| self.config.window_shift()),
+            sack_permitted: !synchronized || flow.sack,
+            sack: [None; SACK_BLOCKS],
         };
+        flow.rcv_adv = flow.rcv_nxt.wrapping_add(u32::from(header.window));
         if let Ok(packet) = self.packet(key, header, &[]) {
             if flow.retries == 0 && flow.deadline.is_none() {
                 flow.sample = Some((flow.iss.wrapping_add(1), now));
@@ -1492,6 +1701,9 @@ impl<E: Entropy> TcpStack<E> {
                 flags,
                 window,
                 mss: None,
+                window_scale: None,
+                sack_permitted: false,
+                sack: [None; SACK_BLOCKS],
             };
             let Ok(packet) = self.packet(key, header, &payload) else {
                 break;
@@ -1506,6 +1718,10 @@ impl<E: Entropy> TcpStack<E> {
             out.push(packet);
             budget -= 1;
             flow.ack_due = false;
+            flow.duplicates = 0;
+            flow.unacked = 0;
+            flow.delayed_ack = None;
+            self.note_window(flow, window);
             flow.snd_nxt = flow
                 .snd_nxt
                 .wrapping_add(payload.len() as u32 + u32::from(flags & FIN != 0));

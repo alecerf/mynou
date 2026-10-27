@@ -23,12 +23,12 @@ characters and bare carriage returns are rejected, even in comments.
 | Section | Field | Accepted value |
 | --- | --- | --- |
 | Interface | `PrivateKey` | Required, canonical standard base64 encoding of 32 bytes; all-zero key rejected |
-| Interface | `Address` | Required, one usable IPv4 address with an explicit decimal CIDR prefix, 0–32 |
-| Interface | `DNS` | Required, one to three distinct literal usable IPv4 addresses, comma separated |
+| Interface | `Address` | Required, one usable IPv4 address with an explicit decimal CIDR prefix, 0–32, optionally followed by one unicast IPv6 address with a prefix of 0–128 |
+| Interface | `DNS` | Required, one to three distinct literal addresses, comma separated, at least one of them a usable IPv4 address |
 | Interface | `MTU` | Optional, decimal 576–1424; defaults to 1424 |
 | Peer | `PublicKey` | Required, canonical base64 encoding of 32 bytes; low-order keys and the local public identity rejected |
 | Peer | `PresharedKey` | Optional, canonical base64 encoding of 32 bytes; an all-zero PSK has the protocol's no-PSK meaning |
-| Peer | `AllowedIPs` | Required, exactly `0.0.0.0/0` |
+| Peer | `AllowedIPs` | Required, exactly `0.0.0.0/0`, or `0.0.0.0/0` with `::/0` |
 | Peer | `Endpoint` | Required, literal usable IPv4 address and decimal UDP port 1–65535 |
 | Peer | `PersistentKeepalive` | Optional, decimal 0–65535 seconds; absent or zero disables it |
 
@@ -37,7 +37,12 @@ Usable addresses exclude `0.0.0.0/8`, loopback, multicast and reserved class E
 The interface prefix is retained by `address_prefix()`; it does not change the
 full IPv4 route from `AllowedIPs` or create a host route. Inner DNS uses the
 explicit resolvers; no host resolver is consulted. Endpoint hostnames and IPv6
-are rejected; the tunnel runtime itself accepts only a literal IPv4 endpoint.
+endpoints are rejected; the tunnel runtime itself accepts only a literal IPv4 endpoint.
+
+The IPv6 address, IPv6 resolvers and `::/0` route of a provider profile are
+accepted and kept in the stored profile, but the tunnel carries IPv4 only for
+now: those entries are not used, and no IPv6 traffic falls back to the host
+network. The NAT-PMP gateway is the first IPv4 resolver.
 
 All fields are unique: repeated `DNS` or `AllowedIPs` lines are rejected too.
 Unknown fields, additional peers/addresses, partial routes, `ListenPort`,

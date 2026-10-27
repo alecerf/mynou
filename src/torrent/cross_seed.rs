@@ -315,6 +315,11 @@ fn queued(
         index: None,
         persistence_failed: AtomicBool::new(false),
         retiring: false,
+        removing: None,
+        live_peers: Vec::new(),
+        known_peers: 0,
+        seeding_peers: BTreeMap::new(),
+        inbound: None,
         admitted: true,
         needs_rehash: false,
         seed_queued: false,
@@ -667,6 +672,41 @@ pub(super) fn gate(client: &Client, id: &str) -> Result<Option<Arc<Mutex<()>>>> 
         .cross_seed
         .as_ref()
         .map(|reuse| reuse.activity.clone()))
+}
+
+/// Whether a seed-only transfer reads the files of transfer `id`. Its seed
+/// record names the source; an unreadable one counts as a reuse.
+pub(super) fn reused_by(config: &DownloadConfig, id: &str) -> Result<bool> {
+    let entries = match fs::read_dir(&config.state_dir) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(_) => return Err("Could not list the transfer state".into()),
+    };
+    for entry in entries {
+        let path = entry
+            .map_err(|_| "Could not list the transfer state")?
+            .path();
+        if path.extension().is_none_or(|extension| extension != "seed") {
+            continue;
+        }
+        let mut encoded = Vec::new();
+        let read = File::open(&path)
+            .and_then(|file| file.take((MAX_RECORD + 1) as u64).read_to_end(&mut encoded));
+        let source = read
+            .ok()
+            .and_then(|_| crate::bencode::parse(&encoded).ok())
+            .and_then(|value| match value {
+                Value::Dict(fields) => match fields.get(b"source".as_slice()) {
+                    Some(Value::Bytes(source)) => Some(source.clone()),
+                    _ => None,
+                },
+                _ => None,
+            });
+        if source.is_none_or(|source| source == id.as_bytes()) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// A completed ordinary transfer that automatic discovery may compare with

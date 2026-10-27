@@ -253,9 +253,12 @@ impl NetworkDatagram for Datagram {
         }
         let deadline = Self::deadline(&self.write_timeout)?;
         let (socket, payload) = (self.socket, packet.to_vec());
+        // Like a blocking OS socket, wait for queue space: a datagram refused
+        // at once by a busy tunnel looks like a lost reply to callers such as
+        // the DHT, which then give up on that node.
         self.connector
             .owner
-            .call(Some(self.connector.generation), deadline, move |r| {
+            .wait(Some(self.connector.generation), deadline, move |r| {
                 r.tunnel
                     .udp_send_to(socket, (*target.ip(), target.port()), &payload)
                     .map_err(failed)

@@ -61,33 +61,55 @@ impl Sha1 {
         }
         out
     }
+    /// Piece verification hashes every downloaded byte, so this is the hot
+    /// loop of a transfer. One loop per round function keeps the selection
+    /// out of the rounds, and a 16-word ring keeps the schedule in registers;
+    /// together they double the throughput of a single 80-round loop.
     fn compress(state: &mut [u32; 5], block: &[u8]) {
-        let mut words = [0u32; 80];
-        for (word, bytes) in words[..16].iter_mut().zip(block.as_chunks::<4>().0.iter()) {
+        let mut words = [0u32; 16];
+        for (word, bytes) in words.iter_mut().zip(block.as_chunks::<4>().0.iter()) {
             *word = u32::from_be_bytes(*bytes);
         }
-        for i in 16..80 {
-            words[i] = (words[i - 3] ^ words[i - 8] ^ words[i - 14] ^ words[i - 16]).rotate_left(1);
-        }
         let [mut a, mut b, mut c, mut d, mut e] = *state;
-        for (i, word) in words.iter().enumerate() {
-            let (f, k) = match i {
-                0..=19 => ((b & c) | (!b & d), 0x5a827999),
-                20..=39 => (b ^ c ^ d, 0x6ed9eba1),
-                40..=59 => ((b & c) | (b & d) | (c & d), 0x8f1bbcdc),
-                _ => (b ^ c ^ d, 0xca62c1d6),
+        let mut round = |i: usize, f: u32, k: u32, [a, b, c, d, e]: [&mut u32; 5]| {
+            let word = if i < 16 {
+                words[i]
+            } else {
+                let word = (words[(i + 13) & 15]
+                    ^ words[(i + 8) & 15]
+                    ^ words[(i + 2) & 15]
+                    ^ words[i & 15])
+                    .rotate_left(1);
+                words[i & 15] = word;
+                word
             };
             let t = a
                 .rotate_left(5)
                 .wrapping_add(f)
-                .wrapping_add(e)
+                .wrapping_add(*e)
                 .wrapping_add(k)
-                .wrapping_add(*word);
-            e = d;
-            d = c;
-            c = b.rotate_left(30);
-            b = a;
-            a = t;
+                .wrapping_add(word);
+            *e = *d;
+            *d = *c;
+            *c = b.rotate_left(30);
+            *b = *a;
+            *a = t;
+        };
+        for i in 0..20 {
+            let f = d ^ (b & (c ^ d));
+            round(i, f, 0x5a827999, [&mut a, &mut b, &mut c, &mut d, &mut e]);
+        }
+        for i in 20..40 {
+            let f = b ^ c ^ d;
+            round(i, f, 0x6ed9eba1, [&mut a, &mut b, &mut c, &mut d, &mut e]);
+        }
+        for i in 40..60 {
+            let f = (b & c) | (d & (b | c));
+            round(i, f, 0x8f1bbcdc, [&mut a, &mut b, &mut c, &mut d, &mut e]);
+        }
+        for i in 60..80 {
+            let f = b ^ c ^ d;
+            round(i, f, 0xca62c1d6, [&mut a, &mut b, &mut c, &mut d, &mut e]);
         }
         for (s, x) in state.iter_mut().zip([a, b, c, d, e]) {
             *s = s.wrapping_add(x);

@@ -37,15 +37,24 @@ Mynou implements v1, v2 and hybrid torrents, `btih` and `btmh` magnets, the TCP
 peer protocol, metadata exchange, v2 hash proofs, HTTP, HTTPS and UDP trackers,
 a DHT client and PEX reception. Peer data uses TCP only.
 
-- **Peers**: `downloads.max_peers` (1 to 8, default 4) is a per-transfer
+- **Peers**: `downloads.max_peers` (1 to 256, default 50) is a per-transfer
   ceiling. Outgoing workers per transfer are
-  `min(max_peers, max(1, 64 / execution_slots))`, so at most 64 across active
-  downloads. Execution slots are at most 64; `max_active: 0` removes the user
+  `min(max_peers, max(1, 256 / execution_slots))`, so at most 256 across active
+  downloads. Execution slots are at most 256; `max_active: 0` removes the user
   download-queue limit while keeping this resource bound. The independent
   `max_seeding` queue limit also accepts zero for no user limit. Incoming seeding connections are limited to 32.
+  An incoming peer of a torrent still downloading takes a free worker slot, ahead
+  of any address to dial; up to 8 wait at most 5 seconds for one, then are closed.
   Concurrency is also reduced using a 128 MiB per-transfer memory estimate, with
-  at least one worker; this is not a hard process memory limit. A peer pipelines
-  up to 16 blocks, fewer when a rate limit applies. A peer count is not a
+  at least one worker. Once the pieces are known a peer message is at most the
+  bitfield or 64 KiB, plus 1 KiB, so a worker's estimate is its piece, the
+  blocks it requested of the next piece (at most 256 KiB) and two such messages. Workers share one copy of the metadata, counted once; when v2
+  hashes must be fetched from peers each worker may keep its own, and the
+  estimate counts one per worker. This is not a hard process memory limit. A peer pipelines
+  up to 16 blocks, fewer when a rate limit applies; without a limit, the pipeline
+  continues into the worker's next piece, so it does not drain at each piece
+  boundary. A worker holds a second piece only while unclaimed pieces outnumber
+  twice the workers, so the last pieces are not held behind a slow peer. A peer count is not a
   promise of connections or speed.
 - **Connections**: new connections have a one-second attempt timeout,
   established sockets check for cancellation every 100 ms, idle peers rotate
@@ -94,8 +103,8 @@ a DHT client and PEX reception. Peer data uses TCP only.
   slightly below the ratio. Seeding time counts online availability, including
   idle time, and excludes offline, paused or limited time.
 - Payload counters and seeding time survive a clean restart. Updates are saved
-  every second and on clean shutdown, so a crash can lose the latest
-  increments; counters are not equivalent to a tracker's records. Older
+  every 30 seconds and on clean shutdown, so a crash can lose up to 30 seconds
+  of increments; counters are not equivalent to a tracker's records. Older
   transfers start their counters at zero.
 - Native transfer state written by 0.14 or later is refused by 0.13 and earlier.
 - Retained transfers use an on-disk index with no fixed total-count limit.

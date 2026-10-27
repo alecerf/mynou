@@ -181,7 +181,17 @@ struct State {
     gateway: Option<Ipv4Addr>,
     forwarding: bool,
     error: Option<&'static str>,
+    /// The last telemetry the tunnel answered, and when: a tunnel busy with
+    /// traffic may miss one status deadline without anything being wrong.
+    telemetry: Option<(Instant, Telemetry)>,
 }
+type Telemetry = (
+    crate::tunnel::Status,
+    crate::tunnel::Stats,
+    Option<Duration>,
+);
+/// How long a missed status query may reuse the last answer.
+const TELEMETRY_GRACE: Duration = Duration::from_secs(10);
 /// Shared across automatic engine recovery, never across a change in operator intent.
 pub(crate) struct Operator {
     path: PathBuf,
@@ -203,6 +213,7 @@ impl Operator {
             gateway: None,
             forwarding: false,
             error: None,
+            telemetry: None,
         };
         if let Some(intent) = intent {
             state.document = intent.document();
@@ -287,7 +298,7 @@ impl Operator {
         value.insert("complete_isolation_verified", false);
         value.insert("forwarding", "disabled");
         value.insert("handshake_age_secs", Value::Null);
-        let Ok(state) = self.state.try_lock() else {
+        let Ok(mut state) = self.state.try_lock() else {
             value.insert("state", "blocked");
             value.insert("reason", "VPN control is busy");
             return value;
@@ -315,7 +326,19 @@ impl Operator {
             }
             Mode::Enabled => {
                 if let Some(driver) = &state.driver {
-                    match driver.telemetry(Instant::now() + Duration::from_millis(100)) {
+                    let now = Instant::now();
+                    let telemetry = match driver.telemetry(now + Duration::from_millis(100)) {
+                        Ok(telemetry) => {
+                            state.telemetry = Some((now, telemetry));
+                            Ok(telemetry)
+                        }
+                        Err(error) => state
+                            .telemetry
+                            .filter(|(at, _)| now.duration_since(*at) < TELEMETRY_GRACE)
+                            .map(|(_, telemetry)| telemetry)
+                            .ok_or(error),
+                    };
+                    match telemetry {
                         Ok((status, counters, age)) => {
                             value.insert(
                                 "state",

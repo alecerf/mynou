@@ -18,7 +18,7 @@ commands need the running service.
   "downloads": {
     "max_active": 2,
     "max_seeding": 0,
-    "max_peers": 4
+    "max_peers": 50
   }
 }
 ```
@@ -37,12 +37,12 @@ For example, `max_active: 2, max_seeding: 8` queues downloads and seeds
 separately, and `max_active: 0, max_seeding: 0` removes both user queue
 limits. Restart the service after changing these settings. A zero setting
 does not create one thread or connection per retained torrent: the existing
-64 outbound execution-slot resource budget, 32 inbound peer connections,
+256 outbound execution-slot resource budget, 32 inbound peer connections,
 memory checks and native tunnel flow bounds still apply. Additional work
 waits in the download queue. API transfer snapshots expose the configured
 queue limits and execution slots so these resource bounds remain visible.
 
-`max_peers` (1 to 8, default 4) limits outgoing peer connections per transfer;
+`max_peers` (1 to 256, default 50) limits outgoing peer connections per transfer;
 set it to 1 for a single-peer baseline. Reachable peers and the worker/memory
 budgets determine the actual connections and throughput.
 

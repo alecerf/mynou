@@ -151,7 +151,20 @@ impl TunnelConfig {
             keepalive: Some(Duration::from_secs(25)),
             peer_queue: MAX_QUEUED_PAYLOADS,
             udp: Limits::default(),
-            tcp: TcpConfig::new(ip, MAX_MTU),
+            // Scaled windows keep a peer behind a long VPN path from being
+            // capped at 64 KiB per round trip.
+            tcp: TcpConfig {
+                send_buffer: 256 << 10,
+                receive_buffer: 512 << 10,
+                total_buffer: 64 << 20,
+                // A loss leaves the rest of a 512 KiB window waiting for it.
+                reorder_segments: 512,
+                // Every datagram costs a system call and Wi-Fi airtime on a
+                // single flow: acknowledge every fourth segment at most.
+                ack_delay: Some(Duration::from_millis(20)),
+                ack_segments: 4,
+                ..TcpConfig::new(ip, MAX_MTU)
+            },
             dns: None,
             handshake_load: 32,
             datagrams_per_pump: 64,
@@ -1114,6 +1127,14 @@ impl<E: Entropy + Clone, C: Clock> Tunnel<E, C> {
         // Reading may reopen the window; announce it now.
         self.flush();
         Ok(read)
+    }
+
+    /// Received bytes that [`tcp_recv`](Self::tcp_recv) can return now.
+    pub fn tcp_readable(&mut self, flow: VirtualFlow) -> Result<usize, TunnelError> {
+        let live = self.current(flow.generation)?;
+        live.tcp
+            .readable(live.generation, flow.flow)
+            .map_err(TunnelError::Tcp)
     }
 
     pub fn tcp_close(&mut self, flow: VirtualFlow) -> Result<(), TunnelError> {
