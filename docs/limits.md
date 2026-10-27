@@ -114,7 +114,15 @@ a DHT client and PEX reception. Peer data uses TCP only.
 - The API accepts HTTP/1.1 requests with a declared content length and bodies
   up to 1 MiB; it rejects chunked request bodies and ambiguous headers.
 - The TLS client supports TLS 1.3 with X25519 and ChaCha20-Poly1305/SHA-256,
-  certificate and host name validation, and RSA and ECDSA P-256/P-384
+  and TLS 1.2 for servers without it: ECDHE with X25519 or P-256,
+  AES-128-GCM or ChaCha20-Poly1305 with the SHA-256 PRF, secure renegotiation
+  required, the extended master secret whenever the server offers it, and
+  neither session resumption nor renegotiation. A TLS 1.3 server's downgrade
+  sentinel is refused. AES and the P-256 exchange are written for these
+  servers: AES computes its S-box without tables, and P-256 uses a Montgomery
+  ladder over variable-time field arithmetic with a fresh key per handshake.
+  Both versions validate the certificate and host name, with RSA (PSS, and
+  PKCS#1 v1.5 for TLS 1.2 key exchanges) and ECDSA P-256/P-384
   signatures with SHA-256/SHA-384. Unsupported algorithms or critical extensions
   are errors; there is no unauthenticated fallback. X.509 NameConstraints is not
   implemented and causes rejection, and CRLs and OCSP are not consulted. Trust

@@ -239,6 +239,86 @@ pub(super) fn verify_ecdsa_p384_sha256(
     verify_ecdsa(point, &sha256(message), signature, &CURVE384)
 }
 
+/// Exchanges two points when `choice` is 1, without a branch on it.
+fn swap(first: &mut Point, second: &mut Point, choice: u32) {
+    let mask = 0u32.wrapping_sub(choice);
+    for (a, b) in [
+        (&mut first.x, &mut second.x),
+        (&mut first.y, &mut second.y),
+        (&mut first.z, &mut second.z),
+    ] {
+        for (x, y) in a.iter_mut().zip(b.iter_mut()) {
+            let difference = mask & (*x ^ *y);
+            *x ^= difference;
+            *y ^= difference;
+        }
+    }
+}
+
+/// A Montgomery ladder: one addition and one doubling for every scalar bit.
+fn ladder(field: &Modulus, point: &Point, scalar: &[u8]) -> Point {
+    let mut low = Point::infinity(field);
+    let mut high = point.clone_point();
+    for byte in scalar {
+        for bit in (0..8).rev() {
+            let choice = u32::from((byte >> bit) & 1);
+            swap(&mut low, &mut high, choice);
+            high = add(field, &low, &high);
+            low = double(field, &low);
+            swap(&mut low, &mut high, choice);
+        }
+    }
+    low
+}
+
+/// An ECDH scalar must lie in [1, n - 1].
+fn check_scalar(scalar: &[u8; 32]) -> Result<()> {
+    if scalar.iter().all(|byte| *byte == 0) || scalar.as_slice() >= ORDER.as_slice() {
+        return Err("Curve: ECDH scalar out of range".into());
+    }
+    Ok(())
+}
+
+fn affine(field: &Modulus, point: &Point) -> Result<(Vec<u8>, Vec<u8>)> {
+    if point.is_infinity() {
+        return Err("Curve: ECDH result is at infinity".into());
+    }
+    let inverse_z = inverse(field, &point.z, &PRIME);
+    let square = field.multiply(&inverse_z, &inverse_z);
+    let x = field.multiply(&point.x, &square);
+    let y = field.multiply(&point.y, &field.multiply(&square, &inverse_z));
+    Ok((
+        to_bytes(&field.decode(&x), 32),
+        to_bytes(&field.decode(&y), 32),
+    ))
+}
+
+/// The uncompressed public point of an ephemeral P-256 scalar (SEC 1 3.2.1),
+/// for TLS 1.2 servers without X25519. The field arithmetic is the
+/// variable-time code above; each scalar is fresh and used for one exchange.
+pub fn p256_public_key(scalar: &[u8; 32]) -> Result<Vec<u8>> {
+    check_scalar(scalar)?;
+    let field = Modulus::new(&PRIME)?;
+    let generator = Point {
+        x: field.encode(&GX)?,
+        y: field.encode(&GY)?,
+        z: field.one(),
+    };
+    let (x, y) = affine(&field, &ladder(&field, &generator, scalar))?;
+    Ok([vec![4], x, y].concat())
+}
+
+/// The P-256 ECDH shared secret, the x coordinate (SEC 1 3.3.1), with a peer
+/// point checked to lie on the curve.
+pub fn p256_shared_secret(scalar: &[u8; 32], peer: &[u8]) -> Result<[u8; 32]> {
+    check_scalar(scalar)?;
+    let field = Modulus::new(&PRIME)?;
+    let point = public_point(&field, peer, &CURVE_B)?;
+    let (x, _) = affine(&field, &ladder(&field, &point, scalar))?;
+    x.try_into()
+        .map_err(|_| "Curve: invalid shared secret".into())
+}
+
 fn reduce_bytes(bytes: &mut [u8], modulus: &[u8]) {
     if &*bytes >= modulus {
         let mut borrow = 0u16;
@@ -334,5 +414,27 @@ mod tests {
             hex::<32>(b"7cf27b188d034f7e8a52380304b51ac3c08969e277f21b35a60b48fc47669978");
         assert_eq!(to_bytes(&field.decode(&x), 32), expected);
         assert!(validate_public_point(&[4; 65]).is_err());
+    }
+    #[test]
+    fn p256_ecdh_agrees_and_rejects_bad_input() {
+        let mut one = [0; 32];
+        one[31] = 1;
+        assert_eq!(p256_public_key(&one).unwrap(), generator());
+        let mut two = [0; 32];
+        two[31] = 2;
+        assert_eq!(
+            p256_public_key(&two).unwrap()[1..33],
+            hex::<32>(b"7cf27b188d034f7e8a52380304b51ac3c08969e277f21b35a60b48fc47669978")
+        );
+        let first = hex::<32>(b"c88f01f510d9ac3f70a292daa2316de544e9aab8afe84049c62a9c57862d1433");
+        let second = hex::<32>(b"0f56db78ca460b055c500064824bed999a25aaf48ebb519ac201537b85479813");
+        let shared = p256_shared_secret(&first, &p256_public_key(&second).unwrap()).unwrap();
+        assert_eq!(
+            shared,
+            p256_shared_secret(&second, &p256_public_key(&first).unwrap()).unwrap()
+        );
+        assert!(p256_public_key(&[0; 32]).is_err());
+        assert!(p256_public_key(&ORDER).is_err());
+        assert!(p256_shared_secret(&first, &[4; 65]).is_err());
     }
 }

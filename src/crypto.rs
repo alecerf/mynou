@@ -1,6 +1,6 @@
 //! Cryptographic primitives implemented with the Rust standard library.
 //!
-//! Algorithms follow FIPS 180-4, RFCs 2104/5869/7693/7748/8017/8439 and
+//! Algorithms follow FIPS 180-4 and 197, NIST SP 800-38D, RFCs 2104/5869/7693/7748/8017/8439 and
 //! draft-irtf-cfrg-xchacha-03. Reference provenance: docs/crypto-vectors.md.
 //! This implementation is exercised with public test vectors. It has not had an
 //! independent cryptographic audit; no claim of formal constant-time execution
@@ -12,6 +12,8 @@ mod aead;
 mod blake2s;
 #[path = "crypto/curve.rs"]
 mod curve;
+#[path = "crypto/gcm.rs"]
+mod gcm;
 #[path = "crypto/hashes.rs"]
 mod hashes;
 
@@ -20,6 +22,7 @@ pub use blake2s::{
     Blake2s, blake2s, hkdf_blake2s_expand, hkdf_blake2s_extract, hmac_blake2s, keyed_blake2s,
 };
 pub use curve::{x25519, x25519_public_key};
+pub use gcm::Aes128Gcm;
 pub use hashes::{Sha1, Sha256, Sha384, Sha512, sha1, sha256, sha384, sha512};
 
 use crate::Result;

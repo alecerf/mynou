@@ -123,7 +123,7 @@ CLI / API            Plex watchlists   IRC announcements
   payload such as MP4 `mdat`, Matroska clusters and WAV data. `organizer`
   publishes imports without overwriting: a hard link when possible, otherwise a
   synchronized copy; it rejects symbolic links on controlled paths.
-- `net`, `tls`, `pki` and `crypto` implement HTTP/1.1, the TLS 1.3 client, X.509
+- `net`, `tls`, `pki` and `crypto` implement HTTP/1.1, the TLS 1.3 and 1.2 client, X.509
   validation and the primitives they need. A failed negotiation never disables
   certificate validation.
 - `server` serves the Bearer-token API and the health routes. `ui` embeds the
