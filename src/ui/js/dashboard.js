@@ -1,4 +1,4 @@
-import { TERMINAL_STATES, WORKING, label, formatBytes, relativeTime, duration, JOB_ICONS, toneOf, qualityOf, mediaLabel, mediaLine, fractionOf } from './format.js';
+import { TERMINAL_STATES, WORKING, label, formatBytes, relativeTime, duration, JOB_ICONS, qualityOf, mediaLabel, mediaLine, fractionOf } from './format.js';
 import { $, h, icon, reconcile } from './dom.js';
 import { Motion, progressBar, setProgress, setWorking } from './motion.js';
 import { quality, act, skeleton } from './components.js';
@@ -27,15 +27,13 @@ views.dashboard = {
     });
   },
   render() {
-    const hour = new Date().getHours();
-    $('#greeting').textContent = `The ${hour < 5 ? 'night' : hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : hour < 23 ? 'evening' : 'night'}`;
     const status = data.get('status')?.data;
     const stats = $('#stats');
     if (!status) {
       if (!stats.querySelector('.loading')) stats.replaceChildren(skeleton('lines', 3));
     } else {
       stats.querySelector('.empty')?.remove();
-      const cards = [['ready to watch', status.ready], ['on their way', status.active], ['series followed', status.monitored_series]];
+      const cards = [['Ready to watch', status.ready], ['In progress', status.active], ['Series followed', status.monitored_series]];
       reconcile(stats, cards, (c) => c[0],
         () => h('div', { class: 'stat' }, h('dt'), h('dd')),
         (el, [name, value]) => {
@@ -83,22 +81,20 @@ views.dashboard = {
     if (!latest.length) recent.replaceChildren(h('li', { class: 'empty' }, jobs.length ? 'Nothing has finished yet.' : 'No jobs yet. Make a request to get started.'));
     else { recent.querySelector('.empty')?.remove(); const before = Motion.beforeLayout(recent); reconcile(recent, latest, (j) => j.id, createJobRow, updateJobRow); Motion.afterLayout(recent, before); }
   },
-  /** One large card for the job furthest along, two smaller ones, then what waits. */
+  /** A card for each of the three jobs furthest along, then one for what waits. */
   paintMotion(active) {
     const root = $('#in-motion');
-    // The page takes on the glow of what is furthest along.
-    const ambient = $('#ambient');
-    if (active.length) ambient.dataset.tone = toneOf(active[0].request?.title ?? active[0].id); else delete ambient.dataset.tone;
     if (!active.length) {
       if (!root.querySelector('.empty-panel')) {
         root.querySelector('.loading')?.remove();
-        root.replaceChildren(h('div', { class: 'empty-panel' }, icon('logo', 'logo'),
-          h('div', {}, h('strong', {}, 'Nothing on its way.'), h('p', {}, 'Mynou is keeping watch. Make a request when you are ready.'))));
+        root.replaceChildren(h('div', { class: 'empty-panel' },
+          h('div', {}, h('strong', {}, 'Nothing in progress'), h('p', {}, 'What you request shows up here while Mynou finds and downloads it.')),
+          h('a', { class: 'secondary', href: '#requests' }, icon('requests'), 'New request')));
       }
       return;
     }
     root.querySelector('.empty-panel, .loading')?.remove();
-    const slots = active.slice(0, 3).map((job, i) => ({ type: i ? 'small' : 'feature', job }));
+    const slots = active.slice(0, 3).map((job) => ({ type: 'job', job }));
     const waiting = active.slice(3);
     if (waiting.length) slots.push({ type: 'queue', job: waiting[0], more: waiting.length });
     const before = Motion.beforeLayout(root);
@@ -112,8 +108,7 @@ function createMotionCard(slot) {
     return h('button', { type: 'button', class: 'motion-card queue-card' },
       h('p', { class: 'eyebrow' }, 'Up next'), h('div', {}, h('div', { class: 'card-title' }), h('div', { class: 'card-sub' })));
   }
-  return h('button', { type: 'button', class: `motion-card ${slot.type}` },
-    h('div', { class: 'tone-art' }),
+  return h('button', { type: 'button', class: 'motion-card' },
     h('div', { class: 'card-top' }, h('span', { class: 'card-label' }, icon('down'), h('span'))),
     h('div', {}, h('div', { class: 'card-title' }), h('div', { class: 'card-sub' }),
       h('div', { class: 'card-status' }, h('span', { class: 'card-size' }), h('strong')), progressBar('Progress')));
@@ -129,7 +124,6 @@ function updateMotionCard(el, slot) {
     return;
   }
   el._job = job;
-  el.dataset.tone = toneOf(request.title ?? job.id);
   el.setAttribute('aria-label', `${mediaLabel(request)}, ${label('job', job.state)}`);
   $('.card-label', el).replaceChildren(icon(JOB_ICONS[job.state] ?? 'clock'), label('job', job.state));
   $('.card-title', el).textContent = request.title ?? titleOf(job);

@@ -7,6 +7,7 @@ class Link extends EventTarget {
   #next = 1;
   #attempt = 0;
   #timer = 0;
+  #extra = new Set();   // topics a sheet watches while it is open
   state = 'closed';
 
   connect() {
@@ -27,7 +28,7 @@ class Link extends EventTarget {
     socket.addEventListener('open', () => {
       this.#attempt = 0;
       this.#setState('open');
-      socket.send(JSON.stringify({ subscribe: TOPICS }));
+      this.#subscribe();
     });
     socket.addEventListener('message', (event) => this.#receive(event.data));
     socket.addEventListener('close', () => {
@@ -40,6 +41,14 @@ class Link extends EventTarget {
       this.#timer = setTimeout(() => this.#open(), delay);
     });
   }
+
+  #subscribe() {
+    if (this.#socket?.readyState === WebSocket.OPEN) this.#socket.send(JSON.stringify({ subscribe: [...TOPICS, ...this.#extra] }));
+  }
+
+  /** Pushes one more topic, such as `transfer:ID`, until `unwatch`. */
+  watch(topic) { this.#extra.add(topic); this.#subscribe(); }
+  unwatch(topic) { if (this.#extra.delete(topic)) this.#subscribe(); }
 
   #receive(text) {
     let message;
@@ -69,6 +78,11 @@ class Link extends EventTarget {
         this.#socket.send(JSON.stringify({ id, method, path, body }));
       });
     }
+    return this.http(method, path, body);
+  }
+
+  /** Plain HTTP, for bodies larger than a WebSocket frame may carry. */
+  async http(method, path, body) {
     const response = await fetch(path, {
       method,
       headers: body ? { 'Content-Type': 'application/json' } : {},

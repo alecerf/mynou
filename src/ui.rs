@@ -17,7 +17,6 @@ macro_rules! modules {
 
 /// The native modules `app.js` imports, served by name only.
 const MODULES: &[(&str, &str)] = modules![
-    "art",
     "components",
     "dashboard",
     "dom",

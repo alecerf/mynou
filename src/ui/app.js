@@ -10,7 +10,6 @@ import { link } from './js/link.js';
 import { data, views, currentView, jobsTail, transfersTail, libraryTail, resetTail, refreshTail, pageMembership, sampleTransfers } from './js/store.js';
 import { refreshJobSearch } from './js/jobs.js';
 import { VIEWS, route } from './js/router.js';
-import { setupArt } from './js/art.js';
 import './js/dashboard.js';
 import './js/transfers.js';
 import './js/library.js';
@@ -27,7 +26,6 @@ function setup() {
   for (const view of Object.values(views)) view.init?.();
   $('#detail-close').addEventListener('click', () => $('#detail').close());
   $('#detail').addEventListener('click', (event) => { if (event.target.id === 'detail') event.target.close(); });
-  setupArt();
 
   const pill = $('#link');
   let lost = false;
@@ -49,6 +47,8 @@ function setup() {
   });
   let queued = false;
   link.addEventListener('topic', ({ detail }) => {
+    // One transfer's details belong to its open sheet only.
+    if (detail.topic.startsWith('transfer:')) return;
     const previous = data.get(detail.topic);
     const tail = detail.topic === 'jobs' ? jobsTail : detail.topic === 'library' ? libraryTail : detail.topic === 'transfers' ? transfersTail : null;
     if (tail && previous && pageMembership(previous.data, detail.topic) !== pageMembership(detail.data, detail.topic)) resetTail(tail);

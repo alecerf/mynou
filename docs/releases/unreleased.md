@@ -20,6 +20,19 @@ release was kept or rejected, and downloads the one you pick (`POST /api/grab`,
 `POST /api/series/ID/search` and `/grab`;
 [details](/docs/selection.md#choose-a-release-by-hand), #370).
 
+## Added: Add a torrent by hand, and remove a transfer
+
+**Add a torrent** in Transfers takes a magnet link, the URL of a .torrent file
+or the file itself (`POST /api/torrents` with `source`, or `torrent` holding
+the file in Base64). Mynou matches the release name with the library: a film
+or an episode takes it as its chosen release, a season pack fills the missing
+episodes of a followed series, and anything else downloads as a plain
+transfer. **Remove** stops a transfer and takes it off the list, with its
+downloaded files when asked (`POST /api/transfers/ID/remove` with
+`{"delete_files": false}`). Requests still waiting on it are cancelled; what is
+already in the library stays. A transfer being imported cannot be removed
+until the import ends.
+
 ## Added: TLS 1.2 for trackers and indexers without TLS 1.3
 
 Mynou now reaches HTTPS servers that offer only TLS 1.2: ECDHE with X25519 or

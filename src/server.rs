@@ -601,6 +601,11 @@ pub(crate) fn route(
                 .ok_or("candidate_id must be a string")?;
             Ok((201, public_job(&engine.grab(&request, candidate)?)))
         }
+        ("POST", "/api/torrents") => {
+            let value = control_body(body, &["source", "torrent"], false)?;
+            let torrent = crate::manual::ManualTorrent::from_json(&value)?;
+            Ok((201, engine.add_torrent(&torrent)?))
+        }
         ("GET", "/api/profiles") => Ok((200, engine.config.selection.to_json())),
         ("GET", path)
             if path == "/api/title-profiles" || path.starts_with("/api/title-profiles?") =>
@@ -962,6 +967,12 @@ pub(crate) fn route(
                     return Ok((404, error("Unknown transfer route")));
                 }
                 let snapshot = match parts[1] {
+                    "remove" => {
+                        let value = control_body(body, &["delete_files"], true)?;
+                        let delete_files =
+                            optional_boolean(&value, "delete_files")?.unwrap_or(false);
+                        engine.remove_transfer(&id, delete_files)?
+                    }
                     "cross-seed" => {
                         let value = control_body(body, &["metadata_hex", "mapping"], false)?;
                         engine.cross_seed(

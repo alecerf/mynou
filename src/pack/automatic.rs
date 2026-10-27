@@ -447,6 +447,36 @@ fn map_metadata(
 }
 
 impl Engine {
+    /// Maps a season pack added by hand onto the missing aired episodes of the
+    /// season, as an automatic pack is. None when no episode is missing.
+    pub(crate) fn submit_manual_pack(
+        &self,
+        id: &str,
+        season: u32,
+        source: &str,
+        metadata: &TorrentMetadata,
+    ) -> Result<Option<Value>> {
+        let scope = {
+            let mut series = lock(&self.series_store)?;
+            let record = series.get(id)?.ok_or("Unknown tracked series")?;
+            let mut jobs = lock(&self.store)?;
+            capture_scope(&record, &mut jobs, season)?
+        };
+        if scope.episodes.is_empty() {
+            return Ok(None);
+        }
+        let episodes = map_metadata(&scope, metadata, season)?;
+        let _publication = self.torrent_publication()?;
+        self.submit_pack(
+            id,
+            &PackSubmission {
+                source_url: source.into(),
+                episodes,
+            },
+        )
+        .map(Some)
+    }
+
     pub fn search_packs(&self, id: &str, query: &AutoPackRequest) -> Result<Value> {
         self.search_packs_before(id, query, Instant::now() + Duration::from_secs(90))
     }

@@ -46,6 +46,16 @@ const TOPICS: [(&str, &str, Duration); 9] = [
 ];
 static OPEN: AtomicUsize = AtomicUsize::new(0);
 
+/// A fixed topic, or `transfer:ID` for the details of one native transfer.
+fn topic(name: &str) -> Option<(String, String, Duration)> {
+    if let Some((topic, path, every)) = TOPICS.iter().find(|(topic, _, _)| *topic == name) {
+        return Some(((*topic).to_owned(), (*path).to_owned(), *every));
+    }
+    let id = name.strip_prefix("transfer:")?;
+    ([40, 64].contains(&id.len()) && id.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')))
+        .then(|| (name.to_owned(), format!("/api/transfers/{id}"), FAST))
+}
+
 pub type Route = fn(&Arc<Engine>, &str, &str, &[u8]) -> Result<(u16, Value)>;
 
 /// Holds one of the `MAX_SOCKETS` slots until dropped.
@@ -250,7 +260,7 @@ fn call(engine: &Arc<Engine>, route: Route, message: &Value) -> String {
 }
 
 struct Watch {
-    path: &'static str,
+    path: String,
     every: Duration,
     due: Instant,
     last: Option<String>,
@@ -261,7 +271,7 @@ pub fn serve(stream: &mut TcpStream, engine: &Arc<Engine>, route: Route) -> Resu
     stream
         .set_read_timeout(Some(TICK))
         .map_err(|e| e.to_string())?;
-    let mut watches: BTreeMap<&'static str, Watch> = BTreeMap::new();
+    let mut watches: BTreeMap<String, Watch> = BTreeMap::new();
     let mut buffer = Vec::new();
     let mut chunk = [0u8; 8192];
     let mut heard = Instant::now();
@@ -318,19 +328,15 @@ pub fn serve(stream: &mut TcpStream, engine: &Arc<Engine>, route: Route) -> Resu
                         let names = topics.as_array().filter(|a| a.len() <= MAX_TOPICS);
                         let names: Option<Vec<&str>> =
                             names.and_then(|a| a.iter().map(Value::as_str).collect());
-                        let wanted: Option<Vec<_>> = names.and_then(|names| {
-                            names
-                                .iter()
-                                .map(|n| TOPICS.iter().find(|(topic, _, _)| topic == n))
-                                .collect()
-                        });
+                        let wanted: Option<Vec<_>> =
+                            names.and_then(|names| names.iter().map(|n| topic(n)).collect());
                         match wanted {
                             Some(wanted) => {
                                 watches.retain(|name, _| wanted.iter().any(|(t, _, _)| t == name));
                                 for (name, path, every) in wanted {
                                     watches.entry(name).or_insert(Watch {
                                         path,
-                                        every: *every,
+                                        every,
                                         due: Instant::now(),
                                         last: None,
                                     });
@@ -364,7 +370,7 @@ pub fn serve(stream: &mut TcpStream, engine: &Arc<Engine>, route: Route) -> Resu
                 continue;
             }
             watch.due = now + watch.every;
-            let (status, body) = match route(engine, "GET", watch.path, &[]) {
+            let (status, body) = match route(engine, "GET", &watch.path, &[]) {
                 Ok((status, value)) => (status, json::stringify(&value)),
                 Err(e) => (400, failure(&e)),
             };
