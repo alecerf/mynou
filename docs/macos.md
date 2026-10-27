@@ -65,9 +65,9 @@ curl -s -X POST -H 'Content-Type: application/json' \
 
 `settings.json` holds `{"settings": {...}}`, the whole document.
 
-Settings are validated before they are saved: unknown fields are rejected, so a
-typo is reported instead of ignored, and an invalid document leaves the saved
-one unchanged. The running service applies saved settings by restarting its
+Settings are validated before they are saved: fields this version does not know
+are ignored, so check the spelling of a setting you add by hand, and an invalid
+document leaves the saved one unchanged. The running service applies saved settings by restarting its
 engine; a new `listen` address applies at the next start. Relative paths
 resolve against the data directory.
 

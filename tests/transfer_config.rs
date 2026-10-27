@@ -184,16 +184,17 @@ fn policy_settings_remain_strict_even_when_downloads_are_disabled() {
 }
 
 #[test]
-fn unknown_transfer_fields_and_top_level_policies_are_rejected() {
+fn unknown_transfer_fields_and_top_level_policies_are_ignored() {
     for name in [
         "download_limit",
         "upload_limits_bps",
         "seed_ratio",
         "transfer_policy",
     ] {
-        assert!(config::from_json(&configured(name, 1_u32.into()), Path::new(".")).is_err());
+        let cfg = config::from_json(&configured(name, 1_u32.into()), Path::new(".")).unwrap();
+        assert_eq!(cfg.download_policy, TransferPolicy::default());
     }
     let mut value = config::default_json();
     value.insert("download_policy", TransferPolicy::default().to_json());
-    assert!(config::from_json(&value, Path::new(".")).is_err());
+    assert!(config::from_json(&value, Path::new(".")).is_ok());
 }
