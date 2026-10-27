@@ -31,7 +31,7 @@ transfer. **Remove** stops a transfer and takes it off the list, with its
 downloaded files when asked (`POST /api/transfers/ID/remove` with
 `{"delete_files": false}`). Requests still waiting on it are cancelled; what is
 already in the library stays. A transfer being imported cannot be removed
-until the import ends.
+until the import ends ([details](/docs/transfers.md#add-a-torrent-by-hand)).
 
 ## Added: TLS 1.2 for trackers and indexers without TLS 1.3
 

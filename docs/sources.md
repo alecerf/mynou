@@ -14,7 +14,7 @@ and validate each provider's contract.
 ## Indexers
 
 Add each source in the **Indexers** part of the **Settings** view, or to the
-`indexers` array of the settings document (`mynou settings --save`):
+`indexers` array of the settings document (`POST /api/settings`):
 
 ```json
 {
@@ -45,8 +45,8 @@ Add each source in the **Indexers** part of the **Settings** view, or to the
 - `id` is an optional stable identifier of 1 to 64 lowercase letters, digits,
   underscores or hyphens. It binds the name, kind, URL, API key variable,
   interval and authentication: changing any of them needs a new ID.
-- Credential values are secrets, saved from the **Settings** view or
-  `mynou secrets --set NAME`, or read from environment variables of the same
+- Credential values are secrets, saved from the **Settings** view or with
+  `POST /api/secrets` and `{"name": "NAME", "value": "..."}`, or read from environment variables of the same
   name; they are never part of the settings document.
 
 ### Authentication
@@ -139,7 +139,7 @@ A `mapping` is a section of a `json` source. Every key is optional:
 - All resulting parameter names must be distinct. Unknown keys, malformed paths
   and a `mapping` on a non-`json` source stop the service from starting.
 - A response that does not match the mapping is reported as a parse failure
-  (`last_parse` in `mynou indexers`). `mynou indexers` never shows the mapping.
+  (`last_parse` in `GET /api/indexers`), which never shows the mapping.
 - The mapping is part of the source's identity: changing it on a source with an
   `id` needs a new `id`, as for the URL.
 
@@ -148,29 +148,20 @@ header (use `bearer` or `basic` authentication where the indexer accepts it),
 interactive or CAPTCHA logins, and scripts. An indexer that offers none of the
 three formats is not reachable directly; put an aggregator that serves Torznab
 in front of it. Compatibility of any particular tracker is not verified by
-Mynou: check it with `mynou indexer-control SOURCE --action probe`.
+Mynou: check it with the `probe` action below.
 
 ### Health, pause and probe
 
-```sh
-mynou indexers
-mynou indexer-control movies-source --action pause
-mynou indexer-control movies-source --action pause --apply \
-  --plan-id PLAN_ID
-```
-
-`mynou indexers` and `GET /api/indexers` show
-each source's alias, format, enabled and authentication mode, request counters,
+`GET /api/indexers` shows each source's alias, format, enabled and authentication mode, request counters,
 last diagnostic, HTTP status, parse result and whether a session exists. They
 never show URLs, variable names or values, response bodies, headers or cookies.
 
-`indexer-control` previews an action and returns a `plan_id`; applying it
-requires that plan and the running service. Actions are `enable`, `pause`,
+`POST /api/indexers/SOURCE_ID/control` with `{"action": "pause"}` previews an
+action and returns a `plan_id`; send it again with `"apply": true` and that
+`"plan_id"` to apply it. Actions are `enable`, `pause`,
 `reset_session` (forget the cookie) and `probe` (search the source once with a
 fixed synthetic query, within five seconds, downloading nothing). Paused
-sources are never searched or probed. The API equivalent is
-`POST /api/indexers/SOURCE_ID/control` with `action` and, to apply,
-`"apply": true` and `"plan_id"`. The enabled state is read from the configuration
+sources are never searched or probed. The enabled state is read from the configuration
 once and then kept in a private `indexers.bin` file, so a later `enabled`
 change in the settings does not override a pause.
 
@@ -240,11 +231,7 @@ of the per-title search:
 - Per poll, at most 500 entries are read, 200 unseen ones are considered
   (the rest stay new for the next poll) and 32 jobs and 32 upgrades are routed.
 
-```sh
-mynou feeds
-```
-
-`mynou feeds` and `GET /api/feeds` report, for every RSS or Torznab source and
+`GET /api/feeds` reports, for every RSS or Torznab source and
 every watched JSON source,
 whether it is watched and active, whether it has a baseline, when it last
 succeeded, how many polls, failures and new entries it saw, the last outcome
@@ -460,16 +447,10 @@ key are never kept. The tracker passkey in its announce list stays in
 that file and in the native transfer state. Any failure leaves no file and
 routes nothing.
 
-Test a format without storage, network or acquisition:
-
-```sh
-mynou irc-preview SOURCE_ID --text announcement.txt
-mynou irc-preview SOURCE_ID --announcement claim.json
-```
-
-The text file holds the message body without line endings. The API equivalent
-is `POST /api/irc/preview` with `{"source_id": "...", "text": "..."}` or an
-`announcement` object (one of the two).
+Test a format without storage, network or acquisition with
+`POST /api/irc/preview` and `{"source_id": "...", "text": "..."}`, where `text`
+is the message body without line endings, or an `announcement` object instead
+of `text`.
 
 ### Rules and actions
 
@@ -489,8 +470,8 @@ history.
   becomes `urn:btih:` with the 40-character hash, or `urn:btmh:1220` with the
   64-character v2 hash. Downloads must be enabled. While an enabled grab rule exists, queued movie and episode
   jobs with a catalog ID and the same profile wait for an announcement instead
-  of searching. Explicit
-  `--url` or `--path` requests, running acquisitions, upgrades, packs and shared
+  of searching. Requests
+  with an explicit `source_url` or `source_path`, running acquisitions, upgrades, packs and shared
   videos keep their normal scheduling, and disabling the rule or source restores
   it. No announcement ever creates a request on its own.
 - **`request`** creates demand for one configured
@@ -520,25 +501,15 @@ and waits for a matching announcement to download.
 
 ### Review announcements
 
-History is stored on disk without a total identity limit. Follow `next_cursor`
-with `mynou announcements --after CURSOR --limit 50` or the API `after` parameter
-for later pages. Each page holds at most 200 rows; `--offset` remains available
-up to 1,000 rows. See [migration and downgrade](inventory-storage.md#irc-announcement-storage).
-
-```sh
-mynou irc
-mynou announcements --limit 50
-mynou announcement ANNOUNCEMENT_ID
-mynou irc-control ANNOUNCEMENT_ID --action dismiss
-mynou irc-control ANNOUNCEMENT_ID --action dismiss --apply \
-  --plan-id PLAN_ID
-```
+History is stored on disk without a total identity limit. Pass `next_cursor`
+as `after` for later pages. Each page holds at most 200 rows; `offset` remains
+available up to 1,000 rows. See [migration and downgrade](inventory-storage.md#irc-announcement-storage).
 
 Actions are `acknowledge`, `dismiss` and `request`. Each is previewed first; the
-apply step needs the returned `plan_id` and the running service, and a changed
+apply step needs the returned `plan_id`, and a changed
 announcement, rule or profile requires a new preview. Acknowledged and dismissed
 announcements are final and are no longer routed; to stop a routed download,
-cancel its job. Listing and previews work offline without writing.
+cancel its job. Listing and previews write nothing.
 
 | Route | Purpose |
 | --- | --- |

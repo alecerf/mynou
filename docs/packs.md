@@ -7,6 +7,10 @@ pack in three ways, all built on a tracked [series](series.md) plan:
 - **Automatic search**: Mynou finds a pack and maps its numbered files itself.
 - **Shared video**: one video file contains several consecutive episodes.
 
+A season pack [added by hand](transfers.md#add-a-torrent-by-hand) in Transfers
+is mapped like an automatic one: its numbered files fill the season's missing
+aired episodes.
+
 In every case Mynou records one ordinary episode job per episode. The jobs share
 one native transfer that downloads only the selected files (plus the boundary
 pieces they need, see [transfers](transfers.md#selective-acquisition)), and each
@@ -15,14 +19,14 @@ the torrent; it cannot prove that a file shows the episode you assigned. Review
 the files before mapping them.
 
 Packs work while series monitoring is off. To choose a pack before Mynou
-requests individual episodes, track the series with `--unmonitored`. Existing
+requests individual episodes, track the series with `"enabled": false`. Existing
 requests for an episode, in any state, are always reused rather than replaced.
 Pack jobs have no release baseline, so [library upgrades](library.md) need an
 explicit baseline first.
 
 ## Map files explicitly
 
-Create a mapping file with the exact path of each episode's file:
+List the exact path of each episode's file:
 
 ```json
 [
@@ -35,18 +39,14 @@ Paths are case-sensitive and relative to the torrent's content root, including
 its top-level folder; they never include the download directory or a hash
 prefix. Single-file torrents use the file name. Use the paths shown in transfer
 details or in the torrent metadata. Absolute or anime-style names such as
-`Pack/001.mp4` work because you choose the mapping.
-
-```sh
-mynou series-pack ID --url 'magnet:?xt=urn:btih:...' \
-  --mapping ./episodes.json
-```
+`Pack/001.mp4` work because you choose the mapping. Send the list as
+`episodes` to `POST /api/series/ID/packs`, with the torrent as `source_url`:
+`{"source_url": "magnet:?xt=urn:btih:...", "episodes": [...]}`.
 
 The source can be a magnet, an HTTP or HTTPS torrent URL or a `.torrent` path
 visible to the service. The torrent is only read when the job runs, so an
-unreachable source creates jobs that then fail with a clear error. The API call is
-`POST /api/series/ID/packs` with `{"source_url": "...", "episodes": [...]}`;
-the response contains `series_id`, `submitted`, `reused` and the public `jobs`.
+unreachable source creates jobs that then fail with a clear error. The response
+contains `series_id`, `submitted`, `reused` and the public `jobs`.
 
 Each mapped episode must exist in the accepted plan with a catalog ID and an
 air date on or before today (UTC); future, undated and unidentified episodes
@@ -61,43 +61,30 @@ same mapping again reuses the recorded jobs and adds the rest.
 
 ### Correct a wrong mapping
 
-Let the job fail or cancel it before anything is imported, then remap it:
-
-```sh
-mynou pack-remap JOB_ID --file-path Pack/corrected.mp4
-```
-
-The API equivalent is `POST /api/jobs/JOB_ID/pack-mapping` with
-`{"file_path": "Pack/corrected.mp4"}`; the job must be `failed` or `cancelled`, without an
+Let the job fail or cancel it before anything is imported, then remap it with
+`POST /api/jobs/JOB_ID/pack-mapping` and
+`{"file_path": "Pack/corrected.mp4"}`. The job must be `failed` or `cancelled`, without an
 active lease or a confirmed import, and the new file must not belong to another
 episode of the same pack. Mynou records the correction, resets attempts and
 requeues the job, reusing bytes that were already verified.
 
 ## Search for a pack automatically
 
-```sh
-mynou series-pack-search ID --season 1
-mynou series-pack-search ID --season 1 --apply \
-  --scope-id SCOPE_ID --candidate-id CANDIDATE_ID
-```
-
-The preview searches your sources, ranks pack titles under the episode profile
+`POST /api/series/ID/pack-search` with `{"season": 1}` previews: it searches your sources, ranks pack titles under the episode profile
 and inspects the best candidates' metadata, without downloading payload,
 recording jobs or creating a transfer. It stops at the first candidate whose
 files cover every requested episode. The report shows title assessments,
 `requested_episodes`, `metadata_decisions`, `scope_id` and, when a candidate
 resolves, `selected_candidate_id`, `torrent_id` and the file `mapping`. It never
-includes acquisition URLs. When the service is stopped, the preview opens
-existing storage read-only.
+includes acquisition URLs.
 
-To acquire, copy both guards from the preview. Apply searches and inspects again
+To acquire, send `"apply": true` with both guards from the preview,
+`"scope_id"` and `"candidate_id"`; the response then adds `submission`. Apply
+searches and inspects again
 and refuses a changed catalog, monitoring choice, missing-episode set, ranking,
-torrent hash or mapping; guards are checks, not reservations. `--apply`
+torrent hash or mapping; guards are checks, not reservations. `"apply": true`
 without guards acquires whatever currently resolves. An empty scope returns
-`scope_empty: true` without contacting sources. Applying needs the running
-service. The API equivalent is `POST /api/series/ID/pack-search` with
-`{"season": 1}`, plus `"apply": true`, `"scope_id"` and `"candidate_id"` to
-acquire; the response then adds `submission`.
+`scope_empty: true` without contacting sources.
 
 What qualifies:
 
@@ -136,28 +123,23 @@ why a season fell back.
 Some releases put consecutive episodes in one file. A shared video binds one
 file to 2 to 64 consecutive episodes of one season. Each episode keeps its own
 job and Plex check, and all of them share one library file. Every episode needs
-a catalog ID and an air date in the past. Create `shared.json` with library
-(canonical) numbers, as shown in series details:
+a catalog ID and an air date in the past. Preview with
+`POST /api/series/SERIES_ID/shared-file`, using library (canonical) numbers as
+shown in series details:
 
 ```json
-{"file_path": "Pack/combined.mp4", "season": 1, "episodes": [1, 2]}
-```
-
-Preview, then apply with a running service:
-
-```sh
-mynou series-shared-file SERIES_ID \
-  --url 'magnet:?xt=urn:btih:TORRENT_HASH' --mapping shared.json
-mynou series-shared-file SERIES_ID \
-  --url 'magnet:?xt=urn:btih:TORRENT_HASH' --mapping shared.json \
-  --apply --plan-id REVIEWED_PLAN_ID
+{
+  "source_url": "magnet:?xt=urn:btih:TORRENT_HASH",
+  "file_path": "Pack/combined.mp4",
+  "season": 1,
+  "episodes": [1, 2]
+}
 ```
 
 The preview authenticates the metadata and requires exactly one non-empty video
 at that path; it downloads no payload and records no jobs. Review `binding`,
-`group_id`, `new_owners` and `plan_id` before applying. The API equivalent is
-`POST /api/series/SERIES_ID/shared-file` with `source_url`, `file_path`,
-`season`, `episodes` and, to apply, `"apply": true` and `"plan_id"`.
+`group_id`, `new_owners` and `plan_id`, then send the same body again with
+`"apply": true` and the reviewed `"plan_id"` to apply.
 
 The file is imported once, under a name that covers the whole range, for
 example `Example Series/Season 01/Example Series - S01E01-E02 [mynou-GROUP_ID].mp4`,

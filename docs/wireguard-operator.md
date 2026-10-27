@@ -11,35 +11,25 @@ state and rollback, use the [macOS migration guide](wireguard-macos-migration.md
 ## Import and inspect
 
 Use the [supported profile subset](wireguard-profiles.md#accepted-subset).
-Keep the profile and its directories under trusted control. Import requires a
-0400/0600 regular file with one link, no symlink path components and no `..`.
-The reader never changes the source. Use a physical absolute path on macOS.
-Do not put credentials in command arguments or logs.
-
-```sh
-mynou vpn --action import --profile /private/path/tunnel.conf
-mynou vpn
-```
+Import the profile from the **VPN** page of **Settings**, which reads the chosen
+`.conf` file in the browser and sends its text, or with `POST /api/vpn/control`
+and `{"action":"import","profile":"..."}`. Never put the profile in a URL, a
+command line or a log.
 
 Import atomically stores a canonical private copy in `store_dir/vpn.conf` and
-requests protection. With the service stopped, it performs no networking;
-protection remains blocked until `mynou serve` starts the tunnel. With the
-service running, the CLI sends the private profile to the authenticated local
-API. Use a trusted local management connection; the ordinary management API is
-HTTP and must not be exposed to untrusted networks.
+requests protection; the running service then starts the tunnel. The API
+answers only this machine (see [limits](limits.md)) and is plain HTTP.
 
-Equivalent structured import uses `--settings /private/path/tunnel.json` or
-`POST /api/vpn/control` with `{"action":"import","settings":{...}}`. The object
+A structured import sends `{"action":"import","settings":{...}}` instead. The object
 contains the exact supported WireGuard directive names (`PrivateKey`, `Address`,
 `DNS`, optional `MTU`, `PublicKey`, optional `PresharedKey`, `AllowedIPs`,
 `Endpoint`, optional `PersistentKeepalive`). Every value is a string, for example
 `"AllowedIPs":"0.0.0.0/0"`. JSON files have the same private-file checks.
 Unknown fields, hooks, injected newlines and unsupported profiles are rejected
 before changing the current authorization. Supply exactly one profile or
-settings object. The API also accepts `{"action":"import","profile":"..."}`.
-Never paste actual profile bodies into public issues.
+settings object. Never paste actual profile bodies into public issues.
 
-`GET /api/vpn` and `mynou vpn` report state, enabled intent, presence of a
+`GET /api/vpn` reports state, enabled intent, presence of a
 profile, a redacted block reason, current installed-session handshake age and
 outer-datagram counters. Counts/ages are decimal strings. No profile, key, PSK,
 endpoint, DNS server, input path or provider payload is returned. A successful
@@ -70,19 +60,13 @@ Retirement can wait for bounded network operations or an already admitted local
 publication; filesystem stalls and the Direct system resolver can delay it.
 The successor is not activated while old work remains.
 
-```sh
-mynou vpn --action revoke
-mynou vpn --action reconnect
-mynou vpn --action disable
-```
-
+Controls are `POST /api/vpn/control` with `{"action":"revoke"}` (or `enable`,
+`reconnect`, `disable`); the **VPN** page offers turning protection on and off.
 `revoke` persists a blocked intent while retaining the private imported profile;
 it never selects Direct. `enable` enables the retained profile. `reconnect`
 explicitly requests a fresh owner/handshake, including after a terminal error.
 `disable` is the only action that requests Direct. Imports and every mode change
-retire the old generation first. The API equivalent is `POST /api/vpn/control`
-with `{"action":"revoke"}` (or `enable`, `reconnect`, `disable`); accepted controls
-return 202. A retiring generation refuses further controls until replacement.
+retire the old generation first. Accepted controls return 202. A retiring generation refuses further controls until replacement.
 
 The intent file is written as 0600 with a unique create-new temporary, file sync,
 atomic rename and parent sync. A failed save leaves the running engine blocked;
@@ -102,15 +86,8 @@ with NAT-PMP ([RFC 6886](https://www.rfc-editor.org/rfc/rfc6886)), the method
 [ProtonVPN documents](https://protonvpn.com/support/port-forwarding-manual-setup)
 for its P2P servers ([#223](https://github.com/alecerf/mynou/issues/223)). Generate
 the WireGuard profile for a P2P server with "NAT-PMP (port forwarding)" enabled,
-import it, then opt in:
-
-```sh
-mynou vpn --action enable-forwarding
-mynou vpn --action disable-forwarding
-```
-
-The API equivalent is `{"action":"enable-forwarding"}` (or
-`disable-forwarding`). The choice is stored in the private intent and survives
+import it, then opt in with **Open a port for seeding** on the **VPN** page, or
+`{"action":"enable-forwarding"}` (or `disable-forwarding`). The choice is stored in the private intent and survives
 `revoke`, `enable` and restarts; a new import keeps it. The NAT-PMP gateway is
 the profile's first `DNS` server (`10.2.0.1` in Proton profiles), by owner
 decision; no provider name is interpreted. A profile without `DNS` cannot enable
@@ -153,5 +130,4 @@ and cancellation, suspended request retries and supervised engine replacement.
 The native fixture injects already-constructed controlled loopback owners into
 the operator; it does not connect a provider profile or replace #224's complete
 ordinary-path attempted-I/O observation. Parser/private-file and existing torrent
-protocol fixtures supply their own documented coverage. `tests/cli.rs` exercises
-offline CLI import/status and explicit controls across processes.
+protocol fixtures supply their own documented coverage.

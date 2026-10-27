@@ -6,7 +6,7 @@ thread. It constructs the non-`Send` tunnel inside that thread and exposes a
 Rust library prerequisite for [#221](https://github.com/alecerf/mynou/issues/221),
 delivered by [#286](https://github.com/alecerf/mynou/issues/286). Production torrent
 traffic, listeners and metadata inspection still use their existing paths.
-The separate [operator layer](wireguard-operator.md) supplies CLI/API controls;
+The separate [operator layer](wireguard-operator.md) supplies API controls;
 this transport alone does not establish a complete isolation claim.
 
 ## Use
