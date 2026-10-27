@@ -4,12 +4,13 @@ use super::{
 };
 use crate::{Result, bencode::Value, net::NetworkStream};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, VecDeque},
     io::Read,
     net::SocketAddr,
+    path::PathBuf,
     sync::{
         Arc,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering},
     },
     time::{Duration, Instant},
 };
@@ -26,7 +27,84 @@ pub struct PeerSettings<'a> {
     pub local_download_gate: Arc<super::RateGate>,
     /// The only way this peer reaches the network.
     pub network: &'a dyn super::transport::Network,
+    /// Verified pieces this side uploads while it downloads.
+    pub serving: Option<Serving>,
 }
+
+/// The pieces of a download already verified on disk, shared by its peers so
+/// each can announce and serve them.
+pub struct Pieces {
+    bits: Vec<AtomicU8>,
+    version: AtomicU64,
+}
+impl Pieces {
+    pub fn new(have: &[bool]) -> Self {
+        let bits: Vec<_> = (0..have.len().div_ceil(8))
+            .map(|_| AtomicU8::new(0))
+            .collect();
+        for (index, _) in have.iter().enumerate().filter(|(_, have)| **have) {
+            bits[index / 8].fetch_or(0x80 >> (index % 8), Ordering::Relaxed);
+        }
+        Self {
+            bits,
+            version: AtomicU64::new(0),
+        }
+    }
+    /// Once `index` is written and verified.
+    pub fn add(&self, index: usize) {
+        if let Some(byte) = self.bits.get(index / 8) {
+            byte.fetch_or(0x80 >> (index % 8), Ordering::Release);
+        }
+        self.version.fetch_add(1, Ordering::Release);
+    }
+    pub fn has(&self, index: usize) -> bool {
+        self.bits
+            .get(index / 8)
+            .is_some_and(|byte| byte.load(Ordering::Acquire) & (0x80 >> (index % 8)) != 0)
+    }
+    /// The version is read first: a later addition is announced next time.
+    fn snapshot(&self) -> (u64, Vec<u8>) {
+        let version = self.version.load(Ordering::Acquire);
+        let bits = self
+            .bits
+            .iter()
+            .map(|byte| byte.load(Ordering::Acquire))
+            .collect();
+        (version, bits)
+    }
+}
+
+/// A piece this peer was fetching arrived from another one first.
+pub const ABANDONED: &str = "Piece was verified from another peer";
+
+/// What a downloading peer needs to upload verified pieces.
+#[derive(Clone)]
+pub struct Serving {
+    pub pieces: Arc<Pieces>,
+    /// The download's data directory.
+    pub base: PathBuf,
+    pub upload_gate: Arc<super::RateGate>,
+    pub local_upload_gate: Arc<super::RateGate>,
+}
+
+/// Uploading state on a download connection.
+struct Upload {
+    serving: Serving,
+    /// Pieces this peer was told of, by bitfield or HAVE.
+    announced: Vec<u8>,
+    version: u64,
+    interested: bool,
+    unchoked: bool,
+    requests: VecDeque<[u32; 3]>,
+    /// Metadata pieces asked for by a peer that has only a magnet link.
+    metadata: VecDeque<usize>,
+    cached: Option<(usize, Vec<u8>)>,
+}
+
+/// Blocks served after each downloaded message, so uploads never hold up the
+/// download for long; between pieces a connection serves more at once.
+const UPLOAD_BATCH: usize = 4;
+const IDLE_UPLOAD_BATCH: usize = 64;
 pub struct Peer {
     pub stream: Box<dyn NetworkStream>,
     pub metadata_id: Option<u8>,
@@ -44,7 +122,18 @@ pub struct Peer {
     piece_count: Option<usize>,
     bitfield_received: bool,
     availability_known: bool,
-    ahead: Option<Blocks>,
+    request_limit: usize,
+    request_sent: Option<Instant>,
+    request_rtt: Option<Duration>,
+    ahead: VecDeque<Blocks>,
+    haves: Vec<u8>,
+    upload: Option<Upload>,
+    /// Availability or choking changed since `take_fresh`.
+    fresh: bool,
+    /// Pieces verified by any peer of this download.
+    done: Option<Arc<Pieces>>,
+    /// Pieces abandoned here, whose late blocks are ignored.
+    cancelled: VecDeque<usize>,
 }
 
 /// An incoming connection whose handshake named a torrent being downloaded,
@@ -56,9 +145,18 @@ pub struct Inbound {
     pub extensions: bool,
 }
 
-/// Blocks requested at once from an unlimited peer. A piece requested ahead
-/// of the current one therefore never has more outstanding.
-pub const PIPELINE: usize = 16;
+/// Maximum requested blocks, including pieces requested ahead. Peers which
+/// omit `reqq` keep the conservative 16-block window. The worker memory budget
+/// accounts for this maximum before connections are allocated.
+pub const PIPELINE: usize = 512;
+pub const PIECES_IN_FLIGHT: usize = 8;
+const DEFAULT_REQUEST_LIMIT: usize = 16;
+
+pub fn piece_claims(meta: &Meta) -> usize {
+    (PIPELINE * BLOCK)
+        .div_ceil(meta.piece_length)
+        .clamp(2, PIECES_IN_FLIGHT)
+}
 
 /// One piece's blocks: requested in order, stored as they arrive.
 struct Blocks {
@@ -71,22 +169,15 @@ struct Blocks {
 }
 
 impl Blocks {
-    /// A piece requested ahead holds only the blocks it can have requested
-    /// until it becomes the current piece.
-    fn new(meta: &Meta, index: usize, v2_wire: bool, ahead: bool) -> Self {
+    /// Allocate once: queued pieces can complete out of order, and growing an
+    /// ahead buffer while a verified result waits would add a transient copy.
+    fn new(meta: &Meta, index: usize, v2_wire: bool) -> Self {
         let size = meta.wire_piece_size(index, v2_wire);
         let length = meta.piece_size(index);
         Self {
             index,
             size,
-            data: vec![
-                0;
-                if ahead {
-                    length.min(PIPELINE * BLOCK)
-                } else {
-                    length
-                }
-            ],
+            data: vec![0; length],
             received: vec![false; size.div_ceil(BLOCK)],
             next: 0,
             pending: 0,
@@ -141,6 +232,10 @@ fn handshake_deadline(
     Ok(response[25] & 0x10 != 0)
 }
 
+const CLOSED: &str = "Peer connection closed";
+const EXPIRED: &str = "Peer exceeded read deadline";
+const RESET: &str = "Peer read interrupted";
+
 pub fn read_exact_deadline(
     stream: &mut dyn NetworkStream,
     mut buffer: &mut [u8],
@@ -155,10 +250,10 @@ pub fn read_exact_deadline(
             return Err("Download interrupted".into());
         }
         if Instant::now() >= deadline {
-            return Err("Peer exceeded read deadline".into());
+            return Err(EXPIRED.into());
         }
         match stream.read(buffer) {
-            Ok(0) => return Err("Peer connection closed".into()),
+            Ok(0) => return Err(CLOSED.into()),
             Ok(n) => {
                 let (_, remaining) = buffer.split_at_mut(n);
                 buffer = remaining;
@@ -170,7 +265,7 @@ pub fn read_exact_deadline(
                         | std::io::ErrorKind::TimedOut
                         | std::io::ErrorKind::Interrupted
                 ) => {}
-            Err(_) => return Err("Peer read interrupted".into()),
+            Err(_) => return Err(RESET.into()),
         }
     }
     Ok(())
@@ -262,6 +357,9 @@ pub fn write_payload_message(
     prefix.extend_from_slice(&length.to_be_bytes());
     prefix.push(7);
     prefix.extend_from_slice(header);
+    // The header leaves in its own write: the tunnel stream takes 16 KiB per
+    // write, so a whole message would end in a 13-byte remainder that waits
+    // for send space, measured 2.5 times slower over loopback WireGuard.
     write_all_deadline(stream, &prefix, Some(stop), deadline)?;
     stream
         .set_write_timeout(Some(Duration::from_millis(100)))
@@ -347,6 +445,15 @@ fn read_bounded(
 ) -> Result<(u8, Vec<u8>)> {
     let mut length = [0; 4];
     read_exact_deadline(stream, &mut length, stop, deadline)?;
+    read_body(stream, length, stop, deadline, limit)
+}
+fn read_body(
+    stream: &mut dyn NetworkStream,
+    length: [u8; 4],
+    stop: Option<&AtomicBool>,
+    deadline: Instant,
+    limit: usize,
+) -> Result<(u8, Vec<u8>)> {
     let length = u32::from_be_bytes(length) as usize;
     if length == 0 {
         return Ok((255, Vec::new()));
@@ -370,7 +477,7 @@ pub fn extended_handshake(meta: Option<&Meta>, port: u16, pex: bool) -> Vec<u8> 
         b"v".to_vec(),
         Value::Bytes(format!("Mynou/{}", env!("CARGO_PKG_VERSION")).into_bytes()),
     );
-    fields.insert(b"reqq".to_vec(), Value::Int(16));
+    fields.insert(b"reqq".to_vec(), Value::Int(PIPELINE as i64));
     fields.insert(b"p".to_vec(), Value::Int(i64::from(port)));
     if let Some(meta) = meta {
         fields.insert(
@@ -449,6 +556,7 @@ impl Peer {
             download_gate,
             local_download_gate,
             network,
+            serving,
         } = settings;
         // Standard-library connects cannot be cancelled in flight. One
         // bounded attempt avoids resetting the handshake on slower networks;
@@ -478,7 +586,19 @@ impl Peer {
         let deadline = end
             .unwrap_or(Instant::now() + Duration::from_secs(5))
             .min(Instant::now() + Duration::from_secs(5));
-        let extensions = handshake_deadline(&mut *stream, hash, id, true, stop, deadline)?;
+        let extensions = match handshake_deadline(&mut *stream, hash, id, true, stop, deadline) {
+            Ok(extensions) => extensions,
+            // Peers that require encryption hang up on a plaintext handshake.
+            Err(e) if e == CLOSED || e == RESET => {
+                let connection = network.connect(address, connect_timeout);
+                if stop.is_some_and(|flag| flag.load(Ordering::Acquire)) {
+                    return Err("Download interrupted".into());
+                }
+                stream = super::mse::initiate(connection?, hash, stop, deadline)?;
+                handshake_deadline(&mut *stream, hash, id, true, stop, deadline)?
+            }
+            Err(e) => return Err(e),
+        };
         let settings = PeerSettings {
             meta,
             port,
@@ -488,6 +608,7 @@ impl Peer {
             download_gate,
             local_download_gate,
             network,
+            serving,
         };
         Self::open(stream, extensions, settings, stop, deadline)
     }
@@ -532,6 +653,7 @@ impl Peer {
             counters,
             download_gate,
             local_download_gate,
+            serving,
             ..
         } = settings;
         if extensions {
@@ -543,6 +665,24 @@ impl Peer {
                 deadline,
             )?;
         }
+        let upload = match serving {
+            Some(serving) => {
+                // Even empty: a peer must not take this side for a seed.
+                let (version, announced) = serving.pieces.snapshot();
+                write_message_deadline(&mut *stream, 5, &announced, stop, deadline)?;
+                Some(Upload {
+                    serving,
+                    announced,
+                    version,
+                    interested: false,
+                    unchoked: false,
+                    requests: VecDeque::new(),
+                    metadata: VecDeque::new(),
+                    cached: None,
+                })
+            }
+            None => None,
+        };
         write_message_deadline(&mut *stream, 2, &[], stop, deadline)?;
         Ok(Self {
             stream,
@@ -561,8 +701,22 @@ impl Peer {
             piece_count: meta.map(Meta::count),
             bitfield_received: false,
             availability_known: false,
-            ahead: None,
+            request_limit: DEFAULT_REQUEST_LIMIT,
+            request_sent: None,
+            request_rtt: None,
+            ahead: VecDeque::new(),
+            haves: Vec::new(),
+            upload,
+            fresh: false,
+            done: None,
+            cancelled: VecDeque::new(),
         })
+    }
+
+    /// Pieces of this download verified meanwhile through other peers are
+    /// abandoned here, with their outstanding requests cancelled.
+    pub fn watch(&mut self, done: Arc<Pieces>) {
+        self.done = Some(done);
     }
 
     /// Read the initial availability and unchoke before assigning any payload
@@ -578,15 +732,35 @@ impl Peer {
             if !self.choked {
                 return Ok(());
             }
-            let (id, payload) = read_bounded(
+            let read = read_bounded(
                 &mut *self.stream,
                 Some(stop),
                 deadline,
                 message_limit(self.piece_count),
-            )?;
+            );
+            let (id, payload) = match read {
+                Ok(message) => message,
+                // It may unchoke later; meanwhile it fetches from this side.
+                Err(e) if e == EXPIRED && self.uploading() => return Ok(()),
+                Err(e) => return Err(e),
+            };
             self.ancillary(id, &payload)?;
+            self.upload(meta, stop, UPLOAD_BATCH)?;
+        }
+        if self.uploading() {
+            return Ok(());
         }
         Err("Peer keeps the download choked".into())
+    }
+
+    /// Whether the peer is interested in what this side uploads.
+    pub fn uploading(&self) -> bool {
+        self.upload.as_ref().is_some_and(|upload| upload.interested)
+    }
+
+    /// Whether availability or choking changed since the last call.
+    pub fn take_fresh(&mut self) -> bool {
+        std::mem::take(&mut self.fresh)
     }
 
     pub fn availability(&self) -> Option<&[u8]> {
@@ -635,12 +809,14 @@ impl Peer {
                     return Err("Invalid choke message".into());
                 }
                 self.choked = true;
+                self.fresh = true;
             }
             1 => {
                 if !payload.is_empty() {
                     return Err("Invalid unchoke message".into());
                 }
                 self.choked = false;
+                self.fresh = true;
             }
             4 => {
                 if payload.len() != 4 {
@@ -659,6 +835,7 @@ impl Peer {
                 }
                 self.bitfield[n / 8] |= 0x80 >> (n % 8);
                 self.availability_known = true;
+                self.fresh = true;
             }
             5 => {
                 if self.bitfield_received {
@@ -668,9 +845,16 @@ impl Peer {
                 self.bitfield = payload.to_vec();
                 self.bitfield_received = true;
                 self.availability_known = true;
+                self.fresh = true;
             }
             20 if payload.first() == Some(&0) => {
                 let v = crate::bencode::parse(&payload[1..])?;
+                // Like libtorrent and Transmission, ignore a nonpositive hint.
+                if let Some(Value::Int(n)) = value_field(&v, b"reqq")
+                    && let Some(n) = usize::try_from(*n).ok().filter(|n| *n > 0)
+                {
+                    self.request_limit = n.min(PIPELINE);
+                }
                 if let Some(m) = value_field(&v, b"m") {
                     for (key, slot) in [
                         (b"ut_metadata".as_slice(), &mut self.metadata_id),
@@ -694,9 +878,213 @@ impl Peer {
                     .extend(super::discovery::pex_peers(&payload[1..])?);
                 self.discovered.truncate(1000);
             }
+            2 | 3 if let Some(upload) = &mut self.upload => upload.interested = id == 2,
+            20 if payload.first() == Some(&EXT_METADATA)
+                && let Some(upload) = &mut self.upload =>
+            {
+                let v = crate::bencode::parse(&payload[1..])?;
+                if let Some(Value::Int(0)) = value_field(&v, b"msg_type")
+                    && let Some(Value::Int(piece)) = value_field(&v, b"piece")
+                    && upload.metadata.len() < 16
+                {
+                    let piece = usize::try_from(*piece).map_err(|_| "Negative metadata index")?;
+                    upload.metadata.push_back(piece);
+                }
+            }
+            6 | 8 if let Some(upload) = &mut self.upload => {
+                if payload.len() != 12 {
+                    return Err("Invalid block request".into());
+                }
+                let request: [u32; 3] = std::array::from_fn(|i| {
+                    u32::from_be_bytes(payload[4 * i..4 * i + 4].try_into().unwrap())
+                });
+                if id == 8 {
+                    upload.requests.retain(|queued| *queued != request);
+                } else if upload.unchoked && upload.requests.len() < PIPELINE {
+                    // Requests beyond the announced queue are dropped, as
+                    // are those sent while choked.
+                    upload.requests.push_back(request);
+                }
+            }
             _ => {}
         }
         Ok(())
+    }
+
+    /// Announces newly verified pieces, unchokes an interested peer and
+    /// serves a few of its requests within the upload quotas. Never waits for
+    /// quota: the download on this connection goes on meanwhile.
+    fn upload(&mut self, meta: &Meta, stop: &AtomicBool, batch: usize) -> Result<()> {
+        let complete = self.complete();
+        let Some(upload) = &mut self.upload else {
+            return Ok(());
+        };
+        if upload.serving.pieces.version.load(Ordering::Acquire) != upload.version {
+            let (version, pieces) = upload.serving.pieces.snapshot();
+            upload.version = version;
+            for (index, (old, new)) in upload.announced.iter_mut().zip(&pieces).enumerate() {
+                let added = *new & !*old;
+                *old = *new;
+                // A seed needs none of them.
+                for bit in (0..8).filter(|bit| !complete && added & (0x80 >> bit) != 0) {
+                    self.haves
+                        .extend(frame(4, &((index * 8 + bit) as u32).to_be_bytes())?);
+                }
+            }
+        }
+        let deadline = Instant::now() + Duration::from_secs(15);
+        while let Some(piece) = upload.metadata.pop_front() {
+            let ext = self
+                .metadata_id
+                .ok_or("Metadata extension has not been negotiated")?;
+            if piece >= meta.info.len().div_ceil(BLOCK) {
+                return Err("Metadata index is out of bounds".into());
+            }
+            let header = value_dict(&[
+                (b"msg_type", Value::Int(1)),
+                (b"piece", Value::Int(piece as i64)),
+                (b"total_size", Value::Int(meta.info.len() as i64)),
+            ]);
+            let mut reply = vec![ext];
+            reply.extend(crate::bencode::encode(&header));
+            let start = piece * BLOCK;
+            reply.extend_from_slice(&meta.info[start..(start + BLOCK).min(meta.info.len())]);
+            write_message_deadline(&mut *self.stream, 20, &reply, Some(stop), deadline)?;
+        }
+        if !upload.interested || complete {
+            return Ok(());
+        }
+        if !upload.unchoked {
+            write_message_deadline(&mut *self.stream, 1, &[], Some(stop), deadline)?;
+            upload.unchoked = true;
+        }
+        for _ in 0..batch {
+            let Some(&[index, offset, length]) = upload.requests.front() else {
+                break;
+            };
+            let (index, offset, length) = (index as usize, offset as usize, length as usize);
+            if index >= meta.count()
+                || length == 0
+                || length > BLOCK
+                || offset
+                    .checked_add(length)
+                    .is_none_or(|end| end > meta.wire_piece_size(index, self.v2_wire))
+            {
+                return Err("Block request is out of bounds".into());
+            }
+            let held = upload.announced[index / 8] & (0x80 >> (index % 8)) != 0;
+            if !held {
+                upload.requests.pop_front();
+                continue;
+            }
+            if !super::RateGate::try_reserve_pair(
+                &upload.serving.upload_gate,
+                &upload.serving.local_upload_gate,
+                length as u64,
+                stop,
+            )? {
+                break;
+            }
+            upload.requests.pop_front();
+            if upload.cached.as_ref().is_none_or(|(i, _)| *i != index) {
+                let data = super::read_piece(meta, &upload.serving.base, index)?;
+                if !meta.verify(index, &data) {
+                    return Err("Seeding data has been modified".into());
+                }
+                upload.cached = Some((index, data));
+            }
+            let data = &upload.cached.as_ref().ok_or("Missing seeding piece")?.1;
+            let mut header = [0; 8];
+            header[..4].copy_from_slice(&(index as u32).to_be_bytes());
+            header[4..].copy_from_slice(&(offset as u32).to_be_bytes());
+            write_payload_message(
+                &mut *self.stream,
+                &header,
+                &data[offset..offset + length],
+                stop,
+                &self.counters.uploaded,
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Whether the peer advertises every piece.
+    fn complete(&self) -> bool {
+        self.availability_known
+            && self.piece_count.is_some_and(|count| {
+                self.bitfield
+                    .iter()
+                    .map(|b| b.count_ones() as usize)
+                    .sum::<usize>()
+                    == count
+            })
+    }
+
+    /// Between pieces, answers a peer that fetches from this side: reads the
+    /// messages already arrived, then serves its requests. True while
+    /// requests remain, so the caller checks back soon.
+    pub fn serve_between_pieces(&mut self, meta: &Meta, stop: &AtomicBool) -> Result<bool> {
+        // Blocks requested ahead may still arrive: they are read with the
+        // next piece.
+        if self.upload.is_none() || !self.ahead.is_empty() {
+            return Ok(false);
+        }
+        if !self.haves.is_empty() {
+            write_all_deadline(
+                &mut *self.stream,
+                &std::mem::take(&mut self.haves),
+                Some(stop),
+                Instant::now() + Duration::from_secs(15),
+            )?;
+        }
+        self.stream
+            .set_read_timeout(Some(Duration::from_millis(1)))
+            .map_err(|_| "Could not configure peer reads")?;
+        for _ in 0..IDLE_UPLOAD_BATCH {
+            let mut first = [0; 1];
+            match self.stream.read(&mut first) {
+                Ok(0) => return Err(CLOSED.into()),
+                Ok(_) => {}
+                Err(e)
+                    if matches!(
+                        e.kind(),
+                        std::io::ErrorKind::WouldBlock
+                            | std::io::ErrorKind::TimedOut
+                            | std::io::ErrorKind::Interrupted
+                    ) =>
+                {
+                    break;
+                }
+                Err(_) => return Err(RESET.into()),
+            }
+            let deadline = Instant::now() + Duration::from_secs(15);
+            let mut rest = [0; 3];
+            read_exact_deadline(&mut *self.stream, &mut rest, Some(stop), deadline)?;
+            let (id, payload) = read_body(
+                &mut *self.stream,
+                [first[0], rest[0], rest[1], rest[2]],
+                Some(stop),
+                deadline,
+                message_limit(self.piece_count),
+            )?;
+            if id == 7 {
+                let piece = payload
+                    .get(..4)
+                    .map(|b| u32::from_be_bytes([b[0], b[1], b[2], b[3]]));
+                if piece.is_some_and(|piece| self.cancelled.contains(&(piece as usize))) {
+                    continue;
+                }
+                return Err("Unsolicited or inconsistent piece block".into());
+            }
+            if id != 255 {
+                self.ancillary(id, &payload)?;
+            }
+        }
+        self.upload(meta, stop, IDLE_UPLOAD_BATCH)?;
+        Ok(self
+            .upload
+            .as_ref()
+            .is_some_and(|upload| !upload.requests.is_empty()))
     }
     pub fn metadata(
         &mut self,
@@ -824,7 +1212,7 @@ impl Peer {
         &mut self,
         meta: &mut Meta,
         index: usize,
-        upcoming: &mut dyn FnMut() -> Option<usize>,
+        upcoming: &mut dyn FnMut(usize) -> Option<usize>,
         stop: &AtomicBool,
     ) -> Result<Vec<u8>> {
         self.ready_for(meta, index, stop)?;
@@ -838,7 +1226,7 @@ impl Peer {
         &mut self,
         meta: &Meta,
         index: usize,
-        upcoming: &mut dyn FnMut() -> Option<usize>,
+        upcoming: &mut dyn FnMut(usize) -> Option<usize>,
         stop: &AtomicBool,
     ) -> Result<Vec<u8>> {
         self.ready_for(meta, index, stop)?;
@@ -851,15 +1239,12 @@ impl Peer {
         if index >= meta.count() {
             return Err("Invalid piece index".into());
         }
-        if self
-            .ahead
-            .as_ref()
-            .is_some_and(|ahead| ahead.index != index)
-        {
+        if self.ahead.front().is_some_and(|ahead| ahead.index != index) {
             return Err("Peer pipeline skipped a requested piece".into());
         }
         // A choking peer discards the requests sent ahead.
-        if self.choked && self.ahead.take().is_some() {
+        if self.choked && !self.ahead.is_empty() {
+            self.ahead.clear();
             return Err("Peer choked a pipelined piece".into());
         }
         self.prepare_download(meta, stop)?;
@@ -872,19 +1257,44 @@ impl Peer {
         &mut self,
         meta: &Meta,
         index: usize,
-        upcoming: &mut dyn FnMut() -> Option<usize>,
+        upcoming: &mut dyn FnMut(usize) -> Option<usize>,
         stop: &AtomicBool,
     ) -> Result<Vec<u8>> {
-        let mut current = match self.ahead.take() {
-            Some(mut ahead) => {
-                ahead.data.resize(meta.piece_size(index), 0);
-                ahead
-            }
-            None => Blocks::new(meta, index, self.v2_wire, false),
-        };
+        let aggregate = self.download_gate.clone();
+        let local = self.local_download_gate.clone();
+        let _aggregate_use = aggregate.participate();
+        let _local_use = (!Arc::ptr_eq(&aggregate, &local)).then(|| local.participate());
+        let mut current = self
+            .ahead
+            .pop_front()
+            .unwrap_or_else(|| Blocks::new(meta, index, self.v2_wire));
         let mut deadline = Instant::now() + Duration::from_secs(120);
         let mut messages = current.received.len() * 8 + 256;
         while current.received.iter().any(|v| !v) {
+            if self.done.as_ref().is_some_and(|done| done.has(index)) {
+                let mut cancels = Vec::new();
+                for block in (0..current.next).filter(|block| !current.received[*block]) {
+                    let offset = block * BLOCK;
+                    let mut cancel = Vec::with_capacity(12);
+                    cancel.extend_from_slice(&(index as u32).to_be_bytes());
+                    cancel.extend_from_slice(&(offset as u32).to_be_bytes());
+                    cancel.extend_from_slice(
+                        &((current.size - offset).min(BLOCK) as u32).to_be_bytes(),
+                    );
+                    cancels.extend(frame(8, &cancel)?);
+                }
+                write_all_deadline(
+                    &mut *self.stream,
+                    &cancels,
+                    Some(stop),
+                    Instant::now() + Duration::from_secs(15),
+                )?;
+                if self.cancelled.len() == 8 {
+                    self.cancelled.pop_front();
+                }
+                self.cancelled.push_back(index);
+                return Err(ABANDONED.into());
+            }
             if Instant::now() >= deadline || messages == 0 {
                 return Err("Peer did not provide the requested piece".into());
             }
@@ -892,34 +1302,56 @@ impl Peer {
             if stop.load(Ordering::Relaxed) {
                 return Err("Download interrupted".into());
             }
-            // Limited requests stay at one outstanding block. Waiting for the
-            // next reservation never leaves old responses unread in a pipeline.
-            let pipeline =
-                if self.download_gate.limit() == 0 && self.local_download_gate.limit() == 0 {
-                    PIPELINE
-                } else {
-                    1
-                };
+            // Reserve at most two observed round trips of quota (4..100 ms),
+            // then drain its replies. At low latency, small batches avoid
+            // introducing a long pause just to assemble the next requests.
+            // Unlimited refills use nonblocking credit checks in case a limit
+            // is enabled meanwhile.
+            let rate = [aggregate.share(), local.share()]
+                .into_iter()
+                .filter(|rate| *rate != 0)
+                .min();
+            let pipeline = rate.map_or(self.request_limit, |rate| {
+                let horizon = self.request_rtt.map_or(Duration::from_millis(100), |rtt| {
+                    (rtt * 2).clamp(Duration::from_millis(4), Duration::from_millis(100))
+                });
+                let bytes = u128::from(rate) * horizon.as_nanos() / 1_000_000_000;
+                self.request_limit
+                    .min((bytes / BLOCK as u128).max(1) as usize)
+            });
+            let in_flight =
+                current.pending + self.ahead.iter().map(|a| a.pending).sum::<usize>() > 0;
             // The requests of one round leave in one write. Once this piece
             // is all requested, the pipeline continues into the next one, so it
             // does not drain for a round trip at every piece boundary.
             let mut requests = Vec::new();
             loop {
-                let ahead = self.ahead.as_ref().map_or(0, |ahead| ahead.pending);
+                // Drain a limited batch completely before reserving another.
+                // Refilling one block of credit per arriving response keeps a
+                // nearly empty window alive forever on a high-latency link.
+                if rate.is_some() && in_flight {
+                    break;
+                }
+                let ahead: usize = self.ahead.iter().map(|ahead| ahead.pending).sum();
                 if current.pending + ahead >= pipeline {
                     break;
                 }
-                if current.next == current.received.len() && pipeline > 1 && self.ahead.is_none() {
+                let ahead_unrequested = self.ahead.iter().any(|a| a.next < a.received.len());
+                if current.next == current.received.len() && !ahead_unrequested {
+                    if pipeline <= 1 || self.ahead.len() >= piece_claims(meta) - 1 {
+                        break;
+                    }
                     // Only a piece whose hash is known goes ahead: fetching a
                     // v2 proof reads messages outside this loop.
-                    match upcoming() {
+                    match upcoming(self.ahead.len()) {
                         Some(next)
                             if next != index
                                 && next < meta.count()
+                                && !self.ahead.iter().any(|a| a.index == next)
                                 && self.has_piece(next)
                                 && !needs_hashes(meta, next) =>
                         {
-                            self.ahead = Some(Blocks::new(meta, next, self.v2_wire, true));
+                            self.ahead.push_back(Blocks::new(meta, next, self.v2_wire));
                         }
                         _ => break,
                     }
@@ -929,27 +1361,32 @@ impl Peer {
                 } else {
                     // A slow last block must not let the next piece outgrow
                     // the blocks it holds while ahead.
-                    match self.ahead.as_mut() {
-                        Some(ahead)
-                            if pipeline > 1
-                                && ahead.next < ahead.received.len()
-                                && ahead.next * BLOCK < ahead.data.len() =>
-                        {
-                            ahead
-                        }
+                    match self.ahead.iter_mut().find(|a| a.next < a.received.len()) {
+                        Some(ahead) if pipeline > 1 => ahead,
                         _ => break,
                     }
                 };
                 let offset = target.next * BLOCK;
                 let length = (target.size - offset).min(BLOCK);
                 let waiting = Instant::now();
-                reserve_payload(
-                    &mut *self.stream,
-                    &self.download_gate,
-                    &self.local_download_gate,
-                    length as u64,
-                    stop,
-                )?;
+                if in_flight {
+                    if !super::RateGate::try_reserve_pair(
+                        &self.download_gate,
+                        &self.local_download_gate,
+                        length as u64,
+                        stop,
+                    )? {
+                        break;
+                    }
+                } else {
+                    reserve_payload(
+                        &mut *self.stream,
+                        &self.download_gate,
+                        &self.local_download_gate,
+                        length as u64,
+                        stop,
+                    )?;
+                }
                 // Rate waits are outside both the piece's network deadline and
                 // the fresh per-message deadline established below.
                 deadline = deadline
@@ -964,12 +1401,18 @@ impl Peer {
                 target.pending += 1;
             }
             if !requests.is_empty() {
+                if !self.haves.is_empty() {
+                    requests.splice(0..0, std::mem::take(&mut self.haves));
+                }
                 write_all_deadline(
                     &mut *self.stream,
                     &requests,
                     Some(stop),
                     Instant::now() + Duration::from_secs(15),
                 )?;
+                if !in_flight {
+                    self.request_sent = Some(Instant::now());
+                }
             }
             let reading = Instant::now();
             let (id, payload) = self.read(stop)?;
@@ -995,10 +1438,18 @@ impl Peer {
                         .try_into()
                         .map_err(|_| "Invalid piece offset")?,
                 ) as usize;
+                // Blocks already on their way when a piece was abandoned.
+                if self.cancelled.contains(&piece)
+                    && piece != current.index
+                    && !self.ahead.iter().any(|ahead| ahead.index == piece)
+                {
+                    messages += 1;
+                    continue;
+                }
                 let target = if piece == current.index {
                     Some(&mut current)
                 } else {
-                    self.ahead.as_mut().filter(|ahead| ahead.index == piece)
+                    self.ahead.iter_mut().find(|ahead| ahead.index == piece)
                 };
                 let Some(target) = target.filter(|target| {
                     offset.is_multiple_of(BLOCK)
@@ -1008,6 +1459,13 @@ impl Peer {
                 }) else {
                     return Err("Unsolicited or inconsistent piece block".into());
                 };
+                if let Some(sent) = self.request_sent.take() {
+                    let sample = sent.elapsed().min(Duration::from_millis(50));
+                    self.request_rtt = Some(
+                        self.request_rtt
+                            .map_or(sample, |old| (old * 3 + sample) / 4),
+                    );
+                }
                 super::add_payload(&self.counters.downloaded, (payload.len() - 8) as u64);
                 if !target.received[offset / BLOCK] {
                     target.data[offset..offset + payload.len() - 8].copy_from_slice(&payload[8..]);
@@ -1021,7 +1479,12 @@ impl Peer {
                 }
             } else {
                 self.ancillary(id, &payload)?;
+                // Upload traffic is not a message this piece waited through.
+                if matches!(id, 2 | 3 | 6 | 8) {
+                    messages += 1;
+                }
             }
+            self.upload(meta, stop, UPLOAD_BATCH)?;
         }
         let data = current.data;
         if !meta.verify(index, &data) {
@@ -1032,12 +1495,18 @@ impl Peer {
         }
         // A peer may close after sending its final permitted block. HAVE is an
         // advisory announcement and cannot invalidate the verified payload.
-        let _ = write_message(
-            &mut *self.stream,
-            4,
-            &(index as u32).to_be_bytes(),
-            Some(stop),
-        );
+        // While pieces are in flight it waits for the next requests: writing
+        // to a peer that closed would reset the connection and discard blocks
+        // it already sent but this side has not read yet.
+        self.haves.extend(frame(4, &(index as u32).to_be_bytes())?);
+        if self.ahead.is_empty() {
+            let _ = write_all_deadline(
+                &mut *self.stream,
+                &std::mem::take(&mut self.haves),
+                Some(stop),
+                Instant::now() + Duration::from_secs(15),
+            );
+        }
         if stop.load(Ordering::Acquire) {
             return Err("Download interrupted".into());
         }
@@ -1243,7 +1712,15 @@ mod tests {
                 piece_count: meta.map(Meta::count),
                 bitfield_received: false,
                 availability_known: false,
-                ahead: None,
+                request_limit: DEFAULT_REQUEST_LIMIT,
+                request_sent: None,
+                request_rtt: None,
+                ahead: VecDeque::new(),
+                haves: Vec::new(),
+                upload: None,
+                fresh: false,
+                done: None,
+                cancelled: VecDeque::new(),
             },
             remote,
         )
@@ -1272,6 +1749,7 @@ mod tests {
             download_gate: Arc::new(super::super::RateGate::default()),
             local_download_gate: Arc::new(super::super::RateGate::default()),
             network: &crate::torrent::transport::Direct,
+            serving: None,
         };
         let listener = TcpListener::bind("127.0.0.1:0").expect("listener");
         listener
@@ -1426,6 +1904,7 @@ mod tests {
             download_gate: Arc::new(super::super::RateGate::default()),
             local_download_gate: Arc::new(super::super::RateGate::default()),
             network: &crate::torrent::transport::Direct,
+            serving: None,
         };
         let peer =
             Peer::accept(inbound, &[9; 20], settings, &AtomicBool::new(false)).expect("answered");
@@ -1483,10 +1962,10 @@ mod tests {
         });
         let stop = AtomicBool::new(false);
         let first = peer
-            .fetch_known_piece(&meta, 0, &mut || Some(1), &stop)
+            .fetch_known_piece(&meta, 0, &mut |_| Some(1), &stop)
             .expect("first piece");
         let second = peer
-            .fetch_known_piece(&meta, 1, &mut || None, &stop)
+            .fetch_known_piece(&meta, 1, &mut |_| None, &stop)
             .expect("piece requested ahead");
         drop(peer);
         let (requested, later) = server.join().expect("server");
@@ -1502,11 +1981,229 @@ mod tests {
         // The piece requested ahead must be the next one fetched.
         let (mut peer, _remote) = peer_pair(Some(&meta));
         peer.choked = false;
-        peer.ahead = Some(Blocks::new(&meta, 1, false, true));
+        peer.ahead.push_back(Blocks::new(&meta, 1, false));
         assert!(
-            peer.fetch_known_piece(&meta, 2, &mut || None, &stop)
+            peer.fetch_known_piece(&meta, 2, &mut |_| None, &stop)
                 .is_err()
         );
+    }
+
+    #[test]
+    fn an_advertised_request_queue_keeps_thirty_two_blocks_in_flight() {
+        let high = 1_073_741_824;
+        for (global, local, window) in [
+            (0, 0, 32),
+            (high, 0, 32),
+            (0, high, 32),
+            (high, high, 2),
+            (16 << 20, 0, 32),
+        ] {
+            // Three windows in a single final piece also catch a limiter that
+            // fills its first batch but then falls back to one request per RTT.
+            let payload: Vec<u8> = (0..BLOCK * 96).map(|n| (n % 251) as u8).collect();
+            let info = value_dict(&[
+                (b"name", Value::Bytes(b"window.bin".to_vec())),
+                (b"piece length", Value::Int((BLOCK * 128) as i64)),
+                (b"length", Value::Int(payload.len() as i64)),
+                (
+                    b"pieces",
+                    Value::Bytes(crate::crypto::sha1(&payload).to_vec()),
+                ),
+            ]);
+            let meta =
+                Meta::parse(&crate::bencode::encode(&value_dict(&[(b"info", info)]))).unwrap();
+            let (mut peer, mut remote) = peer_pair(Some(&meta));
+            peer.choked = false;
+            peer.download_gate = Arc::new(super::super::RateGate::new(global).unwrap());
+            peer.local_download_gate = Arc::new(super::super::RateGate::new(local).unwrap());
+            peer.ancillary(20, format!("\0d4:reqqi{window}ee").as_bytes())
+                .unwrap();
+            let blocks = payload.clone();
+            let server = std::thread::spawn(move || {
+                remote
+                    .set_read_timeout(Some(Duration::from_millis(500)))
+                    .unwrap();
+                // Demand a useful window before sending anything: a stop-and-wait
+                // client or the old 16-block window cannot satisfy this peer.
+                for first in (0..blocks.len()).step_by(window * BLOCK) {
+                    for offset in (first..first + window * BLOCK).step_by(BLOCK) {
+                        let mut request = [0; 17];
+                        remote
+                            .read_exact(&mut request)
+                            .expect("the full advertised window before the first reply");
+                        assert_eq!(&request[..5], &[0, 0, 0, 13, 6]);
+                        assert_eq!(
+                            u32::from_be_bytes(request[9..13].try_into().unwrap()) as usize,
+                            offset
+                        );
+                    }
+                    remote
+                        .set_read_timeout(Some(Duration::from_millis(20)))
+                        .unwrap();
+                    assert!(
+                        matches!(remote.peek(&mut [0; 1]), Err(error)
+                    if matches!(error.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut)),
+                        "requests exceeded the peer's advertised queue"
+                    );
+                    remote
+                        .set_read_timeout(Some(Duration::from_millis(500)))
+                        .unwrap();
+                    for offset in (first..first + window * BLOCK).step_by(BLOCK).rev() {
+                        let mut response = vec![0; 4];
+                        response.extend_from_slice(&(offset as u32).to_be_bytes());
+                        response.extend_from_slice(&blocks[offset..offset + BLOCK]);
+                        write_message(&mut remote, 7, &response, None).unwrap();
+                    }
+                }
+            });
+            let downloaded =
+                peer.fetch_known_piece(&meta, 0, &mut |_| None, &AtomicBool::new(false));
+            server.join().expect("window peer");
+            assert_eq!(downloaded.unwrap(), payload);
+        }
+    }
+
+    #[test]
+    fn partial_payload_writes_count_only_accepted_payload_bytes() {
+        struct Capture {
+            bytes: Vec<u8>,
+            allowance: usize,
+        }
+        impl std::io::Read for Capture {
+            fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
+                Ok(0)
+            }
+        }
+        impl Write for Capture {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                if self.allowance == 0 {
+                    return Err(std::io::ErrorKind::BrokenPipe.into());
+                }
+                let n = bytes.len().min(self.allowance);
+                self.bytes.extend_from_slice(&bytes[..n]);
+                self.allowance -= n;
+                Ok(n)
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        impl NetworkStream for Capture {
+            fn set_read_timeout(&self, _: Option<Duration>) -> std::io::Result<()> {
+                Ok(())
+            }
+            fn set_write_timeout(&self, _: Option<Duration>) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        let header = [0; 8];
+        let payload = [9; 128];
+        let mut body = header.to_vec();
+        body.extend_from_slice(&payload);
+        let expected = frame(7, &body).unwrap();
+        for allowance in [usize::MAX, 7, 13, 30] {
+            let mut stream = Capture {
+                bytes: Vec::new(),
+                allowance,
+            };
+            let counter = std::sync::atomic::AtomicU64::new(0);
+            let result = write_payload_message(
+                &mut stream,
+                &header,
+                &payload,
+                &AtomicBool::new(false),
+                &counter,
+            );
+            let accepted = expected.len().min(allowance);
+            assert_eq!(stream.bytes, expected[..accepted]);
+            assert_eq!(
+                counter.load(Ordering::Relaxed),
+                accepted.saturating_sub(13) as u64
+            );
+            assert_eq!(result.is_ok(), allowance == usize::MAX);
+        }
+    }
+
+    #[test]
+    fn eight_piece_window_accepts_out_of_order_replies_before_the_first_piece() {
+        let piece = 1 << 20;
+        let payload: Vec<u8> = (0..piece * 8).map(|n| (n % 251) as u8).collect();
+        let info = value_dict(&[
+            (b"name", Value::Bytes(b"deep-window.bin".to_vec())),
+            (b"piece length", Value::Int(piece as i64)),
+            (b"length", Value::Int(payload.len() as i64)),
+            (
+                b"pieces",
+                Value::Bytes(
+                    payload
+                        .chunks(piece)
+                        .flat_map(crate::crypto::sha1)
+                        .collect(),
+                ),
+            ),
+        ]);
+        let meta = Meta::parse(&crate::bencode::encode(&value_dict(&[(b"info", info)]))).unwrap();
+        let (mut peer, mut remote) = peer_pair(Some(&meta));
+        peer.choked = false;
+        peer.ancillary(20, b"\0d4:reqqi512ee").unwrap();
+        let blocks = payload.clone();
+        let server = std::thread::spawn(move || {
+            remote
+                .set_read_timeout(Some(Duration::from_millis(500)))
+                .unwrap();
+            for index in 0..8 {
+                for offset in (0..piece).step_by(BLOCK) {
+                    let mut request = [0; 17];
+                    remote
+                        .read_exact(&mut request)
+                        .expect("eight pieces requested before replies");
+                    assert_eq!(&request[..5], &[0, 0, 0, 13, 6]);
+                    assert_eq!(
+                        u32::from_be_bytes(request[5..9].try_into().unwrap()) as usize,
+                        index
+                    );
+                    assert_eq!(
+                        u32::from_be_bytes(request[9..13].try_into().unwrap()) as usize,
+                        offset
+                    );
+                }
+            }
+            for index in (0..8).rev() {
+                for offset in (0..piece).step_by(BLOCK).rev() {
+                    let mut block = (index as u32).to_be_bytes().to_vec();
+                    block.extend_from_slice(&(offset as u32).to_be_bytes());
+                    block.extend_from_slice(
+                        &blocks[index * piece + offset..index * piece + offset + BLOCK],
+                    );
+                    write_message(&mut remote, 7, &block, None).unwrap();
+                }
+            }
+        });
+        let mut next = 1..8;
+        let stop = AtomicBool::new(false);
+        let first = peer.fetch_known_piece(&meta, 0, &mut |_| next.next(), &stop);
+        let mut actual = first.unwrap();
+        for index in 1..8 {
+            actual.extend(
+                peer.fetch_known_piece(&meta, index, &mut |_| next.next(), &stop)
+                    .unwrap(),
+            );
+        }
+        server.join().unwrap();
+        assert_eq!(actual, payload);
+    }
+
+    #[test]
+    fn peer_request_queue_is_respected_and_bounded() {
+        let (mut peer, _remote) = peer_pair(None);
+        assert_eq!(peer.request_limit, 16);
+        peer.ancillary(20, b"\0d4:reqqi2ee").unwrap();
+        assert_eq!(peer.request_limit, 2);
+        peer.ancillary(20, b"\0d4:reqqi2000ee").unwrap();
+        assert_eq!(peer.request_limit, 512);
+        peer.ancillary(20, b"\0d4:reqqi0ee").unwrap();
+        peer.ancillary(20, b"\0d4:reqqi-1ee").unwrap();
+        assert_eq!(peer.request_limit, 512, "nonpositive hints are ignored");
     }
 
     #[test]
@@ -1582,9 +2279,17 @@ mod tests {
                 piece_count: Some(meta.count()),
                 bitfield_received: false,
                 availability_known: false,
-                ahead: None,
+                request_limit: DEFAULT_REQUEST_LIMIT,
+                request_sent: None,
+                request_rtt: None,
+                ahead: VecDeque::new(),
+                haves: Vec::new(),
+                upload: None,
+                fresh: false,
+                done: None,
+                cancelled: VecDeque::new(),
             };
-            let result = peer.fetch_piece(&mut meta, 0, &mut || None, &AtomicBool::new(false));
+            let result = peer.fetch_piece(&mut meta, 0, &mut |_| None, &AtomicBool::new(false));
             let _ = finished.send(());
             server.join().expect("server");
             assert_eq!(result.expect("verified piece is retained"), expected);
@@ -1796,6 +2501,7 @@ mod tests {
                 download_gate: Arc::new(super::super::RateGate::default()),
                 local_download_gate: Arc::new(super::super::RateGate::default()),
                 network: &network,
+                serving: None,
             },
             Instant::now() + Duration::from_millis(1500),
         )
@@ -1822,6 +2528,7 @@ mod tests {
                 download_gate: Arc::new(super::super::RateGate::default()),
                 local_download_gate: Arc::new(super::super::RateGate::default()),
                 network: &network,
+                serving: None,
             },
             &stop,
         );
@@ -1891,6 +2598,7 @@ mod tests {
                     download_gate: Arc::new(super::super::RateGate::default()),
                     local_download_gate: Arc::new(super::super::RateGate::default()),
                     network: &crate::torrent::transport::Direct,
+                    serving: None,
                 },
             )
             .expect("peer");
@@ -1906,5 +2614,65 @@ mod tests {
             }
             worker.join().expect("worker");
         }
+    }
+
+    #[test]
+    fn a_peer_requiring_encryption_is_reached_through_mse() {
+        use std::net::TcpListener;
+        let info = value_dict(&[
+            (b"name", Value::Bytes(b"x".to_vec())),
+            (b"piece length", Value::Int(BLOCK as i64)),
+            (b"length", Value::Int(0)),
+            (b"pieces", Value::Bytes(Vec::new())),
+        ]);
+        let meta =
+            Meta::parse(&crate::bencode::encode(&value_dict(&[(b"info", info)]))).expect("meta");
+        let hash = meta.v1.expect("v1");
+        let listener = TcpListener::bind("127.0.0.1:0").expect("listener");
+        let address = listener.local_addr().expect("address");
+        let worker = std::thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(5);
+            // The plaintext attempt is dropped unanswered.
+            let (mut plain, _) = listener.accept().expect("plaintext");
+            let mut first = [0; 68];
+            read_exact_deadline(&mut plain, &mut first, None, deadline).expect("handshake");
+            assert_eq!(first[0], 19);
+            drop(plain);
+            let (stream, _) = listener.accept().expect("encrypted");
+            let mut stream: Box<dyn NetworkStream> = Box::new(stream);
+            read_exact_deadline(&mut *stream, &mut first, None, deadline).expect("key");
+            assert_ne!(first[0], 19);
+            let marker = super::super::mse::torrent_marker(&hash);
+            let (mut stream, found) = super::super::mse::respond(
+                stream,
+                &first,
+                |seen| Ok((*seen == marker).then_some(hash)),
+                None,
+                deadline,
+            )
+            .expect("encrypted handshake");
+            assert_eq!(found, hash);
+            handshake(&mut *stream, &hash, &[2; 20], false).expect("handshake");
+            let (id, _) = read_message(&mut *stream, None).expect("extended");
+            assert_eq!(id, 20);
+        });
+        Peer::connect(
+            address,
+            &hash,
+            &[1; 20],
+            PeerSettings {
+                meta: Some(&meta),
+                port: 6882,
+                pex: false,
+                v2_wire: false,
+                counters: Arc::new(super::super::TransferCounters::default()),
+                download_gate: Arc::new(super::super::RateGate::default()),
+                local_download_gate: Arc::new(super::super::RateGate::default()),
+                network: &crate::torrent::transport::Direct,
+                serving: None,
+            },
+        )
+        .expect("peer");
+        worker.join().expect("worker");
     }
 }

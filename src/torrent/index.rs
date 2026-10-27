@@ -3,7 +3,7 @@
 use super::*;
 use crate::{
     crypto::sha256,
-    inventory::{Change, Index, Key, Query},
+    inventory::{Change, Index, Key, MAX_PAGE_ROWS, Query},
 };
 
 const HEADER: Key = [0; 64];
@@ -780,6 +780,35 @@ impl TransferIndex {
             .get(&key)?
             .map(|id| String::from_utf8(id).map_err(|_| "Invalid transfer wire owner".to_owned()))
             .transpose()
+    }
+    /// The indexed wire hash that `matches`. An encrypted handshake names its
+    /// torrent only through a hash of it, so every torrent is checked.
+    pub fn wire_matching(
+        &mut self,
+        matches: impl Fn(&[u8; 20]) -> bool,
+    ) -> Result<Option<[u8; 20]>> {
+        let mut after = None;
+        loop {
+            let page = self.index.page(&Query {
+                start: single(WIRE),
+                end: Some(single(WIRE + 1)),
+                after,
+                limit: MAX_PAGE_ROWS,
+                ..Query::default()
+            })?;
+            for (key, _) in &page.entries {
+                if let Ok(wire) = <[u8; 20]>::try_from(&key[2..22])
+                    && key[1] == 20
+                    && matches(&wire)
+                {
+                    return Ok(Some(wire));
+                }
+            }
+            match page.next {
+                Some(next) => after = Some(next),
+                None => return Ok(None),
+            }
+        }
     }
     pub fn seeds_page(
         &mut self,

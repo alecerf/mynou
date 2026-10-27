@@ -7,7 +7,7 @@ use super::{
 };
 use crate::Result;
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, VecDeque},
     mem::size_of,
     net::SocketAddr,
     path::Path,
@@ -27,8 +27,6 @@ const WORKER_MEMORY_BUDGET: usize = 128 * 1024 * 1024;
 pub(super) const CONNECTION_BUDGET: usize = 256;
 const POLL: Duration = Duration::from_millis(20);
 const RETRY: Duration = Duration::from_secs(2);
-// A worker holds the piece it fetches and the one it requests ahead.
-const CLAIMS: usize = 2;
 // Incoming peers waiting for a free slot, and how long one waits for it
 // before its connection is closed.
 const INBOUND: usize = 8;
@@ -67,11 +65,8 @@ fn peer_limit(config: &DownloadConfig, meta: &Meta) -> usize {
     let copied = (0..meta.count()).any(|index| super::wire::needs_hashes(meta, index));
     let footprint = meta
         .piece_length
-        // The blocks requested ahead of the next piece.
-        .saturating_add(
-            meta.piece_length
-                .min(wire::PIPELINE * super::metainfo::BLOCK),
-        )
+        // Every claimed piece can be buffered, including queued results.
+        .saturating_mul(wire::piece_claims(meta))
         // A message being read plus its copy, bounded once the pieces are known.
         .saturating_add(2 * super::wire::message_limit(Some(meta.count())))
         .saturating_add(if copied { metadata } else { 0 })
@@ -133,6 +128,11 @@ enum EventKind {
         availability: Option<Vec<u8>>,
         peers: Vec<SocketAddr>,
     },
+    /// Another peer delivered the piece first.
+    Abandoned {
+        index: usize,
+        availability: Option<Vec<u8>>,
+    },
     Failed {
         corrupt: bool,
     },
@@ -150,6 +150,8 @@ struct Worker {
     commands: SyncSender<Command>,
     stop: Arc<AtomicBool>,
     corrupt: Arc<AtomicBool>,
+    /// The peer fetches from this side: keep it even with nothing to offer.
+    uploading: Arc<AtomicBool>,
     handle: JoinHandle<()>,
     // None before handshake; Some(None) for unknown availability.
     availability: Option<Option<Vec<u8>>>,
@@ -240,6 +242,10 @@ struct PeerTask {
     commands: Receiver<Command>,
     /// An incoming peer to answer instead of dialing `address`.
     inbound: Option<wire::Inbound>,
+    serving: Option<wire::Serving>,
+    uploading: Arc<AtomicBool>,
+    /// Pieces verified through any peer.
+    done: Arc<wire::Pieces>,
     events: SyncSender<Event>,
 }
 
@@ -257,6 +263,58 @@ fn send_event(events: &SyncSender<Event>, stop: &AtomicBool, mut event: Event) -
         }
         thread::sleep(POLL);
     }
+}
+
+/// The rarest piece `wanted` accepts, within the most urgent priority it
+/// accepts at all; ties keep `order`. No missing piece is rarer than `floor`.
+fn rarest(
+    order: &[usize],
+    ranks: &[u8],
+    rarity: &[u16],
+    floor: u16,
+    wanted: impl Fn(usize) -> bool,
+) -> Option<usize> {
+    let mut best: Option<usize> = None;
+    for &index in order {
+        if let Some(best) = best {
+            if ranks[index] < ranks[best] {
+                break;
+            }
+            if rarity[index] >= rarity[best] {
+                continue;
+            }
+        }
+        if wanted(index) {
+            best = Some(index);
+            if rarity[index] <= floor {
+                break;
+            }
+        }
+    }
+    best
+}
+
+fn count_offers(rarity: &mut [u16], bits: &[u8], add: bool) {
+    for (byte, bits) in bits.iter().enumerate().filter(|(_, bits)| **bits != 0) {
+        for bit in (0..8).filter(|bit| bits & (0x80 >> bit) != 0) {
+            if let Some(count) = rarity.get_mut(byte * 8 + bit) {
+                *count = if add {
+                    count.saturating_add(1)
+                } else {
+                    count.saturating_sub(1)
+                };
+            }
+        }
+    }
+}
+
+/// What the coordinator may assign to a peer: nothing while it chokes this
+/// side, which it may do while fetching from it.
+fn offered(peer: &wire::Peer) -> Option<Vec<u8>> {
+    if peer.choked {
+        return Some(Vec::new());
+    }
+    peer.availability().map(<[u8]>::to_vec)
 }
 
 fn peer_worker(mut task: PeerTask) {
@@ -282,6 +340,7 @@ fn peer_worker(mut task: PeerTask) {
             download_gate: task.download_gate.clone(),
             local_download_gate: task.local_download_gate.clone(),
             network: &*task.network,
+            serving: task.serving.clone(),
         };
         let mut peer = match inbound {
             Some(inbound) => wire::Peer::accept(inbound, &task.peer_id, settings, &task.stop)?,
@@ -293,19 +352,42 @@ fn peer_worker(mut task: PeerTask) {
                 &task.stop,
             )?,
         };
+        peer.watch(task.done.clone());
         peer.prepare_download(&task.meta, &task.stop)?;
         send(EventKind::Connected {
-            availability: peer.availability().map(<[u8]>::to_vec),
+            availability: offered(&peer),
             peers: std::mem::take(&mut peer.discovered),
         })?;
         let mut keepalive = Instant::now();
-        let mut queued = None;
+        let mut queued = VecDeque::new();
         while !task.stop.load(Ordering::Acquire) {
-            let command = match queued
-                .take()
-                .map(Command::Piece)
-                .map_or_else(|| task.commands.recv_timeout(POLL), Ok)
-            {
+            let next = match queued.pop_front() {
+                Some(index) => Ok(Command::Piece(index)),
+                None => match task.commands.try_recv() {
+                    Ok(command) => Ok(command),
+                    Err(mpsc::TryRecvError::Disconnected) => {
+                        Err(mpsc::RecvTimeoutError::Disconnected)
+                    }
+                    // A peer fetching from this side is answered while idle.
+                    Err(mpsc::TryRecvError::Empty) => {
+                        let busy = peer.serve_between_pieces(&task.meta, &task.stop)?;
+                        task.uploading.store(peer.uploading(), Ordering::Release);
+                        // HAVEs and unchokes read here reach the coordinator.
+                        if peer.take_fresh() {
+                            send(EventKind::Connected {
+                                availability: offered(&peer),
+                                peers: std::mem::take(&mut peer.discovered),
+                            })?;
+                        }
+                        task.commands.recv_timeout(if busy {
+                            Duration::from_millis(1)
+                        } else {
+                            POLL
+                        })
+                    }
+                },
+            };
+            let command = match next {
                 Ok(command) => command,
                 Err(mpsc::RecvTimeoutError::Disconnected) => return Ok(()),
                 Err(mpsc::RecvTimeoutError::Timeout) => {
@@ -328,26 +410,36 @@ fn peer_worker(mut task: PeerTask) {
                 .map(|index| task.meta.v2_pieces[*index])
                 .collect();
             // The queued piece is taken only once the peer can request it.
-            let mut upcoming = || {
-                if queued.is_none() {
-                    queued = task
-                        .commands
-                        .try_recv()
-                        .ok()
-                        .map(|Command::Piece(next)| next);
+            let mut upcoming = |ahead| {
+                while queued.len() <= ahead {
+                    let Ok(Command::Piece(next)) = task.commands.try_recv() else {
+                        break;
+                    };
+                    queued.push_back(next);
                 }
-                queued
+                queued.get(ahead).copied()
             };
             // Only a worker storing fetched v2 hashes copies the shared metadata.
-            let data = if wire::needs_hashes(&task.meta, index) {
+            let fetched = if wire::needs_hashes(&task.meta, index) {
                 peer.fetch_piece(
                     Arc::make_mut(&mut task.meta),
                     index,
                     &mut upcoming,
                     &task.stop,
-                )?
+                )
             } else {
-                peer.fetch_known_piece(&task.meta, index, &mut upcoming, &task.stop)?
+                peer.fetch_known_piece(&task.meta, index, &mut upcoming, &task.stop)
+            };
+            let data = match fetched {
+                Err(e) if e == wire::ABANDONED => {
+                    send(EventKind::Abandoned {
+                        index,
+                        availability: offered(&peer),
+                    })?;
+                    keepalive = Instant::now();
+                    continue;
+                }
+                fetched => fetched?,
             };
             let proofs = pair
                 .into_iter()
@@ -362,12 +454,12 @@ fn peer_worker(mut task: PeerTask) {
                 index,
                 data,
                 proofs,
-                availability: peer.availability().map(<[u8]>::to_vec),
+                availability: offered(&peer),
                 peers: std::mem::take(&mut peer.discovered),
             })?;
             // The coordinator alone can issue the next command. Each worker
-            // therefore owns at most one payload and one piece being requested
-            // ahead, including queued results.
+            // therefore owns at most piece_claims(meta) payloads, including
+            // queued results.
             keepalive = Instant::now();
         }
         Ok(())
@@ -535,6 +627,7 @@ fn metadata(context: MetadataContext<'_>, addresses: &mut BTreeSet<SocketAddr>) 
                 download_gate: policy.download.clone(),
                 local_download_gate: gate,
                 network: &*policy.network,
+                serving: None,
             },
             stop,
         )
@@ -579,21 +672,23 @@ pub(super) fn download(
     peer_id: &[u8; 20],
     policy: &PolicyRuntime,
 ) -> Result<()> {
-    let (source, cached, counters, local_gate) = with_generation(jobs, stop, id, |job| {
-        Ok((
-            Source {
-                original: job.source.original.clone(),
-                v1: job.source.v1,
-                v2: job.source.v2,
-                trackers: job.source.trackers.clone(),
-                peers: job.source.peers.clone(),
-                meta: None,
-            },
-            job.meta.as_ref().map(|meta| (**meta).clone()),
-            job.counters.clone(),
-            job.download_gate.clone(),
-        ))
-    })?;
+    let (source, cached, counters, local_gate, upload_gate) =
+        with_generation(jobs, stop, id, |job| {
+            Ok((
+                Source {
+                    original: job.source.original.clone(),
+                    v1: job.source.v1,
+                    v2: job.source.v2,
+                    trackers: job.source.trackers.clone(),
+                    peers: job.source.peers.clone(),
+                    meta: None,
+                },
+                job.meta.as_ref().map(|meta| (**meta).clone()),
+                job.counters.clone(),
+                job.download_gate.clone(),
+                job.upload_gate.clone(),
+            ))
+        })?;
     let mut addresses = BTreeSet::new();
     super::merge_peers(
         &mut addresses,
@@ -635,10 +730,25 @@ pub(super) fn download(
         );
         Ok(())
     })?;
+    // Peers may fetch verified pieces from this side while it downloads.
+    // Duplicate requests near the end stop once one copy is verified.
+    let pieces = Arc::new(wire::Pieces::new(&have));
+    let serving = config.seed.then(|| wire::Serving {
+        pieces: pieces.clone(),
+        base: base.clone(),
+        upload_gate: policy.upload.clone(),
+        local_upload_gate: upload_gate.clone(),
+    });
     let limit = peer_limit(config, &meta);
+    let claims = wire::piece_claims(&meta);
     // What new workers start from; renewed after the coordinator learns hashes.
     let mut shared = Arc::new(meta.clone());
     let mut shared_stale = false;
+    // Piece priorities, recomputed when the order they produced changes.
+    let mut ranked = Arc::new(Vec::new());
+    let mut ranks = Vec::new();
+    let mut rarity = vec![0u16; meta.count()];
+    let mut counted: Vec<Option<Vec<u8>>> = vec![None; limit];
     let (events, receiver) = mpsc::sync_channel(limit);
     let mut group = Group {
         workers: (0..limit).map(|_| None).collect(),
@@ -695,7 +805,7 @@ pub(super) fn download(
             }
         }
         waiting.retain(|(_, since)| since.elapsed() < INBOUND_WAIT);
-        // At most one connection and `CLAIMS` exclusive claims exist per slot.
+        // At most one connection and `claims` exclusive claims exist per slot.
         // A retired or panicking worker loses its claims when its slot is taken.
         for slot in 0..limit {
             if group.workers[slot].is_some() {
@@ -711,9 +821,10 @@ pub(super) fn download(
                 ticket = ticket
                     .checked_add(1)
                     .ok_or("Peer generation sequence exhausted")?;
-                let (commands, command_receiver) = mpsc::sync_channel(CLAIMS);
+                let (commands, command_receiver) = mpsc::sync_channel(claims);
                 let cancel = Arc::new(AtomicBool::new(false));
                 let corrupt = Arc::new(AtomicBool::new(false));
+                let uploading = Arc::new(AtomicBool::new(false));
                 let task = PeerTask {
                     slot,
                     ticket,
@@ -737,6 +848,9 @@ pub(super) fn download(
                     stop: cancel.clone(),
                     commands: command_receiver,
                     inbound: accepted,
+                    serving: serving.clone(),
+                    uploading: uploading.clone(),
+                    done: pieces.clone(),
                     events: events.clone(),
                     corrupt: corrupt.clone(),
                 };
@@ -747,6 +861,7 @@ pub(super) fn download(
                     stop: cancel,
                     handle: thread::spawn(move || peer_worker(task)),
                     corrupt,
+                    uploading,
                     availability: None,
                     claims: Vec::new(),
                     idle_since: Instant::now(),
@@ -803,16 +918,31 @@ pub(super) fn download(
                         || (!proofs.is_empty() && !meta.verify(index, &data))
                     {
                         retire_peer(&mut group, event.slot, &mut quarantine, &mut retries, true);
-                    } else {
+                    } else if !have[index] {
                         worker.received += data.len() as u64;
                         let _publication = policy.network.publication()?;
                         commit_piece(
                             jobs, stop, id, &meta, &base, index, &data, &mut have, &selected,
                         )?;
+                        pieces.add(index);
                         if !meta.private && config.pex {
                             super::merge_peers(&mut addresses, peers);
                         }
                     }
+                }
+                EventKind::Abandoned {
+                    index,
+                    availability,
+                } => {
+                    let worker = group.workers[event.slot]
+                        .as_mut()
+                        .ok_or("Peer worker unavailable")?;
+                    if worker.claims.first() != Some(&index) || !have[index] {
+                        return Err("Peer abandoned an unclaimed piece".into());
+                    }
+                    worker.claims.remove(0);
+                    worker.availability = Some(availability);
+                    worker.idle_since = Instant::now();
                 }
                 EventKind::Failed { corrupt } => {
                     retire_peer(
@@ -833,25 +963,57 @@ pub(super) fn download(
                 retire_peer(&mut group, slot, &mut quarantine, &mut retries, false);
             }
         }
-        let order = with_generation(jobs, stop, id, |job| {
+        let (order, fresh_ranks) = with_generation(jobs, stop, id, |job| {
             if job.piece_order.len() != meta.count() {
                 job.piece_order = Arc::new(super::piece_order(&meta, &job.control.file_priorities));
             }
-            Ok(job.piece_order.clone())
+            let fresh = (!Arc::ptr_eq(&job.piece_order, &ranked))
+                .then(|| super::piece_ranks(&meta, &job.control.file_priorities));
+            Ok((job.piece_order.clone(), fresh))
         })?;
-        let mut claimed: BTreeSet<_> = group
-            .workers
-            .iter()
-            .flatten()
-            .flat_map(|worker| worker.claims.iter().copied())
-            .collect();
+        if let Some(fresh) = fresh_ranks {
+            ranks = fresh;
+            ranked = order.clone();
+        }
+        // How many connected peers offer each piece, kept current by diffing
+        // what each slot offered when last counted.
+        for (worker, counted) in group.workers.iter().zip(&mut counted) {
+            let offered = worker
+                .as_ref()
+                .and_then(|worker| worker.availability.as_ref())
+                .and_then(Option::as_ref);
+            if offered != counted.as_ref() {
+                if let Some(old) = counted.take() {
+                    count_offers(&mut rarity, &old, false);
+                }
+                if let Some(new) = offered {
+                    count_offers(&mut rarity, new, true);
+                    *counted = Some(new.clone());
+                }
+            }
+        }
+        let mut claimed = vec![0u8; meta.count()];
+        // Pieces held by a peer that delivered nothing for a while.
+        let mut stalled = vec![false; meta.count()];
+        for worker in group.workers.iter().flatten() {
+            for index in &worker.claims {
+                claimed[*index] = claimed[*index].saturating_add(1);
+                stalled[*index] |= worker.idle_since.elapsed() >= RETRY;
+            }
+        }
+        let missing = |index: &usize| selected.pieces[*index] && !have[*index];
         // A second claim keeps a peer's requests flowing between pieces, but
         // near the end it would make other peers wait for a slow one.
         let workers = group.workers.iter().flatten().count();
         let plenty = (0..meta.count())
-            .filter(|index| selected.pieces[*index] && !have[*index] && !claimed.contains(index))
-            .nth(CLAIMS * workers)
+            .filter(|index| missing(index) && claimed[*index] == 0)
+            .nth(claims * workers)
             .is_some();
+        let floor = (0..meta.count())
+            .filter(|index| missing(index) && claimed[*index] == 0)
+            .map(|index| rarity[index])
+            .min()
+            .unwrap_or(0);
         for slot in 0..limit {
             let Some(worker) = group.workers[slot].as_mut() else {
                 continue;
@@ -859,32 +1021,47 @@ pub(super) fn download(
             let Some(availability) = &worker.availability else {
                 continue;
             };
+            let offers = |index: usize| {
+                availability.as_ref().is_none_or(|bits| {
+                    index / 8 < bits.len() && bits[index / 8] & (0x80 >> (index % 8)) != 0
+                })
+            };
             let mut failed = false;
-            while worker.claims.len() < if plenty { CLAIMS } else { 1 } {
-                let next = order.iter().copied().find(|index| {
-                    selected.pieces[*index]
-                        && !have[*index]
-                        && !claimed.contains(index)
-                        && availability.as_ref().is_none_or(|bits| {
-                            *index / 8 < bits.len()
-                                && bits[*index / 8] & (0x80 >> (*index % 8)) != 0
+            while worker.claims.len() < if workers == 1 || plenty { claims } else { 1 } {
+                let next = rarest(&order, &ranks, &rarity, floor, |index| {
+                    missing(&index) && claimed[index] == 0 && offers(index)
+                })
+                // Endgame: once every missing piece is claimed, an idle peer
+                // also fetches one held by a stalled peer. The first verified
+                // copy makes the other peer cancel its requests.
+                .or_else(|| {
+                    (!plenty && worker.claims.is_empty())
+                        .then(|| {
+                            order.iter().copied().find(|index| {
+                                missing(index)
+                                    && claimed[*index] == 1
+                                    && stalled[*index]
+                                    && offers(*index)
+                            })
                         })
+                        .flatten()
                 });
                 let Some(index) = next else {
                     // Recycling an idle peer refreshes HAVE/PEX availability
                     // and allows later candidates to use this bounded slot.
                     failed = worker.claims.is_empty()
                         && worker.idle_since.elapsed() >= RETRY
+                        && !worker.uploading.load(Ordering::Acquire)
                         && !selected.complete(&have);
                     break;
                 };
-                // The channel holds `CLAIMS` commands, so this never waits.
+                // The channel holds `claims` commands, so this never waits.
                 if worker.commands.send(Command::Piece(index)).is_err() {
                     failed = true;
                     break;
                 }
                 worker.claims.push(index);
-                claimed.insert(index);
+                claimed[index] += 1;
             }
             if failed {
                 retire_peer(&mut group, slot, &mut quarantine, &mut retries, false);
@@ -1054,26 +1231,49 @@ mod tests {
     }
 
     #[test]
+    fn the_rarest_piece_comes_first_within_the_most_urgent_priority() {
+        // Piece 2 has the high priority, 0 and 1 the normal one, 3 the low.
+        let order = [2, 0, 1, 3];
+        let ranks = [1, 1, 2, 0];
+        let mut rarity = vec![0; 4];
+        count_offers(&mut rarity, &[0xf0], true);
+        count_offers(&mut rarity, &[0xf0], true);
+        count_offers(&mut rarity, &[0x80], true);
+        count_offers(&mut rarity, &[0x20], true);
+        count_offers(&mut rarity, &[0x20], false);
+        assert_eq!(rarity, [3, 2, 2, 2]);
+        assert_eq!(rarest(&order, &ranks, &rarity, 2, |_| true), Some(2));
+        // Rarer within its priority, even after a more common piece.
+        assert_eq!(rarest(&order, &ranks, &rarity, 2, |i| i != 2), Some(1));
+        // A lower priority is never preferred for being rarer.
+        assert_eq!(rarest(&order, &ranks, &[1, 9, 9, 0], 0, |i| i < 2), Some(0));
+        // Ties keep the order.
+        assert_eq!(rarest(&order, &ranks, &[2, 2, 2, 2], 2, |i| i < 2), Some(0));
+        assert_eq!(rarest(&order, &ranks, &rarity, 2, |i| i == 3), Some(3));
+        assert_eq!(rarest(&order, &ranks, &rarity, 2, |_| false), None);
+    }
+
+    #[test]
     fn connection_allocation_and_large_metadata_reduce_worker_count() {
         let small = metadata(8);
         assert_eq!(peer_limit(&configuration(1), &small), 256);
         assert_eq!(peer_limit(&configuration(32), &small), 8);
         assert_eq!(peer_limit(&configuration(256), &small), 1);
         // Bounded messages and the blocks requested ahead: a 4 MiB piece
-        // leaves room for 29 workers in 128 MiB.
+        // includes two full payloads, even while results wait in the queue.
         let mut wide = metadata(8);
         wide.piece_length = 4 * 1024 * 1024;
-        assert_eq!(peer_limit(&configuration(1), &wide), 29);
+        assert_eq!(peer_limit(&configuration(1), &wide), 15);
         let mut large = metadata(1_048_576);
         large.piece_length = 16 * 1024 * 1024;
         assert_eq!(peer_limit(&configuration(1), &large), 1);
-        // Hashes known up front: workers share one copy of the metadata, so
-        // only each one's piece and the blocks requested ahead count.
+        // Hashes known up front: metadata is shared, and the bound includes
+        // all eight payloads even if a completed result is still queued.
         let mut known = metadata(24_000);
         known.v2 = None;
         known.pieces = vec![Some([0; 20]); 24_000];
         known.piece_length = 256 * 1024;
-        assert_eq!(peer_limit(&configuration(1), &known), 202);
+        assert_eq!(peer_limit(&configuration(1), &known), 59);
     }
 
     #[test]
@@ -1114,6 +1314,7 @@ mod tests {
             commands,
             stop,
             corrupt: Arc::new(AtomicBool::new(true)),
+            uploading: Arc::default(),
             handle: thread::spawn(move || {
                 assert!(
                     send_event(

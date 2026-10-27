@@ -14,8 +14,8 @@ use std::{
     io::{self, Read, Write},
     net::IpAddr,
     sync::{
-        Arc, Mutex, RwLock, Weak,
-        atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering},
+        Arc, Condvar, Mutex, RwLock, Weak,
+        atomic::{AtomicBool, AtomicU8, AtomicU64, AtomicUsize, Ordering},
         mpsc::{self, Receiver, SyncSender, TryRecvError},
     },
     thread::{self, JoinHandle},
@@ -29,6 +29,15 @@ const CHUNK: usize = 16 * 1024;
 /// without a round trip through the owner.
 const READ_AHEAD: usize = 256 * 1024;
 const TICK: Duration = Duration::from_millis(2);
+/// The datagram wait while streams are busy. The owner cannot be woken out of
+/// it without a second host socket, so a command sent meanwhile waits at most
+/// this long instead of a whole tick.
+const NAP: Duration = Duration::from_micros(200);
+/// How long after the last command or datagram the owner keeps napping.
+const ACTIVE: Duration = Duration::from_millis(50);
+/// The longest a blocked stream waits for owner progress before polling its
+/// flow again, for changes that arrive without a datagram.
+const SETTLE: Duration = Duration::from_millis(20);
 const START_TIMEOUT: Duration = Duration::from_secs(5);
 /// How long the other address family may still answer once one lookup gave
 /// addresses (the resolution delay of RFC 8305 section 3).
@@ -61,6 +70,36 @@ fn remaining(deadline: Instant) -> io::Result<Duration> {
 fn pause(deadline: Instant) -> io::Result<()> {
     thread::sleep(remaining(deadline)?.min(TICK));
     Ok(())
+}
+
+/// What the owner and its callers wait on, besides command results.
+#[derive(Default)]
+struct Signals {
+    /// Owner pumps that received datagrams: the only way a remote peer makes a
+    /// blocked flow readable or frees its send buffer.
+    count: Mutex<u64>,
+    changed: Condvar,
+    /// Commands sent and not yet taken by the owner.
+    queued: AtomicUsize,
+}
+impl Signals {
+    fn current(&self) -> u64 {
+        *self.count.lock().unwrap_or_else(|e| e.into_inner())
+    }
+    fn advance(&self) {
+        *self.count.lock().unwrap_or_else(|e| e.into_inner()) += 1;
+        self.changed.notify_all();
+    }
+    /// Waits until progress passes `seen`, for at most `SETTLE`.
+    fn settle(&self, seen: u64, deadline: Instant) -> io::Result<()> {
+        let wait = remaining(deadline)?.min(SETTLE);
+        let count = self.count.lock().unwrap_or_else(|e| e.into_inner());
+        let _ = self
+            .changed
+            .wait_timeout_while(count, wait, |count| *count == seen)
+            .unwrap_or_else(|e| e.into_inner());
+        Ok(())
+    }
 }
 
 struct Command {
@@ -121,6 +160,7 @@ struct Owner {
     cancelled: Arc<AtomicBool>,
     generation: Arc<AtomicU64>,
     publication: Arc<RwLock<()>>,
+    signals: Arc<Signals>,
     thread: Mutex<Option<JoinHandle<()>>>,
 }
 impl Drop for Owner {
@@ -203,7 +243,13 @@ impl Owner {
             }),
         };
         loop {
-            match self.sender.try_send(command) {
+            // Counted before it can be taken, so the count never underflows.
+            self.signals.queued.fetch_add(1, Ordering::SeqCst);
+            let sent = self.sender.try_send(command);
+            if sent.is_err() {
+                self.signals.queued.fetch_sub(1, Ordering::SeqCst);
+            }
+            match sent {
                 Ok(()) => break,
                 Err(mpsc::TrySendError::Full(returned)) if patient => {
                     pause(deadline)?;
@@ -257,18 +303,27 @@ fn run(
     receiver: Receiver<Command>,
     cancelled: &AtomicBool,
     generation: &AtomicU64,
-    publication: &RwLock<()>,
+    (publication, signals): (&RwLock<()>, &Signals),
 ) {
     // A full batch likely left commands queued: then do not wait for datagrams.
     let mut busy = false;
+    let mut active = Instant::now();
     while !cancelled.load(Ordering::Acquire) {
         runtime.collect();
-        if runtime
-            .tunnel
-            .pump(if busy { Duration::ZERO } else { TICK })
-            .is_err()
-        {
-            break;
+        let wait = if busy || signals.queued.load(Ordering::SeqCst) > 0 {
+            Duration::ZERO
+        } else if active.elapsed() < ACTIVE {
+            NAP
+        } else {
+            TICK
+        };
+        match runtime.tunnel.pump(wait) {
+            Ok(pumped) if pumped.received > 0 => {
+                active = Instant::now();
+                signals.advance();
+            }
+            Ok(_) => {}
+            Err(_) => break,
         }
         publish(&runtime, generation, publication);
         busy = true;
@@ -277,7 +332,11 @@ fn run(
                 break;
             }
             let command = match receiver.try_recv() {
-                Ok(command) => command,
+                Ok(command) => {
+                    signals.queued.fetch_sub(1, Ordering::SeqCst);
+                    active = Instant::now();
+                    command
+                }
                 Err(TryRecvError::Empty) => {
                     busy = false;
                     break;
@@ -289,6 +348,9 @@ fn run(
             };
             // Observe timers/session loss before each command, even under load.
             let pumped = runtime.tunnel.pump(Duration::ZERO).map_err(failed);
+            if pumped.as_ref().is_ok_and(|pumped| pumped.received > 0) {
+                signals.advance();
+            }
             publish(&runtime, generation, publication);
             let admission = pumped
                 .and_then(|_| remaining(command.deadline).map(|_| ()))
@@ -308,6 +370,7 @@ fn run(
     }
     cancelled.store(true, Ordering::Release);
     generation.store(0, Ordering::Release);
+    signals.advance();
     let _fence = publication.write().unwrap_or_else(|e| e.into_inner());
     runtime.tunnel.cancel();
     // Dropping the receiver wakes pending callers; dropping the tunnel closes
@@ -340,10 +403,12 @@ impl HttpTunnel {
         let cancelled = Arc::new(AtomicBool::new(false));
         let generation = Arc::new(AtomicU64::new(0));
         let publication = Arc::new(RwLock::new(()));
+        let signals = Arc::new(Signals::default());
         let (ready, started) = mpsc::sync_channel(1);
         let stop = cancelled.clone();
         let epoch = generation.clone();
         let fence = publication.clone();
+        let shared = signals.clone();
         let handle = thread::Builder::new()
             .name("mynou-tunnel-http".into())
             .spawn(move || {
@@ -364,7 +429,7 @@ impl HttpTunnel {
                         receiver,
                         &stop,
                         &epoch,
-                        &fence,
+                        (&fence, &shared),
                     );
                 }
             })
@@ -376,6 +441,7 @@ impl HttpTunnel {
             cancelled,
             generation,
             publication,
+            signals,
             thread: Mutex::new(Some(handle)),
         });
         started
@@ -653,6 +719,7 @@ impl Read for Stream {
         )?;
         let flow = self.flow;
         loop {
+            let seen = self.owner.signals.current();
             let (read, data) = self.owner.wait(Some(self.generation), deadline, move |r| {
                 let ready = r.tunnel.tcp_readable(flow).map_err(failed)?;
                 let mut data = vec![0; ready.clamp(1, READ_AHEAD)];
@@ -673,7 +740,7 @@ impl Read for Stream {
                     return Ok(n);
                 }
                 TcpRead::Eof => return Ok(0),
-                TcpRead::WouldBlock => pause(deadline)?,
+                TcpRead::WouldBlock => self.owner.signals.settle(seen, deadline)?,
             }
         }
     }
@@ -693,6 +760,7 @@ impl Write for Stream {
         let flow = self.flow;
         let bytes = &buffer[..buffer.len().min(CHUNK)];
         loop {
+            let seen = self.owner.signals.current();
             let data = bytes.to_vec();
             let sent = self.owner.wait(Some(self.generation), deadline, move |r| {
                 r.tunnel.tcp_send(flow, &data).map_err(failed)
@@ -700,7 +768,7 @@ impl Write for Stream {
             if sent != 0 {
                 return Ok(sent);
             }
-            pause(deadline)?;
+            self.owner.signals.settle(seen, deadline)?;
         }
     }
     fn flush(&mut self) -> io::Result<()> {

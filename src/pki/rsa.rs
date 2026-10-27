@@ -162,6 +162,26 @@ pub(super) fn to_bytes(words: &[u32], width: usize) -> Vec<u8> {
         .collect()
 }
 
+/// `base^exponent mod modulus` for an ephemeral Diffie-Hellman exchange. Unlike
+/// [`Modulus::power`], every exponent bit runs the same squaring and
+/// multiplication and selects the result without branching.
+pub(crate) fn dh_power(modulus: &[u8], base: &[u8], exponent: &[u8]) -> Result<Vec<u8>> {
+    let arithmetic = Modulus::new(modulus)?;
+    let base = arithmetic.encode(base)?;
+    let mut result = arithmetic.one();
+    for byte in exponent {
+        for bit in (0..8).rev() {
+            result = arithmetic.multiply(&result, &result);
+            let product = arithmetic.multiply(&result, &base);
+            let mask = 0u32.wrapping_sub(u32::from((byte >> bit) & 1));
+            for (word, multiplied) in result.iter_mut().zip(&product) {
+                *word = (*word & !mask) | (multiplied & mask);
+            }
+        }
+    }
+    Ok(to_bytes(&arithmetic.decode(&result), modulus.len()))
+}
+
 fn rsa_message(modulus: &[u8], exponent: &[u8], signature: &[u8]) -> Result<(Vec<u8>, usize)> {
     if !(256..=1024).contains(&modulus.len()) || modulus[0] < 0x80 {
         return Err("RSA: only 2048- to 8192-bit keys are accepted".into());

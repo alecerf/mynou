@@ -1,5 +1,9 @@
 # Torrent engine load evidence
 
+This page preserves the historical #320 campaign and its then-current defaults.
+The current v0.26.0 comparison, local pipeline changes and a fresh run of these
+five protected-load levels are recorded in [the October 2026 benchmark](torrent-benchmark.md).
+
 This is the record of [#320](https://github.com/alecerf/mynou/issues/320), the
 engine-level part of the "Resources and claims" gate of the
 [WireGuard design](wireguard-design.md#verification-gates-before-protected-delivery),

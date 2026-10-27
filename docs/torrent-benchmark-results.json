@@ -1,0 +1,5628 @@
+{
+  "date": "2026-10-27",
+  "base_commit": "976510b2ae89a4e69a2dafa46aed1e8b4d6a99e9",
+  "remote_HEAD_and_v0_26_0_verified": "976510b2ae89a4e69a2dafa46aed1e8b4d6a99e9",
+  "cpu": "Apple M1 Pro",
+  "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+  "measurement": "payload MiB / process launch-to-exit wall seconds; three repetitions except interoperability and protected load; delayed application bytes, TCP ACKs stay local; libtorrent plaintext unless peer_encryption is negotiated; no public swarm; no equal durability claim",
+  "binaries": {
+    "mynou_v0_26_0_sha256": "f7a8b75c5d46aa495b468b5fc7d0e85765b8ccb6dbcbfe1142fc9c5fadf061d2",
+    "rqbit_sha256": "de8b957b2927dc5bf911506bf3c24c8e77e24a6d21ecd80f6fcffd2db30eb672",
+    "mynou_pipeline_step_sha256": "e879ccb51141c33e596e402125c351ea75df850988aef05d67db748191e3a870",
+    "mynou_final_sha256": "87394d93a29afedc4486604ee27cd2bc2aff91779bf4b396eab8fbd2450ef74c",
+    "mynou_service_waker_sha256": "75b6d53a2bb201a4d5369a1692b43e2d1b7ac31100c20039c9c2ac22f0836f41",
+    "mynou_service_final_sha256": "9b1914d15eda4e0925eb6523a4404900a46635c3d8c12466f27d5a0e83ee5752"
+  },
+  "source_sha256": {
+    "src/torrent.rs": "c21091c905906cf0ecc5102b33368ecf03a8f8fd9e3570cb183b7d2d4f636fa9",
+    "src/torrent/wire.rs": "97540cbb6200397c428ef0e1bb9c5182e0343d216567c81df6db4ec7d60d5f86",
+    "src/torrent/parallel.rs": "b2ba572dd0775bf5481b637dc50d6b9e7aad34202694c67cc7b09f2b1702befa",
+    "src/torrent/mse.rs": "82410e6627cbb18799f9de4b2a2184da36617f42cb4c13b07b6e769f3a7110db",
+    "src/torrent/index.rs": "2e511cb656dc1fe6458795832cbac076f78a266d83ace442df79ff531cae8b26",
+    "src/torrent/control.rs": "f6396269280c45fd13b28ed8f0d0893dd282bd3e487785eafe1a893f19ea9aa2",
+    "src/torrent/transport.rs": "e5f72623ea1536b8d3479b03988145dd8e0aae6ae401b3079800a7ea5c85432c",
+    "src/tunnel.rs": "280f4a09a5c319dd7ef532c9e59f87e0bf75ec368b7d5ae999952a4f936c46ff",
+    "src/tunnel_http.rs": "a424b8291b18f091b24e46f22138cbf0d6aba52b0654fabf5ad777177d8a6b67",
+    "src/pki/rsa.rs": "d7fb30f8d7cd6136ac01d91cc7ba3a2b3ba4b3e82009eda68119758ca6bd9c94",
+    "src/crypto/hashes.rs": "a5177000f22780e8933ab31e5a1268d317ce5d9941a5c02ea223b6256f44f603",
+    ".github/scripts/torrent_compare.py": "c4b5c0425046d69caf978c8e99a0b47e2364ee923f1619e2ba8d050ef62f942a",
+    "examples/torrent_bench.rs": "28013b38ea5ebbef8cc177d7fbdb34ac923f77e680845c78fd0fc188dac38f51"
+  },
+  "validation": {
+    "lib_tests_passed": 860,
+    "lib_tests_failed_release_only": [
+      "settings::tests::updates_are_automatic_by_default_and_only_a_staged_one_installs"
+    ],
+    "clippy_all_targets": "passed",
+    "format": "passed",
+    "all_release_tests_passed": 1378,
+    "test_binaries": 65,
+    "host_io_observer": "passed",
+    "network_inventory": "passed",
+    "python_ci_tests": 96
+  },
+  "campaigns": {
+    "compare_before_plain": {
+      "environment": {
+        "commit": "976510b2ae89a4e69a2dafa46aed1e8b4d6a99e9",
+        "dirty": " M .github/scripts/torrent_load.py\n M docs/torrent-load.md\n M src/crypto/hashes.rs\n M src/torrent.rs\n M src/torrent/control.rs\n M src/torrent/parallel.rs\n M src/torrent/transport.rs\n M src/torrent/wire.rs\n M tests/transfer_management.rs\n?? .github/scripts/torrent_compare.py\n?? docs/releases/\n?? docs/torrent-benchmark-results.json\n?? docs/torrent-benchmark.md\n?? docs/torrent-comparison.md\n?? examples/\n",
+        "platform": "macOS-27.2-arm64-arm-64bit",
+        "python": "3.9.6 (default, Aug 25 2026, 21:26:21) \n[Clang 21.0.0 (clang-2100.3.34.2)]",
+        "libtorrent": "2.1.1.0",
+        "mynou_sha256": "f7a8b75c5d46aa495b468b5fc7d0e85765b8ccb6dbcbfe1142fc9c5fadf061d2",
+        "rqbit_version": null,
+        "rqbit_sha256": null,
+        "payload_sha256": "1b537074505f93156efd8291df0bfe97101d2a471a811d5aaf128ec4baefe135",
+        "bytes": 67108864,
+        "piece_bytes": 1048576,
+        "repeats": 3,
+        "kind": "v1",
+        "seed_engine": "libtorrent",
+        "seeds": 1,
+        "peer_encryption": "disabled",
+        "method": "trackerless synthetic magnet, common seeds, explicit loopback peers, discovery disabled; same delayed TCP proxy for every downloader; throughput uses process launch to exit; ready excludes shutdown, CPU/RSS include shutdown; no equal durability claim"
+      },
+      "measurements": [
+        {
+          "engine": "mynou",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 0,
+          "ready_s": 0.632322541,
+          "wall_s": 0.6863552079999999,
+          "mib_s": 93.2461781509495,
+          "cpu_s": 0.26,
+          "rss_bytes": 8011776,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 50,
+          "rate_bps": 0,
+          "repeat": 0,
+          "ready_s": 15.011220917,
+          "wall_s": 15.064399790999998,
+          "mib_s": 4.248426813409178,
+          "cpu_s": 0.69,
+          "rss_bytes": 6995968,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 50,
+          "rate_bps": 0,
+          "repeat": 1,
+          "ready_s": 15.007300542,
+          "wall_s": 15.062144374999999,
+          "mib_s": 4.249062975802209,
+          "cpu_s": 0.71,
+          "rss_bytes": 7028736,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 1,
+          "ready_s": 0.708920375,
+          "wall_s": 0.7657863750000011,
+          "mib_s": 83.57422133555184,
+          "cpu_s": 0.27,
+          "rss_bytes": 9125888,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 2,
+          "ready_s": 0.769345875,
+          "wall_s": 0.8247404589999974,
+          "mib_s": 77.6001702130636,
+          "cpu_s": 0.27,
+          "rss_bytes": 8011776,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 50,
+          "rate_bps": 0,
+          "repeat": 2,
+          "ready_s": 14.98237125,
+          "wall_s": 15.043152,
+          "mib_s": 4.254427529549658,
+          "cpu_s": 0.69,
+          "rss_bytes": 8142848,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          }
+        }
+      ]
+    },
+    "compare_plain": {
+      "environment": {
+        "commit": "976510b2ae89a4e69a2dafa46aed1e8b4d6a99e9",
+        "dirty": " M .github/scripts/torrent_load.py\n M docs/torrent-load.md\n M src/crypto/hashes.rs\n M src/torrent.rs\n M src/torrent/control.rs\n M src/torrent/parallel.rs\n M src/torrent/transport.rs\n M src/torrent/wire.rs\n M tests/transfer_management.rs\n?? .github/scripts/torrent_compare.py\n?? docs/releases/\n?? docs/torrent-benchmark-results.json\n?? docs/torrent-benchmark.md\n?? docs/torrent-comparison.md\n?? examples/\n",
+        "platform": "macOS-27.2-arm64-arm-64bit",
+        "python": "3.9.6 (default, Aug 25 2026, 21:26:21) \n[Clang 21.0.0 (clang-2100.3.34.2)]",
+        "libtorrent": "2.1.1.0",
+        "mynou_sha256": "e879ccb51141c33e596e402125c351ea75df850988aef05d67db748191e3a870",
+        "rqbit_version": "rqbit 9.0.1",
+        "rqbit_sha256": "de8b957b2927dc5bf911506bf3c24c8e77e24a6d21ecd80f6fcffd2db30eb672",
+        "payload_sha256": "1b537074505f93156efd8291df0bfe97101d2a471a811d5aaf128ec4baefe135",
+        "bytes": 67108864,
+        "piece_bytes": 1048576,
+        "repeats": 3,
+        "kind": "v1",
+        "seed_engine": "libtorrent",
+        "seeds": 1,
+        "peer_encryption": "disabled",
+        "method": "trackerless synthetic magnet, common seeds, explicit loopback peers, discovery disabled; same delayed TCP proxy for every downloader; throughput uses process launch to exit; ready excludes shutdown, CPU/RSS include shutdown; no equal durability claim"
+      },
+      "measurements": [
+        {
+          "engine": "mynou",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 0,
+          "ready_s": 0.474284334,
+          "wall_s": 0.48147420899999993,
+          "mib_s": 132.9250846746809,
+          "cpu_s": 0.16,
+          "rss_bytes": 17563648,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          },
+          "phases": {
+            "open_s": 0.127477834,
+            "admission_s": 0.073902625,
+            "work_s": 0.272903875,
+            "shutdown_s": 0.000257083
+          }
+        },
+        {
+          "engine": "libtorrent",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 0,
+          "ready_s": 0.8384702079999999,
+          "wall_s": 0.9218080419999999,
+          "mib_s": 69.42877159233984,
+          "cpu_s": 0.25,
+          "rss_bytes": 36634624,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 1,
+            "other": 0
+          }
+        },
+        {
+          "engine": "rqbit",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 0,
+          "ready_s": 0.7261795830000002,
+          "wall_s": 0.7261795830000002,
+          "mib_s": 88.13246956848135,
+          "cpu_s": 0.54,
+          "rss_bytes": 14778368,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 50,
+          "rate_bps": 0,
+          "repeat": 0,
+          "ready_s": 1.1975155,
+          "wall_s": 1.2054516670000002,
+          "mib_s": 53.09213280966826,
+          "cpu_s": 0.17,
+          "rss_bytes": 28098560,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          },
+          "phases": {
+            "open_s": 0.114585792,
+            "admission_s": 0.085787875,
+            "work_s": 0.997141833,
+            "shutdown_s": 0.000227416
+          }
+        },
+        {
+          "engine": "libtorrent",
+          "rtt_ms": 50,
+          "rate_bps": 0,
+          "repeat": 0,
+          "ready_s": 1.2774822499999998,
+          "wall_s": 1.3583254580000004,
+          "mib_s": 47.1168375907742,
+          "cpu_s": 0.22,
+          "rss_bytes": 38223872,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 1,
+            "other": 0
+          }
+        },
+        {
+          "engine": "rqbit",
+          "rtt_ms": 50,
+          "rate_bps": 0,
+          "repeat": 0,
+          "ready_s": 2.2796938339999997,
+          "wall_s": 2.2796938339999997,
+          "mib_s": 28.073945301551404,
+          "cpu_s": 0.5700000000000001,
+          "rss_bytes": 15319040,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          }
+        },
+        {
+          "engine": "libtorrent",
+          "rtt_ms": 50,
+          "rate_bps": 0,
+          "repeat": 1,
+          "ready_s": 1.3208805829999999,
+          "wall_s": 1.4104815420000012,
+          "mib_s": 45.37457463587279,
+          "cpu_s": 0.21000000000000002,
+          "rss_bytes": 35717120,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 1,
+            "other": 0
+          }
+        },
+        {
+          "engine": "rqbit",
+          "rtt_ms": 50,
+          "rate_bps": 0,
+          "repeat": 1,
+          "ready_s": 2.2331074169999994,
+          "wall_s": 2.2331074169999994,
+          "mib_s": 28.659615526233335,
+          "cpu_s": 0.5800000000000001,
+          "rss_bytes": 15269888,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 50,
+          "rate_bps": 0,
+          "repeat": 1,
+          "ready_s": 0.984101625,
+          "wall_s": 0.9932402499999995,
+          "mib_s": 64.4355683330393,
+          "cpu_s": 0.19,
+          "rss_bytes": 26050560,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          },
+          "phases": {
+            "open_s": 0.129004,
+            "admission_s": 0.075877625,
+            "work_s": 0.77922,
+            "shutdown_s": 0.0002465
+          }
+        },
+        {
+          "engine": "libtorrent",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 1,
+          "ready_s": 1.021346709,
+          "wall_s": 1.105399457999999,
+          "mib_s": 57.89762201964103,
+          "cpu_s": 0.31,
+          "rss_bytes": 34701312,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 1,
+            "other": 0
+          }
+        },
+        {
+          "engine": "rqbit",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 1,
+          "ready_s": 0.44483287500000124,
+          "wall_s": 0.44483287500000124,
+          "mib_s": 143.8742583942336,
+          "cpu_s": 0.44000000000000006,
+          "rss_bytes": 14942208,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 1,
+          "ready_s": 0.681900041,
+          "wall_s": 0.6896103339999993,
+          "mib_s": 92.80603384925503,
+          "cpu_s": 0.18,
+          "rss_bytes": 19611648,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          },
+          "phases": {
+            "open_s": 0.112052583,
+            "admission_s": 0.073904583,
+            "work_s": 0.495942875,
+            "shutdown_s": 0.000184084
+          }
+        },
+        {
+          "engine": "rqbit",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 2,
+          "ready_s": 0.6988273750000005,
+          "wall_s": 0.6988273750000005,
+          "mib_s": 91.58198761174741,
+          "cpu_s": 0.53,
+          "rss_bytes": 15220736,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 2,
+          "ready_s": 0.468556875,
+          "wall_s": 0.47652187499999954,
+          "mib_s": 134.30653104854852,
+          "cpu_s": 0.16,
+          "rss_bytes": 20627456,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          },
+          "phases": {
+            "open_s": 0.116641458,
+            "admission_s": 0.067959125,
+            "work_s": 0.283956292,
+            "shutdown_s": 0.000258833
+          }
+        },
+        {
+          "engine": "libtorrent",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 2,
+          "ready_s": 0.823564583,
+          "wall_s": 0.9071159170000005,
+          "mib_s": 70.55327637912009,
+          "cpu_s": 0.26,
+          "rss_bytes": 35979264,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 1,
+            "other": 0
+          }
+        },
+        {
+          "engine": "rqbit",
+          "rtt_ms": 50,
+          "rate_bps": 0,
+          "repeat": 2,
+          "ready_s": 2.2336314999999978,
+          "wall_s": 2.2336314999999978,
+          "mib_s": 28.652891043128673,
+          "cpu_s": 0.5800000000000001,
+          "rss_bytes": 15515648,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 50,
+          "rate_bps": 0,
+          "repeat": 2,
+          "ready_s": 1.037983458,
+          "wall_s": 1.0475861669999986,
+          "mib_s": 61.09282655314031,
+          "cpu_s": 0.18,
+          "rss_bytes": 29196288,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          },
+          "phases": {
+            "open_s": 0.127854666,
+            "admission_s": 0.09171625,
+            "work_s": 0.818412542,
+            "shutdown_s": 0.000245625
+          }
+        },
+        {
+          "engine": "libtorrent",
+          "rtt_ms": 50,
+          "rate_bps": 0,
+          "repeat": 2,
+          "ready_s": 1.56071975,
+          "wall_s": 1.6481302499999977,
+          "mib_s": 38.831882370947376,
+          "cpu_s": 0.25,
+          "rss_bytes": 35438592,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 1,
+            "other": 0
+          }
+        }
+      ]
+    },
+    "four_after": {
+      "environment": {
+        "commit": "976510b2ae89a4e69a2dafa46aed1e8b4d6a99e9",
+        "dirty": " M .github/scripts/torrent_load.py\n M docs/torrent-load.md\n M src/crypto/hashes.rs\n M src/torrent.rs\n M src/torrent/control.rs\n M src/torrent/parallel.rs\n M src/torrent/transport.rs\n M src/torrent/wire.rs\n M tests/transfer_management.rs\n?? .github/scripts/torrent_compare.py\n?? docs/releases/\n?? docs/torrent-benchmark-results.json\n?? docs/torrent-benchmark.md\n?? docs/torrent-comparison.md\n?? examples/\n",
+        "platform": "macOS-27.2-arm64-arm-64bit",
+        "python": "3.9.6 (default, Aug 25 2026, 21:26:21) \n[Clang 21.0.0 (clang-2100.3.34.2)]",
+        "libtorrent": "2.1.1.0",
+        "mynou_sha256": "e879ccb51141c33e596e402125c351ea75df850988aef05d67db748191e3a870",
+        "rqbit_version": null,
+        "rqbit_sha256": null,
+        "payload_sha256": "9be63fc7083b9b7c9a71647eaecb8f5f636d2d874c8260fdeacebf9b04f26893",
+        "bytes": 16777216,
+        "piece_bytes": 1048576,
+        "repeats": 3,
+        "kind": "v1",
+        "seed_engine": "libtorrent",
+        "seeds": 4,
+        "peer_encryption": "negotiated",
+        "method": "trackerless synthetic magnet, common seeds, explicit loopback peers, discovery disabled; same delayed TCP proxy for every downloader; throughput uses process launch to exit; ready excludes shutdown, CPU/RSS include shutdown; no equal durability claim"
+      },
+      "measurements": [
+        {
+          "engine": "mynou",
+          "rtt_ms": 50,
+          "rate_bps": 16777216,
+          "repeat": 0,
+          "ready_s": 1.635238,
+          "wall_s": 1.64500475,
+          "mib_s": 9.726415683602129,
+          "cpu_s": 0.14,
+          "rss_bytes": 14450688,
+          "verified": true,
+          "seed_payload_bytes": [
+            4194304,
+            4194304,
+            4194304,
+            4194304
+          ],
+          "handshakes": {
+            "plaintext": 5,
+            "other": 0
+          },
+          "phases": {
+            "open_s": 0.12989075,
+            "admission_s": 0.093977417,
+            "work_s": 1.411369833,
+            "shutdown_s": 0.000459334
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 50,
+          "rate_bps": 16777216,
+          "repeat": 1,
+          "ready_s": 1.668796334,
+          "wall_s": 1.6835059589999999,
+          "mib_s": 9.503975863265715,
+          "cpu_s": 0.16,
+          "rss_bytes": 12271616,
+          "verified": true,
+          "seed_payload_bytes": [
+            4194304,
+            4194304,
+            4194304,
+            4194304
+          ],
+          "handshakes": {
+            "plaintext": 5,
+            "other": 0
+          },
+          "phases": {
+            "open_s": 0.130266542,
+            "admission_s": 0.088607708,
+            "work_s": 1.449922084,
+            "shutdown_s": 0.000722083
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 50,
+          "rate_bps": 16777216,
+          "repeat": 2,
+          "ready_s": 1.648207625,
+          "wall_s": 1.6633509159999997,
+          "mib_s": 9.619136795545554,
+          "cpu_s": 0.16,
+          "rss_bytes": 12288000,
+          "verified": true,
+          "seed_payload_bytes": [
+            4194304,
+            4194304,
+            4194304,
+            4194304
+          ],
+          "handshakes": {
+            "plaintext": 5,
+            "other": 0
+          },
+          "phases": {
+            "open_s": 0.12760675,
+            "admission_s": 0.091654917,
+            "work_s": 1.428945958,
+            "shutdown_s": 0.000898042
+          }
+        }
+      ]
+    },
+    "four_before": {
+      "environment": {
+        "commit": "976510b2ae89a4e69a2dafa46aed1e8b4d6a99e9",
+        "dirty": " M .github/scripts/torrent_load.py\n M docs/torrent-load.md\n M src/crypto/hashes.rs\n M src/torrent.rs\n M src/torrent/control.rs\n M src/torrent/parallel.rs\n M src/torrent/transport.rs\n M src/torrent/wire.rs\n M tests/transfer_management.rs\n?? .github/scripts/torrent_compare.py\n?? docs/releases/\n?? docs/torrent-benchmark-results.json\n?? docs/torrent-benchmark.md\n?? docs/torrent-comparison.md\n?? examples/\n",
+        "platform": "macOS-27.2-arm64-arm-64bit",
+        "python": "3.9.6 (default, Aug 25 2026, 21:26:21) \n[Clang 21.0.0 (clang-2100.3.34.2)]",
+        "libtorrent": "2.1.1.0",
+        "mynou_sha256": "f7a8b75c5d46aa495b468b5fc7d0e85765b8ccb6dbcbfe1142fc9c5fadf061d2",
+        "rqbit_version": null,
+        "rqbit_sha256": null,
+        "payload_sha256": "9be63fc7083b9b7c9a71647eaecb8f5f636d2d874c8260fdeacebf9b04f26893",
+        "bytes": 16777216,
+        "piece_bytes": 1048576,
+        "repeats": 3,
+        "kind": "v1",
+        "seed_engine": "libtorrent",
+        "seeds": 4,
+        "peer_encryption": "negotiated",
+        "method": "trackerless synthetic magnet, common seeds, explicit loopback peers, discovery disabled; same delayed TCP proxy for every downloader; throughput uses process launch to exit; ready excludes shutdown, CPU/RSS include shutdown; no equal durability claim"
+      },
+      "measurements": [
+        {
+          "engine": "mynou",
+          "rtt_ms": 50,
+          "rate_bps": 16777216,
+          "repeat": 0,
+          "ready_s": 14.716868542,
+          "wall_s": 14.770979834,
+          "mib_s": 1.0832050534095936,
+          "cpu_s": 0.35,
+          "rss_bytes": 15417344,
+          "verified": true,
+          "seed_payload_bytes": [
+            4194304,
+            4194304,
+            4194304,
+            4194304
+          ],
+          "handshakes": {
+            "plaintext": 5,
+            "other": 0
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 50,
+          "rate_bps": 16777216,
+          "repeat": 1,
+          "ready_s": 14.901894667,
+          "wall_s": 14.969214083,
+          "mib_s": 1.0688603898163649,
+          "cpu_s": 0.37,
+          "rss_bytes": 14336000,
+          "verified": true,
+          "seed_payload_bytes": [
+            4194304,
+            4194304,
+            4194304,
+            4194304
+          ],
+          "handshakes": {
+            "plaintext": 5,
+            "other": 0
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 50,
+          "rate_bps": 16777216,
+          "repeat": 2,
+          "ready_s": 14.874395208,
+          "wall_s": 14.937685667000004,
+          "mib_s": 1.071116393575401,
+          "cpu_s": 0.37,
+          "rss_bytes": 14385152,
+          "verified": true,
+          "seed_payload_bytes": [
+            4194304,
+            4194304,
+            4194304,
+            4194304
+          ],
+          "handshakes": {
+            "plaintext": 5,
+            "other": 0
+          }
+        }
+      ]
+    },
+    "interop_hybrid": {
+      "environment": {
+        "commit": "976510b2ae89a4e69a2dafa46aed1e8b4d6a99e9",
+        "dirty": " M .github/scripts/torrent_load.py\n M docs/torrent-load.md\n M src/crypto/hashes.rs\n M src/torrent.rs\n M src/torrent/control.rs\n M src/torrent/parallel.rs\n M src/torrent/transport.rs\n M src/torrent/wire.rs\n M tests/transfer_management.rs\n?? .github/scripts/torrent_compare.py\n?? docs/releases/\n?? docs/torrent-benchmark-results.json\n?? docs/torrent-benchmark.md\n?? docs/torrent-comparison.md\n?? examples/\n",
+        "platform": "macOS-27.2-arm64-arm-64bit",
+        "python": "3.9.6 (default, Aug 25 2026, 21:26:21) \n[Clang 21.0.0 (clang-2100.3.34.2)]",
+        "libtorrent": "2.1.1.0",
+        "mynou_sha256": "e879ccb51141c33e596e402125c351ea75df850988aef05d67db748191e3a870",
+        "rqbit_version": null,
+        "rqbit_sha256": null,
+        "payload_sha256": "3254959bbcc9f9c86c5862238f6f7b562b8d10b4dc451057e379eeac04e06573",
+        "bytes": 2097152,
+        "piece_bytes": 1048576,
+        "repeats": 1,
+        "kind": "hybrid",
+        "seed_engine": "libtorrent",
+        "seeds": 1,
+        "peer_encryption": "negotiated",
+        "method": "trackerless synthetic magnet, common seeds, explicit loopback peers, discovery disabled; same delayed TCP proxy for every downloader; throughput uses process launch to exit; ready excludes shutdown, CPU/RSS include shutdown; no equal durability claim"
+      },
+      "measurements": [
+        {
+          "engine": "mynou",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 0,
+          "ready_s": 0.328295667,
+          "wall_s": 0.335171208,
+          "mib_s": 5.967099656125594,
+          "cpu_s": 0.06,
+          "rss_bytes": 6832128,
+          "verified": true,
+          "seed_payload_bytes": [
+            2097152
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          },
+          "phases": {
+            "open_s": 0.129463583,
+            "admission_s": 0.072826292,
+            "work_s": 0.126005792,
+            "shutdown_s": 0.000256958
+          }
+        },
+        {
+          "engine": "libtorrent",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 0,
+          "ready_s": 0.530772375,
+          "wall_s": 0.619617791,
+          "mib_s": 3.227796278690132,
+          "cpu_s": 0.1,
+          "rss_bytes": 34471936,
+          "verified": true,
+          "seed_payload_bytes": [
+            2097152
+          ],
+          "handshakes": {
+            "plaintext": 0,
+            "other": 1
+          }
+        }
+      ]
+    },
+    "interop_v2": {
+      "environment": {
+        "commit": "976510b2ae89a4e69a2dafa46aed1e8b4d6a99e9",
+        "dirty": " M .github/scripts/torrent_load.py\n M docs/torrent-load.md\n M src/crypto/hashes.rs\n M src/torrent.rs\n M src/torrent/control.rs\n M src/torrent/parallel.rs\n M src/torrent/transport.rs\n M src/torrent/wire.rs\n M tests/transfer_management.rs\n?? .github/scripts/torrent_compare.py\n?? docs/releases/\n?? docs/torrent-benchmark-results.json\n?? docs/torrent-benchmark.md\n?? docs/torrent-comparison.md\n?? examples/\n",
+        "platform": "macOS-27.2-arm64-arm-64bit",
+        "python": "3.9.6 (default, Aug 25 2026, 21:26:21) \n[Clang 21.0.0 (clang-2100.3.34.2)]",
+        "libtorrent": "2.1.1.0",
+        "mynou_sha256": "e879ccb51141c33e596e402125c351ea75df850988aef05d67db748191e3a870",
+        "rqbit_version": null,
+        "rqbit_sha256": null,
+        "payload_sha256": "3254959bbcc9f9c86c5862238f6f7b562b8d10b4dc451057e379eeac04e06573",
+        "bytes": 2097152,
+        "piece_bytes": 1048576,
+        "repeats": 1,
+        "kind": "v2",
+        "seed_engine": "libtorrent",
+        "seeds": 1,
+        "peer_encryption": "negotiated",
+        "method": "trackerless synthetic magnet, common seeds, explicit loopback peers, discovery disabled; same delayed TCP proxy for every downloader; throughput uses process launch to exit; ready excludes shutdown, CPU/RSS include shutdown; no equal durability claim"
+      },
+      "measurements": [
+        {
+          "engine": "mynou",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 0,
+          "ready_s": 0.320125875,
+          "wall_s": 0.32739000000000007,
+          "mib_s": 6.10892208069886,
+          "cpu_s": 0.06,
+          "rss_bytes": 6815744,
+          "verified": true,
+          "seed_payload_bytes": [
+            2097152
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          },
+          "phases": {
+            "open_s": 0.124206166,
+            "admission_s": 0.093859542,
+            "work_s": 0.102060167,
+            "shutdown_s": 0.00027525
+          }
+        },
+        {
+          "engine": "libtorrent",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 0,
+          "ready_s": 0.537399917,
+          "wall_s": 0.624086042,
+          "mib_s": 3.2046863179164005,
+          "cpu_s": 0.09000000000000001,
+          "rss_bytes": 35618816,
+          "verified": true,
+          "seed_payload_bytes": [
+            2097152
+          ],
+          "handshakes": {
+            "plaintext": 0,
+            "other": 1
+          }
+        }
+      ]
+    },
+    "quota_after": {
+      "environment": {
+        "commit": "976510b2ae89a4e69a2dafa46aed1e8b4d6a99e9",
+        "dirty": " M .github/scripts/torrent_load.py\n M docs/torrent-load.md\n M src/crypto/hashes.rs\n M src/torrent.rs\n M src/torrent/control.rs\n M src/torrent/parallel.rs\n M src/torrent/transport.rs\n M src/torrent/wire.rs\n M tests/transfer_management.rs\n?? .github/scripts/torrent_compare.py\n?? docs/releases/\n?? docs/torrent-benchmark-results.json\n?? docs/torrent-benchmark.md\n?? docs/torrent-comparison.md\n?? examples/\n",
+        "platform": "macOS-27.2-arm64-arm-64bit",
+        "python": "3.9.6 (default, Aug 25 2026, 21:26:21) \n[Clang 21.0.0 (clang-2100.3.34.2)]",
+        "libtorrent": "2.1.1.0",
+        "mynou_sha256": "e879ccb51141c33e596e402125c351ea75df850988aef05d67db748191e3a870",
+        "rqbit_version": null,
+        "rqbit_sha256": null,
+        "payload_sha256": "9be63fc7083b9b7c9a71647eaecb8f5f636d2d874c8260fdeacebf9b04f26893",
+        "bytes": 16777216,
+        "piece_bytes": 1048576,
+        "repeats": 3,
+        "kind": "v1",
+        "seed_engine": "libtorrent",
+        "seeds": 1,
+        "peer_encryption": "negotiated",
+        "method": "trackerless synthetic magnet, common seeds, explicit loopback peers, discovery disabled; same delayed TCP proxy for every downloader; throughput uses process launch to exit; ready excludes shutdown, CPU/RSS include shutdown; no equal durability claim"
+      },
+      "measurements": [
+        {
+          "engine": "mynou",
+          "rtt_ms": 50,
+          "rate_bps": 0,
+          "repeat": 0,
+          "ready_s": 0.66063,
+          "wall_s": 0.699898333,
+          "mib_s": 22.86046307814252,
+          "cpu_s": 0.08,
+          "rss_bytes": 20611072,
+          "verified": true,
+          "seed_payload_bytes": [
+            16777216
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          },
+          "phases": {
+            "open_s": 0.126761875,
+            "admission_s": 0.080755125,
+            "work_s": 0.453113,
+            "shutdown_s": 0.000283708
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 0,
+          "ready_s": 0.351122958,
+          "wall_s": 0.3596322499999999,
+          "mib_s": 44.489892105060115,
+          "cpu_s": 0.06,
+          "rss_bytes": 17334272,
+          "verified": true,
+          "seed_payload_bytes": [
+            16777216
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          },
+          "phases": {
+            "open_s": 0.121307458,
+            "admission_s": 0.074030834,
+            "work_s": 0.155784666,
+            "shutdown_s": 0.000262792
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 0,
+          "rate_bps": 16777216,
+          "repeat": 0,
+          "ready_s": 1.289371458,
+          "wall_s": 1.2999231249999998,
+          "mib_s": 12.308420161384545,
+          "cpu_s": 0.14,
+          "rss_bytes": 9076736,
+          "verified": true,
+          "seed_payload_bytes": [
+            16777216
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          },
+          "phases": {
+            "open_s": 0.113943125,
+            "admission_s": 0.0648075,
+            "work_s": 1.110620833,
+            "shutdown_s": 0.000558458
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 50,
+          "rate_bps": 16777216,
+          "repeat": 0,
+          "ready_s": 2.19038425,
+          "wall_s": 2.2035004999999996,
+          "mib_s": 7.261173755122816,
+          "cpu_s": 0.13,
+          "rss_bytes": 10092544,
+          "verified": true,
+          "seed_payload_bytes": [
+            16777216
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          },
+          "phases": {
+            "open_s": 0.1347565,
+            "admission_s": 0.095408875,
+            "work_s": 1.960218875,
+            "shutdown_s": 0.000498375
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 50,
+          "rate_bps": 16777216,
+          "repeat": 1,
+          "ready_s": 2.190283166,
+          "wall_s": 2.2020322500000002,
+          "mib_s": 7.266015291102116,
+          "cpu_s": 0.13,
+          "rss_bytes": 10158080,
+          "verified": true,
+          "seed_payload_bytes": [
+            16777216
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          },
+          "phases": {
+            "open_s": 0.13673675,
+            "admission_s": 0.087123125,
+            "work_s": 1.966423291,
+            "shutdown_s": 0.00039625
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 50,
+          "rate_bps": 0,
+          "repeat": 1,
+          "ready_s": 0.685405458,
+          "wall_s": 0.697203333,
+          "mib_s": 22.948828903547422,
+          "cpu_s": 0.08,
+          "rss_bytes": 20676608,
+          "verified": true,
+          "seed_payload_bytes": [
+            16777216
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          },
+          "phases": {
+            "open_s": 0.129698833,
+            "admission_s": 0.106549792,
+            "work_s": 0.449156833,
+            "shutdown_s": 0.000241333
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 0,
+          "rate_bps": 16777216,
+          "repeat": 1,
+          "ready_s": 1.524586458,
+          "wall_s": 1.5360280839999998,
+          "mib_s": 10.416476213334652,
+          "cpu_s": 0.13,
+          "rss_bytes": 8044544,
+          "verified": true,
+          "seed_payload_bytes": [
+            16777216
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          },
+          "phases": {
+            "open_s": 0.11269325,
+            "admission_s": 0.086539125,
+            "work_s": 1.3253540830000001,
+            "shutdown_s": 0.00055
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 1,
+          "ready_s": 0.394127709,
+          "wall_s": 0.404770375,
+          "mib_s": 39.528584570943465,
+          "cpu_s": 0.08,
+          "rss_bytes": 20578304,
+          "verified": true,
+          "seed_payload_bytes": [
+            16777216
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          },
+          "phases": {
+            "open_s": 0.12864325,
+            "admission_s": 0.084633667,
+            "work_s": 0.180850792,
+            "shutdown_s": 0.000189125
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 50,
+          "rate_bps": 0,
+          "repeat": 2,
+          "ready_s": 0.6465185,
+          "wall_s": 0.6547564589999997,
+          "mib_s": 24.436566879289096,
+          "cpu_s": 0.06,
+          "rss_bytes": 20627456,
+          "verified": true,
+          "seed_payload_bytes": [
+            16777216
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          },
+          "phases": {
+            "open_s": 0.120582,
+            "admission_s": 0.066889208,
+            "work_s": 0.459047292,
+            "shutdown_s": 0.000281792
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 0,
+          "rate_bps": 16777216,
+          "repeat": 2,
+          "ready_s": 1.294088208,
+          "wall_s": 1.3057714170000008,
+          "mib_s": 12.253293181098933,
+          "cpu_s": 0.13,
+          "rss_bytes": 7979008,
+          "verified": true,
+          "seed_payload_bytes": [
+            16777216
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          },
+          "phases": {
+            "open_s": 0.115344667,
+            "admission_s": 0.070848333,
+            "work_s": 1.107895208,
+            "shutdown_s": 0.00050775
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 2,
+          "ready_s": 0.421595583,
+          "wall_s": 0.4322769579999992,
+          "mib_s": 37.013307565655694,
+          "cpu_s": 0.08,
+          "rss_bytes": 14270464,
+          "verified": true,
+          "seed_payload_bytes": [
+            16777216
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          },
+          "phases": {
+            "open_s": 0.138261333,
+            "admission_s": 0.105352209,
+            "work_s": 0.177982041,
+            "shutdown_s": 0.000181958
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 50,
+          "rate_bps": 16777216,
+          "repeat": 2,
+          "ready_s": 2.097788042,
+          "wall_s": 2.1083045830000007,
+          "mib_s": 7.589036294382516,
+          "cpu_s": 0.12,
+          "rss_bytes": 10141696,
+          "verified": true,
+          "seed_payload_bytes": [
+            16777216
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          },
+          "phases": {
+            "open_s": 0.115843167,
+            "admission_s": 0.082783458,
+            "work_s": 1.899161417,
+            "shutdown_s": 0.000736833
+          }
+        }
+      ]
+    },
+    "quota_before": {
+      "environment": {
+        "commit": "976510b2ae89a4e69a2dafa46aed1e8b4d6a99e9",
+        "dirty": " M .github/scripts/torrent_load.py\n M docs/torrent-load.md\n M src/crypto/hashes.rs\n M src/torrent.rs\n M src/torrent/control.rs\n M src/torrent/parallel.rs\n M src/torrent/transport.rs\n M src/torrent/wire.rs\n M tests/transfer_management.rs\n?? .github/scripts/torrent_compare.py\n?? docs/releases/\n?? docs/torrent-benchmark-results.json\n?? docs/torrent-benchmark.md\n?? docs/torrent-comparison.md\n?? examples/\n",
+        "platform": "macOS-27.2-arm64-arm-64bit",
+        "python": "3.9.6 (default, Aug 25 2026, 21:26:21) \n[Clang 21.0.0 (clang-2100.3.34.2)]",
+        "libtorrent": "2.1.1.0",
+        "mynou_sha256": "f7a8b75c5d46aa495b468b5fc7d0e85765b8ccb6dbcbfe1142fc9c5fadf061d2",
+        "rqbit_version": null,
+        "rqbit_sha256": null,
+        "payload_sha256": "9be63fc7083b9b7c9a71647eaecb8f5f636d2d874c8260fdeacebf9b04f26893",
+        "bytes": 16777216,
+        "piece_bytes": 1048576,
+        "repeats": 3,
+        "kind": "v1",
+        "seed_engine": "libtorrent",
+        "seeds": 1,
+        "peer_encryption": "negotiated",
+        "method": "trackerless synthetic magnet, common seeds, explicit loopback peers, discovery disabled; same delayed TCP proxy for every downloader; throughput uses process launch to exit; ready excludes shutdown, CPU/RSS include shutdown; no equal durability claim"
+      },
+      "measurements": [
+        {
+          "engine": "mynou",
+          "rtt_ms": 50,
+          "rate_bps": 0,
+          "repeat": 0,
+          "ready_s": 4.119236167,
+          "wall_s": 4.1712950840000005,
+          "mib_s": 3.83573918358637,
+          "cpu_s": 0.21000000000000002,
+          "rss_bytes": 6881280,
+          "verified": true,
+          "seed_payload_bytes": [
+            16777216
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 0,
+          "ready_s": 0.4428865,
+          "wall_s": 0.5010012500000007,
+          "mib_s": 31.93604806375229,
+          "cpu_s": 0.1,
+          "rss_bytes": 8929280,
+          "verified": true,
+          "seed_payload_bytes": [
+            16777216
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 0,
+          "rate_bps": 16777216,
+          "repeat": 0,
+          "ready_s": 1.618145791,
+          "wall_s": 1.6759974590000004,
+          "mib_s": 9.546553853098649,
+          "cpu_s": 0.18,
+          "rss_bytes": 7864320,
+          "verified": true,
+          "seed_payload_bytes": [
+            16777216
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 50,
+          "rate_bps": 16777216,
+          "repeat": 0,
+          "ready_s": 56.970645667,
+          "wall_s": 57.03285625,
+          "mib_s": 0.28054004396807675,
+          "cpu_s": 0.71,
+          "rss_bytes": 8110080,
+          "verified": true,
+          "seed_payload_bytes": [
+            16777216
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 50,
+          "rate_bps": 16777216,
+          "repeat": 1,
+          "ready_s": 56.856967833,
+          "wall_s": 56.918541041999994,
+          "mib_s": 0.2811034806425143,
+          "cpu_s": 0.71,
+          "rss_bytes": 8028160,
+          "verified": true,
+          "seed_payload_bytes": [
+            16777216
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 50,
+          "rate_bps": 0,
+          "repeat": 1,
+          "ready_s": 4.093558167,
+          "wall_s": 4.160419958999995,
+          "mib_s": 3.845765609644317,
+          "cpu_s": 0.21000000000000002,
+          "rss_bytes": 6897664,
+          "verified": true,
+          "seed_payload_bytes": [
+            16777216
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 0,
+          "rate_bps": 16777216,
+          "repeat": 1,
+          "ready_s": 1.651980792,
+          "wall_s": 1.7132662920000001,
+          "mib_s": 9.338886823788627,
+          "cpu_s": 0.2,
+          "rss_bytes": 7913472,
+          "verified": true,
+          "seed_payload_bytes": [
+            16777216
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 1,
+          "ready_s": 0.440605375,
+          "wall_s": 0.49829595799999993,
+          "mib_s": 32.10943164022214,
+          "cpu_s": 0.1,
+          "rss_bytes": 7897088,
+          "verified": true,
+          "seed_payload_bytes": [
+            16777216
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 50,
+          "rate_bps": 0,
+          "repeat": 2,
+          "ready_s": 4.111358667,
+          "wall_s": 4.166322292000004,
+          "mib_s": 3.84031740192604,
+          "cpu_s": 0.2,
+          "rss_bytes": 6832128,
+          "verified": true,
+          "seed_payload_bytes": [
+            16777216
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 0,
+          "rate_bps": 16777216,
+          "repeat": 2,
+          "ready_s": 1.660840667,
+          "wall_s": 1.719317999999987,
+          "mib_s": 9.30601552476047,
+          "cpu_s": 0.19,
+          "rss_bytes": 8962048,
+          "verified": true,
+          "seed_payload_bytes": [
+            16777216
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 2,
+          "ready_s": 0.441514542,
+          "wall_s": 0.49770404099999155,
+          "mib_s": 32.14761923140639,
+          "cpu_s": 0.1,
+          "rss_bytes": 7782400,
+          "verified": true,
+          "seed_payload_bytes": [
+            16777216
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 50,
+          "rate_bps": 16777216,
+          "repeat": 2,
+          "ready_s": 56.819249833,
+          "wall_s": 56.88200412500001,
+          "mib_s": 0.2812840413435415,
+          "cpu_s": 0.7,
+          "rss_bytes": 7995392,
+          "verified": true,
+          "seed_payload_bytes": [
+            16777216
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          }
+        }
+      ]
+    },
+    "seed_after_mse": {
+      "environment": {
+        "commit": "976510b2ae89a4e69a2dafa46aed1e8b4d6a99e9",
+        "dirty": " M .github/scripts/torrent_load.py\n M docs/torrent-load.md\n M src/crypto/hashes.rs\n M src/torrent.rs\n M src/torrent/control.rs\n M src/torrent/parallel.rs\n M src/torrent/transport.rs\n M src/torrent/wire.rs\n M tests/transfer_management.rs\n?? .github/scripts/torrent_compare.py\n?? docs/releases/\n?? docs/torrent-benchmark-results.json\n?? docs/torrent-benchmark.md\n?? docs/torrent-comparison.md\n?? examples/\n",
+        "platform": "macOS-27.2-arm64-arm-64bit",
+        "python": "3.9.6 (default, Aug 25 2026, 21:26:21) \n[Clang 21.0.0 (clang-2100.3.34.2)]",
+        "libtorrent": "2.1.1.0",
+        "mynou_sha256": "e879ccb51141c33e596e402125c351ea75df850988aef05d67db748191e3a870",
+        "rqbit_version": null,
+        "rqbit_sha256": null,
+        "payload_sha256": "1b537074505f93156efd8291df0bfe97101d2a471a811d5aaf128ec4baefe135",
+        "bytes": 67108864,
+        "piece_bytes": 1048576,
+        "repeats": 3,
+        "kind": "v1",
+        "seed_engine": "mynou",
+        "seeds": 1,
+        "peer_encryption": "negotiated",
+        "method": "trackerless synthetic magnet, common seeds, explicit loopback peers, discovery disabled; same delayed TCP proxy for every downloader; throughput uses process launch to exit; ready excludes shutdown, CPU/RSS include shutdown; no equal durability claim"
+      },
+      "measurements": [
+        {
+          "engine": "libtorrent",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 0,
+          "ready_s": 1.7107672919999999,
+          "wall_s": 1.791576083,
+          "mib_s": 35.722736314291375,
+          "cpu_s": 0.21000000000000002,
+          "rss_bytes": 34865152,
+          "verified": true,
+          "seed_payload_bytes": [],
+          "handshakes": {
+            "plaintext": 1,
+            "other": 1
+          }
+        },
+        {
+          "engine": "libtorrent",
+          "rtt_ms": 50,
+          "rate_bps": 0,
+          "repeat": 0,
+          "ready_s": 2.496321875,
+          "wall_s": 2.5765025,
+          "mib_s": 24.839874985566674,
+          "cpu_s": 0.23,
+          "rss_bytes": 34766848,
+          "verified": true,
+          "seed_payload_bytes": [],
+          "handshakes": {
+            "plaintext": 1,
+            "other": 1
+          }
+        },
+        {
+          "engine": "libtorrent",
+          "rtt_ms": 50,
+          "rate_bps": 0,
+          "repeat": 1,
+          "ready_s": 2.4960078340000003,
+          "wall_s": 2.577461917,
+          "mib_s": 24.830628758422893,
+          "cpu_s": 0.23,
+          "rss_bytes": 35684352,
+          "verified": true,
+          "seed_payload_bytes": [],
+          "handshakes": {
+            "plaintext": 1,
+            "other": 1
+          }
+        },
+        {
+          "engine": "libtorrent",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 1,
+          "ready_s": 1.681980041,
+          "wall_s": 1.7635979169999993,
+          "mib_s": 36.289450890749734,
+          "cpu_s": 0.21000000000000002,
+          "rss_bytes": 34717696,
+          "verified": true,
+          "seed_payload_bytes": [],
+          "handshakes": {
+            "plaintext": 1,
+            "other": 1
+          }
+        },
+        {
+          "engine": "libtorrent",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 2,
+          "ready_s": 1.694564542,
+          "wall_s": 1.7790905839999986,
+          "mib_s": 35.97343529080251,
+          "cpu_s": 0.2,
+          "rss_bytes": 34750464,
+          "verified": true,
+          "seed_payload_bytes": [],
+          "handshakes": {
+            "plaintext": 1,
+            "other": 1
+          }
+        },
+        {
+          "engine": "libtorrent",
+          "rtt_ms": 50,
+          "rate_bps": 0,
+          "repeat": 2,
+          "ready_s": 2.523300792,
+          "wall_s": 2.6087314589999995,
+          "mib_s": 24.53299659464873,
+          "cpu_s": 0.24000000000000002,
+          "rss_bytes": 35766272,
+          "verified": true,
+          "seed_payload_bytes": [],
+          "handshakes": {
+            "plaintext": 1,
+            "other": 1
+          }
+        }
+      ],
+      "seed_resources": {
+        "wall_s": 13.71,
+        "cpu_s": 1.29,
+        "rss_bytes": 20692992,
+        "includes": "native seed startup, rehash, all consumers and shutdown; excludes proxy and downloaders"
+      }
+    },
+    "seed_after_plain": {
+      "environment": {
+        "commit": "976510b2ae89a4e69a2dafa46aed1e8b4d6a99e9",
+        "dirty": " M .github/scripts/torrent_load.py\n M docs/torrent-load.md\n M src/crypto/hashes.rs\n M src/torrent.rs\n M src/torrent/control.rs\n M src/torrent/parallel.rs\n M src/torrent/transport.rs\n M src/torrent/wire.rs\n M tests/transfer_management.rs\n?? .github/scripts/torrent_compare.py\n?? docs/releases/\n?? docs/torrent-benchmark-results.json\n?? docs/torrent-benchmark.md\n?? docs/torrent-comparison.md\n?? examples/\n",
+        "platform": "macOS-27.2-arm64-arm-64bit",
+        "python": "3.9.6 (default, Aug 25 2026, 21:26:21) \n[Clang 21.0.0 (clang-2100.3.34.2)]",
+        "libtorrent": "2.1.1.0",
+        "mynou_sha256": "e879ccb51141c33e596e402125c351ea75df850988aef05d67db748191e3a870",
+        "rqbit_version": null,
+        "rqbit_sha256": null,
+        "payload_sha256": "1b537074505f93156efd8291df0bfe97101d2a471a811d5aaf128ec4baefe135",
+        "bytes": 67108864,
+        "piece_bytes": 1048576,
+        "repeats": 3,
+        "kind": "v1",
+        "seed_engine": "mynou",
+        "seeds": 1,
+        "peer_encryption": "disabled",
+        "method": "trackerless synthetic magnet, common seeds, explicit loopback peers, discovery disabled; same delayed TCP proxy for every downloader; throughput uses process launch to exit; ready excludes shutdown, CPU/RSS include shutdown; no equal durability claim"
+      },
+      "measurements": [
+        {
+          "engine": "libtorrent",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 0,
+          "ready_s": 0.6929565,
+          "wall_s": 0.7721834169999999,
+          "mib_s": 82.88186276862251,
+          "cpu_s": 0.19,
+          "rss_bytes": 34570240,
+          "verified": true,
+          "seed_payload_bytes": [],
+          "handshakes": {
+            "plaintext": 1,
+            "other": 0
+          }
+        },
+        {
+          "engine": "libtorrent",
+          "rtt_ms": 50,
+          "rate_bps": 0,
+          "repeat": 0,
+          "ready_s": 1.518068958,
+          "wall_s": 1.602265333,
+          "mib_s": 39.943446744971794,
+          "cpu_s": 0.23,
+          "rss_bytes": 35684352,
+          "verified": true,
+          "seed_payload_bytes": [],
+          "handshakes": {
+            "plaintext": 1,
+            "other": 0
+          }
+        },
+        {
+          "engine": "libtorrent",
+          "rtt_ms": 50,
+          "rate_bps": 0,
+          "repeat": 1,
+          "ready_s": 1.502885166,
+          "wall_s": 1.583613416,
+          "mib_s": 40.41390364174586,
+          "cpu_s": 0.22,
+          "rss_bytes": 35520512,
+          "verified": true,
+          "seed_payload_bytes": [],
+          "handshakes": {
+            "plaintext": 1,
+            "other": 0
+          }
+        },
+        {
+          "engine": "libtorrent",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 1,
+          "ready_s": 0.685822,
+          "wall_s": 0.7667323329999993,
+          "mib_s": 83.4711114237047,
+          "cpu_s": 0.19,
+          "rss_bytes": 34439168,
+          "verified": true,
+          "seed_payload_bytes": [],
+          "handshakes": {
+            "plaintext": 1,
+            "other": 0
+          }
+        },
+        {
+          "engine": "libtorrent",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 2,
+          "ready_s": 0.6957480829999999,
+          "wall_s": 0.7766007500000001,
+          "mib_s": 82.41042775196907,
+          "cpu_s": 0.19,
+          "rss_bytes": 34799616,
+          "verified": true,
+          "seed_payload_bytes": [],
+          "handshakes": {
+            "plaintext": 1,
+            "other": 0
+          }
+        },
+        {
+          "engine": "libtorrent",
+          "rtt_ms": 50,
+          "rate_bps": 0,
+          "repeat": 2,
+          "ready_s": 1.531644875,
+          "wall_s": 1.6165970830000003,
+          "mib_s": 39.589332848004396,
+          "cpu_s": 0.21000000000000002,
+          "rss_bytes": 35241984,
+          "verified": true,
+          "seed_payload_bytes": [],
+          "handshakes": {
+            "plaintext": 1,
+            "other": 0
+          }
+        }
+      ],
+      "seed_resources": {
+        "wall_s": 7.72,
+        "cpu_s": 1.25,
+        "rss_bytes": 23789568,
+        "includes": "native seed startup, rehash, all consumers and shutdown; excludes proxy and downloaders"
+      }
+    },
+    "seed_before_plain": {
+      "environment": {
+        "commit": "976510b2ae89a4e69a2dafa46aed1e8b4d6a99e9",
+        "dirty": " M .github/scripts/torrent_load.py\n M docs/torrent-load.md\n M src/crypto/hashes.rs\n M src/torrent.rs\n M src/torrent/control.rs\n M src/torrent/parallel.rs\n M src/torrent/transport.rs\n M src/torrent/wire.rs\n M tests/transfer_management.rs\n?? .github/scripts/torrent_compare.py\n?? docs/releases/\n?? docs/torrent-benchmark-results.json\n?? docs/torrent-benchmark.md\n?? docs/torrent-comparison.md\n?? examples/\n",
+        "platform": "macOS-27.2-arm64-arm-64bit",
+        "python": "3.9.6 (default, Aug 25 2026, 21:26:21) \n[Clang 21.0.0 (clang-2100.3.34.2)]",
+        "libtorrent": "2.1.1.0",
+        "mynou_sha256": "f7a8b75c5d46aa495b468b5fc7d0e85765b8ccb6dbcbfe1142fc9c5fadf061d2",
+        "rqbit_version": null,
+        "rqbit_sha256": null,
+        "payload_sha256": "1b537074505f93156efd8291df0bfe97101d2a471a811d5aaf128ec4baefe135",
+        "bytes": 67108864,
+        "piece_bytes": 1048576,
+        "repeats": 3,
+        "kind": "v1",
+        "seed_engine": "mynou",
+        "seeds": 1,
+        "peer_encryption": "disabled",
+        "method": "trackerless synthetic magnet, common seeds, explicit loopback peers, discovery disabled; same delayed TCP proxy for every downloader; throughput uses process launch to exit; ready excludes shutdown, CPU/RSS include shutdown; no equal durability claim"
+      },
+      "measurements": [
+        {
+          "engine": "libtorrent",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 0,
+          "ready_s": 0.856457417,
+          "wall_s": 0.937513042,
+          "mib_s": 68.26571699042029,
+          "cpu_s": 0.18,
+          "rss_bytes": 34717696,
+          "verified": true,
+          "seed_payload_bytes": [],
+          "handshakes": {
+            "plaintext": 1,
+            "other": 0
+          }
+        },
+        {
+          "engine": "libtorrent",
+          "rtt_ms": 50,
+          "rate_bps": 0,
+          "repeat": 0,
+          "ready_s": 15.526243416,
+          "wall_s": 15.618936541999998,
+          "mib_s": 4.09759011619653,
+          "cpu_s": 0.6799999999999999,
+          "rss_bytes": 35012608,
+          "verified": true,
+          "seed_payload_bytes": [],
+          "handshakes": {
+            "plaintext": 1,
+            "other": 0
+          }
+        },
+        {
+          "engine": "libtorrent",
+          "rtt_ms": 50,
+          "rate_bps": 0,
+          "repeat": 1,
+          "ready_s": 15.579825584,
+          "wall_s": 15.663745916999996,
+          "mib_s": 4.085868114761761,
+          "cpu_s": 0.6799999999999999,
+          "rss_bytes": 35241984,
+          "verified": true,
+          "seed_payload_bytes": [],
+          "handshakes": {
+            "plaintext": 1,
+            "other": 0
+          }
+        },
+        {
+          "engine": "libtorrent",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 1,
+          "ready_s": 0.861225958,
+          "wall_s": 0.9426609170000049,
+          "mib_s": 67.89291763965183,
+          "cpu_s": 0.19,
+          "rss_bytes": 34439168,
+          "verified": true,
+          "seed_payload_bytes": [],
+          "handshakes": {
+            "plaintext": 1,
+            "other": 0
+          }
+        },
+        {
+          "engine": "libtorrent",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 2,
+          "ready_s": 0.851936458,
+          "wall_s": 0.9298598339999984,
+          "mib_s": 68.8275777271611,
+          "cpu_s": 0.19,
+          "rss_bytes": 34635776,
+          "verified": true,
+          "seed_payload_bytes": [],
+          "handshakes": {
+            "plaintext": 1,
+            "other": 0
+          }
+        },
+        {
+          "engine": "libtorrent",
+          "rtt_ms": 50,
+          "rate_bps": 0,
+          "repeat": 2,
+          "ready_s": 15.575699208,
+          "wall_s": 15.660912957999997,
+          "mib_s": 4.086607222173925,
+          "cpu_s": 0.6799999999999999,
+          "rss_bytes": 35094528,
+          "verified": true,
+          "seed_payload_bytes": [],
+          "handshakes": {
+            "plaintext": 1,
+            "other": 0
+          }
+        }
+      ],
+      "seed_resources": {
+        "wall_s": 50.43,
+        "cpu_s": 2.88,
+        "rss_bytes": 19611648,
+        "includes": "native seed startup, rehash, all consumers and shutdown; excludes proxy and downloaders"
+      }
+    },
+    "final_compare_plain": {
+      "environment": {
+        "commit": "976510b2ae89a4e69a2dafa46aed1e8b4d6a99e9",
+        "dirty": " M .github/scripts/torrent_load.py\n M docs/torrent-load.md\n M src/crypto/hashes.rs\n M src/pki.rs\n M src/pki/rsa.rs\n M src/torrent.rs\n M src/torrent/control.rs\n M src/torrent/index.rs\n M src/torrent/inspection.rs\n M src/torrent/parallel.rs\n M src/torrent/transport.rs\n M src/torrent/wire.rs\n M src/tunnel.rs\n M src/tunnel_http.rs\n M src/tunnel_http_tests.rs\n M src/tunnel_tests.rs\n M tests/transfer_management.rs\n?? .github/scripts/torrent_compare.py\n?? docs/releases/\n?? docs/torrent-benchmark-results.json\n?? docs/torrent-benchmark.md\n?? docs/torrent-comparison.md\n?? examples/\n?? src/torrent/mse.rs\n",
+        "platform": "macOS-27.2-arm64-arm-64bit",
+        "python": "3.9.6 (default, Aug 25 2026, 21:26:21) \n[Clang 21.0.0 (clang-2100.3.34.2)]",
+        "libtorrent": "2.1.1.0",
+        "mynou_sha256": "b41a1e4b5a2ed143bffd16de8f89d647405b140951ff72d0c8946b116d01bfeb",
+        "rqbit_version": "rqbit 9.0.1",
+        "rqbit_sha256": "de8b957b2927dc5bf911506bf3c24c8e77e24a6d21ecd80f6fcffd2db30eb672",
+        "payload_sha256": "1b537074505f93156efd8291df0bfe97101d2a471a811d5aaf128ec4baefe135",
+        "bytes": 67108864,
+        "piece_bytes": 1048576,
+        "repeats": 3,
+        "kind": "v1",
+        "seed_engine": "libtorrent",
+        "seeds": 1,
+        "peer_encryption": "disabled",
+        "method": "trackerless synthetic magnet, common seeds, explicit loopback peers, discovery disabled; same delayed TCP proxy for every downloader; throughput uses process launch to exit; ready excludes shutdown, CPU/RSS include shutdown; no equal durability claim"
+      },
+      "measurements": [
+        {
+          "engine": "mynou",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 0,
+          "ready_s": 0.491981167,
+          "wall_s": 0.500230834,
+          "mib_s": 127.94093376499058,
+          "cpu_s": 0.16,
+          "rss_bytes": 20643840,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          },
+          "phases": {
+            "open_s": 0.129083333,
+            "admission_s": 0.110878917,
+            "work_s": 0.252018917,
+            "shutdown_s": 0.000255041
+          }
+        },
+        {
+          "engine": "libtorrent",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 0,
+          "ready_s": 0.820519792,
+          "wall_s": 0.905496,
+          "mib_s": 70.67949499500827,
+          "cpu_s": 0.26,
+          "rss_bytes": 35405824,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 1,
+            "other": 0
+          }
+        },
+        {
+          "engine": "rqbit",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 0,
+          "ready_s": 0.7339321249999999,
+          "wall_s": 0.7339321249999999,
+          "mib_s": 87.20152425539352,
+          "cpu_s": 0.56,
+          "rss_bytes": 14925824,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 50,
+          "rate_bps": 0,
+          "repeat": 0,
+          "ready_s": 1.042624167,
+          "wall_s": 1.0511202920000002,
+          "mib_s": 60.887417441276064,
+          "cpu_s": 0.17,
+          "rss_bytes": 19644416,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          },
+          "phases": {
+            "open_s": 0.113569542,
+            "admission_s": 0.084711125,
+            "work_s": 0.8443435,
+            "shutdown_s": 0.00024525
+          }
+        },
+        {
+          "engine": "libtorrent",
+          "rtt_ms": 50,
+          "rate_bps": 0,
+          "repeat": 0,
+          "ready_s": 1.2600856669999998,
+          "wall_s": 1.3499942909999998,
+          "mib_s": 47.40760788891367,
+          "cpu_s": 0.2,
+          "rss_bytes": 35897344,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 1,
+            "other": 0
+          }
+        },
+        {
+          "engine": "rqbit",
+          "rtt_ms": 50,
+          "rate_bps": 0,
+          "repeat": 0,
+          "ready_s": 2.16716875,
+          "wall_s": 2.16716875,
+          "mib_s": 29.531618153870113,
+          "cpu_s": 0.51,
+          "rss_bytes": 15269888,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          }
+        },
+        {
+          "engine": "libtorrent",
+          "rtt_ms": 50,
+          "rate_bps": 0,
+          "repeat": 1,
+          "ready_s": 1.478330834,
+          "wall_s": 1.5671057919999996,
+          "mib_s": 40.83961678063916,
+          "cpu_s": 0.25,
+          "rss_bytes": 35504128,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 1,
+            "other": 0
+          }
+        },
+        {
+          "engine": "rqbit",
+          "rtt_ms": 50,
+          "rate_bps": 0,
+          "repeat": 1,
+          "ready_s": 2.1750789580000003,
+          "wall_s": 2.1750789580000003,
+          "mib_s": 29.42421918275943,
+          "cpu_s": 0.5,
+          "rss_bytes": 15237120,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 50,
+          "rate_bps": 0,
+          "repeat": 1,
+          "ready_s": 1.016566334,
+          "wall_s": 1.0262900829999992,
+          "mib_s": 62.36053632411456,
+          "cpu_s": 0.16,
+          "rss_bytes": 29147136,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          },
+          "phases": {
+            "open_s": 0.126215584,
+            "admission_s": 0.096874125,
+            "work_s": 0.793476625,
+            "shutdown_s": 0.000295959
+          }
+        },
+        {
+          "engine": "libtorrent",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 1,
+          "ready_s": 1.038323042,
+          "wall_s": 1.1276152909999997,
+          "mib_s": 56.75694584031675,
+          "cpu_s": 0.32,
+          "rss_bytes": 34586624,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 1,
+            "other": 0
+          }
+        },
+        {
+          "engine": "rqbit",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 1,
+          "ready_s": 0.5230174999999999,
+          "wall_s": 0.5230174999999999,
+          "mib_s": 122.36684240967082,
+          "cpu_s": 0.48000000000000004,
+          "rss_bytes": 15171584,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 1,
+          "ready_s": 0.7151485,
+          "wall_s": 0.7238702499999992,
+          "mib_s": 88.41363490211135,
+          "cpu_s": 0.19,
+          "rss_bytes": 18579456,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          },
+          "phases": {
+            "open_s": 0.114484833,
+            "admission_s": 0.084764792,
+            "work_s": 0.515898875,
+            "shutdown_s": 0.000305625
+          }
+        },
+        {
+          "engine": "rqbit",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 2,
+          "ready_s": 0.7514560420000009,
+          "wall_s": 0.7514560420000009,
+          "mib_s": 85.16798910773801,
+          "cpu_s": 0.56,
+          "rss_bytes": 14991360,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 2,
+          "ready_s": 0.435229208,
+          "wall_s": 0.4438451669999992,
+          "mib_s": 144.19442805378145,
+          "cpu_s": 0.16,
+          "rss_bytes": 20611072,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          },
+          "phases": {
+            "open_s": 0.111502417,
+            "admission_s": 0.084889,
+            "work_s": 0.238837791,
+            "shutdown_s": 0.000301167
+          }
+        },
+        {
+          "engine": "libtorrent",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 2,
+          "ready_s": 0.8045533340000001,
+          "wall_s": 0.893357292000001,
+          "mib_s": 71.63986970624059,
+          "cpu_s": 0.25,
+          "rss_bytes": 36077568,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 1,
+            "other": 0
+          }
+        },
+        {
+          "engine": "rqbit",
+          "rtt_ms": 50,
+          "rate_bps": 0,
+          "repeat": 2,
+          "ready_s": 2.1536870420000014,
+          "wall_s": 2.1536870420000014,
+          "mib_s": 29.716480970497457,
+          "cpu_s": 0.52,
+          "rss_bytes": 15187968,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 50,
+          "rate_bps": 0,
+          "repeat": 2,
+          "ready_s": 0.991997708,
+          "wall_s": 1.001578834,
+          "mib_s": 63.89911390639471,
+          "cpu_s": 0.16999999999999998,
+          "rss_bytes": 25968640,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          },
+          "phases": {
+            "open_s": 0.122719166,
+            "admission_s": 0.0977165,
+            "work_s": 0.771562042,
+            "shutdown_s": 0.000255875
+          }
+        },
+        {
+          "engine": "libtorrent",
+          "rtt_ms": 50,
+          "rate_bps": 0,
+          "repeat": 2,
+          "ready_s": 1.5927425830000002,
+          "wall_s": 1.6864331250000006,
+          "mib_s": 37.94991870786455,
+          "cpu_s": 0.25,
+          "rss_bytes": 35291136,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 1,
+            "other": 0
+          }
+        }
+      ]
+    },
+    "final_compare_plain_disturbed": {
+      "environment": {
+        "commit": "976510b2ae89a4e69a2dafa46aed1e8b4d6a99e9",
+        "dirty": " M .github/scripts/torrent_load.py\n M docs/torrent-load.md\n M src/crypto/hashes.rs\n M src/pki.rs\n M src/pki/rsa.rs\n M src/torrent.rs\n M src/torrent/control.rs\n M src/torrent/index.rs\n M src/torrent/inspection.rs\n M src/torrent/parallel.rs\n M src/torrent/transport.rs\n M src/torrent/wire.rs\n M src/tunnel.rs\n M src/tunnel_http.rs\n M src/tunnel_http_tests.rs\n M src/tunnel_tests.rs\n M tests/transfer_management.rs\n?? .github/scripts/torrent_compare.py\n?? docs/releases/\n?? docs/torrent-benchmark-results.json\n?? docs/torrent-benchmark.md\n?? docs/torrent-comparison.md\n?? examples/\n?? src/torrent/mse.rs\n",
+        "platform": "macOS-27.2-arm64-arm-64bit",
+        "python": "3.9.6 (default, Aug 25 2026, 21:26:21) \n[Clang 21.0.0 (clang-2100.3.34.2)]",
+        "libtorrent": "2.1.1.0",
+        "mynou_sha256": "b41a1e4b5a2ed143bffd16de8f89d647405b140951ff72d0c8946b116d01bfeb",
+        "rqbit_version": "rqbit 9.0.1",
+        "rqbit_sha256": "de8b957b2927dc5bf911506bf3c24c8e77e24a6d21ecd80f6fcffd2db30eb672",
+        "payload_sha256": "1b537074505f93156efd8291df0bfe97101d2a471a811d5aaf128ec4baefe135",
+        "bytes": 67108864,
+        "piece_bytes": 1048576,
+        "repeats": 3,
+        "kind": "v1",
+        "seed_engine": "libtorrent",
+        "seeds": 1,
+        "peer_encryption": "disabled",
+        "method": "trackerless synthetic magnet, common seeds, explicit loopback peers, discovery disabled; same delayed TCP proxy for every downloader; throughput uses process launch to exit; ready excludes shutdown, CPU/RSS include shutdown; no equal durability claim"
+      },
+      "measurements": [
+        {
+          "engine": "mynou",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 0,
+          "ready_s": 0.667477791,
+          "wall_s": 0.9369272500000001,
+          "mib_s": 68.30839854428397,
+          "cpu_s": 0.21000000000000002,
+          "rss_bytes": 19660800,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          },
+          "phases": {
+            "open_s": 0.162972583,
+            "admission_s": 0.133005667,
+            "work_s": 0.371499541,
+            "shutdown_s": 0.000279583
+          }
+        },
+        {
+          "engine": "libtorrent",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 0,
+          "ready_s": 0.975069333,
+          "wall_s": 1.0627332090000001,
+          "mib_s": 60.22207592460771,
+          "cpu_s": 0.32,
+          "rss_bytes": 34881536,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 1,
+            "other": 0
+          }
+        },
+        {
+          "engine": "rqbit",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 0,
+          "ready_s": 0.45466074999999995,
+          "wall_s": 0.45466074999999995,
+          "mib_s": 140.76429513653864,
+          "cpu_s": 0.45,
+          "rss_bytes": 15138816,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 50,
+          "rate_bps": 0,
+          "repeat": 0,
+          "ready_s": 1.0178265,
+          "wall_s": 1.0264907079999999,
+          "mib_s": 62.348348115782464,
+          "cpu_s": 0.18,
+          "rss_bytes": 29147136,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          },
+          "phases": {
+            "open_s": 0.1164755,
+            "admission_s": 0.085999,
+            "work_s": 0.815352,
+            "shutdown_s": 0.000305625
+          }
+        },
+        {
+          "engine": "libtorrent",
+          "rtt_ms": 50,
+          "rate_bps": 0,
+          "repeat": 0,
+          "ready_s": 1.4974942500000001,
+          "wall_s": 1.5842040420000005,
+          "mib_s": 40.39883645240692,
+          "cpu_s": 0.26,
+          "rss_bytes": 35586048,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 1,
+            "other": 0
+          }
+        },
+        {
+          "engine": "rqbit",
+          "rtt_ms": 50,
+          "rate_bps": 0,
+          "repeat": 0,
+          "ready_s": 2.261537291,
+          "wall_s": 2.261537291,
+          "mib_s": 28.299334375203106,
+          "cpu_s": 0.62,
+          "rss_bytes": 15187968,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          }
+        },
+        {
+          "engine": "libtorrent",
+          "rtt_ms": 50,
+          "rate_bps": 0,
+          "repeat": 1,
+          "ready_s": 1.326229041,
+          "wall_s": 1.4212168750000007,
+          "mib_s": 45.0318323162325,
+          "cpu_s": 0.24,
+          "rss_bytes": 35553280,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 1,
+            "other": 0
+          }
+        },
+        {
+          "engine": "rqbit",
+          "rtt_ms": 50,
+          "rate_bps": 0,
+          "repeat": 1,
+          "ready_s": 2.230528125000001,
+          "wall_s": 2.230528125000001,
+          "mib_s": 28.692756339936295,
+          "cpu_s": 0.6000000000000001,
+          "rss_bytes": 15237120,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 50,
+          "rate_bps": 0,
+          "repeat": 1,
+          "ready_s": 1.161117292,
+          "wall_s": 1.1730809999999998,
+          "mib_s": 54.557187440594475,
+          "cpu_s": 0.18,
+          "rss_bytes": 29081600,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          },
+          "phases": {
+            "open_s": 0.123545834,
+            "admission_s": 0.0922785,
+            "work_s": 0.945292958,
+            "shutdown_s": 0.000275125
+          }
+        },
+        {
+          "engine": "libtorrent",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 1,
+          "ready_s": 0.848585292,
+          "wall_s": 0.9352556669999998,
+          "mib_s": 68.43048618490756,
+          "cpu_s": 0.27,
+          "rss_bytes": 35569664,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 1,
+            "other": 0
+          }
+        },
+        {
+          "engine": "rqbit",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 1,
+          "ready_s": 0.7714763749999989,
+          "wall_s": 0.7714763749999989,
+          "mib_s": 82.95782226643051,
+          "cpu_s": 0.56,
+          "rss_bytes": 14974976,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 1,
+          "ready_s": 0.698706375,
+          "wall_s": 0.7071221670000014,
+          "mib_s": 90.50769865060654,
+          "cpu_s": 0.19,
+          "rss_bytes": 27049984,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          },
+          "phases": {
+            "open_s": 0.11491025,
+            "admission_s": 0.068941292,
+            "work_s": 0.514854833,
+            "shutdown_s": 0.000189959
+          }
+        },
+        {
+          "engine": "rqbit",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 2,
+          "ready_s": 0.48915037499999947,
+          "wall_s": 0.48915037499999947,
+          "mib_s": 130.839110570037,
+          "cpu_s": 0.47000000000000003,
+          "rss_bytes": 15204352,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 2,
+          "ready_s": 0.682118042,
+          "wall_s": 0.6905633329999983,
+          "mib_s": 92.67795861961898,
+          "cpu_s": 0.19,
+          "rss_bytes": 18579456,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          },
+          "phases": {
+            "open_s": 0.113358625,
+            "admission_s": 0.0839105,
+            "work_s": 0.484848917,
+            "shutdown_s": 0.000206459
+          }
+        },
+        {
+          "engine": "libtorrent",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 2,
+          "ready_s": 1.043147125,
+          "wall_s": 1.128467209,
+          "mib_s": 56.714098105441714,
+          "cpu_s": 0.33,
+          "rss_bytes": 35405824,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 1,
+            "other": 0
+          }
+        },
+        {
+          "engine": "rqbit",
+          "rtt_ms": 50,
+          "rate_bps": 0,
+          "repeat": 2,
+          "ready_s": 2.2390472909999986,
+          "wall_s": 2.2390472909999986,
+          "mib_s": 28.583585642541948,
+          "cpu_s": 0.65,
+          "rss_bytes": 15450112,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 50,
+          "rate_bps": 0,
+          "repeat": 2,
+          "ready_s": 1.074301,
+          "wall_s": 1.0870590839999998,
+          "mib_s": 58.874444767530235,
+          "cpu_s": 0.2,
+          "rss_bytes": 24969216,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          },
+          "phases": {
+            "open_s": 0.1323165,
+            "admission_s": 0.111967,
+            "work_s": 0.8300175,
+            "shutdown_s": 0.000243708
+          }
+        },
+        {
+          "engine": "libtorrent",
+          "rtt_ms": 50,
+          "rate_bps": 0,
+          "repeat": 2,
+          "ready_s": 1.536945875,
+          "wall_s": 1.6197493749999978,
+          "mib_s": 39.51228565839088,
+          "cpu_s": 0.27,
+          "rss_bytes": 35454976,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 1,
+            "other": 0
+          }
+        }
+      ],
+      "note": "a video call was running on the machine"
+    },
+    "final_seed_plain": {
+      "environment": {
+        "commit": "976510b2ae89a4e69a2dafa46aed1e8b4d6a99e9",
+        "dirty": " M .github/scripts/torrent_load.py\n M docs/torrent-load.md\n M src/crypto/hashes.rs\n M src/pki.rs\n M src/pki/rsa.rs\n M src/torrent.rs\n M src/torrent/control.rs\n M src/torrent/index.rs\n M src/torrent/inspection.rs\n M src/torrent/parallel.rs\n M src/torrent/transport.rs\n M src/torrent/wire.rs\n M src/tunnel.rs\n M src/tunnel_http.rs\n M src/tunnel_http_tests.rs\n M src/tunnel_tests.rs\n M tests/transfer_management.rs\n?? .github/scripts/torrent_compare.py\n?? docs/releases/\n?? docs/torrent-benchmark-results.json\n?? docs/torrent-benchmark.md\n?? docs/torrent-comparison.md\n?? examples/\n?? src/torrent/mse.rs\n",
+        "platform": "macOS-27.2-arm64-arm-64bit",
+        "python": "3.9.6 (default, Aug 25 2026, 21:26:21) \n[Clang 21.0.0 (clang-2100.3.34.2)]",
+        "libtorrent": "2.1.1.0",
+        "mynou_sha256": "b41a1e4b5a2ed143bffd16de8f89d647405b140951ff72d0c8946b116d01bfeb",
+        "rqbit_version": null,
+        "rqbit_sha256": null,
+        "payload_sha256": "1b537074505f93156efd8291df0bfe97101d2a471a811d5aaf128ec4baefe135",
+        "bytes": 67108864,
+        "piece_bytes": 1048576,
+        "repeats": 3,
+        "kind": "v1",
+        "seed_engine": "mynou",
+        "seeds": 1,
+        "peer_encryption": "disabled",
+        "method": "trackerless synthetic magnet, common seeds, explicit loopback peers, discovery disabled; same delayed TCP proxy for every downloader; throughput uses process launch to exit; ready excludes shutdown, CPU/RSS include shutdown; no equal durability claim"
+      },
+      "measurements": [
+        {
+          "engine": "libtorrent",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 0,
+          "ready_s": 0.7181318329999999,
+          "wall_s": 0.802693958,
+          "mib_s": 79.73150833159754,
+          "cpu_s": 0.2,
+          "rss_bytes": 35749888,
+          "verified": true,
+          "seed_payload_bytes": [],
+          "handshakes": {
+            "plaintext": 1,
+            "other": 0
+          }
+        },
+        {
+          "engine": "libtorrent",
+          "rtt_ms": 50,
+          "rate_bps": 0,
+          "repeat": 0,
+          "ready_s": 1.5211540829999999,
+          "wall_s": 1.6133125,
+          "mib_s": 39.669933754309845,
+          "cpu_s": 0.24,
+          "rss_bytes": 37371904,
+          "verified": true,
+          "seed_payload_bytes": [],
+          "handshakes": {
+            "plaintext": 1,
+            "other": 0
+          }
+        },
+        {
+          "engine": "libtorrent",
+          "rtt_ms": 50,
+          "rate_bps": 0,
+          "repeat": 1,
+          "ready_s": 1.538037708,
+          "wall_s": 1.6270803329999999,
+          "mib_s": 39.334259471993754,
+          "cpu_s": 0.24,
+          "rss_bytes": 37175296,
+          "verified": true,
+          "seed_payload_bytes": [],
+          "handshakes": {
+            "plaintext": 1,
+            "other": 0
+          }
+        },
+        {
+          "engine": "libtorrent",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 1,
+          "ready_s": 0.739845542,
+          "wall_s": 0.8258980420000004,
+          "mib_s": 77.49140541006389,
+          "cpu_s": 0.19,
+          "rss_bytes": 36405248,
+          "verified": true,
+          "seed_payload_bytes": [],
+          "handshakes": {
+            "plaintext": 1,
+            "other": 0
+          }
+        },
+        {
+          "engine": "libtorrent",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 2,
+          "ready_s": 0.7432404170000001,
+          "wall_s": 0.8310496670000003,
+          "mib_s": 77.01104102602328,
+          "cpu_s": 0.2,
+          "rss_bytes": 35553280,
+          "verified": true,
+          "seed_payload_bytes": [],
+          "handshakes": {
+            "plaintext": 1,
+            "other": 0
+          }
+        },
+        {
+          "engine": "libtorrent",
+          "rtt_ms": 50,
+          "rate_bps": 0,
+          "repeat": 2,
+          "ready_s": 1.535902667,
+          "wall_s": 1.6216906250000003,
+          "mib_s": 39.464987349236225,
+          "cpu_s": 0.25,
+          "rss_bytes": 36995072,
+          "verified": true,
+          "seed_payload_bytes": [],
+          "handshakes": {
+            "plaintext": 1,
+            "other": 0
+          }
+        }
+      ]
+    },
+    "final_seed_negotiated": {
+      "environment": {
+        "commit": "976510b2ae89a4e69a2dafa46aed1e8b4d6a99e9",
+        "dirty": " M .github/scripts/torrent_load.py\n M docs/torrent-load.md\n M src/crypto/hashes.rs\n M src/pki.rs\n M src/pki/rsa.rs\n M src/torrent.rs\n M src/torrent/control.rs\n M src/torrent/index.rs\n M src/torrent/inspection.rs\n M src/torrent/parallel.rs\n M src/torrent/transport.rs\n M src/torrent/wire.rs\n M src/tunnel.rs\n M src/tunnel_http.rs\n M src/tunnel_http_tests.rs\n M src/tunnel_tests.rs\n M tests/transfer_management.rs\n?? .github/scripts/torrent_compare.py\n?? docs/releases/\n?? docs/torrent-benchmark-results.json\n?? docs/torrent-benchmark.md\n?? docs/torrent-comparison.md\n?? examples/\n?? src/torrent/mse.rs\n",
+        "platform": "macOS-27.2-arm64-arm-64bit",
+        "python": "3.9.6 (default, Aug 25 2026, 21:26:21) \n[Clang 21.0.0 (clang-2100.3.34.2)]",
+        "libtorrent": "2.1.1.0",
+        "mynou_sha256": "b41a1e4b5a2ed143bffd16de8f89d647405b140951ff72d0c8946b116d01bfeb",
+        "rqbit_version": null,
+        "rqbit_sha256": null,
+        "payload_sha256": "1b537074505f93156efd8291df0bfe97101d2a471a811d5aaf128ec4baefe135",
+        "bytes": 67108864,
+        "piece_bytes": 1048576,
+        "repeats": 3,
+        "kind": "v1",
+        "seed_engine": "mynou",
+        "seeds": 1,
+        "peer_encryption": "negotiated",
+        "method": "trackerless synthetic magnet, common seeds, explicit loopback peers, discovery disabled; same delayed TCP proxy for every downloader; throughput uses process launch to exit; ready excludes shutdown, CPU/RSS include shutdown; no equal durability claim"
+      },
+      "measurements": [
+        {
+          "engine": "libtorrent",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 0,
+          "ready_s": 0.723958334,
+          "wall_s": 0.8071965829999999,
+          "mib_s": 79.2867578330668,
+          "cpu_s": 0.19,
+          "rss_bytes": 34914304,
+          "verified": true,
+          "seed_payload_bytes": [],
+          "handshakes": {
+            "plaintext": 0,
+            "other": 1
+          }
+        },
+        {
+          "engine": "libtorrent",
+          "rtt_ms": 50,
+          "rate_bps": 0,
+          "repeat": 0,
+          "ready_s": 1.6216868750000002,
+          "wall_s": 1.707498541,
+          "mib_s": 37.48173041630728,
+          "cpu_s": 0.22000000000000003,
+          "rss_bytes": 36077568,
+          "verified": true,
+          "seed_payload_bytes": [],
+          "handshakes": {
+            "plaintext": 0,
+            "other": 1
+          }
+        },
+        {
+          "engine": "libtorrent",
+          "rtt_ms": 50,
+          "rate_bps": 0,
+          "repeat": 1,
+          "ready_s": 1.650055584,
+          "wall_s": 1.7354332500000003,
+          "mib_s": 36.878399097170686,
+          "cpu_s": 0.22000000000000003,
+          "rss_bytes": 36503552,
+          "verified": true,
+          "seed_payload_bytes": [],
+          "handshakes": {
+            "plaintext": 0,
+            "other": 1
+          }
+        },
+        {
+          "engine": "libtorrent",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 1,
+          "ready_s": 0.707049625,
+          "wall_s": 0.7946179999999998,
+          "mib_s": 80.54184526401367,
+          "cpu_s": 0.19,
+          "rss_bytes": 35291136,
+          "verified": true,
+          "seed_payload_bytes": [],
+          "handshakes": {
+            "plaintext": 0,
+            "other": 1
+          }
+        },
+        {
+          "engine": "libtorrent",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 2,
+          "ready_s": 0.744755292,
+          "wall_s": 0.8310087919999996,
+          "mib_s": 77.01482898390326,
+          "cpu_s": 0.19,
+          "rss_bytes": 35667968,
+          "verified": true,
+          "seed_payload_bytes": [],
+          "handshakes": {
+            "plaintext": 0,
+            "other": 1
+          }
+        },
+        {
+          "engine": "libtorrent",
+          "rtt_ms": 50,
+          "rate_bps": 0,
+          "repeat": 2,
+          "ready_s": 1.5932330000000001,
+          "wall_s": 1.6790903330000004,
+          "mib_s": 38.11587663997347,
+          "cpu_s": 0.23,
+          "rss_bytes": 37584896,
+          "verified": true,
+          "seed_payload_bytes": [],
+          "handshakes": {
+            "plaintext": 0,
+            "other": 1
+          }
+        }
+      ]
+    },
+    "final_download_from_negotiated_libtorrent": {
+      "environment": {
+        "commit": "976510b2ae89a4e69a2dafa46aed1e8b4d6a99e9",
+        "dirty": " M .github/scripts/torrent_load.py\n M docs/torrent-load.md\n M src/crypto/hashes.rs\n M src/pki.rs\n M src/pki/rsa.rs\n M src/torrent.rs\n M src/torrent/control.rs\n M src/torrent/index.rs\n M src/torrent/inspection.rs\n M src/torrent/parallel.rs\n M src/torrent/transport.rs\n M src/torrent/wire.rs\n M src/tunnel.rs\n M src/tunnel_http.rs\n M src/tunnel_http_tests.rs\n M src/tunnel_tests.rs\n M tests/transfer_management.rs\n?? .github/scripts/torrent_compare.py\n?? docs/releases/\n?? docs/torrent-benchmark-results.json\n?? docs/torrent-benchmark.md\n?? docs/torrent-comparison.md\n?? examples/\n?? src/torrent/mse.rs\n",
+        "platform": "macOS-27.2-arm64-arm-64bit",
+        "python": "3.9.6 (default, Aug 25 2026, 21:26:21) \n[Clang 21.0.0 (clang-2100.3.34.2)]",
+        "libtorrent": "2.1.1.0",
+        "mynou_sha256": "b41a1e4b5a2ed143bffd16de8f89d647405b140951ff72d0c8946b116d01bfeb",
+        "rqbit_version": null,
+        "rqbit_sha256": null,
+        "payload_sha256": "1b537074505f93156efd8291df0bfe97101d2a471a811d5aaf128ec4baefe135",
+        "bytes": 67108864,
+        "piece_bytes": 1048576,
+        "repeats": 3,
+        "kind": "v1",
+        "seed_engine": "libtorrent",
+        "seeds": 1,
+        "peer_encryption": "negotiated",
+        "method": "trackerless synthetic magnet, common seeds, explicit loopback peers, discovery disabled; same delayed TCP proxy for every downloader; throughput uses process launch to exit; ready excludes shutdown, CPU/RSS include shutdown; no equal durability claim"
+      },
+      "measurements": [
+        {
+          "engine": "mynou",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 0,
+          "ready_s": 0.504035834,
+          "wall_s": 0.512206541,
+          "mib_s": 124.94959528445382,
+          "cpu_s": 0.18,
+          "rss_bytes": 20676608,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          },
+          "phases": {
+            "open_s": 0.123316792,
+            "admission_s": 0.104149375,
+            "work_s": 0.276569667,
+            "shutdown_s": 0.000232667
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 50,
+          "rate_bps": 0,
+          "repeat": 0,
+          "ready_s": 1.081692916,
+          "wall_s": 1.090779708,
+          "mib_s": 58.67362541731479,
+          "cpu_s": 0.18,
+          "rss_bytes": 26034176,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          },
+          "phases": {
+            "open_s": 0.112910083,
+            "admission_s": 0.083903792,
+            "work_s": 0.884879041,
+            "shutdown_s": 0.000275375
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 50,
+          "rate_bps": 0,
+          "repeat": 1,
+          "ready_s": 1.042467541,
+          "wall_s": 1.051174167,
+          "mib_s": 60.88429682652199,
+          "cpu_s": 0.18,
+          "rss_bytes": 23904256,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          },
+          "phases": {
+            "open_s": 0.115995208,
+            "admission_s": 0.08576625,
+            "work_s": 0.840706083,
+            "shutdown_s": 0.000267791
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 1,
+          "ready_s": 0.688769166,
+          "wall_s": 0.6970885409999998,
+          "mib_s": 91.8104318687976,
+          "cpu_s": 0.19,
+          "rss_bytes": 20676608,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          },
+          "phases": {
+            "open_s": 0.117933375,
+            "admission_s": 0.093000375,
+            "work_s": 0.477835416,
+            "shutdown_s": 0.000253208
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 0,
+          "rate_bps": 0,
+          "repeat": 2,
+          "ready_s": 0.721690917,
+          "wall_s": 0.7302685840000005,
+          "mib_s": 87.63898845195284,
+          "cpu_s": 0.19,
+          "rss_bytes": 26001408,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          },
+          "phases": {
+            "open_s": 0.114946459,
+            "admission_s": 0.08573,
+            "work_s": 0.521014458,
+            "shutdown_s": 0.000197916
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 50,
+          "rate_bps": 0,
+          "repeat": 2,
+          "ready_s": 1.078067458,
+          "wall_s": 1.0865739579999998,
+          "mib_s": 58.9007306210444,
+          "cpu_s": 0.17,
+          "rss_bytes": 27082752,
+          "verified": true,
+          "seed_payload_bytes": [
+            67108864
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          },
+          "phases": {
+            "open_s": 0.114556,
+            "admission_s": 0.085717166,
+            "work_s": 0.877794292,
+            "shutdown_s": 0.000259458
+          }
+        }
+      ]
+    },
+    "final_quota": {
+      "environment": {
+        "commit": "976510b2ae89a4e69a2dafa46aed1e8b4d6a99e9",
+        "dirty": " M .github/scripts/torrent_load.py\n M docs/torrent-load.md\n M src/crypto/hashes.rs\n M src/pki.rs\n M src/pki/rsa.rs\n M src/torrent.rs\n M src/torrent/control.rs\n M src/torrent/index.rs\n M src/torrent/inspection.rs\n M src/torrent/parallel.rs\n M src/torrent/transport.rs\n M src/torrent/wire.rs\n M src/tunnel.rs\n M src/tunnel_http.rs\n M src/tunnel_http_tests.rs\n M src/tunnel_tests.rs\n M tests/transfer_management.rs\n?? .github/scripts/torrent_compare.py\n?? docs/releases/\n?? docs/torrent-benchmark-results.json\n?? docs/torrent-benchmark.md\n?? docs/torrent-comparison.md\n?? examples/\n?? src/torrent/mse.rs\n",
+        "platform": "macOS-27.2-arm64-arm-64bit",
+        "python": "3.9.6 (default, Aug 25 2026, 21:26:21) \n[Clang 21.0.0 (clang-2100.3.34.2)]",
+        "libtorrent": "2.1.1.0",
+        "mynou_sha256": "b41a1e4b5a2ed143bffd16de8f89d647405b140951ff72d0c8946b116d01bfeb",
+        "rqbit_version": null,
+        "rqbit_sha256": null,
+        "payload_sha256": "9be63fc7083b9b7c9a71647eaecb8f5f636d2d874c8260fdeacebf9b04f26893",
+        "bytes": 16777216,
+        "piece_bytes": 1048576,
+        "repeats": 3,
+        "kind": "v1",
+        "seed_engine": "libtorrent",
+        "seeds": 1,
+        "peer_encryption": "disabled",
+        "method": "trackerless synthetic magnet, common seeds, explicit loopback peers, discovery disabled; same delayed TCP proxy for every downloader; throughput uses process launch to exit; ready excludes shutdown, CPU/RSS include shutdown; no equal durability claim"
+      },
+      "measurements": [
+        {
+          "engine": "mynou",
+          "rtt_ms": 0,
+          "rate_bps": 16777216,
+          "repeat": 0,
+          "ready_s": 1.442744,
+          "wall_s": 1.452673792,
+          "mib_s": 11.014172684957478,
+          "cpu_s": 0.11,
+          "rss_bytes": 8044544,
+          "verified": true,
+          "seed_payload_bytes": [
+            16777216
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          },
+          "phases": {
+            "open_s": 0.112956375,
+            "admission_s": 0.072850209,
+            "work_s": 1.256937416,
+            "shutdown_s": 0.000619708
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 50,
+          "rate_bps": 16777216,
+          "repeat": 0,
+          "ready_s": 2.375127916,
+          "wall_s": 2.387159417,
+          "mib_s": 6.70252681327315,
+          "cpu_s": 0.14,
+          "rss_bytes": 7979008,
+          "verified": true,
+          "seed_payload_bytes": [
+            16777216
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          },
+          "phases": {
+            "open_s": 0.156554958,
+            "admission_s": 0.13728675,
+            "work_s": 2.081286208,
+            "shutdown_s": 0.000551333
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 50,
+          "rate_bps": 16777216,
+          "repeat": 1,
+          "ready_s": 2.453294084,
+          "wall_s": 2.4684357500000003,
+          "mib_s": 6.481837738737983,
+          "cpu_s": 0.16,
+          "rss_bytes": 10076160,
+          "verified": true,
+          "seed_payload_bytes": [
+            16777216
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          },
+          "phases": {
+            "open_s": 0.164054584,
+            "admission_s": 0.120513583,
+            "work_s": 2.168725917,
+            "shutdown_s": 0.001072333
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 0,
+          "rate_bps": 16777216,
+          "repeat": 1,
+          "ready_s": 1.490881875,
+          "wall_s": 1.5141853749999994,
+          "mib_s": 10.566737906843148,
+          "cpu_s": 0.22000000000000003,
+          "rss_bytes": 6914048,
+          "verified": true,
+          "seed_payload_bytes": [
+            16777216
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          },
+          "phases": {
+            "open_s": 0.164723125,
+            "admission_s": 0.1123935,
+            "work_s": 1.21376525,
+            "shutdown_s": 0.001033958
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 0,
+          "rate_bps": 16777216,
+          "repeat": 2,
+          "ready_s": 1.418391584,
+          "wall_s": 1.4354337499999996,
+          "mib_s": 11.146456602403283,
+          "cpu_s": 0.17,
+          "rss_bytes": 8962048,
+          "verified": true,
+          "seed_payload_bytes": [
+            16777216
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          },
+          "phases": {
+            "open_s": 0.135389334,
+            "admission_s": 0.098583875,
+            "work_s": 1.184418375,
+            "shutdown_s": 0.000439375
+          }
+        },
+        {
+          "engine": "mynou",
+          "rtt_ms": 50,
+          "rate_bps": 16777216,
+          "repeat": 2,
+          "ready_s": 2.269293208,
+          "wall_s": 2.2884928340000013,
+          "mib_s": 6.991501027352569,
+          "cpu_s": 0.15000000000000002,
+          "rss_bytes": 9011200,
+          "verified": true,
+          "seed_payload_bytes": [
+            16777216
+          ],
+          "handshakes": {
+            "plaintext": 2,
+            "other": 0
+          },
+          "phases": {
+            "open_s": 0.137340917,
+            "admission_s": 0.095422708,
+            "work_s": 2.036529583,
+            "shutdown_s": 0.005215208
+          }
+        }
+      ]
+    },
+    "final_quota_alternating": {
+      "note": "pipeline step and final binaries alternated, 16 MiB, quota 16 MiB/s",
+      "step": [
+        [
+          {
+            "engine": "mynou",
+            "rtt_ms": 0,
+            "rate_bps": 16777216,
+            "repeat": 0,
+            "ready_s": 1.335776833,
+            "wall_s": 1.348757417,
+            "mib_s": 11.862770723877324,
+            "cpu_s": 0.12,
+            "rss_bytes": 9043968,
+            "verified": true,
+            "seed_payload_bytes": [
+              16777216
+            ],
+            "handshakes": {
+              "plaintext": 2,
+              "other": 0
+            },
+            "phases": {
+              "open_s": 0.134003458,
+              "admission_s": 0.099211792,
+              "work_s": 1.102561583,
+              "shutdown_s": 0.000883542
+            }
+          },
+          {
+            "engine": "mynou",
+            "rtt_ms": 50,
+            "rate_bps": 16777216,
+            "repeat": 0,
+            "ready_s": 2.180120083,
+            "wall_s": 2.1939444999999997,
+            "mib_s": 7.29280070667239,
+            "cpu_s": 0.11,
+            "rss_bytes": 10125312,
+            "verified": true,
+            "seed_payload_bytes": [
+              16777216
+            ],
+            "handshakes": {
+              "plaintext": 2,
+              "other": 0
+            },
+            "phases": {
+              "open_s": 0.13305175,
+              "admission_s": 0.115167083,
+              "work_s": 1.9319012500000001,
+              "shutdown_s": 0.000794917
+            }
+          }
+        ],
+        [
+          {
+            "engine": "mynou",
+            "rtt_ms": 0,
+            "rate_bps": 16777216,
+            "repeat": 0,
+            "ready_s": 1.335154292,
+            "wall_s": 1.3432639579999999,
+            "mib_s": 11.911285123604873,
+            "cpu_s": 0.09,
+            "rss_bytes": 9076736,
+            "verified": true,
+            "seed_payload_bytes": [
+              16777216
+            ],
+            "handshakes": {
+              "plaintext": 2,
+              "other": 0
+            },
+            "phases": {
+              "open_s": 0.126133625,
+              "admission_s": 0.08876975,
+              "work_s": 1.120250917,
+              "shutdown_s": 0.0002275
+            }
+          },
+          {
+            "engine": "mynou",
+            "rtt_ms": 50,
+            "rate_bps": 16777216,
+            "repeat": 0,
+            "ready_s": 2.112577083,
+            "wall_s": 2.121573042,
+            "mib_s": 7.541573956330465,
+            "cpu_s": 0.09,
+            "rss_bytes": 9043968,
+            "verified": true,
+            "seed_payload_bytes": [
+              16777216
+            ],
+            "handshakes": {
+              "plaintext": 2,
+              "other": 0
+            },
+            "phases": {
+              "open_s": 0.120199791,
+              "admission_s": 0.09682325,
+              "work_s": 1.895554042,
+              "shutdown_s": 0.000264917
+            }
+          }
+        ],
+        [
+          {
+            "engine": "mynou",
+            "rtt_ms": 0,
+            "rate_bps": 16777216,
+            "repeat": 0,
+            "ready_s": 1.308914584,
+            "wall_s": 1.317171667,
+            "mib_s": 12.147239726498004,
+            "cpu_s": 0.09,
+            "rss_bytes": 9027584,
+            "verified": true,
+            "seed_payload_bytes": [
+              16777216
+            ],
+            "handshakes": {
+              "plaintext": 2,
+              "other": 0
+            },
+            "phases": {
+              "open_s": 0.126649334,
+              "admission_s": 0.094871333,
+              "work_s": 1.087393917,
+              "shutdown_s": 0.0003035
+            }
+          },
+          {
+            "engine": "mynou",
+            "rtt_ms": 50,
+            "rate_bps": 16777216,
+            "repeat": 0,
+            "ready_s": 2.188662083,
+            "wall_s": 2.2008831669999998,
+            "mib_s": 7.269808883953358,
+            "cpu_s": 0.11,
+            "rss_bytes": 13254656,
+            "verified": true,
+            "seed_payload_bytes": [
+              16777216
+            ],
+            "handshakes": {
+              "plaintext": 2,
+              "other": 0
+            },
+            "phases": {
+              "open_s": 0.13046225,
+              "admission_s": 0.07889775,
+              "work_s": 1.9793020829999999,
+              "shutdown_s": 0.000684166
+            }
+          }
+        ]
+      ],
+      "final": [
+        [
+          {
+            "engine": "mynou",
+            "rtt_ms": 0,
+            "rate_bps": 16777216,
+            "repeat": 0,
+            "ready_s": 1.352048792,
+            "wall_s": 1.359459292,
+            "mib_s": 11.769385147576747,
+            "cpu_s": 0.09,
+            "rss_bytes": 8994816,
+            "verified": true,
+            "seed_payload_bytes": [
+              16777216
+            ],
+            "handshakes": {
+              "plaintext": 2,
+              "other": 0
+            },
+            "phases": {
+              "open_s": 0.121881542,
+              "admission_s": 0.087678625,
+              "work_s": 1.142488625,
+              "shutdown_s": 0.000252958
+            }
+          },
+          {
+            "engine": "mynou",
+            "rtt_ms": 50,
+            "rate_bps": 16777216,
+            "repeat": 0,
+            "ready_s": 2.196874334,
+            "wall_s": 2.2054867499999995,
+            "mib_s": 7.2546343794629475,
+            "cpu_s": 0.09,
+            "rss_bytes": 12238848,
+            "verified": true,
+            "seed_payload_bytes": [
+              16777216
+            ],
+            "handshakes": {
+              "plaintext": 2,
+              "other": 0
+            },
+            "phases": {
+              "open_s": 0.134490459,
+              "admission_s": 0.114432083,
+              "work_s": 1.947951792,
+              "shutdown_s": 0.000259041
+            }
+          }
+        ],
+        [
+          {
+            "engine": "mynou",
+            "rtt_ms": 0,
+            "rate_bps": 16777216,
+            "repeat": 0,
+            "ready_s": 1.302539875,
+            "wall_s": 1.312744167,
+            "mib_s": 12.188208793617896,
+            "cpu_s": 0.09,
+            "rss_bytes": 10076160,
+            "verified": true,
+            "seed_payload_bytes": [
+              16777216
+            ],
+            "handshakes": {
+              "plaintext": 2,
+              "other": 0
+            },
+            "phases": {
+              "open_s": 0.12875175,
+              "admission_s": 0.086912334,
+              "work_s": 1.086875791,
+              "shutdown_s": 0.000513708
+            }
+          },
+          {
+            "engine": "mynou",
+            "rtt_ms": 50,
+            "rate_bps": 16777216,
+            "repeat": 0,
+            "ready_s": 2.176642958,
+            "wall_s": 2.1873143749999997,
+            "mib_s": 7.314906436346171,
+            "cpu_s": 0.11,
+            "rss_bytes": 9027584,
+            "verified": true,
+            "seed_payload_bytes": [
+              16777216
+            ],
+            "handshakes": {
+              "plaintext": 2,
+              "other": 0
+            },
+            "phases": {
+              "open_s": 0.130770958,
+              "admission_s": 0.085896625,
+              "work_s": 1.959975375,
+              "shutdown_s": 0.000270834
+            }
+          }
+        ],
+        [
+          {
+            "engine": "mynou",
+            "rtt_ms": 0,
+            "rate_bps": 16777216,
+            "repeat": 0,
+            "ready_s": 1.3253689579999999,
+            "wall_s": 1.333468792,
+            "mib_s": 11.998780995843509,
+            "cpu_s": 0.11,
+            "rss_bytes": 7913472,
+            "verified": true,
+            "seed_payload_bytes": [
+              16777216
+            ],
+            "handshakes": {
+              "plaintext": 2,
+              "other": 0
+            },
+            "phases": {
+              "open_s": 0.130487375,
+              "admission_s": 0.095844167,
+              "work_s": 1.099037416,
+              "shutdown_s": 0.000309375
+            }
+          },
+          {
+            "engine": "mynou",
+            "rtt_ms": 50,
+            "rate_bps": 16777216,
+            "repeat": 0,
+            "ready_s": 2.167699875,
+            "wall_s": 2.177230542,
+            "mib_s": 7.34878539105116,
+            "cpu_s": 0.09,
+            "rss_bytes": 12140544,
+            "verified": true,
+            "seed_payload_bytes": [
+              16777216
+            ],
+            "handshakes": {
+              "plaintext": 2,
+              "other": 0
+            },
+            "phases": {
+              "open_s": 0.123539666,
+              "admission_s": 0.0697715,
+              "work_s": 1.9743887089999999,
+              "shutdown_s": 0.00037175
+            }
+          }
+        ]
+      ]
+    },
+    "final_0ms_alternating": {
+      "note": "v0.26.0 and final alternated, 64 MiB, 0 ms",
+      "v0_26_0": [
+        [
+          {
+            "engine": "mynou",
+            "rtt_ms": 0,
+            "rate_bps": 0,
+            "repeat": 0,
+            "ready_s": 0.825231625,
+            "wall_s": 1.108724208,
+            "mib_s": 57.72400344306364,
+            "cpu_s": 0.32,
+            "rss_bytes": 8060928,
+            "verified": true,
+            "seed_payload_bytes": [
+              67108864
+            ],
+            "handshakes": {
+              "plaintext": 2,
+              "other": 0
+            },
+            "phases": {
+              "open_s": 0.196681,
+              "admission_s": 0.10569775,
+              "work_s": 0.522852875,
+              "shutdown_s": 0.04618375
+            }
+          },
+          {
+            "engine": "mynou",
+            "rtt_ms": 0,
+            "rate_bps": 0,
+            "repeat": 1,
+            "ready_s": 0.598968125,
+            "wall_s": 0.657206792,
+            "mib_s": 97.38182985789959,
+            "cpu_s": 0.26,
+            "rss_bytes": 8011776,
+            "verified": true,
+            "seed_payload_bytes": [
+              67108864
+            ],
+            "handshakes": {
+              "plaintext": 2,
+              "other": 0
+            },
+            "phases": {
+              "open_s": 0.115020208,
+              "admission_s": 0.068834084,
+              "work_s": 0.415113833,
+              "shutdown_s": 0.050066292
+            }
+          }
+        ],
+        [
+          {
+            "engine": "mynou",
+            "rtt_ms": 0,
+            "rate_bps": 0,
+            "repeat": 0,
+            "ready_s": 0.642533083,
+            "wall_s": 0.696309083,
+            "mib_s": 91.91320573366698,
+            "cpu_s": 0.26,
+            "rss_bytes": 7995392,
+            "verified": true,
+            "seed_payload_bytes": [
+              67108864
+            ],
+            "handshakes": {
+              "plaintext": 2,
+              "other": 0
+            },
+            "phases": {
+              "open_s": 0.122768333,
+              "admission_s": 0.102776042,
+              "work_s": 0.416988708,
+              "shutdown_s": 0.046118958
+            }
+          },
+          {
+            "engine": "mynou",
+            "rtt_ms": 0,
+            "rate_bps": 0,
+            "repeat": 1,
+            "ready_s": 0.759142958,
+            "wall_s": 0.8129048329999999,
+            "mib_s": 78.73000307281973,
+            "cpu_s": 0.28,
+            "rss_bytes": 8077312,
+            "verified": true,
+            "seed_payload_bytes": [
+              67108864
+            ],
+            "handshakes": {
+              "plaintext": 2,
+              "other": 0
+            },
+            "phases": {
+              "open_s": 0.129344625,
+              "admission_s": 0.0948155,
+              "work_s": 0.534982833,
+              "shutdown_s": 0.04596575
+            }
+          }
+        ],
+        [
+          {
+            "engine": "mynou",
+            "rtt_ms": 0,
+            "rate_bps": 0,
+            "repeat": 0,
+            "ready_s": 0.656751208,
+            "wall_s": 0.704642625,
+            "mib_s": 90.82618298885907,
+            "cpu_s": 0.26,
+            "rss_bytes": 8011776,
+            "verified": true,
+            "seed_payload_bytes": [
+              67108864
+            ],
+            "handshakes": {
+              "plaintext": 2,
+              "other": 0
+            },
+            "phases": {
+              "open_s": 0.1299195,
+              "admission_s": 0.081788208,
+              "work_s": 0.4450435,
+              "shutdown_s": 0.040072625
+            }
+          },
+          {
+            "engine": "mynou",
+            "rtt_ms": 0,
+            "rate_bps": 0,
+            "repeat": 1,
+            "ready_s": 0.780688834,
+            "wall_s": 0.8357054160000001,
+            "mib_s": 76.58200937158936,
+            "cpu_s": 0.28,
+            "rss_bytes": 9109504,
+            "verified": true,
+            "seed_payload_bytes": [
+              67108864
+            ],
+            "handshakes": {
+              "plaintext": 2,
+              "other": 0
+            },
+            "phases": {
+              "open_s": 0.125823625,
+              "admission_s": 0.083861709,
+              "work_s": 0.5710035,
+              "shutdown_s": 0.047202625
+            }
+          }
+        ]
+      ],
+      "final": [
+        [
+          {
+            "engine": "mynou",
+            "rtt_ms": 0,
+            "rate_bps": 0,
+            "repeat": 0,
+            "ready_s": 0.515739458,
+            "wall_s": 0.523387125,
+            "mib_s": 122.28042483849791,
+            "cpu_s": 0.17,
+            "rss_bytes": 18579456,
+            "verified": true,
+            "seed_payload_bytes": [
+              67108864
+            ],
+            "handshakes": {
+              "plaintext": 2,
+              "other": 0
+            },
+            "phases": {
+              "open_s": 0.129901125,
+              "admission_s": 0.098879208,
+              "work_s": 0.286959125,
+              "shutdown_s": 0.000290875
+            }
+          },
+          {
+            "engine": "mynou",
+            "rtt_ms": 0,
+            "rate_bps": 0,
+            "repeat": 1,
+            "ready_s": 0.681550958,
+            "wall_s": 0.6898414589999999,
+            "mib_s": 92.77494004604326,
+            "cpu_s": 0.19,
+            "rss_bytes": 18612224,
+            "verified": true,
+            "seed_payload_bytes": [
+              67108864
+            ],
+            "handshakes": {
+              "plaintext": 2,
+              "other": 0
+            },
+            "phases": {
+              "open_s": 0.11389175,
+              "admission_s": 0.083781041,
+              "work_s": 0.483878167,
+              "shutdown_s": 0.000191833
+            }
+          }
+        ],
+        [
+          {
+            "engine": "mynou",
+            "rtt_ms": 0,
+            "rate_bps": 0,
+            "repeat": 0,
+            "ready_s": 0.496853042,
+            "wall_s": 0.504442583,
+            "mib_s": 126.87271486753131,
+            "cpu_s": 0.17,
+            "rss_bytes": 18595840,
+            "verified": true,
+            "seed_payload_bytes": [
+              67108864
+            ],
+            "handshakes": {
+              "plaintext": 2,
+              "other": 0
+            },
+            "phases": {
+              "open_s": 0.128992125,
+              "admission_s": 0.099927792,
+              "work_s": 0.267933125,
+              "shutdown_s": 0.000180292
+            }
+          },
+          {
+            "engine": "mynou",
+            "rtt_ms": 0,
+            "rate_bps": 0,
+            "repeat": 1,
+            "ready_s": 0.718939041,
+            "wall_s": 0.7270395420000001,
+            "mib_s": 88.02822446760398,
+            "cpu_s": 0.2,
+            "rss_bytes": 20709376,
+            "verified": true,
+            "seed_payload_bytes": [
+              67108864
+            ],
+            "handshakes": {
+              "plaintext": 2,
+              "other": 0
+            },
+            "phases": {
+              "open_s": 0.115194875,
+              "admission_s": 0.096898916,
+              "work_s": 0.50684525,
+              "shutdown_s": 0.0002185
+            }
+          }
+        ],
+        [
+          {
+            "engine": "mynou",
+            "rtt_ms": 0,
+            "rate_bps": 0,
+            "repeat": 0,
+            "ready_s": 0.504526958,
+            "wall_s": 0.51223575,
+            "mib_s": 124.94247033714457,
+            "cpu_s": 0.17,
+            "rss_bytes": 20643840,
+            "verified": true,
+            "seed_payload_bytes": [
+              67108864
+            ],
+            "handshakes": {
+              "plaintext": 2,
+              "other": 0
+            },
+            "phases": {
+              "open_s": 0.12675,
+              "admission_s": 0.101858583,
+              "work_s": 0.275918375,
+              "shutdown_s": 0.000249666
+            }
+          },
+          {
+            "engine": "mynou",
+            "rtt_ms": 0,
+            "rate_bps": 0,
+            "repeat": 1,
+            "ready_s": 0.693033292,
+            "wall_s": 0.7012368330000001,
+            "mib_s": 91.26731082592747,
+            "cpu_s": 0.2,
+            "rss_bytes": 18595840,
+            "verified": true,
+            "seed_payload_bytes": [
+              67108864
+            ],
+            "handshakes": {
+              "plaintext": 2,
+              "other": 0
+            },
+            "phases": {
+              "open_s": 0.116248333,
+              "admission_s": 0.087868584,
+              "work_s": 0.488916375,
+              "shutdown_s": 0.00025425
+            }
+          }
+        ]
+      ]
+    }
+  },
+  "protected_load": {
+    "v0_26_0": [
+      {
+        "environment": {
+          "commit": "976510b2ae89a4e69a2dafa46aed1e8b4d6a99e9",
+          "os": "macOS-27.2-arm64-arm-64bit",
+          "cpus": 8,
+          "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+          "smoke": false,
+          "github_run": null,
+          "method": "release lib test harness; one process per level; native seeding and downloading clients and both tunnel owners in-process over loopback UDP; /usr/bin/time -l; transfer CPU and RSS from ps"
+        },
+        "measurements": [
+          {
+            "bytes_per_torrent": "4194304",
+            "client": {
+              "generations": "2",
+              "inner_dropped": "0",
+              "inner_rejected": "0",
+              "received": "3346",
+              "rejected": "0",
+              "sent": "614"
+            },
+            "complete_max_us": "872926",
+            "complete_p50_us": "872926",
+            "complete_p90_us": "872926",
+            "connect_attempts": "2",
+            "flow_limit": "64",
+            "flow_torrents": "1",
+            "max_active": "2",
+            "max_open_flows": "1",
+            "max_peers": "4",
+            "max_running": "1",
+            "max_torrent_flows": "1",
+            "peer_limit": "4",
+            "protected_us": "16038",
+            "refused": {},
+            "rss_after_bytes": "16105472",
+            "rss_before_bytes": "14172160",
+            "seed_uploaded_bytes": "4194304",
+            "seeds": "1",
+            "setup_us": "402084",
+            "torrents": "1",
+            "transfer_cpu_s": "0.31",
+            "transfer_us": "871953",
+            "verified": "1",
+            "real_s": 1.8,
+            "user_s": 0.21,
+            "sys_s": 0.25,
+            "peak_rss_bytes": 16121856
+          },
+          {
+            "bytes_per_torrent": "4194304",
+            "client": {
+              "generations": "2",
+              "inner_dropped": "0",
+              "inner_rejected": "0",
+              "received": "27048",
+              "rejected": "0",
+              "sent": "5262"
+            },
+            "complete_max_us": "2090217",
+            "complete_p50_us": "1535108",
+            "complete_p90_us": "1984304",
+            "connect_attempts": "40",
+            "flow_limit": "64",
+            "flow_torrents": "8",
+            "max_active": "2",
+            "max_open_flows": "8",
+            "max_peers": "4",
+            "max_running": "2",
+            "max_torrent_flows": "4",
+            "peer_limit": "4",
+            "protected_us": "13277",
+            "refused": {},
+            "rss_after_bytes": "26656768",
+            "rss_before_bytes": "21233664",
+            "seed_uploaded_bytes": "33554432",
+            "seeds": "6",
+            "setup_us": "8957939",
+            "torrents": "8",
+            "transfer_cpu_s": "1.38",
+            "transfer_us": "2090236",
+            "verified": "8",
+            "real_s": 14.39,
+            "user_s": 2.2,
+            "sys_s": 2.56,
+            "peak_rss_bytes": 26935296
+          },
+          {
+            "bytes_per_torrent": "4194304",
+            "client": {
+              "generations": "2",
+              "inner_dropped": "0",
+              "inner_rejected": "0",
+              "received": "54123",
+              "rejected": "0",
+              "sent": "10188"
+            },
+            "complete_max_us": "3306479",
+            "complete_p50_us": "2580501",
+            "complete_p90_us": "3143483",
+            "connect_attempts": "80",
+            "flow_limit": "64",
+            "flow_torrents": "16",
+            "max_active": "4",
+            "max_open_flows": "16",
+            "max_peers": "8",
+            "max_running": "4",
+            "max_torrent_flows": "4",
+            "peer_limit": "8",
+            "protected_us": "12235",
+            "refused": {},
+            "rss_after_bytes": "33275904",
+            "rss_before_bytes": "21676032",
+            "seed_uploaded_bytes": "67108864",
+            "seeds": "4",
+            "setup_us": "11586848",
+            "torrents": "16",
+            "transfer_cpu_s": "2.65",
+            "transfer_us": "3306498",
+            "verified": "16",
+            "real_s": 19.43,
+            "user_s": 3.46,
+            "sys_s": 3.77,
+            "peak_rss_bytes": 33800192
+          },
+          {
+            "bytes_per_torrent": "4194304",
+            "client": {
+              "generations": "2",
+              "inner_dropped": "0",
+              "inner_rejected": "0",
+              "received": "54109",
+              "rejected": "0",
+              "sent": "10438"
+            },
+            "complete_max_us": "3299980",
+            "complete_p50_us": "2916722",
+            "complete_p90_us": "3299976",
+            "connect_attempts": "80",
+            "flow_limit": "64",
+            "flow_torrents": "16",
+            "max_active": "16",
+            "max_open_flows": "64",
+            "max_peers": "4",
+            "max_running": "16",
+            "max_torrent_flows": "4",
+            "peer_limit": "4",
+            "protected_us": "12106",
+            "refused": {},
+            "rss_after_bytes": "52330496",
+            "rss_before_bytes": "20758528",
+            "seed_uploaded_bytes": "67108864",
+            "seeds": "4",
+            "setup_us": "11332097",
+            "torrents": "16",
+            "transfer_cpu_s": "2.93",
+            "transfer_us": "3299940",
+            "verified": "16",
+            "real_s": 19.14,
+            "user_s": 3.63,
+            "sys_s": 3.89,
+            "peak_rss_bytes": 53919744
+          },
+          {
+            "bytes_per_torrent": "4194304",
+            "client": {
+              "generations": "2",
+              "inner_dropped": "0",
+              "inner_rejected": "0",
+              "received": "53957",
+              "rejected": "0",
+              "sent": "10253"
+            },
+            "complete_max_us": "6407954",
+            "complete_p50_us": "2700822",
+            "complete_p90_us": "4508841",
+            "connect_attempts": "108",
+            "flow_limit": "16",
+            "flow_torrents": "16",
+            "max_active": "16",
+            "max_open_flows": "16",
+            "max_peers": "4",
+            "max_running": "12",
+            "max_torrent_flows": "4",
+            "peer_limit": "4",
+            "protected_us": "12491",
+            "refused": {
+              "Tunnel operation failed": "37"
+            },
+            "rss_after_bytes": "34340864",
+            "rss_before_bytes": "23707648",
+            "seed_uploaded_bytes": "67108864",
+            "seeds": "4",
+            "setup_us": "11443879",
+            "torrents": "16",
+            "transfer_cpu_s": "2.98",
+            "transfer_us": "6407928",
+            "verified": "16",
+            "real_s": 22.27,
+            "user_s": 3.59,
+            "sys_s": 3.88,
+            "peak_rss_bytes": 34717696
+          }
+        ]
+      },
+      {
+        "environment": {
+          "commit": "976510b2ae89a4e69a2dafa46aed1e8b4d6a99e9",
+          "os": "macOS-27.2-arm64-arm-64bit",
+          "cpus": 8,
+          "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+          "smoke": false,
+          "github_run": null,
+          "method": "release lib test harness; one process per level; native seeding and downloading clients and both tunnel owners in-process over loopback UDP; /usr/bin/time -l; transfer CPU and RSS from ps"
+        },
+        "measurements": [
+          {
+            "bytes_per_torrent": "4194304",
+            "client": {
+              "generations": "2",
+              "inner_dropped": "0",
+              "inner_rejected": "0",
+              "received": "3345",
+              "rejected": "0",
+              "sent": "581"
+            },
+            "complete_max_us": "717473",
+            "complete_p50_us": "717473",
+            "complete_p90_us": "717473",
+            "connect_attempts": "2",
+            "flow_limit": "64",
+            "flow_torrents": "1",
+            "max_active": "2",
+            "max_open_flows": "1",
+            "max_peers": "4",
+            "max_running": "1",
+            "max_torrent_flows": "1",
+            "peer_limit": "4",
+            "protected_us": "11912",
+            "refused": {},
+            "rss_after_bytes": "15679488",
+            "rss_before_bytes": "14123008",
+            "seed_uploaded_bytes": "4194304",
+            "seeds": "1",
+            "setup_us": "309068",
+            "torrents": "1",
+            "transfer_cpu_s": "0.25",
+            "transfer_us": "717495",
+            "verified": "1",
+            "real_s": 1.16,
+            "user_s": 0.16,
+            "sys_s": 0.16,
+            "peak_rss_bytes": 15695872
+          },
+          {
+            "bytes_per_torrent": "4194304",
+            "client": {
+              "generations": "2",
+              "inner_dropped": "0",
+              "inner_rejected": "0",
+              "received": "27042",
+              "rejected": "0",
+              "sent": "5321"
+            },
+            "complete_max_us": "2214149",
+            "complete_p50_us": "1632064",
+            "complete_p90_us": "2168706",
+            "connect_attempts": "40",
+            "flow_limit": "64",
+            "flow_torrents": "8",
+            "max_active": "2",
+            "max_open_flows": "8",
+            "max_peers": "4",
+            "max_running": "2",
+            "max_torrent_flows": "4",
+            "peer_limit": "4",
+            "protected_us": "13588",
+            "refused": {},
+            "rss_after_bytes": "27590656",
+            "rss_before_bytes": "20381696",
+            "seed_uploaded_bytes": "33554432",
+            "seeds": "6",
+            "setup_us": "9036415",
+            "torrents": "8",
+            "transfer_cpu_s": "1.43",
+            "transfer_us": "2214277",
+            "verified": "8",
+            "real_s": 14.58,
+            "user_s": 2.21,
+            "sys_s": 2.62,
+            "peak_rss_bytes": 27869184
+          },
+          {
+            "bytes_per_torrent": "4194304",
+            "client": {
+              "generations": "2",
+              "inner_dropped": "0",
+              "inner_rejected": "0",
+              "received": "54109",
+              "rejected": "0",
+              "sent": "10505"
+            },
+            "complete_max_us": "3563014",
+            "complete_p50_us": "2776513",
+            "complete_p90_us": "3451376",
+            "connect_attempts": "80",
+            "flow_limit": "64",
+            "flow_torrents": "16",
+            "max_active": "4",
+            "max_open_flows": "16",
+            "max_peers": "8",
+            "max_running": "4",
+            "max_torrent_flows": "4",
+            "peer_limit": "8",
+            "protected_us": "12675",
+            "refused": {},
+            "rss_after_bytes": "33275904",
+            "rss_before_bytes": "22183936",
+            "seed_uploaded_bytes": "67108864",
+            "seeds": "4",
+            "setup_us": "11633259",
+            "torrents": "16",
+            "transfer_cpu_s": "2.72",
+            "transfer_us": "3563041",
+            "verified": "16",
+            "real_s": 19.68,
+            "user_s": 3.4,
+            "sys_s": 3.74,
+            "peak_rss_bytes": 33783808
+          },
+          {
+            "bytes_per_torrent": "4194304",
+            "client": {
+              "generations": "2",
+              "inner_dropped": "0",
+              "inner_rejected": "0",
+              "received": "54123",
+              "rejected": "0",
+              "sent": "10679"
+            },
+            "complete_max_us": "3058166",
+            "complete_p50_us": "2687131",
+            "complete_p90_us": "2968229",
+            "connect_attempts": "80",
+            "flow_limit": "64",
+            "flow_torrents": "16",
+            "max_active": "16",
+            "max_open_flows": "41",
+            "max_peers": "4",
+            "max_running": "12",
+            "max_torrent_flows": "4",
+            "peer_limit": "4",
+            "protected_us": "12126",
+            "refused": {},
+            "rss_after_bytes": "44466176",
+            "rss_before_bytes": "19726336",
+            "seed_uploaded_bytes": "67108864",
+            "seeds": "4",
+            "setup_us": "11552131",
+            "torrents": "16",
+            "transfer_cpu_s": "2.80",
+            "transfer_us": "3058163",
+            "verified": "16",
+            "real_s": 19.21,
+            "user_s": 3.48,
+            "sys_s": 3.79,
+            "peak_rss_bytes": 45875200
+          },
+          {
+            "bytes_per_torrent": "4194304",
+            "client": {
+              "generations": "2",
+              "inner_dropped": "0",
+              "inner_rejected": "0",
+              "received": "54039",
+              "rejected": "0",
+              "sent": "10250"
+            },
+            "complete_max_us": "4865276",
+            "complete_p50_us": "2748948",
+            "complete_p90_us": "4772064",
+            "connect_attempts": "108",
+            "flow_limit": "16",
+            "flow_torrents": "16",
+            "max_active": "16",
+            "max_open_flows": "16",
+            "max_peers": "4",
+            "max_running": "12",
+            "max_torrent_flows": "4",
+            "peer_limit": "4",
+            "protected_us": "12636",
+            "refused": {
+              "Tunnel operation failed": "32"
+            },
+            "rss_after_bytes": "32964608",
+            "rss_before_bytes": "19939328",
+            "seed_uploaded_bytes": "67108864",
+            "seeds": "4",
+            "setup_us": "11638364",
+            "torrents": "16",
+            "transfer_cpu_s": "2.90",
+            "transfer_us": "4865097",
+            "verified": "16",
+            "real_s": 21.05,
+            "user_s": 3.58,
+            "sys_s": 3.9,
+            "peak_rss_bytes": 33521664
+          }
+        ]
+      },
+      {
+        "environment": {
+          "commit": "976510b2ae89a4e69a2dafa46aed1e8b4d6a99e9",
+          "os": "macOS-27.2-arm64-arm-64bit",
+          "cpus": 8,
+          "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+          "smoke": false,
+          "github_run": null,
+          "method": "release lib test harness; one process per level; native seeding and downloading clients and both tunnel owners in-process over loopback UDP; /usr/bin/time -l; transfer CPU and RSS from ps"
+        },
+        "measurements": [
+          {
+            "bytes_per_torrent": "4194304",
+            "client": {
+              "generations": "2",
+              "inner_dropped": "0",
+              "inner_rejected": "0",
+              "received": "3345",
+              "rejected": "0",
+              "sent": "580"
+            },
+            "complete_max_us": "987026",
+            "complete_p50_us": "987026",
+            "complete_p90_us": "987026",
+            "connect_attempts": "2",
+            "flow_limit": "64",
+            "flow_torrents": "1",
+            "max_active": "2",
+            "max_open_flows": "1",
+            "max_peers": "4",
+            "max_running": "1",
+            "max_torrent_flows": "1",
+            "peer_limit": "4",
+            "protected_us": "12751",
+            "refused": {},
+            "rss_after_bytes": "15646720",
+            "rss_before_bytes": "13598720",
+            "seed_uploaded_bytes": "4194304",
+            "seeds": "1",
+            "setup_us": "376924",
+            "torrents": "1",
+            "transfer_cpu_s": "0.30",
+            "transfer_us": "987020",
+            "verified": "1",
+            "real_s": 1.5,
+            "user_s": 0.18,
+            "sys_s": 0.21,
+            "peak_rss_bytes": 15679488
+          },
+          {
+            "bytes_per_torrent": "4194304",
+            "client": {
+              "generations": "2",
+              "inner_dropped": "0",
+              "inner_rejected": "0",
+              "received": "27052",
+              "rejected": "0",
+              "sent": "5384"
+            },
+            "complete_max_us": "2197883",
+            "complete_p50_us": "1633179",
+            "complete_p90_us": "2083957",
+            "connect_attempts": "40",
+            "flow_limit": "64",
+            "flow_torrents": "8",
+            "max_active": "2",
+            "max_open_flows": "8",
+            "max_peers": "4",
+            "max_running": "2",
+            "max_torrent_flows": "4",
+            "peer_limit": "4",
+            "protected_us": "14599",
+            "refused": {},
+            "rss_after_bytes": "29261824",
+            "rss_before_bytes": "20529152",
+            "seed_uploaded_bytes": "33554432",
+            "seeds": "6",
+            "setup_us": "8925555",
+            "torrents": "8",
+            "transfer_cpu_s": "1.37",
+            "transfer_us": "2197898",
+            "verified": "8",
+            "real_s": 14.44,
+            "user_s": 2.14,
+            "sys_s": 2.49,
+            "peak_rss_bytes": 29540352
+          },
+          {
+            "bytes_per_torrent": "4194304",
+            "client": {
+              "generations": "2",
+              "inner_dropped": "0",
+              "inner_rejected": "0",
+              "received": "54116",
+              "rejected": "0",
+              "sent": "10506"
+            },
+            "complete_max_us": "3477341",
+            "complete_p50_us": "2808490",
+            "complete_p90_us": "3302536",
+            "connect_attempts": "80",
+            "flow_limit": "64",
+            "flow_torrents": "16",
+            "max_active": "4",
+            "max_open_flows": "16",
+            "max_peers": "8",
+            "max_running": "4",
+            "max_torrent_flows": "4",
+            "peer_limit": "8",
+            "protected_us": "13720",
+            "refused": {},
+            "rss_after_bytes": "31653888",
+            "rss_before_bytes": "19529728",
+            "seed_uploaded_bytes": "67108864",
+            "seeds": "4",
+            "setup_us": "11358210",
+            "torrents": "16",
+            "transfer_cpu_s": "2.68",
+            "transfer_us": "3477359",
+            "verified": "16",
+            "real_s": 19.31,
+            "user_s": 3.4,
+            "sys_s": 3.69,
+            "peak_rss_bytes": 32260096
+          },
+          {
+            "bytes_per_torrent": "4194304",
+            "client": {
+              "generations": "2",
+              "inner_dropped": "0",
+              "inner_rejected": "0",
+              "received": "54150",
+              "rejected": "0",
+              "sent": "10562"
+            },
+            "complete_max_us": "3071566",
+            "complete_p50_us": "2598902",
+            "complete_p90_us": "2978662",
+            "connect_attempts": "80",
+            "flow_limit": "64",
+            "flow_torrents": "16",
+            "max_active": "16",
+            "max_open_flows": "37",
+            "max_peers": "4",
+            "max_running": "10",
+            "max_torrent_flows": "4",
+            "peer_limit": "4",
+            "protected_us": "13598",
+            "refused": {},
+            "rss_after_bytes": "40960000",
+            "rss_before_bytes": "19070976",
+            "seed_uploaded_bytes": "67108864",
+            "seeds": "4",
+            "setup_us": "11469077",
+            "torrents": "16",
+            "transfer_cpu_s": "2.74",
+            "transfer_us": "3071590",
+            "verified": "16",
+            "real_s": 18.97,
+            "user_s": 3.48,
+            "sys_s": 3.65,
+            "peak_rss_bytes": 42074112
+          },
+          {
+            "bytes_per_torrent": "4194304",
+            "client": {
+              "generations": "2",
+              "inner_dropped": "0",
+              "inner_rejected": "0",
+              "received": "54048",
+              "rejected": "0",
+              "sent": "10465"
+            },
+            "complete_max_us": "6471232",
+            "complete_p50_us": "2839193",
+            "complete_p90_us": "4747413",
+            "connect_attempts": "116",
+            "flow_limit": "16",
+            "flow_torrents": "16",
+            "max_active": "16",
+            "max_open_flows": "16",
+            "max_peers": "4",
+            "max_running": "12",
+            "max_torrent_flows": "4",
+            "peer_limit": "4",
+            "protected_us": "13632",
+            "refused": {
+              "Tunnel operation failed": "40"
+            },
+            "rss_after_bytes": "32866304",
+            "rss_before_bytes": "20234240",
+            "seed_uploaded_bytes": "67108864",
+            "seeds": "4",
+            "setup_us": "11750210",
+            "torrents": "16",
+            "transfer_cpu_s": "3.01",
+            "transfer_us": "6471240",
+            "verified": "16",
+            "real_s": 22.74,
+            "user_s": 3.57,
+            "sys_s": 3.87,
+            "peak_rss_bytes": 33406976
+          }
+        ]
+      }
+    ],
+    "tunnel_step": {
+      "environment": {
+        "commit": "976510b2ae89a4e69a2dafa46aed1e8b4d6a99e9",
+        "os": "macOS-27.2-arm64-arm-64bit",
+        "cpus": 8,
+        "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+        "smoke": false,
+        "github_run": null,
+        "method": "release lib test harness; one process per level; native seeding and downloading clients and both tunnel owners in-process over loopback UDP; /usr/bin/time -l; transfer CPU and RSS from ps"
+      },
+      "measurements": [
+        {
+          "bytes_per_torrent": "4194304",
+          "client": {
+            "generations": "2",
+            "inner_dropped": "0",
+            "inner_rejected": "0",
+            "received": "3345",
+            "rejected": "0",
+            "sent": "534"
+          },
+          "complete_max_us": "941676",
+          "complete_p50_us": "941676",
+          "complete_p90_us": "941676",
+          "connect_attempts": "2",
+          "flow_limit": "64",
+          "flow_torrents": "1",
+          "max_active": "2",
+          "max_open_flows": "1",
+          "max_peers": "4",
+          "max_running": "1",
+          "max_torrent_flows": "1",
+          "peer_limit": "4",
+          "protected_us": "12825",
+          "refused": {},
+          "rss_after_bytes": "17481728",
+          "rss_before_bytes": "14106624",
+          "seed_uploaded_bytes": "4194304",
+          "seeds": "1",
+          "setup_us": "301042",
+          "torrents": "1",
+          "transfer_cpu_s": "0.32",
+          "transfer_us": "941688",
+          "verified": "1",
+          "real_s": 1.31,
+          "user_s": 0.17,
+          "sys_s": 0.23,
+          "peak_rss_bytes": 17498112
+        },
+        {
+          "bytes_per_torrent": "4194304",
+          "client": {
+            "generations": "2",
+            "inner_dropped": "0",
+            "inner_rejected": "0",
+            "received": "27064",
+            "rejected": "0",
+            "sent": "4735"
+          },
+          "complete_max_us": "2020969",
+          "complete_p50_us": "1516876",
+          "complete_p90_us": "1894989",
+          "connect_attempts": "40",
+          "flow_limit": "64",
+          "flow_torrents": "8",
+          "max_active": "2",
+          "max_open_flows": "8",
+          "max_peers": "4",
+          "max_running": "2",
+          "max_torrent_flows": "4",
+          "peer_limit": "4",
+          "protected_us": "15064",
+          "refused": {},
+          "rss_after_bytes": "31735808",
+          "rss_before_bytes": "26656768",
+          "seed_uploaded_bytes": "33554432",
+          "seeds": "6",
+          "setup_us": "7474495",
+          "torrents": "8",
+          "transfer_cpu_s": "1.33",
+          "transfer_us": "2020943",
+          "verified": "8",
+          "real_s": 11.79,
+          "user_s": 1.71,
+          "sys_s": 2.58,
+          "peak_rss_bytes": 31981568
+        },
+        {
+          "bytes_per_torrent": "4194304",
+          "client": {
+            "generations": "2",
+            "inner_dropped": "0",
+            "inner_rejected": "0",
+            "received": "54171",
+            "rejected": "0",
+            "sent": "9424"
+          },
+          "complete_max_us": "3222417",
+          "complete_p50_us": "2507340",
+          "complete_p90_us": "3145414",
+          "connect_attempts": "80",
+          "flow_limit": "64",
+          "flow_torrents": "16",
+          "max_active": "4",
+          "max_open_flows": "16",
+          "max_peers": "8",
+          "max_running": "4",
+          "max_torrent_flows": "4",
+          "peer_limit": "8",
+          "protected_us": "13179",
+          "refused": {},
+          "rss_after_bytes": "38125568",
+          "rss_before_bytes": "27492352",
+          "seed_uploaded_bytes": "67108864",
+          "seeds": "4",
+          "setup_us": "9734150",
+          "torrents": "16",
+          "transfer_cpu_s": "2.58",
+          "transfer_us": "3222438",
+          "verified": "16",
+          "real_s": 16.02,
+          "user_s": 2.73,
+          "sys_s": 3.78,
+          "peak_rss_bytes": 38699008
+        },
+        {
+          "bytes_per_torrent": "4194304",
+          "client": {
+            "generations": "2",
+            "inner_dropped": "0",
+            "inner_rejected": "0",
+            "received": "54271",
+            "rejected": "0",
+            "sent": "9617"
+          },
+          "complete_max_us": "2846523",
+          "complete_p50_us": "2491625",
+          "complete_p90_us": "2751491",
+          "connect_attempts": "80",
+          "flow_limit": "64",
+          "flow_torrents": "16",
+          "max_active": "16",
+          "max_open_flows": "43",
+          "max_peers": "4",
+          "max_running": "14",
+          "max_torrent_flows": "4",
+          "peer_limit": "4",
+          "protected_us": "12996",
+          "refused": {},
+          "rss_after_bytes": "44941312",
+          "rss_before_bytes": "23805952",
+          "seed_uploaded_bytes": "67108864",
+          "seeds": "4",
+          "setup_us": "9739601",
+          "torrents": "16",
+          "transfer_cpu_s": "2.68",
+          "transfer_us": "2846398",
+          "verified": "16",
+          "real_s": 15.65,
+          "user_s": 2.76,
+          "sys_s": 3.81,
+          "peak_rss_bytes": 46202880
+        },
+        {
+          "bytes_per_torrent": "4194304",
+          "client": {
+            "generations": "2",
+            "inner_dropped": "0",
+            "inner_rejected": "0",
+            "received": "54060",
+            "rejected": "0",
+            "sent": "9504"
+          },
+          "complete_max_us": "6234752",
+          "complete_p50_us": "2500671",
+          "complete_p90_us": "4402175",
+          "connect_attempts": "116",
+          "flow_limit": "16",
+          "flow_torrents": "16",
+          "max_active": "16",
+          "max_open_flows": "16",
+          "max_peers": "4",
+          "max_running": "13",
+          "max_torrent_flows": "4",
+          "peer_limit": "4",
+          "protected_us": "13490",
+          "refused": {
+            "Tunnel operation failed": "44"
+          },
+          "rss_after_bytes": "38420480",
+          "rss_before_bytes": "24854528",
+          "seed_uploaded_bytes": "67108864",
+          "seeds": "4",
+          "setup_us": "9701631",
+          "torrents": "16",
+          "transfer_cpu_s": "2.86",
+          "transfer_us": "6234768",
+          "verified": "16",
+          "real_s": 19.04,
+          "user_s": 2.84,
+          "sys_s": 3.95,
+          "peak_rss_bytes": 38731776
+        }
+      ]
+    },
+    "loopback_waker": {
+      "measurements": [
+        {
+          "bytes_per_torrent": "4194304",
+          "client": {
+            "generations": "2",
+            "inner_dropped": "0",
+            "inner_rejected": "0",
+            "received": "3343",
+            "rejected": "0",
+            "sent": "486"
+          },
+          "complete_max_us": "454744",
+          "complete_p50_us": "454744",
+          "complete_p90_us": "454744",
+          "connect_attempts": "2",
+          "flow_limit": "64",
+          "flow_torrents": "1",
+          "max_active": "2",
+          "max_open_flows": "1",
+          "max_peers": "4",
+          "max_running": "1",
+          "max_torrent_flows": "1",
+          "peer_limit": "4",
+          "protected_us": "11942",
+          "refused": {},
+          "rss_after_bytes": "16269312",
+          "rss_before_bytes": "14188544",
+          "seed_uploaded_bytes": "4194304",
+          "seeds": "1",
+          "setup_us": "324869",
+          "torrents": "1",
+          "transfer_cpu_s": "0.26",
+          "transfer_us": "454741",
+          "verified": "1",
+          "real_s": 0.83,
+          "user_s": 0.12,
+          "sys_s": 0.21,
+          "peak_rss_bytes": 16302080
+        },
+        {
+          "bytes_per_torrent": "4194304",
+          "client": {
+            "generations": "2",
+            "inner_dropped": "0",
+            "inner_rejected": "0",
+            "received": "27008",
+            "rejected": "0",
+            "sent": "4772"
+          },
+          "complete_max_us": "1897419",
+          "complete_p50_us": "1443466",
+          "complete_p90_us": "1836502",
+          "connect_attempts": "40",
+          "flow_limit": "64",
+          "flow_torrents": "8",
+          "max_active": "2",
+          "max_open_flows": "8",
+          "max_peers": "4",
+          "max_running": "2",
+          "max_torrent_flows": "4",
+          "peer_limit": "4",
+          "protected_us": "7220",
+          "refused": {},
+          "rss_after_bytes": "30687232",
+          "rss_before_bytes": "25755648",
+          "seed_uploaded_bytes": "33554432",
+          "seeds": "6",
+          "setup_us": "8203545",
+          "torrents": "8",
+          "transfer_cpu_s": "1.47",
+          "transfer_us": "1897431",
+          "verified": "8",
+          "real_s": 12.45,
+          "user_s": 1.63,
+          "sys_s": 2.83,
+          "peak_rss_bytes": 31031296
+        },
+        {
+          "bytes_per_torrent": "4194304",
+          "client": {
+            "generations": "2",
+            "inner_dropped": "0",
+            "inner_rejected": "0",
+            "received": "54183",
+            "rejected": "0",
+            "sent": "9347"
+          },
+          "complete_max_us": "3105708",
+          "complete_p50_us": "2498573",
+          "complete_p90_us": "3023714",
+          "connect_attempts": "80",
+          "flow_limit": "64",
+          "flow_torrents": "16",
+          "max_active": "4",
+          "max_open_flows": "16",
+          "max_peers": "8",
+          "max_running": "4",
+          "max_torrent_flows": "4",
+          "peer_limit": "8",
+          "protected_us": "7050",
+          "refused": {},
+          "rss_after_bytes": "31440896",
+          "rss_before_bytes": "23199744",
+          "seed_uploaded_bytes": "67108864",
+          "seeds": "4",
+          "setup_us": "10657621",
+          "torrents": "16",
+          "transfer_cpu_s": "2.86",
+          "transfer_us": "3105724",
+          "verified": "16",
+          "real_s": 17.04,
+          "user_s": 2.71,
+          "sys_s": 4.35,
+          "peak_rss_bytes": 31997952
+        },
+        {
+          "bytes_per_torrent": "4194304",
+          "client": {
+            "generations": "2",
+            "inner_dropped": "0",
+            "inner_rejected": "0",
+            "received": "54297",
+            "rejected": "0",
+            "sent": "9743"
+          },
+          "complete_max_us": "2993289",
+          "complete_p50_us": "2715387",
+          "complete_p90_us": "2915194",
+          "connect_attempts": "80",
+          "flow_limit": "64",
+          "flow_torrents": "16",
+          "max_active": "16",
+          "max_open_flows": "60",
+          "max_peers": "4",
+          "max_running": "16",
+          "max_torrent_flows": "4",
+          "peer_limit": "4",
+          "protected_us": "6500",
+          "refused": {},
+          "rss_after_bytes": "56868864",
+          "rss_before_bytes": "29032448",
+          "seed_uploaded_bytes": "67108864",
+          "seeds": "4",
+          "setup_us": "10548889",
+          "torrents": "16",
+          "transfer_cpu_s": "2.95",
+          "transfer_us": "2993287",
+          "verified": "16",
+          "real_s": 16.95,
+          "user_s": 2.77,
+          "sys_s": 4.17,
+          "peak_rss_bytes": 58671104
+        },
+        {
+          "bytes_per_torrent": "4194304",
+          "client": {
+            "generations": "2",
+            "inner_dropped": "0",
+            "inner_rejected": "0",
+            "received": "54039",
+            "rejected": "0",
+            "sent": "9678"
+          },
+          "complete_max_us": "4490156",
+          "complete_p50_us": "2581667",
+          "complete_p90_us": "4268461",
+          "connect_attempts": "106",
+          "flow_limit": "16",
+          "flow_torrents": "16",
+          "max_active": "16",
+          "max_open_flows": "16",
+          "max_peers": "4",
+          "max_running": "11",
+          "max_torrent_flows": "4",
+          "peer_limit": "4",
+          "protected_us": "6831",
+          "refused": {
+            "Tunnel operation failed": "34"
+          },
+          "rss_after_bytes": "35979264",
+          "rss_before_bytes": "26017792",
+          "seed_uploaded_bytes": "67108864",
+          "seeds": "4",
+          "setup_us": "10741957",
+          "torrents": "16",
+          "transfer_cpu_s": "3.19",
+          "transfer_us": "4490176",
+          "verified": "16",
+          "real_s": 18.51,
+          "user_s": 2.79,
+          "sys_s": 4.63,
+          "peak_rss_bytes": 36651008
+        }
+      ],
+      "level1_repeats_s_cpu": {
+        "16MiB": {
+          "v0_26_0": [
+            [
+              2.11,
+              0.91
+            ],
+            [
+              1.93,
+              0.88
+            ],
+            [
+              1.92,
+              0.93
+            ],
+            [
+              1.83,
+              0.9
+            ],
+            [
+              1.83,
+              0.85
+            ]
+          ],
+          "final": [
+            [
+              0.65,
+              0.67
+            ],
+            [
+              0.63,
+              0.69
+            ],
+            [
+              0.63,
+              0.68
+            ],
+            [
+              0.68,
+              0.68
+            ],
+            [
+              0.64,
+              0.68
+            ]
+          ]
+        },
+        "4MiB": {
+          "v0_26_0": [
+            [
+              0.95,
+              0.3
+            ],
+            [
+              0.95,
+              0.33
+            ],
+            [
+              0.88,
+              0.3
+            ],
+            [
+              0.91,
+              0.32
+            ],
+            [
+              0.94,
+              0.31
+            ]
+          ],
+          "final": [
+            [
+              0.44,
+              0.26
+            ],
+            [
+              0.47,
+              0.25
+            ],
+            [
+              0.47,
+              0.26
+            ],
+            [
+              0.45,
+              0.24
+            ],
+            [
+              0.43,
+              0.24
+            ]
+          ]
+        }
+      }
+    },
+    "final": {
+      "measurements": [
+        {
+          "bytes_per_torrent": "4194304",
+          "client": {
+            "generations": "2",
+            "inner_dropped": "0",
+            "inner_rejected": "0",
+            "received": "3346",
+            "rejected": "0",
+            "sent": "330"
+          },
+          "complete_max_us": "398534",
+          "complete_p50_us": "398534",
+          "complete_p90_us": "398534",
+          "connect_attempts": "2",
+          "flow_limit": "64",
+          "flow_torrents": "1",
+          "max_active": "2",
+          "max_open_flows": "1",
+          "max_peers": "4",
+          "max_running": "1",
+          "max_torrent_flows": "1",
+          "peer_limit": "4",
+          "protected_us": "6808",
+          "refused": {},
+          "rss_after_bytes": "17416192",
+          "rss_before_bytes": "13697024",
+          "seed_uploaded_bytes": "4194304",
+          "seeds": "1",
+          "setup_us": "283722",
+          "torrents": "1",
+          "transfer_cpu_s": "0.14",
+          "transfer_us": "398507",
+          "verified": "1",
+          "real_s": 0.73,
+          "user_s": 0.09,
+          "sys_s": 0.11,
+          "peak_rss_bytes": 17465344
+        },
+        {
+          "bytes_per_torrent": "4194304",
+          "client": {
+            "generations": "2",
+            "inner_dropped": "0",
+            "inner_rejected": "0",
+            "received": "27074",
+            "rejected": "0",
+            "sent": "4447"
+          },
+          "complete_max_us": "1657339",
+          "complete_p50_us": "1235371",
+          "complete_p90_us": "1587311",
+          "connect_attempts": "40",
+          "flow_limit": "64",
+          "flow_torrents": "8",
+          "max_active": "2",
+          "max_open_flows": "8",
+          "max_peers": "4",
+          "max_running": "2",
+          "max_torrent_flows": "4",
+          "peer_limit": "4",
+          "protected_us": "6573",
+          "refused": {},
+          "rss_after_bytes": "24051712",
+          "rss_before_bytes": "20873216",
+          "seed_uploaded_bytes": "33554432",
+          "seeds": "6",
+          "setup_us": "7241978",
+          "torrents": "8",
+          "transfer_cpu_s": "1.43",
+          "transfer_us": "1657338",
+          "verified": "8",
+          "real_s": 10.85,
+          "user_s": 1.54,
+          "sys_s": 2.12,
+          "peak_rss_bytes": 24215552
+        },
+        {
+          "bytes_per_torrent": "4194304",
+          "client": {
+            "generations": "2",
+            "inner_dropped": "0",
+            "inner_rejected": "0",
+            "received": "54134",
+            "rejected": "0",
+            "sent": "9340"
+          },
+          "complete_max_us": "2812012",
+          "complete_p50_us": "2157881",
+          "complete_p90_us": "2703005",
+          "connect_attempts": "80",
+          "flow_limit": "64",
+          "flow_torrents": "16",
+          "max_active": "4",
+          "max_open_flows": "16",
+          "max_peers": "8",
+          "max_running": "4",
+          "max_torrent_flows": "4",
+          "peer_limit": "8",
+          "protected_us": "7219",
+          "refused": {},
+          "rss_after_bytes": "32456704",
+          "rss_before_bytes": "22085632",
+          "seed_uploaded_bytes": "67108864",
+          "seeds": "4",
+          "setup_us": "9320838",
+          "torrents": "16",
+          "transfer_cpu_s": "2.69",
+          "transfer_us": "2812074",
+          "verified": "16",
+          "real_s": 14.91,
+          "user_s": 2.31,
+          "sys_s": 3.01,
+          "peak_rss_bytes": 32997376
+        },
+        {
+          "bytes_per_torrent": "4194304",
+          "client": {
+            "generations": "2",
+            "inner_dropped": "0",
+            "inner_rejected": "0",
+            "received": "54272",
+            "rejected": "0",
+            "sent": "9580"
+          },
+          "complete_max_us": "2503259",
+          "complete_p50_us": "2167138",
+          "complete_p90_us": "2465383",
+          "connect_attempts": "80",
+          "flow_limit": "64",
+          "flow_torrents": "16",
+          "max_active": "16",
+          "max_open_flows": "52",
+          "max_peers": "4",
+          "max_running": "15",
+          "max_torrent_flows": "4",
+          "peer_limit": "4",
+          "protected_us": "7332",
+          "refused": {},
+          "rss_after_bytes": "51691520",
+          "rss_before_bytes": "23560192",
+          "seed_uploaded_bytes": "67108864",
+          "seeds": "4",
+          "setup_us": "9271281",
+          "torrents": "16",
+          "transfer_cpu_s": "2.71",
+          "transfer_us": "2503369",
+          "verified": "16",
+          "real_s": 14.68,
+          "user_s": 2.54,
+          "sys_s": 3.08,
+          "peak_rss_bytes": 52854784
+        },
+        {
+          "bytes_per_torrent": "4194304",
+          "client": {
+            "generations": "2",
+            "inner_dropped": "0",
+            "inner_rejected": "0",
+            "received": "54067",
+            "rejected": "1",
+            "sent": "9603"
+          },
+          "complete_max_us": "4003642",
+          "complete_p50_us": "2068661",
+          "complete_p90_us": "3838518",
+          "connect_attempts": "104",
+          "flow_limit": "16",
+          "flow_torrents": "16",
+          "max_active": "16",
+          "max_open_flows": "16",
+          "max_peers": "4",
+          "max_running": "11",
+          "max_torrent_flows": "4",
+          "peer_limit": "4",
+          "protected_us": "6772",
+          "refused": {
+            "Tunnel operation failed": "32"
+          },
+          "rss_after_bytes": "32309248",
+          "rss_before_bytes": "20987904",
+          "seed_uploaded_bytes": "67108864",
+          "seeds": "4",
+          "setup_us": "9308669",
+          "torrents": "16",
+          "transfer_cpu_s": "2.84",
+          "transfer_us": "4003670",
+          "verified": "16",
+          "real_s": 16.05,
+          "user_s": 2.53,
+          "sys_s": 3.24,
+          "peak_rss_bytes": 32833536
+        }
+      ],
+      "level1_repeats_s_cpu": {
+        "16MiB": {
+          "v0_26_0": [
+            [
+              1.78,
+              0.86
+            ],
+            [
+              1.81,
+              0.83
+            ],
+            [
+              1.94,
+              0.89
+            ],
+            [
+              1.73,
+              0.85
+            ],
+            [
+              1.73,
+              0.8
+            ]
+          ],
+          "loopback_waker": [
+            [
+              0.63,
+              0.67
+            ],
+            [
+              0.61,
+              0.66
+            ],
+            [
+              0.63,
+              0.66
+            ],
+            [
+              0.64,
+              0.67
+            ],
+            [
+              0.61,
+              0.67
+            ]
+          ],
+          "final": [
+            [
+              0.74,
+              0.47
+            ],
+            [
+              0.73,
+              0.47
+            ],
+            [
+              0.77,
+              0.53
+            ],
+            [
+              0.75,
+              0.47
+            ],
+            [
+              0.75,
+              0.49
+            ]
+          ]
+        },
+        "4MiB": {
+          "v0_26_0": [
+            [
+              0.86,
+              0.28
+            ],
+            [
+              1.02,
+              0.32
+            ],
+            [
+              0.96,
+              0.31
+            ],
+            [
+              0.87,
+              0.28
+            ],
+            [
+              0.99,
+              0.31
+            ]
+          ],
+          "loopback_waker": [
+            [
+              0.43,
+              0.25
+            ],
+            [
+              0.44,
+              0.25
+            ],
+            [
+              0.44,
+              0.23
+            ],
+            [
+              0.47,
+              0.24
+            ],
+            [
+              0.43,
+              0.24
+            ]
+          ],
+          "final": [
+            [
+              0.41,
+              0.15
+            ],
+            [
+              0.4,
+              0.15
+            ],
+            [
+              0.4,
+              0.15
+            ],
+            [
+              0.45,
+              0.17
+            ],
+            [
+              0.42,
+              0.16
+            ]
+          ]
+        }
+      },
+      "note": "the loopback waker opened a second host socket, refused by the host I/O observer; the final owner naps 200 us while active"
+    }
+  },
+  "provider_metadata_probe": {
+    "handshake_s": 0.038788417,
+    "metadata_s": 5.027563042,
+    "id": "e4f19cf636409b72571766c2ae89c98fc21a109d",
+    "files": 1,
+    "same_protected_generation": true,
+    "revocation_rejected": true,
+    "note": "run on an intermediate local version; covers WireGuard session and metadata over HTTPS, not the piece pipeline"
+  },
+  "campaigns_note": "campaigns without a final_ prefix used the pipeline-step binary (mynou_pipeline_step_sha256); final_ direct campaigns used the loopback-waker build, whose direct path is identical to the final one",
+  "public_swarm": {
+    "torrent": "https://releases.ubuntu.com/26.04/ubuntu-26.04.1-desktop-amd64.iso.torrent",
+    "duration_s": 90,
+    "note": "installed service, provider VPN with port forwarding or direct; run2 used the tunnel-step binary, run3 the final one; files removed between runs; run3 compared v0.26.0 with the loopback-waker build, run4 the waker with the final build",
+    "runs": [
+      {
+        "binary": "mynou-0.26.0",
+        "mode": "vpn",
+        "first_byte_s": 2.0,
+        "mib_s_last60": 11.46,
+        "mib_total": 811.2,
+        "peers_max": 50,
+        "cpu_s": 44.5,
+        "cpu_s_per_gib": 56.1,
+        "run": "run2"
+      },
+      {
+        "binary": "mynou-local",
+        "mode": "vpn",
+        "first_byte_s": 2.0,
+        "mib_s_last60": 43.76,
+        "mib_total": 4063.4,
+        "peers_max": 50,
+        "cpu_s": 84.5,
+        "cpu_s_per_gib": 21.3,
+        "run": "run2"
+      },
+      {
+        "binary": "mynou-local",
+        "mode": "direct",
+        "first_byte_s": 1.0,
+        "mib_s_last60": 62.09,
+        "mib_total": 6179.3,
+        "peers_max": 50,
+        "cpu_s": 35.0,
+        "cpu_s_per_gib": 5.8,
+        "run": "run2"
+      },
+      {
+        "binary": "mynou-0.26.0",
+        "mode": "direct",
+        "first_byte_s": 1.0,
+        "mib_s_last60": 73.29,
+        "mib_total": 6176.8,
+        "peers_max": 50,
+        "cpu_s": 46.0,
+        "cpu_s_per_gib": 7.6,
+        "run": "run2"
+      },
+      {
+        "binary": "mynou-local",
+        "mode": "vpn",
+        "first_byte_s": 1.0,
+        "mib_s_last60": 40.65,
+        "mib_total": 3579.7,
+        "peers_max": 50,
+        "cpu_s": 78.1,
+        "cpu_s_per_gib": 22.3,
+        "run": "run2"
+      },
+      {
+        "binary": "mynou-0.26.0",
+        "mode": "vpn",
+        "first_byte_s": 2.1,
+        "mib_s_last60": 31.33,
+        "mib_total": 2818.8,
+        "peers_max": 50,
+        "cpu_s": 73.7,
+        "cpu_s_per_gib": 26.8,
+        "run": "run2"
+      },
+      {
+        "binary": "mynou-0.26.0",
+        "mode": "direct",
+        "first_byte_s": 1.0,
+        "mib_s_last60": 43.57,
+        "mib_total": 4131.4,
+        "peers_max": 50,
+        "cpu_s": 31.5,
+        "cpu_s_per_gib": 7.8,
+        "run": "run2"
+      },
+      {
+        "binary": "mynou-local",
+        "mode": "direct",
+        "first_byte_s": 5.1,
+        "mib_s_last60": 68.56,
+        "mib_total": 5679.7,
+        "peers_max": 50,
+        "cpu_s": 23.2,
+        "cpu_s_per_gib": 4.2,
+        "run": "run2"
+      },
+      {
+        "binary": "mynou-0.26.0",
+        "mode": "vpn",
+        "first_byte_s": 7.2,
+        "mib_s_last60": 20.14,
+        "mib_total": 1517.1,
+        "peers_max": 50,
+        "cpu_s": 66.0,
+        "uploaded_mib": 0.0,
+        "cpu_s_per_gib": 44.5,
+        "run": "run3"
+      },
+      {
+        "binary": "mynou-waker",
+        "mode": "vpn",
+        "first_byte_s": 4.1,
+        "mib_s_last60": 42.2,
+        "mib_total": 3601.8,
+        "peers_max": 50,
+        "cpu_s": 101.4,
+        "uploaded_mib": 0.0,
+        "cpu_s_per_gib": 28.8,
+        "run": "run3"
+      },
+      {
+        "binary": "mynou-waker",
+        "mode": "direct",
+        "first_byte_s": 1.0,
+        "mib_s_last60": 46.72,
+        "mib_total": 4504.8,
+        "peers_max": 50,
+        "cpu_s": 32.3,
+        "uploaded_mib": 0.1,
+        "cpu_s_per_gib": 7.3,
+        "run": "run3"
+      },
+      {
+        "binary": "mynou-0.26.0",
+        "mode": "direct",
+        "first_byte_s": 16.4,
+        "mib_s_last60": 64.54,
+        "mib_total": 4304.8,
+        "peers_max": 50,
+        "cpu_s": 40.5,
+        "uploaded_mib": 0.0,
+        "cpu_s_per_gib": 9.6,
+        "run": "run3"
+      },
+      {
+        "binary": "mynou-waker",
+        "mode": "vpn",
+        "first_byte_s": 1.0,
+        "mib_s_last60": 50.51,
+        "mib_total": 4296.2,
+        "peers_max": 50,
+        "cpu_s": 102.8,
+        "uploaded_mib": 0.0,
+        "cpu_s_per_gib": 24.5,
+        "run": "run3"
+      },
+      {
+        "binary": "mynou-0.26.0",
+        "mode": "vpn",
+        "first_byte_s": 6.1,
+        "mib_s_last60": 14.4,
+        "mib_total": 1214.1,
+        "peers_max": 50,
+        "cpu_s": 64.7,
+        "uploaded_mib": 0.0,
+        "cpu_s_per_gib": 54.6,
+        "run": "run3"
+      },
+      {
+        "binary": "mynou-0.26.0",
+        "mode": "direct",
+        "first_byte_s": 4.1,
+        "mib_s_last60": 67.46,
+        "mib_total": 5440.2,
+        "peers_max": 50,
+        "cpu_s": 50.0,
+        "uploaded_mib": 0.0,
+        "cpu_s_per_gib": 9.4,
+        "run": "run3"
+      },
+      {
+        "binary": "mynou-waker",
+        "mode": "direct",
+        "first_byte_s": 5.1,
+        "mib_s_last60": 70.49,
+        "mib_total": 5973.3,
+        "peers_max": 50,
+        "cpu_s": 41.6,
+        "uploaded_mib": 0.0,
+        "cpu_s_per_gib": 7.1,
+        "run": "run3"
+      },
+      {
+        "binary": "mynou-final",
+        "mode": "vpn",
+        "first_byte_s": 28.5,
+        "mib_s_last60": 54.23,
+        "mib_total": 3307.6,
+        "peers_max": 50,
+        "cpu_s": 74.2,
+        "uploaded_mib": 0.2,
+        "cpu_s_per_gib": 23.0,
+        "run": "run4"
+      },
+      {
+        "binary": "mynou-waker",
+        "mode": "vpn",
+        "first_byte_s": 1.0,
+        "mib_s_last60": 41.07,
+        "mib_total": 3337.9,
+        "peers_max": 50,
+        "cpu_s": 99.5,
+        "uploaded_mib": 14.9,
+        "cpu_s_per_gib": 30.5,
+        "run": "run4"
+      },
+      {
+        "binary": "mynou-final",
+        "mode": "vpn",
+        "first_byte_s": 3.1,
+        "mib_s_last60": 56.26,
+        "mib_total": 4671.9,
+        "peers_max": 50,
+        "cpu_s": 104.4,
+        "uploaded_mib": 0.0,
+        "cpu_s_per_gib": 22.9,
+        "run": "run4"
+      },
+      {
+        "binary": "mynou-waker",
+        "mode": "vpn",
+        "first_byte_s": 3.1,
+        "mib_s_last60": 57.27,
+        "mib_total": 5137.3,
+        "peers_max": 50,
+        "cpu_s": 109.5,
+        "uploaded_mib": 0.0,
+        "cpu_s_per_gib": 21.8,
+        "run": "run4"
+      },
+      {
+        "binary": "mynou-final",
+        "mode": "direct",
+        "first_byte_s": 1.0,
+        "mib_s_last60": 68.81,
+        "mib_total": 6184.0,
+        "peers_max": 50,
+        "cpu_s": 43.4,
+        "uploaded_mib": 0.0,
+        "cpu_s_per_gib": 7.2,
+        "run": "run4"
+      }
+    ]
+  }
+}

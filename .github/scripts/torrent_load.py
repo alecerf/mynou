@@ -10,12 +10,13 @@ import subprocess
 TEST = "torrent::load_tests::torrent_load_report"
 BYTES = 4 << 20
 # torrents, seeding clients, downloader max_active and max_peers, client tunnel flow limit.
-# The default engine limits are max_active 2 and max_peers 4, the default tunnel flow limit 64.
+# Keep the historical 2-active/4-peer profile; current max_peers defaults to 50.
+# The default tunnel flow limit is 64.
 LEVELS = [
     (1, 1, 2, 4, 64),
     (8, 6, 2, 4, 64),
     (16, 4, 4, 8, 64),
-    # 16 active torrents x 4 peers: the engine connection budget equals the flow limit.
+    # 16 active torrents x 4 peers: configured peer demand equals the flow limit.
     (16, 4, 16, 4, 64),
     (16, 4, 16, 4, 16),
 ]
