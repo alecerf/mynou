@@ -7,9 +7,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Component, Path, PathBuf};
 use std::sync::RwLock;
 
-/// The variable commands read the access token from; Mynou itself keeps only
-/// the token's digest, never a saved secret of this name.
-pub const API_TOKEN_ENV: &str = "MYNOU_API_TOKEN";
 /// Secret values in one store record, and the size of each.
 pub const MAX_SECRETS: usize = 256;
 pub const MAX_SECRET_BYTES: usize = 4096;
@@ -53,7 +50,6 @@ pub struct Catalog {
     pub enabled: bool,
     pub url: String,
     pub token_env: String,
-    pub api_key_env: String,
 }
 #[derive(Clone, Debug)]
 pub struct Source {
@@ -167,7 +163,6 @@ pub fn default_json() -> Value {
                 ("enabled", false.into()),
                 ("url", "https://api.themoviedb.org/3".into()),
                 ("token_env", "MYNOU_TMDB_TOKEN".into()),
-                ("api_key_env", "MYNOU_TMDB_API_KEY".into()),
             ]),
         ),
         ("series_packs", object(vec![("enabled", false.into())])),
@@ -212,13 +207,9 @@ fn section<'a>(v: &'a Value, k: &str) -> Result<&'a Value> {
     }
     Ok(s)
 }
-fn keys(v: &Value, allowed: &[&str]) -> Result<()> {
-    let map = v.as_object().ok_or("Configuration: expected an object")?;
-    for key in map.keys() {
-        if !allowed.contains(&key.as_str()) {
-            return Err(format!("Configuration: unknown field {key}"));
-        }
-    }
+/// Fields Mynou does not know are ignored, so older or newer documents load.
+fn expect_object(v: &Value) -> Result<()> {
+    v.as_object().ok_or("Configuration: expected an object")?;
     Ok(())
 }
 fn absolute_path(path: &Path) -> Result<PathBuf> {
@@ -285,7 +276,7 @@ fn path_mappings(plex: &Value) -> Result<Vec<PathMapping>> {
     let mut mappings = Vec::with_capacity(entries.len());
     let mut prefixes = std::collections::BTreeSet::new();
     for entry in entries {
-        keys(entry, &["mynou_prefix", "plex_prefix"])?;
+        expect_object(entry)?;
         let mynou_prefix = mapping_path(entry, "mynou_prefix")?;
         let plex_prefix = mapping_path(entry, "plex_prefix")?;
         if !prefixes.insert(mynou_prefix.clone()) {
@@ -303,7 +294,7 @@ fn monitoring(value: &Value) -> Result<Monitoring> {
     let Some(section) = value.get("monitoring") else {
         return Ok(Monitoring::default());
     };
-    keys(section, &["enabled", "interval_secs", "max_checks"])?;
+    expect_object(section)?;
     let interval_secs = number(section, "interval_secs", 3600, 86400)?;
     let max_checks = number(section, "max_checks", 32, 256)? as usize;
     if interval_secs < 60 || max_checks == 0 {
@@ -366,15 +357,7 @@ pub fn load(data_dir: &Path) -> Result<Config> {
     let data_dir = absolute_path(data_dir)?;
     let store = store_dir(&data_dir);
     let (document, secrets) = if crate::store::Store::directory_exists(&store)? {
-        let mut store = crate::store::Store::open_read_only(&store).map_err(|error| {
-            if error.contains("already open") {
-                format!(
-                    "{error}; Mynou is running: set {API_TOKEN_ENV} to its access token to reach it"
-                )
-            } else {
-                error
-            }
-        })?;
+        let mut store = crate::store::Store::open_read_only(&store)?;
         (store.settings()?, store.secrets()?)
     } else {
         (None, BTreeMap::new())
@@ -383,94 +366,22 @@ pub fn load(data_dir: &Path) -> Result<Config> {
     from_json(&document.unwrap_or_else(default_json), &data_dir)
 }
 pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
-    keys(
-        v,
-        &[
-            "schema_version",
-            "listen",
-            "poll_interval_ms",
-            "lease_duration_secs",
-            "workers",
-            "max_attempts",
-            "minimum_seeders",
-            "selection",
-            "monitoring",
-            "series_packs",
-            "updates",
-            "library",
-            "downloads",
-            "plex",
-            "catalog",
-            "indexers",
-            "requesters",
-            "irc",
-        ],
-    )?;
     if number(v, "schema_version", 0, 1)? != 1 {
         return Err(
             "Configuration: use Rust schema 1; previous Go SQLite data remains separate".into(),
         );
     }
     let library = section(v, "library")?;
-    keys(library, &["movies_root", "series_root"])?;
     let d = section(v, "downloads")?;
-    keys(
-        d,
-        &[
-            "enabled",
-            "data_dir",
-            "state_dir",
-            "listen_port",
-            "seed",
-            "dht",
-            "pex",
-            "max_active",
-            "max_seeding",
-            "max_peers",
-            "download_limit_bps",
-            "upload_limit_bps",
-            "seed_ratio_milli",
-            "seed_time_secs",
-        ],
-    )?;
     let p = section(v, "plex")?;
-    keys(
-        p,
-        &[
-            "enabled",
-            "url",
-            "watchlist_url",
-            "token_env",
-            "movies_section",
-            "series_section",
-            "path_mappings",
-        ],
-    )?;
     let c = section(v, "catalog")?;
-    keys(c, &["enabled", "url", "token_env", "api_key_env"])?;
     let mut sources = Vec::new();
     if let Some(indexers) = v.get("indexers") {
         for source in indexers
             .as_array()
             .ok_or("Configuration: indexers must be an array")?
         {
-            keys(
-                source,
-                &[
-                    "name",
-                    "kind",
-                    "url",
-                    "api_key_env",
-                    "enabled",
-                    "min_interval_ms",
-                    "authentication",
-                    "id",
-                    "watch",
-                    "mapping",
-                    "protection",
-                    "cross_seed",
-                ],
-            )?;
+            expect_object(source)?;
             let kind = text(source, "kind", "json")?;
             if !["rss", "json", "torznab"].contains(&kind.as_str()) {
                 return Err("Configuration: expected an rss, json or torznab source".into());
@@ -500,9 +411,15 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
         return Err("Configuration: invalid concurrency or timing settings".into());
     }
     let listen = text(v, "listen", "127.0.0.1:8787")?;
-    listen
+    // The API has no sign-in: only this machine may reach it.
+    if !listen
         .parse::<std::net::SocketAddr>()
-        .map_err(|_| "Configuration: listen requires an IP address and port")?;
+        .map_err(|_| "Configuration: listen requires an IP address and port")?
+        .ip()
+        .is_loopback()
+    {
+        return Err("Configuration: listen must be a loopback address such as 127.0.0.1".into());
+    }
     for url in [
         text(p, "url", "http://127.0.0.1:32400")?,
         text(
@@ -521,14 +438,14 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
     let series_packs_enabled = match v.get("series_packs") {
         None => false,
         Some(section) => {
-            keys(section, &["enabled"])?;
+            expect_object(section)?;
             boolean(section, "enabled", false)?
         }
     };
     let updates_automatic = match v.get("updates") {
         None => true,
         Some(section) => {
-            keys(section, &["automatic"])?;
+            expect_object(section)?;
             boolean(section, "automatic", true)?
         }
     };
@@ -616,7 +533,6 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
             enabled: boolean(c, "enabled", false)?,
             url: text(c, "url", "https://api.themoviedb.org/3")?,
             token_env: text(c, "token_env", "MYNOU_TMDB_TOKEN")?,
-            api_key_env: text(c, "api_key_env", "MYNOU_TMDB_API_KEY")?,
         },
         sources,
         requesters,
@@ -675,7 +591,7 @@ pub fn source(name: &str) -> &'static str {
     }
 }
 
-/// Secret names are environment-variable names; the API token is not one.
+/// Secret names are environment-variable names.
 pub fn check_secret_name(name: &str) -> Result<()> {
     if name.is_empty()
         || name.len() > 128
@@ -685,11 +601,6 @@ pub fn check_secret_name(name: &str) -> Result<()> {
             .all(|(i, b)| b == b'_' || b.is_ascii_uppercase() || i > 0 && b.is_ascii_digit())
     {
         return Err("Secret names use 1 to 128 uppercase letters, digits and underscores".into());
-    }
-    if name == API_TOKEN_ENV {
-        return Err(
-            "The access token is not a saved secret; `mynou token --reset` replaces it".into(),
-        );
     }
     Ok(())
 }
@@ -728,7 +639,6 @@ pub fn secret_names(document: &Value) -> BTreeSet<String> {
     let mut names: BTreeSet<String> = [
         "MYNOU_PLEX_TOKEN",
         "MYNOU_TMDB_TOKEN",
-        "MYNOU_TMDB_API_KEY",
         "MYNOU_INDEXER_API_KEY",
     ]
     .into_iter()

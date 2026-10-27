@@ -32,7 +32,7 @@ impl Default for SelectionConfig {
 
 impl SelectionConfig {
     pub fn from_json(value: &Value) -> Result<Self> {
-        check_keys(value, &["profiles", "movie_profile", "episode_profile"])?;
+        expect_object(value)?;
         let mut config = Self::default();
         if let Some(value) = value.get("profiles") {
             let profiles = value
@@ -113,24 +113,7 @@ pub struct ScoreRule {
 
 impl Profile {
     pub fn from_json(value: &Value) -> Result<Self> {
-        check_keys(
-            value,
-            &[
-                "resolutions",
-                "cutoff_resolution",
-                "sources",
-                "codecs",
-                "languages",
-                "allow_unknown_resolution",
-                "allow_unknown_source",
-                "allow_unknown_codec",
-                "allow_unknown_language",
-                "required_terms",
-                "blocked_terms",
-                "score_rules",
-                "minimum_score",
-            ],
-        )?;
+        expect_object(value)?;
         let mut resolutions = Vec::new();
         for value in list(value, "resolutions")? {
             let resolution = value
@@ -163,7 +146,7 @@ impl Profile {
         let mut score_rules = Vec::new();
         let mut seen_rules = BTreeSet::new();
         for rule in list(value, "score_rules")? {
-            check_keys(rule, &["terms", "score"])?;
+            expect_object(rule)?;
             let terms = terms(rule, "terms")?;
             if terms.is_empty() {
                 return Err("Selection: score rules must contain at least one term".into());
@@ -438,13 +421,9 @@ fn number(value: i32) -> Value {
     Value::Number(f64::from(value))
 }
 
-fn check_keys(value: &Value, allowed: &[&str]) -> Result<()> {
-    let map = value.as_object().ok_or("Selection: expected an object")?;
-    for key in map.keys() {
-        if !allowed.contains(&key.as_str()) {
-            return Err(format!("Selection: unknown field {key}"));
-        }
-    }
+/// Fields Mynou does not know are ignored, so older or newer documents load.
+fn expect_object(value: &Value) -> Result<()> {
+    value.as_object().ok_or("Selection: expected an object")?;
     Ok(())
 }
 pub(crate) fn validate_profile_name(name: &str) -> Result<()> {
@@ -1095,11 +1074,7 @@ mod tests {
             )]))
             .is_err()
         );
-        for invalid in [
-            r#"{"profiles":{}}"#,
-            r#"{"movie_profile":"missing"}"#,
-            r#"{"extra":true}"#,
-        ] {
+        for invalid in [r#"{"profiles":{}}"#, r#"{"movie_profile":"missing"}"#] {
             assert!(SelectionConfig::from_json(&json::parse(invalid).unwrap()).is_err());
         }
     }

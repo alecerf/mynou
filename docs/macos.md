@@ -15,16 +15,13 @@ both files in Downloads (replace the version with the one you downloaded):
 cd "$HOME/Downloads" &&
   awk '$2 == "mynou-v0.22.19-macos-arm64"' SHA256SUMS | shasum -a 256 -c - &&
   mkdir -p "$HOME/.local/bin" &&
-  install -m 755 mynou-v0.22.19-macos-arm64 "$HOME/.local/bin/mynou" &&
-  "$HOME/.local/bin/mynou" demo --dir "$HOME/mynou-demo"
+  install -m 755 mynou-v0.22.19-macos-arm64 "$HOME/.local/bin/mynou"
 ```
 
 Each step runs only if the previous one succeeded, so a checksum failure stops
 before installation: download the files again before retrying. The
 [verification guide](validation.md#verify-release-assets) explains what the
-checksums prove. The demo needs a directory that does not exist yet, uses
-synthetic media, loopback peers and simulated Plex and indexer services, and
-needs no secrets. Add `$HOME/.local/bin` to your `PATH` to run `mynou` directly.
+checksums prove. Add `$HOME/.local/bin` to your `PATH` to run `mynou` directly.
 
 The executable is not signed with an Apple Developer identity or notarized.
 If macOS blocks a verified download, use **Open Anyway** in **System Settings →
@@ -40,19 +37,13 @@ Start the service:
 ```
 
 The first start creates `~/Library/Application Support/Mynou`, private to your
-account. Open <http://127.0.0.1:8787/> and create your access token: Mynou
-shows it once and keeps only its SHA-256 digest, so keep it safe. The first
-visit can create it only from this Mac, while Mynou listens on a loopback
-address; otherwise, and whenever the token is lost, stop Mynou and run
-`mynou token --reset`, which prints a new token once. Commands that reach the
-running service read the token from `MYNOU_API_TOKEN`, which you set the way
-you prefer. Then set Mynou up in the **Settings** view: library folders, downloads, Plex, TMDB, sources and their
+account. Open <http://127.0.0.1:8787/>; there is no sign-in. Then set Mynou up in the **Settings** view: library folders, downloads, Plex, TMDB, sources and their
 tokens. Plex and TMDB turn on once their token is saved. Use ordinary folders you own rather than
 paths through symbolic links: imports never overwrite files and refuse
 symbolic links.
 
-Every command takes `--dir DIR` to use another data directory; `MYNOU_HOME`
-sets the default. Run Mynou as the user that owns its data directory and
+`mynou serve --dir DIR` uses another data directory; `MYNOU_HOME` sets the
+default. Run Mynou as the user that owns its data directory and
 library. For unattended operation, the [native launchd service](macos-service.md)
 starts at account login and restarts after crashes.
 
@@ -60,15 +51,17 @@ starts at account login and restarts after crashes.
 
 Mynou keeps its settings and secrets in its own storage, in `state/jobs` of the
 data directory. Change them from the
-**Settings** view of the web interface, from the API (`GET` and `POST
-/api/settings`, `GET` and `POST /api/secrets`) or from the command line:
+**Settings** view of the web interface or from the API (`GET` and `POST
+/api/settings`, `GET` and `POST /api/secrets`). Settings the view does not
+show, such as `selection`, `irc` and `requesters`, are saved through the API:
 
 ```sh
-mynou settings                            # every setting, as JSON
-mynou settings --save < settings.json     # validate and save a whole document
-printf '%s' "$TOKEN" | mynou secrets --set MYNOU_PLEX_TOKEN
-mynou secrets                             # which secrets are set, never their values
+curl -s http://127.0.0.1:8787/api/settings            # every setting, as JSON
+curl -s -X POST -H 'Content-Type: application/json' \
+  --data @settings.json http://127.0.0.1:8787/api/settings
 ```
+
+`settings.json` holds `{"settings": {...}}`, the whole document.
 
 Settings are validated before they are saved: unknown fields are rejected, so a
 typo is reported instead of ignored, and an invalid document leaves the saved
@@ -95,7 +88,7 @@ resolve against the data directory.
 | `irc`, `requesters` | absent | [IRC announcements](sources.md#irc-announcements), [requester accounts](requesters.md) |
 
 Each integration names the secret that holds its credential (the `*_env`
-settings). Save it in the **Settings** view or with `mynou secrets --set`; a
+settings). Save it in the **Settings** view or with `POST /api/secrets`; a
 saved secret is kept in the store, is never returned by the API, and takes
 precedence over an environment variable of the same name, which remains a
 fallback:
@@ -103,16 +96,12 @@ fallback:
 | Secret | Used for |
 | --- | --- |
 | `MYNOU_PLEX_TOKEN` | Plex server and its watchlist |
-| `MYNOU_TMDB_TOKEN` or `MYNOU_TMDB_API_KEY` | TMDB catalog |
+| `MYNOU_TMDB_TOKEN` | TMDB catalog (read access token) |
 | `MYNOU_INDEXER_API_KEY` | Default API key of sources |
 
 Enable the catalog with `catalog.enabled`, and describe each source as shown in
 [sources](sources.md). Mynou talks to these services itself; the installation
-runs no other media manager. Then check a search:
-
-```sh
-mynou search --title "Example Movie" --year 2026
-```
+runs no other media manager. Then check a search from **New request**.
 
 ## Connect Plex
 
@@ -139,12 +128,8 @@ comparison only: they do not move files or change mounts. They match whole
 path components (`/Volumes/Media` does not match `/Volumes/Media-extra`), the
 longest prefix wins, and without a mapping the paths must be identical.
 
-Once the settings are applied, synchronize:
-
-```sh
-mynou sync
-mynou jobs
-```
+Once the settings are applied, Mynou reads the watchlists on its own; the jobs
+appear in the web interface.
 
 ## Everyday use
 
@@ -152,27 +137,15 @@ The API listens on `127.0.0.1:8787`. `/healthz` reports liveness. While
 Mynou validates its storage after a start, `/readyz` answers 503 `starting`
 (`failed` if validation found an inconsistency), only reads are served and
 `startup` in `/api/status` shows the stage and rows checked; requests, workers
-and transfers begin once it is `ready`. `mynou healthcheck` exits with an error unless the running service answers `/readyz`
-(it bypasses any proxy). `/api` routes need
-`Authorization: Bearer` with the access token. For remote access, put a TLS reverse
-proxy in front and keep the plain listener private.
+and transfers begin once it is `ready`. The API has no sign-in:
+`listen` must be a loopback address, and requests must name it
+(`127.0.0.1`, `localhost` or `[::1]`) and come from no other site's page.
 
 Port 6881/TCP accepts BitTorrent peers; whether peers can reach it depends on
 your firewall and router. DHT and UDP trackers use outgoing connections only.
 
-CLI commands use the running service's API for the same data directory, or
-the storage directly when it is stopped:
-
-```sh
-mynou submit --title "Movie" --year 2026 --url 'magnet:?xt=urn:btih:...'
-mynou status
-mynou events ID
-mynou retry ID
-mynou cancel ID
-```
-
-For a local file, pass its path with `--path`. Cancelling a request never
-deletes files or cancels other requests sharing the torrent.
+Requests, retries and cancellations happen in the web interface. Cancelling a
+request never deletes files or cancels other requests sharing the torrent.
 
 ## TLS trust and proxies
 
@@ -180,7 +153,7 @@ The TLS client reads PEM certificate bundles such as `/etc/ssl/cert.pem`, not th
 macOS Keychain. To trust a private certificate authority, set `MYNOU_CA_FILE` to
 an approved PEM bundle. Certificate and host name checks cannot be disabled. If
 your network needs a proxy, set `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY` for the
-service; local management commands bypass it.
+service; `mynou update` and `mynou service` bypass it to reach the local API.
 
 ## Back up and upgrade
 
@@ -188,7 +161,7 @@ For unattended account-login startup, crash recovery and explicit graceful
 stop/start/uninstall commands, see the [native launchd service](macos-service.md).
 
 Keep the data directory (its `state/` and `downloads/` folders, which hold
-every setting, saved secret and the access token digest) and the library folders. For a consistent backup, stop the service before copying `state/`. The
+every setting and saved secret) and the library folders. For a consistent backup, stop the service before copying `state/`. The
 journal confirms each transaction on disk, and an interrupted final write is
 recovered at the next start. `POST /api/shutdown` lets running work finish;
 stopping the process instead relies on that recovery.
@@ -236,7 +209,7 @@ formats that older versions refuse (see
 ## Native WireGuard controls
 
 Private profile import, redacted status and explicit lifecycle controls are
-available through `mynou vpn` and the authenticated API. See the
+available in **Settings → VPN** and through the API. See the
 [operator reference](wireguard-operator.md) for supported settings, startup and
 restart behavior, file permissions and limitations. The
 [WireGuard installation and migration guide](wireguard-macos-migration.md)

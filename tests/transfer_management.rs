@@ -1,8 +1,6 @@
 //! Durable transfer controls use native local peers and synthetic payloads only.
-mod home_support;
 mod transfer_support;
 
-use mynou::config;
 use mynou::engine::{Engine, lock};
 use mynou::json::{self, Value};
 use mynou::net::HttpClient;
@@ -10,8 +8,7 @@ use mynou::server::Api;
 use mynou::store::Request;
 use mynou::torrent::{Client, FilePriority, TorrentControl, TransferPolicy};
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::thread::{self, JoinHandle};
@@ -891,7 +888,7 @@ struct Server {
 impl Server {
     fn open(cfg: mynou::config::Config) -> Self {
         let engine = Engine::open(cfg).unwrap();
-        let api = Api::bind(engine.clone(), TOKEN.into()).unwrap();
+        let api = Api::bind(engine.clone()).unwrap();
         let origin = format!("http://{}", api.address().unwrap());
         Self {
             engine,
@@ -1073,21 +1070,6 @@ fn transfer_api_authentication_and_strict_controls_preserve_existing_state_on_er
         .unwrap();
     let before = server.engine.transfer(&torrent.id).unwrap();
     let base = format!("/api/transfers/{}", torrent.id);
-    for token in [None, Some("incorrect-token")] {
-        assert_eq!(server.call("GET", "/api/transfers", token, None).0, 401);
-        assert_eq!(server.call("GET", &base, token, None).0, 401);
-        assert_eq!(
-            server
-                .call(
-                    "POST",
-                    &format!("{base}/resume"),
-                    token,
-                    Some(&Value::object())
-                )
-                .0,
-            401
-        );
-    }
     let malformed = [
         ("selection", r#"{"all":false}"#),
         ("selection", r#"{"all":true,"indices":[0]}"#),
@@ -1292,206 +1274,6 @@ fn shared_requests_expose_one_transfer_and_apply_controls_to_both_requests() {
     redacted(&snapshot);
 }
 
-fn command(directory: &Path, args: &[&str]) -> Output {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_mynou"))
-        .current_dir(directory)
-        .env("MYNOU_HOME", directory)
-        .env("MYNOU_API_TOKEN", TOKEN)
-        .env_remove("MYNOU_PLEX_TOKEN")
-        .env_remove("MYNOU_DEMO_TOKEN")
-        .args(args)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(8);
-    loop {
-        if child.try_wait().unwrap().is_some() {
-            return child.wait_with_output().unwrap();
-        }
-        if Instant::now() >= deadline {
-            child.kill().unwrap();
-            let output = child.wait_with_output().unwrap();
-            panic!(
-                "Transfer CLI timed out: stdout={} stderr={}",
-                String::from_utf8_lossy(&output.stdout),
-                String::from_utf8_lossy(&output.stderr)
-            );
-        }
-        thread::sleep(Duration::from_millis(5));
-    }
-}
-
-fn successful(output: Output) -> Value {
-    assert!(
-        output.status.success(),
-        "stdout={} stderr={}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    json::parse(std::str::from_utf8(&output.stdout).unwrap().trim()).unwrap()
-}
-
-#[test]
-fn online_cli_controls_the_existing_native_service_and_validates_file_priorities() {
-    let scratch = Scratch::new();
-    let torrent = Torrent::single(&scratch.0, "cli.bin", payload(BLOCK, 23));
-    let engine_root = scratch.0.join("engine");
-    let server = Server::open(engine_config(&engine_root));
-    let job = server
-        .engine
-        .submit(request(torrent.path.to_str().unwrap(), "CLI Transfer"))
-        .unwrap()
-        .remove(0);
-    server.engine.tick().unwrap();
-    home_support::serve_here(&engine_root, server.origin.strip_prefix("http://").unwrap());
-    let transfers = successful(command(&engine_root, &["torrents"]));
-    assert_eq!(
-        transfers
-            .get("transfers")
-            .unwrap()
-            .as_array()
-            .unwrap()
-            .len(),
-        1
-    );
-    let transfer = successful(command(&engine_root, &["torrent", &torrent.id]));
-    assert_eq!(
-        transfer.get("request_ids").unwrap().as_array().unwrap(),
-        [Value::String(job.id)]
-    );
-    let paused = successful(command(&engine_root, &["pause", &torrent.id]));
-    assert_eq!(paused.get("user_paused"), Some(&Value::Bool(true)));
-    let priority = successful(command(
-        &engine_root,
-        &["torrent-priority", &torrent.id, "--priority", "-10"],
-    ));
-    assert_eq!(priority.get("priority").and_then(Value::as_i64), Some(-10));
-    let files = successful(command(
-        &engine_root,
-        &[
-            "file-priority",
-            &torrent.id,
-            "--file",
-            "0",
-            "--priority",
-            "high",
-        ],
-    ));
-    assert_eq!(
-        files.get("files").unwrap().as_array().unwrap()[0]
-            .get("priority")
-            .and_then(Value::as_str),
-        Some("high")
-    );
-    let policy = successful(command(
-        &engine_root,
-        &[
-            "torrent-policy",
-            &torrent.id,
-            "--policy",
-            r#"{"upload_limit_bps":65536}"#,
-        ],
-    ));
-    let included = successful(command(
-        &engine_root,
-        &[
-            "torrent-select",
-            &torrent.id,
-            "--selection",
-            r#"{"indices":[0]}"#,
-        ],
-    ));
-    assert_eq!(included.get("user_paused"), Some(&Value::Bool(true)));
-    assert_eq!(included.get("file_selection"), Some(&Value::Null));
-    let cleared = successful(command(
-        &engine_root,
-        &["torrent-policy", &torrent.id, "--policy", "null"],
-    ));
-    for args in [
-        vec![
-            "torrent-select",
-            torrent.id.as_str(),
-            "--selection",
-            r#"{"all":false}"#,
-        ],
-        vec![
-            "torrent-select",
-            torrent.id.as_str(),
-            "--selection",
-            r#"{"indices":[0,0]}"#,
-        ],
-        vec![
-            "torrent-select",
-            torrent.id.as_str(),
-            "--selection",
-            r#"{"indices":[999]}"#,
-        ],
-        vec![
-            "torrent-priority",
-            torrent.id.as_str(),
-            "--priority",
-            "1001",
-        ],
-        vec!["torrent-priority", torrent.id.as_str(), "--priority", "1.5"],
-        vec![
-            "file-priority",
-            torrent.id.as_str(),
-            "--file",
-            "0",
-            "--priority",
-            "skip",
-        ],
-        vec![
-            "file-priority",
-            torrent.id.as_str(),
-            "--file",
-            "999",
-            "--priority",
-            "high",
-        ],
-        vec![
-            "torrent-policy",
-            torrent.id.as_str(),
-            "--policy",
-            r#"{"unknown":true}"#,
-        ],
-        vec!["torrent", "0123456789abcdef0123456789abcdef"],
-    ] {
-        let output = command(&engine_root, &args);
-        assert!(
-            !output.status.success(),
-            "Accepted invalid transfer arguments: {args:?}"
-        );
-        assert!(!output.stderr.is_empty());
-    }
-    let resumed = successful(command(&engine_root, &["resume", &torrent.id]));
-    assert_eq!(resumed.get("user_paused"), Some(&Value::Bool(false)));
-    for snapshot in [
-        &transfers, &transfer, &paused, &priority, &files, &policy, &included, &cleared, &resumed,
-    ] {
-        redacted(snapshot);
-    }
-}
-
-#[test]
-fn transfer_cli_requires_a_running_service_without_creating_local_state() {
-    let scratch = Scratch::new();
-    for args in [
-        vec!["torrents"],
-        vec!["torrent", "ffffffffffffffffffffffffffffffffffffffff"],
-        vec!["pause", "ffffffffffffffffffffffffffffffffffffffff"],
-    ] {
-        let output = command(&scratch.0, &args);
-        assert!(!output.status.success());
-        assert!(String::from_utf8_lossy(&output.stderr).contains("running Mynou service"));
-        assert_eq!(fs::read_dir(&scratch.0).unwrap().count(), 0);
-    }
-    // Loading the default settings creates nothing either.
-    assert!(config::load(&scratch.0).unwrap().downloads_enabled);
-    assert_eq!(fs::read_dir(&scratch.0).unwrap().count(), 0);
-}
-
 #[test]
 fn retained_transfer_pages_and_point_controls_reach_beyond_the_resident_window() {
     let scratch = Scratch::new();
@@ -1596,15 +1378,6 @@ fn retained_transfer_pages_and_point_controls_reach_beyond_the_resident_window()
         Some(false)
     );
 
-    home_support::serve_here(&root, server.origin.strip_prefix("http://").unwrap());
-    // Fresh first-page cursor after the priority mutation.
-    let (_, first) = server.call("GET", "/api/transfers?limit=7", Some(TOKEN), None);
-    let cursor = first.get("next").unwrap().as_str().unwrap();
-    let page = successful(command(
-        &root,
-        &["torrents", "--limit", "7", "--after", cursor],
-    ));
-    assert_eq!(page.get("transfers").unwrap().as_array().unwrap().len(), 7);
     for query in [
         "limit=0",
         "limit=201",

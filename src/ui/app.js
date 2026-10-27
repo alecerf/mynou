@@ -11,7 +11,6 @@ import { data, views, currentView, jobsTail, transfersTail, libraryTail, resetTa
 import { refreshJobSearch } from './js/jobs.js';
 import { VIEWS, route } from './js/router.js';
 import { setupArt } from './js/art.js';
-import { TOKEN_KEY, askToken, firstStart, connectOrSetUp } from './js/session.js';
 import './js/dashboard.js';
 import './js/transfers.js';
 import './js/library.js';
@@ -28,16 +27,7 @@ function setup() {
   for (const view of Object.values(views)) view.init?.();
   $('#detail-close').addEventListener('click', () => $('#detail').close());
   $('#detail').addEventListener('click', (event) => { if (event.target.id === 'detail') event.target.close(); });
-  $('#login').addEventListener('cancel', (event) => event.preventDefault());
-  $('#login-form').addEventListener('submit', (event) => {
-    const token = new FormData(event.currentTarget).get('token').trim();
-    $('#login-error').textContent = '';
-    event.currentTarget.reset();
-    try { sessionStorage.setItem(TOKEN_KEY, token); } catch { /* storage unavailable: the token lives for this page only */ }
-    link.connect(token);
-  });
   setupArt();
-  firstStart();
 
   const pill = $('#link');
   let lost = false;
@@ -55,12 +45,7 @@ function setup() {
       resetTail(libraryTail);
       resetTail(transfersTail);
       refreshJobSearch();
-      $('#login').close();
     }
-  });
-  link.addEventListener('rejected', () => {
-    // A refused handshake before any success usually means a wrong token.
-    if (!data.size) { try { sessionStorage.removeItem(TOKEN_KEY); } catch { /* ignore */ } link.disconnect(); askToken('The token was refused. Check it and try again.'); }
   });
   let queued = false;
   link.addEventListener('topic', ({ detail }) => {
@@ -79,10 +64,7 @@ function setup() {
   });
   addEventListener('hashchange', route);
   route();
-
-  let token = '';
-  try { token = sessionStorage.getItem(TOKEN_KEY) ?? ''; } catch { /* ignore */ }
-  if (token) link.connect(token); else connectOrSetUp();
+  link.connect();
 }
 
 setup();

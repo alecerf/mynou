@@ -300,7 +300,6 @@ fn protected_source_reports_and_rules_show_only_requester_aliases() {
     let cfg = config::from_json(&v, &dir.0).unwrap();
     let server = Server::open(cfg.clone());
     let e = &server.engine;
-    assert_eq!(server.call("GET", "/api/irc", &[], "").status, 401);
     let report = server.call(
         "GET",
         "/api/irc",

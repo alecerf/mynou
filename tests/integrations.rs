@@ -422,7 +422,6 @@ fn catalog_http_cache_reuses_seasons_and_invalidates_source_and_credentials() {
     assert_eq!(season_count.load(Ordering::Relaxed), 3);
 
     config.catalog.token_env = "MYNOU_TEST_ABSENT_CREDENTIAL_239104".into();
-    config.catalog.api_key_env = "MYNOU_TEST_ABSENT_CREDENTIAL_239104".into();
     assert!(integrations::expand(&config, &series).is_err());
     assert_eq!(details_count.load(Ordering::Relaxed), 3);
 }

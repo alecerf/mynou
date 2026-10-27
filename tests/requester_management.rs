@@ -1,21 +1,12 @@
 //! Original Bearer API and CLI requester scenarios.
 mod api_support;
-mod home_support;
 mod library_support;
 mod requester_support;
 use api_support::{Server, TOKEN};
 use library_support::Directory;
-use mynou::{
-    config,
-    engine::Engine,
-    json::{self, Value},
-};
+use mynou::json::{self, Value};
 use requester_support::*;
-use std::{
-    collections::BTreeMap,
-    fs,
-    process::{Command, Stdio},
-};
+use std::{collections::BTreeMap, fs};
 fn authenticated(server: &Server, route: &str, v: &Value) -> api_support::Reply {
     server.call(
         "POST",
@@ -44,12 +35,6 @@ fn requester_api_requires_authentication_strict_scopes_and_current_guards() {
     let server = Server::open(accounts.config(&directory.0));
     let q = policy_query(policy(&server.engine, "alice"));
     let route = "/api/requesters/alice/control";
-    assert_eq!(
-        server
-            .call("POST", route, &[], &json::stringify(&q.to_json()))
-            .status,
-        401
-    );
     for patch in [
         r#"{"apply":true}"#,
         r#"{"plan_id":"bad"}"#,
@@ -113,135 +98,4 @@ fn requester_api_requires_authentication_strict_scopes_and_current_guards() {
     );
     assert_eq!(listing.status, 200);
     no_credentials(&json::parse(&listing.body).unwrap());
-}
-fn config_value(cfg: &mynou::config::Config) -> Value {
-    let mut value = config::default_json();
-    value.insert("listen", cfg.listen.clone());
-    value.get_mut("downloads").unwrap().insert("enabled", false);
-    value
-        .get_mut("library")
-        .unwrap()
-        .insert("movies_root", cfg.movies_root.to_str().unwrap());
-    value
-        .get_mut("library")
-        .unwrap()
-        .insert("series_root", cfg.series_root.to_str().unwrap());
-    let mut requesters = Value::object();
-    requesters.insert(
-        "accounts",
-        Value::Array(
-            cfg.requesters
-                .accounts
-                .iter()
-                .map(|a| {
-                    let mut v = Value::object();
-                    v.insert("id", a.id.clone());
-                    v.insert("expected_user_id", a.expected_user_id.clone());
-                    v.insert("token_env", a.token_env.clone());
-                    v.insert("identity_url", a.identity_url.clone());
-                    v.insert("watchlist_url", a.watchlist_url.clone());
-                    v
-                })
-                .collect(),
-        ),
-    );
-    requesters.insert(
-        "destinations",
-        Value::Array(
-            cfg.requesters
-                .destinations
-                .iter()
-                .map(|d| {
-                    let mut v = Value::object();
-                    v.insert("id", d.id.clone());
-                    v.insert("movies_root", d.movies_root.to_str().unwrap());
-                    v.insert("series_root", d.series_root.to_str().unwrap());
-                    v
-                })
-                .collect(),
-        ),
-    );
-    value.insert("requesters", requesters);
-    value
-}
-#[test]
-fn cli_offline_preview_is_read_only_and_online_apply_uses_the_same_guard() {
-    let directory = Directory::new();
-    let accounts = Accounts::open();
-    let mut cfg = accounts.config(&directory.0);
-    cfg.listen = "127.0.0.1:0".into();
-    let engine = Engine::open_for_management(cfg.clone()).unwrap();
-    let mut p = policy(&engine, "alice");
-    p.enabled = true;
-    let q = policy_query(p);
-    drop(engine);
-    home_support::save_settings(&directory.0, &config_value(&cfg));
-    let mapping = directory.0.join("policy.json");
-    let mut v = q.to_json();
-    if let Value::Object(m) = &mut v {
-        m.remove("apply");
-    }
-    fs::write(&mapping, json::stringify(&v)).unwrap();
-    let command = |args: &[&str]| {
-        Command::new(env!("CARGO_BIN_EXE_mynou"))
-            .args(args)
-            .arg("--dir")
-            .arg(&directory.0)
-            .env("MYNOU_API_TOKEN", TOKEN)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .unwrap()
-    };
-    let before = snapshot(&cfg.store_dir);
-    let output = command(&[
-        "requester-control",
-        "alice",
-        "--mapping",
-        mapping.to_str().unwrap(),
-    ]);
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    assert_eq!(snapshot(&cfg.store_dir), before);
-    let offline = json::parse(std::str::from_utf8(&output.stdout).unwrap()).unwrap();
-    let guard = offline.get("plan_id").unwrap().as_str().unwrap();
-    assert!(
-        !command(&[
-            "requester-control",
-            "alice",
-            "--mapping",
-            mapping.to_str().unwrap(),
-            "--apply",
-            "--plan-id",
-            guard
-        ])
-        .status
-        .success()
-    );
-    assert_eq!(snapshot(&cfg.store_dir), before);
-    let server = Server::open(cfg);
-    home_support::serve_here(&directory.0, &server.authority);
-    let online = authenticated(&server, "/api/requesters/alice/control", &q.to_json());
-    assert_eq!(
-        json::parse(&online.body).unwrap().get("plan_id"),
-        offline.get("plan_id")
-    );
-    let output = command(&[
-        "requester-control",
-        "alice",
-        "--mapping",
-        mapping.to_str().unwrap(),
-        "--apply",
-        "--plan-id",
-        guard,
-    ]);
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    assert!(policy(&server.engine, "alice").enabled);
 }

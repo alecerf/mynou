@@ -1,11 +1,9 @@
 #![forbid(unsafe_code)]
 
-pub mod access;
 pub mod bencode;
 pub mod config;
 pub mod crypto;
 pub mod date;
-pub mod demo;
 pub mod engine;
 pub mod indexers;
 pub mod integrations;

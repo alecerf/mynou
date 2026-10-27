@@ -1,7 +1,8 @@
-//! Local authenticated HTTP API with bounded requests and no framework.
+//! Local HTTP API with bounded requests and no framework. It has no sign-in:
+//! it listens on loopback only and answers requests from this machine, never
+//! from a page of another site.
 use crate::{
     Result,
-    access::Access,
     engine::{Engine, lock, public_job},
     integrations,
     json::{self, Value},
@@ -30,7 +31,6 @@ const WRITE_STEP: Duration = Duration::from_secs(5);
 const WRITE_CHUNK: usize = 16_384;
 pub struct Api {
     listener: TcpListener,
-    access: Arc<Access>,
     engine: Arc<Engine>,
 }
 fn listen(address: &str) -> Result<TcpListener> {
@@ -41,29 +41,26 @@ fn listen(address: &str) -> Result<TcpListener> {
 }
 
 /// The API listener bound before storage opens. While storage migrations run,
-/// it answers health checks and an authenticated `GET /api/status` with their
-/// progress, and refuses every other route as unavailable.
+/// it answers health checks and `GET /api/status` with their progress, and
+/// refuses every other route as unavailable.
 pub struct Startup {
     listener: TcpListener,
-    access: Arc<Access>,
     ready: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
 }
 
 impl Startup {
-    pub fn bind(config: &crate::config::Config, access: Arc<Access>) -> Result<Self> {
+    pub fn bind(config: &crate::config::Config) -> Result<Self> {
         let listener = listen(&config.listen)?;
         let ready = Arc::new(AtomicBool::new(false));
         let thread = {
             let listener = listener.try_clone().map_err(|e| e.to_string())?;
-            let access = access.clone();
             let ready = ready.clone();
             let directories = vec![config.store_dir.clone(), config.downloads.state_dir.clone()];
-            thread::spawn(move || starting(&listener, &access, &directories, &ready))
+            thread::spawn(move || starting(&listener, &directories, &ready))
         };
         Ok(Self {
             listener,
-            access,
             ready,
             thread: Some(thread),
         })
@@ -76,13 +73,8 @@ impl Startup {
     /// Hands the listener to the full API once storage is open.
     pub fn serve(mut self, engine: Arc<Engine>) -> Result<Api> {
         self.stop();
-        // A store that was being migrated only now shows its token digest.
-        if let Some(digest) = lock(&engine.store)?.access()? {
-            self.access.replace(Some(digest));
-        }
         Ok(Api {
             listener: self.listener.try_clone().map_err(|e| e.to_string())?,
-            access: self.access.clone(),
             engine,
         })
     }
@@ -101,21 +93,15 @@ impl Drop for Startup {
     }
 }
 
-fn starting(
-    listener: &TcpListener,
-    access: &Arc<Access>,
-    directories: &[PathBuf],
-    ready: &AtomicBool,
-) {
+fn starting(listener: &TcpListener, directories: &[PathBuf], ready: &AtomicBool) {
     let mut threads: Vec<JoinHandle<()>> = Vec::new();
     while !ready.load(Ordering::Acquire) {
         threads.retain(|thread| !thread.is_finished());
         match listener.accept() {
             Ok((mut stream, _)) if threads.len() < 8 => {
-                let access = access.clone();
                 let directories = directories.to_vec();
                 threads.push(thread::spawn(move || {
-                    let _ = starting_connection(&mut stream, &access, &directories);
+                    let _ = starting_connection(&mut stream, &directories);
                 }));
             }
             Ok((mut stream, _)) => {
@@ -138,11 +124,7 @@ fn starting(
     }
 }
 
-fn starting_connection(
-    stream: &mut TcpStream,
-    access: &Access,
-    directories: &[PathBuf],
-) -> Result<()> {
+fn starting_connection(stream: &mut TcpStream, directories: &[PathBuf]) -> Result<()> {
     let HttpRequest {
         method,
         target: path,
@@ -155,15 +137,11 @@ fn starting_connection(
     let mut status = Value::object();
     status.insert("status", "starting");
     status.insert("version", env!("CARGO_PKG_VERSION"));
-    if method == "GET" && (path == "/healthz" || path == "/readyz" || path == "/api/setup") {
+    if method == "GET" && (path == "/healthz" || path == "/readyz") {
         return respond(stream, if path == "/healthz" { 200 } else { 503 }, status);
     }
-    let bearer = headers
-        .get("authorization")
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .unwrap_or("");
-    if !access.allows(bearer.as_bytes()) {
-        return respond(stream, 401, error("Authentication required"));
+    if !from_this_machine(&headers) {
+        return respond(stream, 403, error(FOREIGN));
     }
     if method == "GET" && path == "/api/status" {
         let directories: Vec<_> = directories.iter().map(PathBuf::as_path).collect();
@@ -180,12 +158,9 @@ fn starting_connection(
 }
 
 impl Api {
-    /// Serves `engine` with a token chosen by the caller.
-    pub fn bind(engine: Arc<Engine>, token: String) -> Result<Self> {
-        let access = Access::fixed(&token)?;
+    pub fn bind(engine: Arc<Engine>) -> Result<Self> {
         Ok(Self {
             listener: listen(&engine.config.listen)?,
-            access,
             engine,
         })
     }
@@ -268,9 +243,8 @@ impl Api {
             match self.listener.accept() {
                 Ok((mut stream, _)) if threads.len() < 32 => {
                     let engine = self.engine.clone();
-                    let access = self.access.clone();
                     threads.push(thread::spawn(move || {
-                        let _ = connection(&mut stream, &engine, &access);
+                        let _ = connection(&mut stream, &engine);
                     }));
                 }
                 Ok((mut stream, _)) => {
@@ -393,7 +367,7 @@ fn read_request(stream: &mut TcpStream) -> Result<HttpRequest> {
         body,
     })
 }
-fn connection(stream: &mut TcpStream, engine: &Arc<Engine>, access: &Access) -> Result<()> {
+fn connection(stream: &mut TcpStream, engine: &Arc<Engine>) -> Result<()> {
     let HttpRequest {
         method,
         target: path,
@@ -430,19 +404,11 @@ fn connection(stream: &mut TcpStream, engine: &Arc<Engine>, access: &Access) -> 
     {
         return respond_asset(stream, asset);
     }
+    if !from_this_machine(&headers) {
+        return respond(stream, 403, error(FOREIGN));
+    }
     if method == "GET" && path == "/ws" {
-        return upgrade(stream, engine, access, &headers);
-    }
-    if path == "/api/setup" {
-        let (status, value) = setup(engine, access, &method, &headers);
-        return respond(stream, status, value);
-    }
-    let bearer = headers
-        .get("authorization")
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .unwrap_or("");
-    if !access.allows(bearer.as_bytes()) {
-        return respond(stream, 401, error("Authentication required"));
+        return upgrade(stream, engine, &headers);
     }
     if method == "POST"
         && !body.is_empty()
@@ -461,53 +427,27 @@ fn connection(stream: &mut TcpStream, engine: &Arc<Engine>, access: &Access) -> 
         Err(e) => respond(stream, 400, error(&e)),
     }
 }
-/// The unauthenticated first-start setup: `GET` tells whether the access
-/// token can be created here, and `POST` creates it once and returns it. Only
-/// a same-origin JSON request naming loopback literally, to a loopback
-/// listener, qualifies: a page elsewhere can neither send it nor read it.
-fn setup(
-    engine: &Engine,
-    access: &Access,
-    method: &str,
-    headers: &BTreeMap<String, String>,
-) -> (u16, Value) {
-    let header = |name: &str| headers.get(name).map(String::as_str).unwrap_or("");
-    let loopback = engine
-        .config
-        .listen
-        .parse::<SocketAddr>()
-        .is_ok_and(|address| address.ip().is_loopback());
-    let local = loopback && crate::access::local_host(header("host"));
-    let mut value = Value::object();
-    if method == "GET" {
-        value.insert("token_set", access.is_set());
-        value.insert("available", local && !access.is_set());
-        return (200, value);
-    }
-    if method != "POST" {
-        return (404, error("Not found"));
-    }
-    if !local {
-        return (
-            403,
-            error("Create the access token with `mynou token --reset` while Mynou is stopped"),
-        );
-    }
-    if header("content-type").split(';').next() != Some("application/json")
-        || headers
+const FOREIGN: &str = "Mynou answers only pages and commands on this machine";
+
+/// Whether a request comes from this machine and not from a page of another
+/// site. The `Host` must name loopback literally, so a domain rebound to
+/// loopback is refused, and an `Origin`, which browsers send with every
+/// cross-site write and socket, must be this one.
+fn from_this_machine(headers: &BTreeMap<String, String>) -> bool {
+    let host = headers.get("host").map(String::as_str).unwrap_or("");
+    local_host(host)
+        && headers
             .get("origin")
-            .is_some_and(|origin| !ws::same_origin(origin, header("host")))
-    {
-        return (403, error("Setup requires a same-origin JSON request"));
-    }
-    match access.claim(|digest| lock(&engine.store)?.save_access(digest)) {
-        Ok(Some(token)) => {
-            value.insert("token", token);
-            (201, value)
-        }
-        Ok(None) => (403, error("The access token already exists")),
-        Err(e) => (400, error(&e)),
-    }
+            .is_none_or(|origin| ws::same_origin(origin, host))
+}
+
+/// Whether a `Host` header names this machine literally.
+fn local_host(host: &str) -> bool {
+    let name = match host.rsplit_once(':') {
+        Some((name, port)) if !port.is_empty() && port.bytes().all(|b| b.is_ascii_digit()) => name,
+        _ => host,
+    };
+    matches!(name, "127.0.0.1" | "[::1]") || name.eq_ignore_ascii_case("localhost")
 }
 pub(crate) fn route(
     engine: &Arc<Engine>,
@@ -1249,12 +1189,11 @@ fn respond_asset(stream: &mut TcpStream, asset: ui::Asset) -> Result<()> {
         .and_then(|()| write_within(stream, asset.body.as_bytes(), deadline))
         .map_err(|e| format!("Cannot write the response: {e}"))
 }
-/// Verifies the WebSocket handshake (token, same origin, slot) and serves the
-/// socket until it closes.
+/// Verifies the WebSocket handshake (same origin, subprotocol, slot) and
+/// serves the socket until it closes.
 fn upgrade(
     stream: &mut TcpStream,
     engine: &Arc<Engine>,
-    access: &Access,
     headers: &BTreeMap<String, String>,
 ) -> Result<()> {
     let header = |name: &str| headers.get(name).map(String::as_str).unwrap_or("");
@@ -1270,9 +1209,8 @@ fn upgrade(
     if !ws::same_origin(header("origin"), header("host")) {
         return respond(stream, 403, error("Cross-origin sockets are refused"));
     }
-    match ws::token_from_protocols(header("sec-websocket-protocol")) {
-        Some(offered) if access.allows(&offered) => {}
-        _ => return respond(stream, 401, error("Authentication required")),
+    if !ws::offers_subprotocol(header("sec-websocket-protocol")) {
+        return respond(stream, 400, error("The mynou.v1 subprotocol is required"));
     }
     let Some(_slot) = ws::Slot::take() else {
         return respond(stream, 503, error("Too many open sockets"));
@@ -1492,93 +1430,37 @@ mod tests {
         assert!(body.ends_with("\"}"));
     }
     #[test]
-    fn the_first_visit_creates_the_access_token_once_and_only_from_this_machine() {
-        let root = std::env::temp_dir().join(format!("mynou-setup-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        let mut value = crate::config::default_json();
-        value.insert("listen", "127.0.0.1:0");
-        value.get_mut("downloads").unwrap().insert("enabled", false);
-        let config = crate::config::from_json(&value, &root).unwrap();
-        let startup = Startup::bind(&config, Access::new(None)).unwrap();
-        let address = startup.address().unwrap();
-        let api = startup.serve(Engine::open(config).unwrap()).unwrap();
-        let engine = api.engine.clone();
-        let server = thread::spawn(move || api.run());
-        let send = |head: &str| {
-            let mut stream = TcpStream::connect(address).unwrap();
-            write!(stream, "{head}\r\n").unwrap();
-            let mut text = String::new();
-            stream.read_to_string(&mut text).unwrap();
-            let (head, body) = text.split_once("\r\n\r\n").unwrap();
-            let status: u16 = head[9..12].parse().unwrap();
-            (status, json::parse(body).unwrap())
+    fn only_requests_from_this_machine_are_answered() {
+        let headers = |host: &str, origin: Option<&str>| {
+            let mut headers = BTreeMap::from([("host".to_owned(), host.to_owned())]);
+            if let Some(origin) = origin {
+                headers.insert("origin".to_owned(), origin.to_owned());
+            }
+            headers
         };
-        let host = format!("127.0.0.1:{}", address.port());
-        let claim = |host: &str, extra: &str| {
-            send(&format!(
-                "POST /api/setup HTTP/1.1\r\nHost: {host}\r\nContent-Length: 0\r\n{extra}"
-            ))
-        };
-        let (status, report) = send(&format!("GET /api/setup HTTP/1.1\r\nHost: {host}\r\n"));
-        assert_eq!(status, 200);
-        assert_eq!(report.get("available"), Some(&Value::Bool(true)));
-        let json = "Content-Type: application/json\r\n";
-        // A rebound name, a foreign page or a form post cannot claim it.
-        assert_eq!(claim("evil.example", json).0, 403);
-        assert_eq!(
-            claim(&host, &format!("{json}Origin: http://evil.example\r\n")).0,
-            403
-        );
-        assert_eq!(claim(&host, "Content-Type: text/plain\r\n").0, 403);
-        assert_eq!(claim(&host, "").0, 403);
-        let (status, created) = claim(&host, &format!("{json}Origin: http://{host}\r\n"));
-        assert_eq!(status, 201);
-        let token = created
-            .get("token")
-            .and_then(Value::as_str)
-            .unwrap()
-            .to_owned();
-        assert_eq!(claim(&host, json).0, 403);
-        let (_, report) = send(&format!("GET /api/setup HTTP/1.1\r\nHost: {host}\r\n"));
-        assert_eq!(report.get("available"), Some(&Value::Bool(false)));
-        let jobs = |bearer: &str| {
-            send(&format!(
-                "GET /api/jobs HTTP/1.1\r\nHost: {host}\r\nAuthorization: Bearer {bearer}\r\n"
-            ))
-            .0
-        };
-        assert_eq!(jobs(&token), 200);
-        assert_eq!(jobs("0123456789abcdef0123456789abcdef"), 401);
-        // Only the digest is stored, and it outlives the process.
-        let digest = lock(&engine.store).unwrap().access().unwrap().unwrap();
-        assert_eq!(digest, crate::crypto::sha256(token.as_bytes()));
-        engine.stopped.store(true, Ordering::Release);
-        server.join().unwrap().unwrap();
-        drop(engine);
-        let _ = std::fs::remove_dir_all(&root);
-    }
-    #[test]
-    fn a_listener_beyond_this_machine_never_offers_the_setup() {
-        let root = std::env::temp_dir().join(format!("mynou-remote-setup-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        let mut value = crate::config::default_json();
-        value.insert("listen", "0.0.0.0:8787");
-        value.get_mut("downloads").unwrap().insert("enabled", false);
-        let engine = Engine::open(crate::config::from_json(&value, &root).unwrap()).unwrap();
-        let access = Access::new(None);
-        let headers: BTreeMap<String, String> = [
-            ("host".to_owned(), "127.0.0.1:8787".to_owned()),
-            ("content-type".to_owned(), "application/json".to_owned()),
-        ]
-        .into();
-        let (_, report) = setup(&engine, &access, "GET", &headers);
-        assert_eq!(report.get("available"), Some(&Value::Bool(false)));
-        let (status, reply) = setup(&engine, &access, "POST", &headers);
-        assert_eq!(status, 403);
-        assert!(json::stringify(&reply).contains("mynou token --reset"));
-        assert!(!access.is_set());
-        drop(engine);
-        let _ = std::fs::remove_dir_all(&root);
+        for (host, origin) in [
+            ("127.0.0.1:8787", None),
+            ("localhost:8787", Some("http://localhost:8787")),
+            ("LOCALHOST", None),
+            ("[::1]:8787", Some("http://[::1]:8787")),
+        ] {
+            assert!(from_this_machine(&headers(host, origin)), "{host}");
+        }
+        // A rebound name, another machine's address or a page of another site.
+        for (host, origin) in [
+            ("", None),
+            ("evil.example:8787", None),
+            ("127.0.0.1.evil.example", None),
+            ("[::1]x", None),
+            ("192.168.1.2:8787", None),
+            ("127.0.0.1:8787", Some("http://evil.example")),
+            ("127.0.0.1:8787", Some("null")),
+        ] {
+            assert!(
+                !from_this_machine(&headers(host, origin)),
+                "{host} {origin:?}"
+            );
+        }
     }
     #[test]
     fn the_startup_listener_reports_migration_progress_and_refuses_other_routes() {
@@ -1587,38 +1469,33 @@ mod tests {
         value.insert("listen", "127.0.0.1:0");
         let mut config = crate::config::from_json(&value, &root).unwrap();
         config.store_dir = root.join("store");
-        let token = "s".repeat(32);
-        let startup = Startup::bind(&config, Access::fixed(&token).unwrap()).unwrap();
+        let startup = Startup::bind(&config).unwrap();
         let address = startup.address().unwrap();
         let tracker = crate::progress::Tracker::start(&config.store_dir, "series", Some(10));
         tracker.stage("copying", 4);
-        let get = |path: &str, bearer: &str| {
+        let get = |path: &str, host: &str| {
             let mut stream = TcpStream::connect(address).unwrap();
-            write!(
-                stream,
-                "GET {path} HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer {bearer}\r\n\r\n"
-            )
-            .unwrap();
+            write!(stream, "GET {path} HTTP/1.1\r\nHost: {host}\r\n\r\n").unwrap();
             let mut text = String::new();
             stream.read_to_string(&mut text).unwrap();
             let (head, body) = text.split_once("\r\n\r\n").unwrap();
             let status: u16 = head[9..12].parse().unwrap();
             (status, json::parse(body).unwrap())
         };
-        let (status, body) = get("/healthz", "");
+        let (status, body) = get("/healthz", "localhost");
         assert_eq!(
             (status, body.get("status").and_then(Value::as_str)),
             (200, Some("starting"))
         );
-        assert_eq!(get("/readyz", "").0, 503);
-        assert_eq!(get("/api/status", "wrong").0, 401);
-        let (status, body) = get("/api/status", &token);
+        assert_eq!(get("/readyz", "localhost").0, 503);
+        assert_eq!(get("/api/status", "evil.example").0, 403);
+        let (status, body) = get("/api/status", "localhost");
         assert_eq!(status, 200);
         assert_eq!(
             json::stringify(body.get("migrations").unwrap()),
             r#"[{"done":4,"resumed":false,"stage":"copying","store":"series","total":10}]"#
         );
-        let (status, body) = get("/api/jobs", &token);
+        let (status, body) = get("/api/jobs", "localhost");
         assert_eq!(status, 503);
         assert!(
             body.get("error")

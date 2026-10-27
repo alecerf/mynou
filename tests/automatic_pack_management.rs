@@ -1,7 +1,6 @@
 //! Protected automatic pack previews and acquisition through native HTTP/forms/CLI.
 mod api_support;
 mod automatic_pack_support;
-mod home_support;
 mod library_support;
 mod series_support;
 #[allow(dead_code)]
@@ -15,13 +14,7 @@ use mynou::{
     json::{self, Value},
 };
 use series_support::{Catalog, episode, id, request};
-use std::{
-    fs,
-    path::Path,
-    process::{Command, Output, Stdio},
-    thread,
-    time::{Duration, Instant},
-};
+use std::fs;
 use transfer_support::{BLOCK, Torrent, payload};
 
 fn setup(directory: &Directory, provider: &Provider) -> (Catalog, Config) {
@@ -58,10 +51,6 @@ fn bearer_pack_routes_validate_before_network_io_and_keep_origin_private_data_re
     let server = Server::open(cfg);
     let series = tracked(&server.engine);
     let route = format!("/api/series/{series}/pack-search");
-    assert_eq!(
-        server.call("POST", &route, &[], r#"{"season":1}"#).status,
-        401
-    );
     let auth = format!("Bearer {TOKEN}");
     let headers = [
         ("Authorization", auth.as_str()),
@@ -111,144 +100,4 @@ fn bearer_pack_routes_validate_before_network_io_and_keep_origin_private_data_re
     for job in jobs {
         assert!(!json::stringify(&mynou::engine::public_job(&job)).contains(SECRET));
     }
-}
-
-fn cli_config(config: &Config) -> Value {
-    let mut value = mynou::config::default_json();
-    value.insert("listen", config.listen.clone());
-    value.insert("selection", config.selection.to_json());
-    value.get_mut("downloads").unwrap().insert("enabled", false);
-    let catalog = value.get_mut("catalog").unwrap();
-    catalog.insert("enabled", config.catalog.enabled);
-    catalog.insert("url", config.catalog.url.clone());
-    catalog.insert("token_env", config.catalog.token_env.clone());
-    catalog.insert("api_key_env", config.catalog.api_key_env.clone());
-    value.insert(
-        "indexers",
-        Value::Array(
-            config
-                .sources
-                .iter()
-                .map(|source| {
-                    let mut item = Value::object();
-                    item.insert("name", source.name.clone());
-                    item.insert("kind", source.kind.clone());
-                    item.insert("url", source.url.clone());
-                    item.insert("api_key_env", source.api_key_env.clone());
-                    item
-                })
-                .collect(),
-        ),
-    );
-    value
-}
-
-fn command(directory: &Path, arguments: &[&str]) -> Output {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_mynou"))
-        .current_dir(directory)
-        .env("MYNOU_HOME", directory)
-        .env("MYNOU_API_TOKEN", TOKEN)
-        .env_remove("MYNOU_PLEX_TOKEN")
-        .env_remove("MYNOU_DEMO_TOKEN")
-        .args(arguments)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(8);
-    loop {
-        if child.try_wait().unwrap().is_some() {
-            return child.wait_with_output().unwrap();
-        }
-        if Instant::now() >= deadline {
-            child.kill().unwrap();
-            let result = child.wait_with_output().unwrap();
-            panic!(
-                "Automatic pack CLI timed out: {}",
-                String::from_utf8_lossy(&result.stderr)
-            );
-        }
-        thread::sleep(Duration::from_millis(5));
-    }
-}
-fn success(output: Output) -> Value {
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    json::parse(std::str::from_utf8(&output.stdout).unwrap()).unwrap()
-}
-
-#[test]
-fn offline_cli_preview_is_read_only_and_online_guarded_apply_uses_the_live_service() {
-    let directory = Directory::new();
-    let provider = Provider::open();
-    let (_catalog, cfg) = setup(&directory, &provider);
-    // Commands use the engine's data directory.
-    let home = cfg.data_dir.clone();
-    let engine = Engine::open_for_management(cfg.clone()).unwrap();
-    let series = tracked(&engine);
-    drop(engine);
-    home_support::save_settings(&home, &cli_config(&cfg));
-    let before = snapshot(&cfg.store_dir);
-    let report = success(command(
-        &home,
-        &["series-pack-search", &series, "--season", "1"],
-    ));
-    no_sources(&report);
-    assert_eq!(snapshot(&cfg.store_dir), before);
-    let calls = provider.calls.lock().unwrap().len();
-    for arguments in [
-        vec!["series-pack-search", &series],
-        vec!["series-pack-search", &series, "--season", "1.5"],
-        vec!["series-pack-search", &series, "--season", "1", "--apply"],
-        vec![
-            "series-pack-search",
-            &series,
-            "--season",
-            "1",
-            "--candidate-id",
-            "abc",
-        ],
-    ] {
-        assert!(!command(&home, &arguments).status.success());
-    }
-    assert_eq!(provider.calls.lock().unwrap().len(), calls);
-    assert_eq!(snapshot(&cfg.store_dir), before);
-    let server = Server::open(cfg.clone());
-    home_support::serve_here(&home, &server.authority);
-    let online = success(command(
-        &home,
-        &["series-pack-search", &series, "--season", "1"],
-    ));
-    assert_eq!(
-        online.get("selected_candidate_id"),
-        report.get("selected_candidate_id")
-    );
-    let scope = online.get("scope_id").unwrap().as_str().unwrap();
-    let candidate = online
-        .get("selected_candidate_id")
-        .unwrap()
-        .as_str()
-        .unwrap();
-    let applied = success(command(
-        &home,
-        &[
-            "series-pack-search",
-            &series,
-            "--season",
-            "1",
-            "--apply",
-            "--scope-id",
-            scope,
-            "--candidate-id",
-            candidate,
-        ],
-    ));
-    no_sources(&applied);
-    assert_eq!(
-        applied.get("submission").unwrap().get("submitted"),
-        Some(&Value::Number(2.0))
-    );
 }

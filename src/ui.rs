@@ -1,6 +1,5 @@
 //! Static web interface: plain HTML, CSS and JavaScript embedded in the binary.
-//! The assets hold no secrets and no user data, so they are served without
-//! authentication; every data path stays behind the Bearer token.
+//! The assets hold no secrets and no user data.
 
 pub struct Asset {
     pub content_type: &'static str,
@@ -30,7 +29,6 @@ const MODULES: &[(&str, &str)] = modules![
     "releases",
     "requests",
     "router",
-    "session",
     "settings",
     "sources",
     "store",

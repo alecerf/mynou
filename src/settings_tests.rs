@@ -93,7 +93,6 @@ fn secrets_are_write_only_and_apply_at_once() {
     assert!(!json::stringify(&call(&engine, "GET", "/api/settings", "")).contains("value-never"));
     assert_eq!(config::secret(name).unwrap(), "value-never-returned");
     for body in [
-        r#"{"name":"MYNOU_API_TOKEN","value":"x"}"#,
         r#"{"name":"lower","value":"x"}"#,
         r#"{"name":"MYNOU_X","value":""}"#,
         r#"{"name":"MYNOU_X","value":"a\nb"}"#,
@@ -130,8 +129,6 @@ fn updates_are_automatic_by_default_and_only_a_staged_one_installs() {
             .unwrap()
             .updates_automatic
     );
-    document.insert("updates", json::parse(r#"{"channel":"beta"}"#).unwrap());
-    assert!(config::from_json(&document, &dir.0).is_err());
     let report = call(&engine, "GET", "/api/update", "");
     assert_eq!(
         report.get("version").and_then(json::Value::as_str),

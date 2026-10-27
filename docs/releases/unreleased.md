@@ -8,7 +8,7 @@ embedded in the executable, with no build step, remote asset or framework.
 Every wait shows: busy buttons spin, missing data shows a skeleton, searching
 or importing jobs show a progress bar, and reduced motion keeps the states
 without the movement. The JSON settings editor is gone; optional settings such
-as `selection` and `requesters` are saved with `mynou settings --save` (#370).
+as `selection` and `requesters` are saved with `POST /api/settings` (#370).
 
 ## Added: Find a title on TMDB and choose a release by hand
 
@@ -28,6 +28,30 @@ extended master secret whenever the server offers it. There is no session
 resumption or renegotiation, a TLS 1.3 server's downgrade sentinel is refused,
 and the certificate and host name are validated as with TLS 1.3
 ([details](/docs/limits.md)).
+
+## Removed: The access token
+
+Mynou no longer asks for an access token: the web interface opens without
+signing in. The API answers only this machine: `listen` must be a loopback address,
+and a request must name it in its `Host` and come from no other site's page.
+A settings document whose `listen` is not loopback is refused.
+
+## Removed: The management commands
+
+The web interface and the API replace the command line. `mynou` keeps `serve`,
+`service`, `update`, `version` and `help`; `submit`, `jobs`, `torrents`,
+`settings`, `secrets`, `vpn`, `search`, the series, library, indexer, IRC and
+requester commands, `analyze`, `doctor`, `healthcheck` and `demo` are gone.
+
+## Removed: The TMDB API key
+
+The TMDB catalog uses its read access token only (`MYNOU_TMDB_TOKEN`); the
+`catalog.api_key_env` setting and `MYNOU_TMDB_API_KEY` are no longer read.
+
+## Changed: Settings with unknown fields load
+
+A settings document with fields this version does not know, written by an older
+or newer Mynou, now loads and ignores them instead of being refused.
 
 ## Changed: WireGuard profiles with IPv6 are accepted
 

@@ -1,6 +1,5 @@
 //! Original local catalog, guarded demand, crash and native import fixtures. CI only.
 mod api_support;
-mod home_support;
 mod irc_routing_support;
 mod irc_support;
 mod library_support;
@@ -21,7 +20,7 @@ use requester_support::{
     Accounts, apply, demand, demand_query, demands, enable, movie, policy, policy_query,
 };
 use series_support::{Catalog, episode};
-use std::{fs, process::Command, sync::atomic::Ordering, thread};
+use std::{fs, sync::atomic::Ordering, thread};
 use transfer_support::{Seeder, Torrent};
 
 fn catalog() -> Catalog {
@@ -715,7 +714,7 @@ fn post(server: &Server, route: &str, v: &Value) -> api_support::Reply {
 }
 
 #[test]
-fn protected_api_and_cli_reviews_bind_the_request_action() {
+fn protected_api_reviews_bind_the_request_action() {
     let dir = Directory::new();
     let c = catalog();
     let a = Accounts::open();
@@ -725,30 +724,11 @@ fn protected_api_and_cli_reviews_bind_the_request_action() {
     let id = irc_support::record_id(&row);
     let route = format!("/api/irc/announcements/{id}/control");
     let before = irc_support::bytes(&server.engine.config.store_dir);
-    assert_eq!(
-        server
-            .call("POST", &route, &[], r#"{"action":"request"}"#)
-            .status,
-        401
-    );
     let response = post(&server, &route, &irc_support::query("request").to_json());
     assert_eq!(response.status, 200, "{}", response.body);
     response.no_secrets();
     let review = json::parse(&response.body).unwrap();
     no_private(&review);
-    home_support::serve_here(&dir.0, &server.authority);
-    let output = Command::new(env!("CARGO_BIN_EXE_mynou"))
-        .env("MYNOU_API_TOKEN", TOKEN)
-        .args(["irc-control", id, "--action", "request", "--dir"])
-        .arg(&dir.0)
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    no_private(&json::parse(std::str::from_utf8(&output.stdout).unwrap()).unwrap());
     assert_eq!(irc_support::bytes(&server.engine.config.store_dir), before);
     let plan = review.get("plan_id").unwrap().as_str().unwrap();
     let apply = format!(r#"{{"action":"request","apply":true,"plan_id":"{plan}"}}"#);
@@ -773,53 +753,4 @@ fn protected_api_and_cli_reviews_bind_the_request_action() {
     );
     assert_eq!(replay.status, 400, "{}", replay.body);
     assert_eq!(lock(&server.engine.store).unwrap().list().unwrap().len(), 1);
-}
-
-#[test]
-fn offline_cli_catalog_review_is_read_only_and_application_requires_the_service() {
-    let dir = Directory::new();
-    let c = catalog();
-    let a = Accounts::open();
-    let cfg = configured(&dir, &c, &a);
-    let e = Engine::open(cfg.clone()).unwrap();
-    enable(&e, "alice");
-    let row = irc_support::receive(&e, 7);
-    drop(e);
-    home_support::save_settings(&dir.0, &value(&c, &a, 0));
-    let before = irc_support::bytes(&cfg.store_dir);
-    let output = Command::new(env!("CARGO_BIN_EXE_mynou"))
-        .args([
-            "irc-control",
-            irc_support::record_id(&row),
-            "--action",
-            "request",
-            "--dir",
-        ])
-        .arg(&dir.0)
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let report = json::parse(std::str::from_utf8(&output.stdout).unwrap()).unwrap();
-    no_private(&report);
-    assert_eq!(irc_support::bytes(&cfg.store_dir), before);
-    let output = Command::new(env!("CARGO_BIN_EXE_mynou"))
-        .args([
-            "irc-control",
-            irc_support::record_id(&row),
-            "--action",
-            "request",
-            "--apply",
-            "--plan-id",
-        ])
-        .arg(report.get("plan_id").unwrap().as_str().unwrap())
-        .arg("--dir")
-        .arg(&dir.0)
-        .output()
-        .unwrap();
-    assert!(!output.status.success());
-    assert_eq!(irc_support::bytes(&cfg.store_dir), before);
 }

@@ -1,5 +1,4 @@
 //! Authenticated library controls and CLI routing; all services are synthetic and local.
-mod home_support;
 mod jobs_state;
 mod library_support;
 
@@ -9,13 +8,11 @@ use mynou::engine::{Engine, lock};
 use mynou::json::{self, Value};
 use mynou::net::HttpClient;
 use mynou::server::Api;
-use std::fs;
 use std::path::Path;
-use std::process::{Command, Output, Stdio};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::thread::{self, JoinHandle};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 const HD: &str = r#"{"resolutions":[1080,720],"languages":["en"]}"#;
 const BASELINE: &str = "Fixture.Movie.2024.720p.WEB-DL.EN";
@@ -30,7 +27,7 @@ struct Server {
 impl Server {
     fn open(directory: &Path, configuration: &Value) -> Self {
         let engine = Engine::open(config::from_json(configuration, directory).unwrap()).unwrap();
-        let api = Api::bind(engine.clone(), TOKEN.into()).unwrap();
+        let api = Api::bind(engine.clone()).unwrap();
         let origin = format!("http://{}", api.address().unwrap());
         Self {
             engine,
@@ -60,10 +57,6 @@ impl Server {
             response.status,
             json::parse(std::str::from_utf8(&response.body).unwrap()).unwrap(),
         )
-    }
-
-    fn record_endpoint(&self, directory: &Path) {
-        home_support::serve_here(directory, self.origin.strip_prefix("http://").unwrap());
     }
 }
 
@@ -95,86 +88,6 @@ fn object(key: &str, value: impl Into<Value>) -> Value {
     let mut body = Value::object();
     body.insert(key, value);
     body
-}
-
-fn command(directory: &Path, args: &[&str]) -> Output {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_mynou"))
-        .current_dir(directory)
-        .env("MYNOU_HOME", directory)
-        .env("MYNOU_API_TOKEN", TOKEN)
-        .env_remove("MYNOU_PLEX_TOKEN")
-        .env_remove("MYNOU_DEMO_TOKEN")
-        .env_remove("MYNOU_LIBRARY_ABSENT_FIXTURE_KEY_592744")
-        .args(args)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(8);
-    loop {
-        if child.try_wait().unwrap().is_some() {
-            return child.wait_with_output().unwrap();
-        }
-        if Instant::now() >= deadline {
-            child.kill().unwrap();
-            let output = child.wait_with_output().unwrap();
-            panic!(
-                "Library CLI timed out: stdout={} stderr={}",
-                String::from_utf8_lossy(&output.stdout),
-                String::from_utf8_lossy(&output.stderr)
-            );
-        }
-        thread::sleep(Duration::from_millis(5));
-    }
-}
-
-fn successful(output: Output) -> Value {
-    assert!(
-        output.status.success(),
-        "stdout={} stderr={}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    json::parse(std::str::from_utf8(&output.stdout).unwrap().trim()).unwrap()
-}
-
-#[test]
-fn library_routes_authenticate_before_reading_mutating_or_searching() {
-    let directory = Directory::new();
-    let indexer = candidate_indexer();
-    let server = Server::open(&directory.0, &configuration(Some(&indexer), HD));
-    let original = local_import(&server.engine, &directory.0, "Fixture Movie");
-    let before = files(&directory.0);
-    let upgrades = object("apply", true);
-    let monitor = object("enabled", false);
-    let baseline = object("release_title", BASELINE);
-    let monitor_route = format!("/api/library/{}/monitor", original.id);
-    let baseline_route = format!("/api/library/{}/baseline", original.id);
-    for token in [None, Some("incorrect-token")] {
-        for (method, route, body) in [
-            ("GET", "/api/library", None),
-            ("POST", "/api/upgrades", Some(&upgrades)),
-            ("POST", monitor_route.as_str(), Some(&monitor)),
-            ("POST", baseline_route.as_str(), Some(&baseline)),
-        ] {
-            let (status, error) = server.call(method, route, token, body);
-            assert_eq!(status, 401);
-            assert_eq!(
-                error.get("error").and_then(Value::as_str),
-                Some("Authentication required")
-            );
-        }
-    }
-    assert_eq!(indexer.calls.load(Ordering::Relaxed), 0);
-    assert_eq!(files(&directory.0), before);
-    assert_eq!(
-        lock(&server.engine.store)
-            .unwrap()
-            .get(&original.id)
-            .unwrap()
-            .unwrap(),
-        original
-    );
 }
 
 #[test]
@@ -318,240 +231,4 @@ fn api_rejects_malformed_controls_without_modifying_state() {
             .unwrap(),
         original
     );
-}
-
-#[test]
-fn online_cli_uses_the_api_while_the_engine_owns_the_journal_lock() {
-    let directory = Directory::new();
-    let indexer = candidate_indexer();
-    let configuration = configuration(Some(&indexer), HD);
-    let server = Server::open(&directory.0, &configuration);
-    let original = local_import(&server.engine, &directory.0, "Fixture Movie");
-    server.record_endpoint(&directory.0);
-    let before = files(&directory.0);
-    let library = successful(command(&directory.0, &["library"]));
-    assert_eq!(library, server.engine.library(None, 200).unwrap(),);
-    assert_eq!(files(&directory.0), before);
-    let baseline = successful(command(
-        &directory.0,
-        &["baseline", &original.id, "--release-title", BASELINE],
-    ));
-    assert_eq!(
-        baseline
-            .get("release")
-            .unwrap()
-            .get("title")
-            .and_then(Value::as_str),
-        Some(BASELINE)
-    );
-    let unmonitored = successful(command(&directory.0, &["unmonitor", &original.id]));
-    assert_eq!(unmonitored.get("monitored"), Some(&Value::Bool(false)));
-    let paused = successful(command(&directory.0, &["upgrades", "--apply"]));
-    assert_eq!(paused.get("queued").and_then(Value::as_u64), Some(0));
-    assert_eq!(indexer.calls.load(Ordering::Relaxed), 0);
-    let monitored = successful(command(&directory.0, &["monitor", &original.id]));
-    assert_eq!(monitored.get("monitored"), Some(&Value::Bool(true)));
-    let before = files(&directory.0);
-    let preview = successful(command(&directory.0, &["upgrades"]));
-    assert_eq!(preview.get("apply"), Some(&Value::Bool(false)));
-    assert_eq!(files(&directory.0), before);
-    let applied = successful(command(&directory.0, &["upgrades", "--apply"]));
-    assert_eq!(applied.get("queued").and_then(Value::as_u64), Some(1));
-    assert_eq!(lock(&server.engine.store).unwrap().list().unwrap().len(), 2);
-    for output in [
-        &library,
-        &baseline,
-        &unmonitored,
-        &paused,
-        &monitored,
-        &preview,
-        &applied,
-    ] {
-        assert_redacted(output);
-    }
-}
-
-#[test]
-fn offline_cli_controls_persist_and_previews_leave_the_job_index_unchanged() {
-    let directory = Directory::new();
-    let indexer = candidate_indexer();
-    let configuration = configuration(Some(&indexer), HD);
-    let engine = Engine::open(config::from_json(&configuration, &directory.0).unwrap()).unwrap();
-    let original = local_import(&engine, &directory.0, "Fixture Movie");
-    let store = engine.config.store_dir.clone();
-    drop(engine);
-    home_support::save_settings(&directory.0, &configuration);
-    let before = jobs_state::fingerprint(&store);
-    let library = successful(command(&directory.0, &["library"]));
-    assert_eq!(library.get("library").unwrap().as_array().unwrap().len(), 1);
-    assert_eq!(jobs_state::fingerprint(&store), before);
-    successful(command(
-        &directory.0,
-        &["baseline", &original.id, "--release-title", BASELINE],
-    ));
-    successful(command(&directory.0, &["unmonitor", &original.id]));
-    let preview = successful(command(&directory.0, &["upgrades"]));
-    assert_eq!(preview.get("queued").and_then(Value::as_u64), Some(0));
-    assert_eq!(indexer.calls.load(Ordering::Relaxed), 0);
-    successful(command(&directory.0, &["monitor", &original.id]));
-    let before = jobs_state::fingerprint(&store);
-    let preview = successful(command(&directory.0, &["upgrades"]));
-    assert_eq!(preview.get("apply"), Some(&Value::Bool(false)));
-    assert_eq!(jobs_state::fingerprint(&store), before);
-    assert_redacted(&preview);
-    let engine = Engine::open(config::from_json(&configuration, &directory.0).unwrap()).unwrap();
-    let resumed = lock(&engine.store)
-        .unwrap()
-        .get(&original.id)
-        .unwrap()
-        .unwrap();
-    assert!(resumed.monitored);
-    assert_eq!(resumed.release.unwrap().title, BASELINE);
-    assert_eq!(resumed.imports, original.imports);
-}
-
-#[test]
-fn invalid_cli_controls_fail_before_searching_or_changing_state() {
-    let directory = Directory::new();
-    let indexer = candidate_indexer();
-    let configuration = configuration(Some(&indexer), HD);
-    let server = Server::open(&directory.0, &configuration);
-    let original = local_import(&server.engine, &directory.0, "Fixture Movie");
-    server.record_endpoint(&directory.0);
-    let before = files(&directory.0);
-    for args in [
-        vec!["library", "unexpected"],
-        vec!["library", "--apply"],
-        vec!["upgrades", "unexpected"],
-        vec!["upgrades", "--apply", "--apply"],
-        vec!["upgrades", "--unknown"],
-        vec!["monitor"],
-        vec!["unmonitor"],
-        vec!["monitor", original.id.as_str(), "extra"],
-        vec!["baseline", original.id.as_str()],
-        vec!["baseline", original.id.as_str(), "--release-title"],
-    ] {
-        let output = command(&directory.0, &args);
-        assert!(
-            !output.status.success(),
-            "Accepted invalid CLI arguments: {args:?}"
-        );
-        assert!(
-            !output.stderr.is_empty(),
-            "Missing CLI diagnostic: {args:?}"
-        );
-    }
-    assert_eq!(indexer.calls.load(Ordering::Relaxed), 0);
-    assert_eq!(files(&directory.0), before);
-}
-
-#[test]
-fn offline_previews_of_a_missing_store_create_no_files_or_directories() {
-    let directory = Directory::new();
-    // Without storage, the default settings apply and nothing is created.
-    let indexer = candidate_indexer();
-    let before = files(&directory.0);
-    let library = successful(command(&directory.0, &["library"]));
-    assert!(
-        library
-            .get("library")
-            .unwrap()
-            .as_array()
-            .unwrap()
-            .is_empty()
-    );
-    assert_eq!(library.get("next"), Some(&Value::Null));
-    assert_eq!(library.get("total").and_then(Value::as_u64), Some(0));
-    let preview = successful(command(&directory.0, &["upgrades"]));
-    assert_eq!(preview.get("apply"), Some(&Value::Bool(false)));
-    assert_eq!(preview.get("queued").and_then(Value::as_u64), Some(0));
-    assert_eq!(preview.get("checked").and_then(Value::as_u64), Some(0));
-    assert!(
-        preview
-            .get("entries")
-            .unwrap()
-            .as_array()
-            .unwrap()
-            .is_empty()
-    );
-    assert_eq!(files(&directory.0), before);
-    for name in ["state", "library", "downloads"] {
-        assert!(!directory.0.join(name).exists(), "Preview created {name}");
-    }
-    assert_eq!(indexer.calls.load(Ordering::Relaxed), 0);
-}
-
-#[test]
-fn offline_previews_refuse_an_unmigrated_store_without_changing_existing_bytes() {
-    let directory = Directory::new();
-    let indexer = candidate_indexer();
-    let configuration = configuration(Some(&indexer), HD);
-    let engine = Engine::open(config::from_json(&configuration, &directory.0).unwrap()).unwrap();
-    let original = local_import(&engine, &directory.0, "Fixture Movie");
-    engine.set_baseline(&original.id, BASELINE).unwrap();
-    let store = engine.config.store_dir.clone();
-    let jobs = lock(&engine.store).unwrap().list().unwrap();
-    drop(engine);
-    // The files an earlier version left: a snapshot plus an interrupted write.
-    jobs_state::downgrade(&store, &jobs);
-    let mut journal = Vec::new();
-    // Two bytes cannot contain a complete record header.
-    journal.extend_from_slice(&[0, 1]);
-    jobs_state::write_private(&store.join("journal.bin"), &journal);
-    let before = files(&directory.0);
-    for args in [vec!["library"], vec!["upgrades"]] {
-        let output = command(&directory.0, &args);
-        assert!(
-            !output.status.success(),
-            "Preview migrated or read an unmigrated store: {args:?}"
-        );
-        assert!(String::from_utf8_lossy(&output.stderr).contains("migrated"));
-        assert_eq!(files(&directory.0), before);
-    }
-    assert_eq!(indexer.calls.load(Ordering::Relaxed), 0);
-}
-
-#[test]
-fn a_relative_data_directory_keeps_library_controls_and_preview_on_the_same_store() {
-    let directory = Directory::new();
-    let nested = directory.0.join("nested");
-    fs::create_dir(&nested).unwrap();
-    let indexer = candidate_indexer();
-    let configuration = configuration(Some(&indexer), HD);
-    let engine = Engine::open(config::from_json(&configuration, &nested).unwrap()).unwrap();
-    let original = local_import(&engine, &nested, "Fixture Movie");
-    let store = engine.config.store_dir.clone();
-    drop(engine);
-    home_support::save_settings(&nested, &configuration);
-    let library = successful(command(&directory.0, &["library", "--dir", "nested"]));
-    assert_eq!(
-        library.get("library").unwrap().as_array().unwrap()[0]
-            .get("id")
-            .and_then(Value::as_str),
-        Some(original.id.as_str())
-    );
-    successful(command(
-        &directory.0,
-        &[
-            "baseline",
-            &original.id,
-            "--release-title",
-            BASELINE,
-            "--dir",
-            "nested",
-        ],
-    ));
-    let before = jobs_state::fingerprint(&store);
-    let preview = successful(command(&directory.0, &["upgrades", "--dir", "nested"]));
-    assert_eq!(
-        preview.get("entries").unwrap().as_array().unwrap()[0]
-            .get("action")
-            .and_then(Value::as_str),
-        Some("upgrade_available")
-    );
-    assert_eq!(jobs_state::fingerprint(&store), before);
-    assert!(!directory.0.join("state").exists());
-    assert!(!directory.0.join("library").exists());
-    assert_redacted(&library);
-    assert_redacted(&preview);
 }

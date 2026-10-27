@@ -1,7 +1,6 @@
 /target/
 /bin/
 /.env
-/mynou-demo/
 /data/
 /state/
 /downloads/
@@ -11,3 +10,4 @@
 /opencode.json
 /opencode.jsonc
 /.opencode/
+.DS_Store

@@ -1,6 +1,5 @@
 //! Automatic cross-seed discovery against a synthetic loopback Torznab source.
 //! No real indexer, tracker or media is contacted.
-mod home_support;
 #[allow(dead_code)]
 mod transfer_support;
 use mynou::{
@@ -19,7 +18,6 @@ use std::{
     io::{Read, Write},
     net::TcpListener,
     path::{Path, PathBuf},
-    process::Command,
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
@@ -526,9 +524,8 @@ fn status_and_run_are_served_to_the_operator_cli() {
     indexer.publish("good", &good);
     *indexer.feed.lock().unwrap() = rss(&[("g1", TITLE, "good", None, None)]);
     let engine = open(&f);
-    let api = Api::bind(engine.clone(), TOKEN.into()).unwrap();
+    let api = Api::bind(engine.clone()).unwrap();
     let origin = format!("http://{}", api.address().unwrap());
-    home_support::serve_here(&f.scratch.0, &api.address().unwrap().to_string());
     let worker = {
         let api = api;
         thread::spawn(move || api.run())
@@ -537,7 +534,6 @@ fn status_and_run_are_served_to_the_operator_cli() {
         .without_proxy()
         .with_timeout(Duration::from_secs(5));
     let route = format!("{origin}/api/cross-seed/discovery");
-    assert_eq!(http.request("GET", &route, &[], &[]).unwrap().status, 401);
     let auth = vec![
         ("Authorization".into(), format!("Bearer {TOKEN}")),
         ("Content-Type".into(), "application/json".into()),
@@ -553,26 +549,23 @@ fn status_and_run_are_served_to_the_operator_cli() {
         .status,
         400
     );
-    let cli = |args: &[&str]| {
-        let output = Command::new(env!("CARGO_BIN_EXE_mynou"))
-            .args(args)
-            .args(["--dir", f.scratch.0.to_str().unwrap()])
-            .env(mynou::config::API_TOKEN_ENV, TOKEN)
-            .output()
+    let call = |method: &str, path: &str, body: &str| {
+        let response = http
+            .request(method, &format!("{route}{path}"), &auth, body.as_bytes())
             .unwrap();
         assert!(
-            output.status.success(),
+            (200..300).contains(&response.status),
             "{}",
-            String::from_utf8_lossy(&output.stderr)
+            String::from_utf8_lossy(&response.body)
         );
-        json::parse(std::str::from_utf8(&output.stdout).unwrap()).unwrap()
+        json::parse(std::str::from_utf8(&response.body).unwrap()).unwrap()
     };
-    let preview = cli(&["cross-seed-discovery", "--run", "--dry-run"]);
+    let preview = call("POST", "/run", r#"{"dry_run":true}"#);
     assert_eq!(number(&preview, "would_add"), 1);
     assert!(transfer(&engine, &good_id).is_none());
-    let run = cli(&["cross-seed-discovery", "--run", "--indexer", "tracker-b"]);
+    let run = call("POST", "/run", r#"{"indexer":"tracker-b"}"#);
     assert_eq!(number(&run, "added"), 1);
-    let status = cli(&["cross-seed-discovery"]);
+    let status = call("GET", "", "");
     assert_eq!(status.get("enabled"), Some(&Value::Bool(true)));
     let recent = status.get("recent").and_then(Value::as_array).unwrap();
     assert_eq!(

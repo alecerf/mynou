@@ -142,7 +142,6 @@ impl Catalog {
         config.catalog.url = format!("{}/3", self.url);
         // Existing nonsecret PATH supplies a fixture-only Bearer value, without mutating process environment.
         config.catalog.token_env = "PATH".into();
-        config.catalog.api_key_env = "MYNOU_SERIES_ABSENT_KEY_89171".into();
         config
     }
     pub fn wait_for_calls(&self, previous: usize) {

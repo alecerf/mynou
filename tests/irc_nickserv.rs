@@ -385,7 +385,6 @@ fn native_cli_sends_a_maximum_password_once_without_recording_or_logging_it() {
     let child = ChildGuard(
         Command::new(env!("CARGO_BIN_EXE_mynou"))
             .args(["serve", "--dir", dir.0.to_str().unwrap()])
-            .env("MYNOU_API_TOKEN", "0123456789abcdef0123456789abcdef")
             .env("MYNOU_NICKSERV_TEST_PASSWORD", &password)
             .stdout(Stdio::from(log.try_clone().unwrap()))
             .stderr(Stdio::from(log))

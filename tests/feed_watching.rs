@@ -1,7 +1,6 @@
 //! Feed watching uses synthetic loopback feeds and local jobs. No real source,
 //! tracker or media is contacted.
 mod api_support;
-mod home_support;
 mod irc_routing_support;
 mod irc_support;
 mod library_support;
@@ -24,7 +23,6 @@ use std::{
     net::TcpListener,
     os::unix::fs::PermissionsExt,
     path::PathBuf,
-    process::Command,
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -890,13 +888,12 @@ fn monitored_owned_media_takes_a_strictly_better_new_entry_once() {
 }
 
 #[test]
-fn protected_status_and_offline_cli_expose_only_redacted_freshness() {
+fn protected_status_exposes_only_redacted_freshness() {
     let dir = Directory::new();
     let feed = Feed::open(rss(&[item("Fixture.Movie.2024.1080p.WEB-DL", 1, 5)]));
     let mut v = configuration(vec![source("feed-a", &feed, "rss")]);
     v.get_mut("downloads").unwrap().insert("enabled", false);
     let server = Server::open(config::from_json(&v, &dir.0).unwrap());
-    assert_eq!(server.call("GET", "/api/feeds", &[], "").status, 401);
     let reply = server.call(
         "GET",
         "/api/feeds",
@@ -910,10 +907,6 @@ fn protected_status_and_offline_cli_expose_only_redacted_freshness() {
     let row = &report.get("sources").unwrap().as_array().unwrap()[0];
     assert_eq!(row.get("watch_enabled"), Some(&Value::Bool(true)));
     assert_eq!(text(row, "successes"), "0");
-    assert_eq!(
-        server.call("GET", "/api/feeds/retained", &[], "").status,
-        401
-    );
     let retained = server.call(
         "GET",
         "/api/feeds/retained?limit=1",
@@ -925,34 +918,6 @@ fn protected_status_and_offline_cli_expose_only_redacted_freshness() {
     no_private(&retained);
     assert_eq!(text(&retained, "total"), "1");
     assert_eq!(retained.get("next"), Some(&Value::Null));
-    drop(server);
-    home_support::save_settings(&dir.0, &v);
-    let out = Command::new(env!("CARGO_BIN_EXE_mynou"))
-        .env_remove("MYNOU_API_TOKEN")
-        .args(["feeds", "--dir"])
-        .arg(&dir.0)
-        .output()
-        .unwrap();
-    assert!(
-        out.status.success(),
-        "{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    no_private(&json::parse(std::str::from_utf8(&out.stdout).unwrap()).unwrap());
-    let out = Command::new(env!("CARGO_BIN_EXE_mynou"))
-        .env_remove("MYNOU_API_TOKEN")
-        .args(["feeds", "--retained", "--limit", "1", "--dir"])
-        .arg(&dir.0)
-        .output()
-        .unwrap();
-    assert!(
-        out.status.success(),
-        "{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    let retained = json::parse(std::str::from_utf8(&out.stdout).unwrap()).unwrap();
-    no_private(&retained);
-    assert_eq!(text(&retained, "total"), "1");
     assert_eq!(feed.requests(), 0);
 }
 
