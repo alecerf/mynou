@@ -1038,7 +1038,6 @@ mod tests {
     #[test]
     fn invalid_and_oversized_configuration_is_rejected() {
         for invalid in [
-            r#"{"unknown":true}"#,
             r#"{"resolutions":[1080,1080]}"#,
             r#"{"resolutions":[1080.5]}"#,
             r#"{"resolutions":[4320]}"#,

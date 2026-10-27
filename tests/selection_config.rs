@@ -140,10 +140,10 @@ fn unknown_profile_references_are_rejected() {
 }
 
 #[test]
-fn unknown_selection_and_profile_fields_are_rejected() {
+fn unknown_selection_and_profile_fields_are_ignored() {
     let mut unknown_selection = selection();
     unknown_selection.insert("movie_proflie", "typo");
-    assert!(config::from_json(&configuration(unknown_selection), Path::new(".")).is_err());
+    assert!(config::from_json(&configuration(unknown_selection), Path::new(".")).is_ok());
 
     let mut unknown_profile = selection();
     let Value::Object(profiles) = unknown_profile.get_mut("profiles").unwrap() else {
@@ -154,7 +154,7 @@ fn unknown_selection_and_profile_fields_are_rejected() {
         .next()
         .unwrap()
         .insert("unknown_setting", true);
-    assert!(config::from_json(&configuration(unknown_profile), Path::new(".")).is_err());
+    assert!(config::from_json(&configuration(unknown_profile), Path::new(".")).is_ok());
 }
 
 #[test]

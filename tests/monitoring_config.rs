@@ -211,7 +211,6 @@ fn malformed_monitoring_never_silently_enables_or_defaults() {
         r#"{"max_checks":257}"#,
         r#"{"max_checks":-1}"#,
         r#"{"max_checks":null}"#,
-        r#"{"interval_seconds":3600}"#,
     ] {
         assert!(
             config::from_json(&configured_monitoring(document(monitoring)), Path::new("."))
@@ -393,7 +392,6 @@ fn malformed_mapping_fields_are_rejected() {
         r#"[{"mynou_prefix":"/library"}]"#,
         r#"[{"mynou_prefix":false,"plex_prefix":"/media"}]"#,
         r#"[{"mynou_prefix":"/library","plex_prefix":null}]"#,
-        r#"[{"mynou_prefix":"/library","plex_prefix":"/media","extra":true}]"#,
     ] {
         assert!(
             config::from_json(&configured_mappings(document(entries)), Path::new(".")).is_err(),

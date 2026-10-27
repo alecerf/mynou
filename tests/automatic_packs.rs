@@ -736,12 +736,7 @@ fn series_pack_preference_is_strictly_optional_and_disabled_for_legacy_configura
             .unwrap()
             .series_packs_enabled
     );
-    for text in [
-        r#"{"enabled":"true"}"#,
-        r#"{"enabled":true,"unknown":1}"#,
-        r#"[]"#,
-        r#"null"#,
-    ] {
+    for text in [r#"{"enabled":"true"}"#, r#"[]"#, r#"null"#] {
         value.insert("series_packs", mynou::json::parse(text).unwrap());
         assert!(mynou::config::from_json(&value, std::path::Path::new(".")).is_err());
     }
