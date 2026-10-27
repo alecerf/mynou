@@ -87,11 +87,9 @@ there is no supported importer.
 
 For an existing Rust installation, use its original configuration and data.
 For a fresh installation, follow [configure and start](macos.md#configure-and-start).
-A store with no VPN intent uses Direct for backward compatibility, and the
-profile is imported into the running service: import it **before the first
-request**. An existing installation's retained transfers start with the
-service, before a profile can be imported; this release has no way to import
-one while the service is stopped.
+A store without VPN intent starts `unchosen`: retained transfers and new torrent
+work wait until a profile is imported or Direct is chosen explicitly, so the
+profile can be imported into the running service before anything leaves.
 
 Keep the profile in a trusted private directory and do not paste its contents
 into issues or logs. Import it from the **VPN** page of **Settings** (or

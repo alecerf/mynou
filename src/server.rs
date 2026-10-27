@@ -468,7 +468,11 @@ pub(crate) fn route(
     {
         return Ok((
             503,
-            error("Mynou is still validating storage; see startup in status"),
+            error(if engine.vpn_unchosen() {
+                "Choose how torrents connect first: import a VPN profile or use your own connection in Settings, VPN"
+            } else {
+                "Mynou is still validating storage; see startup in status"
+            }),
         ));
     }
     match (method, path) {

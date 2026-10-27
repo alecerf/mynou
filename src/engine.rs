@@ -157,6 +157,13 @@ impl Engine {
         Self::open_operator(config, true, false, true, None)
     }
 
+    /// As `mynou serve` opens it: a store that never chose a VPN mode keeps
+    /// torrents waiting until a profile is imported or Direct is chosen.
+    pub fn open_for_service(config: Config) -> Result<Arc<Self>> {
+        let operator = crate::vpn::Operator::load_for_service(&config.store_dir);
+        Self::open_operator(config, true, false, true, Some(operator))
+    }
+
     pub(crate) fn open_operator(
         config: Config,
         start_downloads: bool,
