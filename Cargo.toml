@@ -21,7 +21,8 @@ panic = "abort"
 strip = "symbols"
 
 [lints.rust]
-unsafe_code = "forbid"
+# Denied everywhere; src/crypto/sha_arm.rs is the one allowed exception.
+unsafe_code = "deny"
 
 [lints.clippy]
 dbg_macro = "deny"

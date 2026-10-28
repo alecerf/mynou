@@ -11,8 +11,15 @@ On a local benchmark with 50 ms of added latency, a 64 MiB download from one
 peer went from about 4 to 61 MiB/s, and seeding to libtorrent from about 4 to
 40 MiB/s. Worker memory accounting includes every piece in flight, so torrents
 with large pieces use fewer simultaneous peers. Seeding advertises the same
-request queue, SHA-1 piece verification is about 85% faster, and unchanged
-metadata or counter-only changes no longer rewrite durable files.
+request queue, and unchanged metadata or counter-only changes no longer
+rewrite durable files.
+
+## Changed: Hashing uses the processor's SHA instructions
+
+SHA-1 piece verification runs on the Apple silicon SHA instructions, about
+five times as fast as in 0.26.0 (about 2,100 instead of 415 MiB/s on an M1
+Pro), so checking existing data and verifying downloads cost less CPU.
+SHA-256, used for stored files, updates and TLS, is about ten times as fast.
 
 ## Added: Downloads share their pieces and finish without waiting on slow peers
 

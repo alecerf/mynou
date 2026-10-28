@@ -9,8 +9,14 @@ moves through the code. User-facing behavior and bounds are in the guides and in
 Mynou is safe Rust that uses only the standard library. `Cargo.toml` declares no
 dependencies, development dependencies or build dependencies, and `Cargo.lock`
 contains only `mynou`. There is no vendored or copied third-party code, no
-submodule, no FFI, no `unsafe` code and no generation step. CI checks the graph
-offline on every run (see [CI](validation.md#mynou-ci)).
+submodule, no FFI and no generation step. CI checks the graph offline on every
+run (see [CI](validation.md#mynou-ci)).
+
+`unsafe` is denied crate-wide. The one exception is `src/crypto/sha_arm.rs`,
+which runs SHA-1 and SHA-256 on the Armv8 SHA instructions: two `unsafe`
+blocks call `#[target_feature]` functions, and the module is compiled only
+when the build enables those instructions. The portable compressors remain
+the fallback on other targets and the reference its tests compare against.
 
 | Former component | Rust replacement |
 | --- | --- |

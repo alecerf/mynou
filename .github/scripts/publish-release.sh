@@ -37,7 +37,7 @@ fi
 printf '\n' >> "$notes"
 cat >> "$notes" <<EOF
 <!-- mynou-ci-release -->
-Mynou $version uses Rust 1.99.1 and the standard library only: no Cargo dependencies, unsafe code, FFI, or external programs at runtime.
+Mynou $version uses Rust 1.99.1 and the standard library only: no Cargo dependencies, FFI, or external programs at runtime, and no unsafe code outside the SHA instructions.
 
 This release was built and published by [GitHub Actions]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID) after dependency, formatting, Clippy, test and native start checks passed on macOS.
 
