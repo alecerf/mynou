@@ -33,13 +33,11 @@ impl Sha1 {
             if self.buffered != 64 {
                 return;
             }
-            Self::compress(&mut self.state, &self.buffer);
+            Self::compress_blocks(&mut self.state, std::slice::from_ref(&self.buffer));
             self.buffered = 0;
         }
         let (blocks, tail) = data.as_chunks::<64>();
-        for block in blocks {
-            Self::compress(&mut self.state, block);
-        }
+        Self::compress_blocks(&mut self.state, blocks);
         self.buffer[..tail.len()].copy_from_slice(tail);
         self.buffered = tail.len();
     }
@@ -49,22 +47,38 @@ impl Sha1 {
         self.buffered += 1;
         if self.buffered > 56 {
             self.buffer[self.buffered..].fill(0);
-            Self::compress(&mut self.state, &self.buffer);
+            Self::compress_blocks(&mut self.state, std::slice::from_ref(&self.buffer));
             self.buffered = 0;
         }
         self.buffer[self.buffered..56].fill(0);
         self.buffer[56..].copy_from_slice(&bits.to_be_bytes());
-        Self::compress(&mut self.state, &self.buffer);
+        Self::compress_blocks(&mut self.state, std::slice::from_ref(&self.buffer));
         let mut out = [0; 20];
         for (chunk, word) in out.as_chunks_mut::<4>().0.iter_mut().zip(self.state) {
             chunk.copy_from_slice(&word.to_be_bytes());
         }
         out
     }
-    /// Piece verification hashes every downloaded byte, so this is the hot
-    /// loop of a transfer. One loop per round function keeps the selection
-    /// out of the rounds, and a 16-word ring keeps the schedule in registers;
-    /// together they double the throughput of a single 80-round loop.
+    /// The Armv8 SHA instructions when the build enables them, else `compress`.
+    fn compress_blocks(state: &mut [u32; 5], blocks: &[[u8; 64]]) {
+        #[cfg(all(target_arch = "aarch64", target_feature = "sha2"))]
+        super::sha_arm::sha1_blocks(state, blocks);
+        #[cfg(not(all(target_arch = "aarch64", target_feature = "sha2")))]
+        for block in blocks {
+            Self::compress(state, block);
+        }
+    }
+    /// Piece verification hashes every downloaded byte, so without the SHA
+    /// instructions this is the hot loop of a transfer. One loop per round
+    /// function keeps the selection out of the rounds, and a 16-word ring
+    /// keeps the schedule in registers; together they double the throughput
+    /// of a single 80-round loop.
+    // With the SHA instructions compiled in, this is only the reference that
+    // the tests compare them against.
+    #[cfg_attr(
+        all(target_arch = "aarch64", target_feature = "sha2"),
+        allow(dead_code)
+    )]
     fn compress(state: &mut [u32; 5], block: &[u8]) {
         let mut words = [0u32; 16];
         for (word, bytes) in words.iter_mut().zip(block.as_chunks::<4>().0.iter()) {
@@ -113,6 +127,17 @@ impl Sha1 {
     }
 }
 
+pub(super) const SHA256_K: [u32; 64] = [
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+];
+
 #[derive(Clone)]
 pub struct Sha256 {
     state: [u32; 8],
@@ -148,13 +173,11 @@ impl Sha256 {
             if self.buffered != 64 {
                 return;
             }
-            Self::compress(&mut self.state, &self.buffer);
+            Self::compress_blocks(&mut self.state, std::slice::from_ref(&self.buffer));
             self.buffered = 0;
         }
         let (blocks, tail) = data.as_chunks::<64>();
-        for block in blocks {
-            Self::compress(&mut self.state, block);
-        }
+        Self::compress_blocks(&mut self.state, blocks);
         self.buffer[..tail.len()].copy_from_slice(tail);
         self.buffered = tail.len();
     }
@@ -164,31 +187,34 @@ impl Sha256 {
         self.buffered += 1;
         if self.buffered > 56 {
             self.buffer[self.buffered..].fill(0);
-            Self::compress(&mut self.state, &self.buffer);
+            Self::compress_blocks(&mut self.state, std::slice::from_ref(&self.buffer));
             self.buffered = 0;
         }
         self.buffer[self.buffered..56].fill(0);
         self.buffer[56..].copy_from_slice(&bits.to_be_bytes());
-        Self::compress(&mut self.state, &self.buffer);
+        Self::compress_blocks(&mut self.state, std::slice::from_ref(&self.buffer));
         let mut out = [0; 32];
         for (chunk, word) in out.as_chunks_mut::<4>().0.iter_mut().zip(self.state) {
             chunk.copy_from_slice(&word.to_be_bytes());
         }
         out
     }
+    /// The Armv8 SHA instructions when the build enables them, else `compress`.
+    fn compress_blocks(state: &mut [u32; 8], blocks: &[[u8; 64]]) {
+        #[cfg(all(target_arch = "aarch64", target_feature = "sha2"))]
+        super::sha_arm::sha256_blocks(state, blocks);
+        #[cfg(not(all(target_arch = "aarch64", target_feature = "sha2")))]
+        for block in blocks {
+            Self::compress(state, block);
+        }
+    }
+    // With the SHA instructions compiled in, this is only the reference that
+    // the tests compare them against.
+    #[cfg_attr(
+        all(target_arch = "aarch64", target_feature = "sha2"),
+        allow(dead_code)
+    )]
     fn compress(state: &mut [u32; 8], block: &[u8]) {
-        const K: [u32; 64] = [
-            0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4,
-            0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe,
-            0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f,
-            0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
-            0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc,
-            0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b,
-            0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116,
-            0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
-            0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7,
-            0xc67178f2,
-        ];
         let mut words = [0u32; 64];
         for (word, bytes) in words[..16].iter_mut().zip(block.as_chunks::<4>().0.iter()) {
             *word = u32::from_be_bytes(*bytes);
@@ -210,7 +236,7 @@ impl Sha256 {
             let t1 = h
                 .wrapping_add(s1)
                 .wrapping_add(ch)
-                .wrapping_add(K[i])
+                .wrapping_add(SHA256_K[i])
                 .wrapping_add(words[i]);
             let s0 = a.rotate_right(2) ^ a.rotate_right(13) ^ a.rotate_right(22);
             let maj = (a & b) ^ (a & c) ^ (b & c);
@@ -537,6 +563,57 @@ mod tests {
             }
             assert_eq!(one.finalize(), sha1(&data));
             assert_eq!(two.finalize(), sha256(&data));
+        }
+    }
+    #[test]
+    fn every_length_matches_python_hashlib() {
+        // SHA-256 over the digests of every prefix of 0..=1027 bytes, from
+        // Python's hashlib: covers each padding case and up to 17 blocks.
+        let data: Vec<u8> = (0..1027).map(|x| (x * 31) as u8).collect();
+        let mut one = Sha256::new();
+        let mut two = Sha256::new();
+        for length in 0..=data.len() {
+            one.update(&sha1(&data[..length]));
+            two.update(&sha256(&data[..length]));
+        }
+        assert_eq!(
+            one.finalize().as_slice(),
+            bytes("4c5d593c55f50aec57b53e31fd6808313a5637567f56df42a1ecf73f24b02c20")
+        );
+        assert_eq!(
+            two.finalize().as_slice(),
+            bytes("cdf61734fa8f2e1bb06e0716af3e951a4af0e33e9c62e30185d61eb6a3e2c2b6")
+        );
+    }
+    #[test]
+    fn block_compression_matches_the_portable_reference() {
+        // With the SHA instructions compiled in, compress_blocks runs them;
+        // the portable compressors are the reference for any state and input.
+        let mut seed = 0x9e37_79b9_7f4a_7c15u64;
+        let mut next = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed as u32
+        };
+        for count in (0..300).map(|round| round % 5) {
+            let blocks: Vec<[u8; 64]> = (0..count)
+                .map(|_| std::array::from_fn(|_| next() as u8))
+                .collect();
+            let start: [u32; 5] = std::array::from_fn(|_| next());
+            let (mut fast, mut reference) = (start, start);
+            Sha1::compress_blocks(&mut fast, &blocks);
+            for block in &blocks {
+                Sha1::compress(&mut reference, block);
+            }
+            assert_eq!(fast, reference);
+            let start: [u32; 8] = std::array::from_fn(|_| next());
+            let (mut fast, mut reference) = (start, start);
+            Sha256::compress_blocks(&mut fast, &blocks);
+            for block in &blocks {
+                Sha256::compress(&mut reference, block);
+            }
+            assert_eq!(fast, reference);
         }
     }
 }

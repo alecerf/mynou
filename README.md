@@ -10,7 +10,7 @@
   <a href="https://github.com/alecerf/mynou/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/alecerf/mynou?label=release"></a>
   <img alt="Platform: macOS on Apple Silicon" src="https://img.shields.io/badge/platform-macOS%20Apple%20Silicon-lightgrey">
   <img alt="Zero dependencies" src="https://img.shields.io/badge/dependencies-0-brightgreen">
-  <img alt="No unsafe code" src="https://img.shields.io/badge/unsafe-forbidden-brightgreen">
+  <img alt="Unsafe code only for the SHA instructions" src="https://img.shields.io/badge/unsafe-SHA%20instructions%20only-brightgreen">
 </p>
 
 <p align="center">
@@ -30,8 +30,8 @@
   one executable. There is no qBittorrent, Radarr, Sonarr, ffprobe, SQLite or
   Docker to install and keep in sync.
 - **Nothing hidden underneath.** Mynou is safe Rust built on the standard
-  library only: zero Cargo dependencies, no `unsafe` code and no external
-  program at runtime.
+  library only: zero Cargo dependencies and no external program at runtime.
+  The only `unsafe` code calls the processor's SHA instructions.
 - **It explains itself.** The release list of a title shows which one Mynou
   would pick and why every other one was rejected; you can also pick one
   yourself.
@@ -276,8 +276,8 @@ The executable is `target/release/mynou`.
 
 Bug reports and feature ideas are welcome through the
 [issue templates](https://github.com/alecerf/mynou/issues/new/choose). Product
-code stays on the Rust standard library: no dependency, no `unsafe`, no
-external helper.
+code stays on the Rust standard library: no dependency, no external helper,
+and no `unsafe` outside `src/crypto/sha_arm.rs`.
 
 Found a vulnerability? Do not open a public issue; follow
 [SECURITY.md](SECURITY.md).

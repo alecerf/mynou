@@ -280,6 +280,8 @@ Partage et coûts fixes :
   [la régression du tunnel](#régression-trouvée-puis-corrigée-dans-le-tunnel).
 - Le compresseur SHA-1 déroule ses 80 tours ; sur 14 cas différentiels contre
   `hashlib`, le débit mesuré sur 512 Mio passe d'environ 415 à 760–785 Mio/s.
+  Il reste la référence et le repli hors Apple silicon : voir
+  [instructions SHA](#instructions-sha).
 - MSE/PE : échange Diffie-Hellman 768 bits (exponentiation de Montgomery sans
   branche dépendant du secret), RC4 après abandon des 1 024 premiers octets,
   recherche du torrent par son haché `req2` sur toutes les pages de l'index.
@@ -296,6 +298,35 @@ les données, et ne recevait que les 16 premières. Il exerce trois lots
 successifs, les quotas global/local et une petite file distante.
 `eight_piece_window_accepts_out_of_order_replies_before_the_first_piece`
 couvre huit pièces servies dans l'ordre inverse.
+
+### Instructions SHA
+
+SHA-1 et SHA-256 utilisent les instructions SHA d'Armv8
+(`src/crypto/sha_arm.rs`, seul module autorisé à contenir `unsafe`). Sur un
+M1 Pro (macOS 27.2, Rust 1.99.1), avec des pièces de 16 Mio sur 512 Mio :
+
+| Hachage | Portable, Mio/s | Instructions SHA, Mio/s | Rapport |
+| --- | ---: | ---: | ---: |
+| SHA-1 | 760–777 | 2 080–2 155 | 2,8× |
+| SHA-256 | 191–194 | 2 038–2 062 | 10,6× |
+
+Bout en bout, `torrent_compare.py --mib 512 --rtt 0 --rates 0
+--peer-encryption disabled --engines mynou`, deux tours alternés entre trunk
+et la branche, trois essais chacun :
+
+| Mesure | Portable | Instructions SHA |
+| --- | ---: | ---: |
+| Téléchargement depuis libtorrent, CPU s/Gio | 1,94–2,22 | 1,22–1,44 |
+| Téléchargement depuis libtorrent, Mio/s | 290–505 | 317–601 |
+| Seed Mynou : revérification puis envoi de 512 Mio, CPU s | 2,00–2,02 | 1,12–1,16 |
+| Seed Mynou : prêt et servi, s | 1,95–2,00 | 1,49–1,52 |
+
+Le CPU par Gio téléchargé baisse d'environ un tiers ; le débit sans latence
+reste dominé par le disque et le relais et ses intervalles se recouvrent. Les
+tests comparent le chemin matériel au compresseur portable sur des états et
+blocs aléatoires, et toutes les longueurs de 0 à 1 027 octets à `hashlib`.
+`RUSTFLAGS="-C target-feature=-sha2"` compile et teste le chemin portable sur
+la même machine.
 
 ## Essaim réel
 

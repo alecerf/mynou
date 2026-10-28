@@ -16,6 +16,11 @@ mod curve;
 mod gcm;
 #[path = "crypto/hashes.rs"]
 mod hashes;
+// The one place allowed to use `unsafe`: see the module documentation.
+#[cfg(all(target_arch = "aarch64", target_feature = "sha2"))]
+#[allow(unsafe_code)]
+#[path = "crypto/sha_arm.rs"]
+mod sha_arm;
 
 pub use aead::{ChaCha20Poly1305, XChaCha20Poly1305, hchacha20};
 pub use blake2s::{
