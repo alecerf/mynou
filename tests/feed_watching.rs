@@ -455,7 +455,9 @@ fn a_failed_commit_reports_failure_and_the_entries_are_observed_again() {
     ]));
     let directory = state_dir(&dir);
     let indexed = directory.join("feeds.idx");
-    fs::set_permissions(&indexed, fs::Permissions::from_mode(0o500)).unwrap();
+    // Commits write to files the index holds open; an inaccessible
+    // directory fails the per-commit path checks instead.
+    fs::set_permissions(&indexed, fs::Permissions::from_mode(0o000)).unwrap();
     let report = engine.feeds_poll(None, true);
     fs::set_permissions(&indexed, fs::Permissions::from_mode(0o700)).unwrap();
     let report = report.unwrap();
@@ -463,9 +465,8 @@ fn a_failed_commit_reports_failure_and_the_entries_are_observed_again() {
     assert_eq!(outcome(row), "storage_failed");
     assert_eq!(num(row, "routed"), 0);
     assert!(stored(&engine, &job.id).acquisition_url.is_none());
-    // A failed WAL transaction has uncertain durability: no stale health reads
-    // or retry in that process. Reopen to recover before observing again.
-    assert!(engine.feeds().is_err());
+    // The path checks fail before the redo record is written, so nothing
+    // was saved: the cursor did not advance. Reopen to observe again.
     drop(engine);
     let engine = open(&dir, vec![source("feed-a", &feed, "rss")]);
     assert_eq!(text(&status(&engine, 0), "successes"), "1");

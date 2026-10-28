@@ -165,8 +165,9 @@ fn legacy_json_bindings_and_pending_fingerprints_survive_an_explicit_default_for
     let binding = cfg.irc.sources[0].binding();
     let engine = Engine::open(cfg.clone()).unwrap();
     irc_support::receive(&engine, 7);
-    let before = irc_support::bytes(&cfg.store_dir);
     drop(engine);
+    // Closing checkpoints the redo logs, so the bytes settle first.
+    let before = irc_support::bytes(&cfg.store_dir);
     for declared in [Value::Null, json::parse("{\"type\":\"json\"}").unwrap()] {
         source(&mut v).insert("announcement_format", declared);
         let cfg = config::from_json(&v, &dir.0).unwrap();

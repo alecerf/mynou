@@ -27,7 +27,7 @@ enum Backend {
         state: State,
         bytes: Option<Vec<u8>>,
     },
-    Ready(Index),
+    Ready(Box<Index>),
 }
 pub(crate) struct AnnouncementStore {
     /// Only bounded binding metadata is retained after migration.
@@ -191,7 +191,7 @@ impl AnnouncementStore {
                 return Err("IRC: index metadata contains history rows".into());
             }
             index::count(&mut index)?;
-            (Backend::Ready(index), state)
+            (Backend::Ready(Box::new(index)), state)
         } else {
             // A missing marker cannot hide an already published history.
             if bytes.is_none() && fs::symlink_metadata(directory.join(INDEX)).is_ok() {
@@ -337,7 +337,7 @@ impl AnnouncementStore {
         };
         if let Some((state, bytes)) = legacy {
             match self.migrate(&state, bytes.as_deref()) {
-                Ok(index) => *self.backend.borrow_mut() = Backend::Ready(index),
+                Ok(index) => *self.backend.borrow_mut() = Backend::Ready(Box::new(index)),
                 Err(e) => {
                     self.poisoned = true;
                     return Err(e);
@@ -672,6 +672,7 @@ fn check_creation_artifacts(staging: &Path, identity: [u8; 32]) -> Result<()> {
     }
     if !complete_identity
         && (fs::symlink_metadata(&tree).is_ok()
+            || fs::symlink_metadata(staging.join("redo.bin")).is_ok()
             || fs::symlink_metadata(staging.join("objects")).is_ok())
     {
         return Err("IRC: incomplete staging has unbound artifacts".into());
@@ -680,6 +681,11 @@ fn check_creation_artifacts(staging: &Path, identity: [u8; 32]) -> Result<()> {
         && !Index::valid_creation_prefix(identity, &bytes)
     {
         return Err("IRC: corrupt partial creation tree".into());
+    }
+    if let Some(bytes) = read(&staging.join("redo.bin"))?
+        && !Index::valid_creation_redo(identity, &bytes)
+    {
+        return Err("IRC: corrupt partial creation redo log".into());
     }
     if let Some(lock) = read(&staging.join(".lock"))?
         && !lock.is_empty()
@@ -691,7 +697,7 @@ fn check_creation_artifacts(staging: &Path, identity: [u8; 32]) -> Result<()> {
             .map_err(|_| "IRC: cannot inspect creation artifact")?
             .path();
         match path.file_name().and_then(|s| s.to_str()) {
-            Some(".lock" | "identity.bin" | "tree.bin") => {
+            Some(".lock" | "identity.bin" | "tree.bin" | "redo.bin") => {
                 read(&path)?;
             }
             Some("objects") => {

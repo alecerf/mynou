@@ -169,6 +169,9 @@ fn numbering_preview_is_read_only_online_and_after_restart() {
     assert_eq!(series_state(&cfg.store_dir), snapshot);
     assert_eq!(jobs_state::fingerprint(&cfg.store_dir), journal);
     drop(engine);
+    // Closing checkpoints the redo logs; the reader then writes nothing.
+    let snapshot = series_state(&cfg.store_dir);
+    let journal = jobs_state::fingerprint(&cfg.store_dir);
     let reader = Engine::open_for_preview(cfg.clone()).unwrap();
     assert_eq!(reader.series_numbering(&id, &choices).unwrap(), preview);
     let mut forbidden = choices.clone();

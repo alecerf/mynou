@@ -310,11 +310,13 @@ fn migrate(
         // preserved for the operator; it is never treated as disposable.
         let reusable = match Index::open(&staging_path, true) {
             Ok(mut index) => {
-                check_format(&mut index, true).is_ok()
+                !index.interrupted()
+                    && check_format(&mut index, true).is_ok()
                     && source_of(&mut index)?.as_deref() == Some(&files.digest[..])
             }
-            // A mid-commit staging index can require recovery. Keep the exact
-            // artifacts and rebuild from the fully validated legacy originals.
+            // A staging index left without a clean close, or one that cannot
+            // be read, keeps its exact artifacts; the migration rebuilds from
+            // the fully validated legacy originals.
             Err(_) => false,
         };
         if reusable {

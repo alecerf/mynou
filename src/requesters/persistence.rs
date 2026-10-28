@@ -27,7 +27,7 @@ enum Backend {
         state: State,
         bytes: Option<Vec<u8>>,
     },
-    Ready(Index),
+    Ready(Box<Index>),
 }
 pub(crate) struct RequesterStore {
     /// Bounded account metadata only. Demands/operator interests live on disk.
@@ -180,7 +180,7 @@ impl RequesterStore {
             if !state.demands.is_empty() || !state.operator_jobs.is_empty() {
                 return Err("Requester: index metadata contains inventory records".into());
             }
-            (Backend::Ready(index), state)
+            (Backend::Ready(Box::new(index)), state)
         } else {
             let state = bytes
                 .as_deref()
@@ -284,7 +284,7 @@ impl RequesterStore {
         if let Some((state, bytes)) = legacy {
             let result = self.migrate(&state, bytes.as_deref());
             match result {
-                Ok(index) => *self.backend.borrow_mut() = Backend::Ready(index),
+                Ok(index) => *self.backend.borrow_mut() = Backend::Ready(Box::new(index)),
                 Err(error) => {
                     self.poisoned = true;
                     return Err(error);
@@ -581,6 +581,7 @@ impl RequesterStore {
                 .map_err(|_| "Requester: cannot inspect staging")?
             {
                 if let Ok(mut inspect) = Index::open(&staging, true)
+                    && !inspect.interrupted()
                     && inspect.get(&index::SOURCE)?.as_deref() == Some(source.as_slice())
                 {
                     drop(inspect);

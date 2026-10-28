@@ -441,6 +441,8 @@ fn metadata_work_obeys_the_shared_deadline_and_read_only_apply_rejects_before_io
     assert!(result.is_err());
     assert_eq!(snapshot(&cfg.store_dir), before);
     drop(engine);
+    // Closing checkpoints each index's redo log; the preview writes nothing.
+    let before = snapshot(&cfg.store_dir);
     let readonly = Engine::open_for_preview(cfg.clone()).unwrap();
     let calls = provider.calls.lock().unwrap().len();
     assert!(

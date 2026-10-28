@@ -236,32 +236,76 @@ fn every_commit_boundary_has_truthful_poisoning_and_idempotent_recovery() {
         assert!(index.page(&Query::default()).is_err());
         assert!(index.commit(vec![put(71)]).is_err());
         drop(index);
+        let saved = fault != Fault::Staged;
+        let expect = |index: &mut Index| {
+            assert_eq!(index.get(&key(3)).unwrap().is_none(), saved, "{fault:?}");
+            let eight = if saved {
+                b"replacement".to_vec()
+            } else {
+                8u64.to_be_bytes().to_vec()
+            };
+            assert_eq!(index.get(&key(8)).unwrap(), Some(eight));
+            assert_eq!(index.get(&key(70)).unwrap().is_some(), saved);
+            assert_eq!(index.len().unwrap(), 40);
+        };
+        // The poisoned index never checkpointed: a read-only open replays
+        // its records in memory and writes nothing.
         let before = contents(&directory.0);
-        if fault != Fault::Unlinked {
-            assert!(Index::open(&directory.0, true).is_err());
-        } else {
-            drop(Index::open(&directory.0, true).unwrap());
-        }
+        expect(&mut Index::open(&directory.0, true).unwrap());
         assert_eq!(contents(&directory.0), before);
         let mut index = Index::open(&directory.0, false).unwrap();
-        if fault == Fault::Staged {
-            assert!(index.get(&key(3)).unwrap().is_some());
-            assert_eq!(
-                index.get(&key(8)).unwrap(),
-                Some(8u64.to_be_bytes().to_vec())
-            );
-            assert!(index.get(&key(70)).unwrap().is_none());
-        } else {
-            assert!(index.get(&key(3)).unwrap().is_none());
-            assert_eq!(index.get(&key(8)).unwrap(), Some(b"replacement".to_vec()));
-            assert!(index.get(&key(70)).unwrap().is_some());
-        }
-        assert_eq!(index.len().unwrap(), 40);
+        expect(&mut index);
         drop(index);
         let mut again = Index::open(&directory.0, true).unwrap();
         assert_eq!(again.len().unwrap(), 40);
         assert!(again.get(&key(71)).unwrap().is_none());
     }
+}
+
+#[test]
+fn records_restore_writes_a_power_loss_discarded_since_the_checkpoint() {
+    let directory = Directory::new();
+    let mut index = Index::create(&directory.0).unwrap();
+    index.commit((0..40).map(put).collect()).unwrap();
+    index
+        .commit(vec![Change::Put(key(41), vec![7; 3000])])
+        .unwrap();
+    index.checkpoint();
+    // Only the redo record of each later commit is flushed.
+    let checkpointed = |name: &str| fs::read(directory.0.join(name)).unwrap();
+    let tree = checkpointed("tree.bin");
+    let segment = checkpointed("segments/0000000000000000");
+    for id in 100..130 {
+        index
+            .commit(vec![
+                Change::Delete(key(id - 100)),
+                Change::Put(key(id), vec![9; 2000]),
+            ])
+            .unwrap();
+    }
+    index.fault = Some(Fault::Published);
+    assert!(index.commit(vec![put(200)]).is_err());
+    drop(index);
+    // The disk kept nothing written after the checkpoint but the redo log.
+    fs::write(directory.0.join("tree.bin"), tree).unwrap();
+    fs::write(directory.0.join("segments/0000000000000000"), segment).unwrap();
+    let expect = |index: &mut Index| {
+        for id in 0..30 {
+            assert!(index.get(&key(id)).unwrap().is_none());
+        }
+        for id in (30..40).chain(100..130) {
+            assert!(index.get(&key(id)).unwrap().is_some(), "{id}");
+        }
+        assert_eq!(index.get(&key(41)).unwrap(), Some(vec![7; 3000]));
+        assert_eq!(index.get(&key(129)).unwrap(), Some(vec![9; 2000]));
+        assert!(index.get(&key(200)).unwrap().is_some());
+        assert_eq!(index.len().unwrap(), 42);
+    };
+    let before = contents(&directory.0);
+    expect(&mut Index::open(&directory.0, true).unwrap());
+    assert_eq!(contents(&directory.0), before);
+    expect(&mut Index::open(&directory.0, false).unwrap());
+    expect(&mut Index::open(&directory.0, true).unwrap());
 }
 
 #[test]
@@ -326,25 +370,49 @@ fn published_redo_repairs_covered_torn_root_pages_and_records_only() {
 }
 
 #[test]
-fn published_corruption_truncation_and_cross_store_replay_never_modify_state() {
+fn an_interrupted_last_record_is_dropped_and_damage_before_it_is_refused() {
     for truncate in [false, true] {
         let directory = Directory::new();
         let mut index = Index::create(&directory.0).unwrap();
+        index.commit(vec![put(1)]).unwrap();
+        index.checkpoint();
         index.fault = Some(Fault::Published);
-        assert!(index.commit(vec![put(1)]).is_err());
+        assert!(index.commit(vec![put(2)]).is_err());
         drop(index);
-        let path = directory.0.join("transaction.bin");
+        let path = directory.0.join("redo.bin");
         let mut bytes = fs::read(&path).unwrap();
+        // The only record after the checkpoint reads as never written.
         if truncate {
-            bytes.truncate(bytes.len() / 2);
+            bytes.truncate(16384 + 24 + 100);
         } else {
-            bytes[100] ^= 1;
+            bytes[16384 + 100] ^= 1;
         }
         fs::write(&path, bytes).unwrap();
-        let before = contents(&directory.0);
-        assert!(Index::open(&directory.0, false).is_err());
-        assert_eq!(contents(&directory.0), before);
+        let mut index = Index::open(&directory.0, false).unwrap();
+        assert!(index.get(&key(1)).unwrap().is_some());
+        assert!(index.get(&key(2)).unwrap().is_none());
     }
+    // A damaged record followed by an intact one is not an interrupted
+    // write: nothing is replayed or changed.
+    let directory = Directory::new();
+    let mut index = Index::create(&directory.0).unwrap();
+    index.commit(vec![put(1)]).unwrap();
+    index.fault = Some(Fault::Published);
+    assert!(index.commit(vec![put(2)]).is_err());
+    drop(index);
+    let path = directory.0.join("redo.bin");
+    let mut bytes = fs::read(&path).unwrap();
+    bytes[16384 + 100] ^= 1;
+    fs::write(&path, bytes).unwrap();
+    let before = contents(&directory.0);
+    assert!(
+        Index::open(&directory.0, false)
+            .err()
+            .unwrap()
+            .contains("damaged")
+    );
+    assert_eq!(contents(&directory.0), before);
+
     let source = Directory::new();
     let target = Directory::new();
     let mut index = Index::create(&source.0).unwrap();
@@ -352,19 +420,61 @@ fn published_corruption_truncation_and_cross_store_replay_never_modify_state() {
     assert!(index.commit(vec![put(1)]).is_err());
     drop(index);
     drop(Index::create(&target.0).unwrap());
-    fs::copy(
-        source.0.join("transaction.bin"),
-        target.0.join("transaction.bin"),
-    )
-    .unwrap();
-    fs::set_permissions(
-        target.0.join("transaction.bin"),
-        fs::Permissions::from_mode(0o600),
-    )
-    .unwrap();
+    fs::copy(source.0.join("redo.bin"), target.0.join("redo.bin")).unwrap();
+    fs::set_permissions(target.0.join("redo.bin"), fs::Permissions::from_mode(0o600)).unwrap();
     let before = contents(&target.0);
     assert!(Index::open(&target.0, false).is_err());
     assert_eq!(contents(&target.0), before);
+}
+
+/// Turns a closed store back into the format of releases before the redo
+/// log: a SHA-256 root and no redo file.
+pub(crate) fn legacy_root(directory: &Path) {
+    let path = directory.join("tree.bin");
+    let mut file = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&path)
+        .unwrap();
+    let mut header = Header::decode(&tree::read_page(&mut file, 0).unwrap()).unwrap();
+    // Earlier releases sealed every segment: `head` named the next one.
+    if header.head_length > 0 {
+        header.head += 1;
+        header.head_length = 0;
+    }
+    file.write_all(&header.encode_legacy()).unwrap();
+    fs::remove_file(directory.join("redo.bin")).unwrap();
+}
+
+#[test]
+fn stores_from_before_the_redo_log_adopt_one_only_when_writable() {
+    let directory = Directory::new();
+    let mut index = Index::create(&directory.0).unwrap();
+    index.commit(vec![put(1)]).unwrap();
+    drop(index);
+    legacy_root(&directory.0);
+    let before = contents(&directory.0);
+    let mut index = Index::open(&directory.0, true).unwrap();
+    assert!(index.get(&key(1)).unwrap().is_some());
+    drop(index);
+    assert_eq!(contents(&directory.0), before);
+    let mut index = Index::open(&directory.0, false).unwrap();
+    assert!(directory.0.join("redo.bin").exists());
+    let root = tree::read_page(&mut index.tree, 0).unwrap();
+    assert!(
+        !Header::is_legacy(&root),
+        "earlier releases must refuse the store"
+    );
+    index.commit(vec![put(2)]).unwrap();
+    drop(index);
+    // A new-format root without its redo log is never treated as legacy.
+    fs::remove_file(directory.0.join("redo.bin")).unwrap();
+    assert!(
+        Index::open(&directory.0, false)
+            .err()
+            .unwrap()
+            .contains("missing")
+    );
 }
 
 #[test]
@@ -373,6 +483,7 @@ fn incomplete_unpublished_staging_is_discarded_only_by_writable_open() {
     let mut index = Index::create(&directory.0).unwrap();
     index.commit(vec![put(1)]).unwrap();
     drop(index);
+    legacy_root(&directory.0);
     let staging = directory.0.join("transaction.tmp");
     fs::write(&staging, b"partial").unwrap();
     fs::set_permissions(&staging, fs::Permissions::from_mode(0o600)).unwrap();
@@ -483,20 +594,17 @@ fn stale_valid_wal_and_inconsistent_checksummed_redo_are_rejected_before_writes(
     index.fault = Some(Fault::Published);
     assert!(index.commit(vec![put(1)]).is_err());
     drop(index);
-    let path = directory.0.join("transaction.bin");
+    let path = directory.0.join("redo.bin");
     let saved = fs::read(&path).unwrap();
     // Keep the full framing/checksum valid but change a new-key put into an
     // existing-key put. Counts no longer agree; no recovery write is allowed.
-    let mut invalid = saved.clone();
-    let count_offset = 16 + 2 * PAGE_SIZE;
+    let mut body = super::persistence::redo_bodies(&directory.0).remove(0);
+    let count_offset = 2 * PAGE_SIZE;
     let pages =
-        u32::from_le_bytes(invalid[count_offset..count_offset + 4].try_into().unwrap()) as usize;
+        u32::from_le_bytes(body[count_offset..count_offset + 4].try_into().unwrap()) as usize;
     let action_offset = count_offset + 4 + pages * (PAGE_SIZE + 8) + 4;
-    invalid[action_offset + 65] = 1;
-    let end = invalid.len() - 32;
-    let digest = sha256(&invalid[..end]);
-    invalid[end..].copy_from_slice(&digest);
-    fs::write(&path, invalid).unwrap();
+    body[action_offset + 65] = 1;
+    super::persistence::rewrite_redo_body(&directory.0, 0, &body);
     let before = contents(&directory.0);
     assert!(Index::open(&directory.0, false).is_err());
     assert_eq!(contents(&directory.0), before);
@@ -831,29 +939,13 @@ fn cached_pages_never_outlive_a_commit_or_a_recovery() {
 #[test]
 fn swapped_index_files_are_refused_at_open_without_blocking() {
     use crate::store::open_tests::{Swap, swapped};
-    for name in [
-        "identity.bin",
-        ".lock",
-        "tree.bin",
-        "transaction.bin",
-        "transaction.tmp",
-        "segment",
-    ] {
+    for name in ["identity.bin", ".lock", "tree.bin", "redo.bin", "segment"] {
         for swap in [Swap::Symlink, Swap::Fifo, Swap::Replaced] {
             let directory = Directory::new();
             let mut index = Index::create(&directory.0).unwrap();
             // Too large to inline, so the value lives in a log segment.
             let value = vec![7; super::MAX_INLINE_BYTES + 1];
             index.commit(vec![Change::Put(key(1), value)]).unwrap();
-            let fault = match name {
-                "transaction.bin" => Some(Fault::Published),
-                "transaction.tmp" => Some(Fault::Staged),
-                _ => None,
-            };
-            if let Some(fault) = fault {
-                index.fault = Some(fault);
-                assert!(index.commit(vec![put(2)]).is_err());
-            }
             drop(index);
             assert!(directory.0.join(name).exists() || name == "segment");
             let path = directory.0.clone();
@@ -1089,6 +1181,8 @@ fn store_names_come_from_the_index_directory() {
 /// Synthetic pre-count index: preserve every key/value and encode branches
 /// using their original 72-byte links. Production never strips summaries.
 pub(crate) fn legacy_range_index(index: &mut Index) {
+    // Pending records would restore the counted pages on replay.
+    index.checkpoint();
     for id in 1..index.header.next {
         let bytes = tree::read_page(&mut index.tree, id).unwrap();
         let mut node = tree::Node::decode(
@@ -1368,7 +1462,7 @@ fn counted_branches_reject_overflow_and_inconsistent_cardinalities() {
     let mut index = Index::create(&directory.0).unwrap();
     index.commit((0..200).map(put).collect()).unwrap();
     let bytes = tree::read_page(&mut index.tree, index.header.root).unwrap();
-    assert_eq!(&bytes[..8], b"MYNOUIN2"); // Older readers reject this version.
+    assert_eq!(&bytes[..8], b"MYNOUIN4"); // Older readers reject this version.
     let mut node = tree::Node::decode(
         &bytes,
         index.header.root,
@@ -1460,9 +1554,6 @@ fn partial_range_upgrade_redo_repairs_a_torn_branch_and_resumes_after_mutations(
     index.inject(Some(Fault::Published));
     assert!(index.prepare_range_counts(1).is_err());
     drop(index);
-    let before = contents(&directory.0);
-    assert!(Index::open(&directory.0, true).is_err());
-    assert_eq!(contents(&directory.0), before);
     let mut file = fs::OpenOptions::new()
         .write(true)
         .open(directory.0.join("tree.bin"))
@@ -1471,6 +1562,13 @@ fn partial_range_upgrade_redo_repairs_a_torn_branch_and_resumes_after_mutations(
         .unwrap();
     file.write_all(&[0; 128]).unwrap();
     file.sync_all().unwrap();
+    // A read-only open reads the torn branch from its record, in memory.
+    let before = contents(&directory.0);
+    let mut reader = Index::open(&directory.0, true).unwrap();
+    assert_eq!(reader.len().unwrap(), 2049);
+    assert!(reader.get(&key(2048)).unwrap().is_some());
+    drop(reader);
+    assert_eq!(contents(&directory.0), before);
     let mut index = Index::open(&directory.0, false).unwrap();
     // A saved count stays correct even if ordinary operations run between
     // upgrade batches. Unknown siblings remain explicitly unknown.

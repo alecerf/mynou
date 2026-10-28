@@ -398,7 +398,6 @@ fn live_authentication_reconnect_and_restart_repeat_the_handshake_before_duplica
     // Duplicate receipt handling must still leave the entire IRC index and
     // its identity marker byte-for-byte unchanged, without creating jobs.
     let receipts = cfg.store_dir.join("announcements.idx");
-    let before = bytes(&receipts);
     let marker = fs::read(cfg.store_dir.join("announcements.bin")).unwrap();
     no_secrets(&engine.irc_sources().unwrap());
     no_secrets(&rows(&engine)[0]);
@@ -409,6 +408,8 @@ fn live_authentication_reconnect_and_restart_repeat_the_handshake_before_duplica
         Some(false)
     );
     drop(engine);
+    // Closing checkpointed the redo log; from here the bytes must hold.
+    let before = bytes(&receipts);
     let engine = Engine::open(cfg.clone()).unwrap();
     let workers = engine.start();
     wait(|| health(&engine).get("received").unwrap().as_str() == Some("1"));

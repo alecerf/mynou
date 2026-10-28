@@ -36,7 +36,7 @@ who can rewrite the owner's directory while it is in use.
 
 Open policy: private store files and locks are opened with
 `O_NOFOLLOW | O_NONBLOCK`, named per target in `src/store.rs` (macOS, and Linux
-on x86-64 and arm64; other targets do not build). This covers index files, WALs,
+on x86-64 and arm64; other targets do not build). This covers index files, redo logs,
 record files, value-log segments, staging locks, legacy snapshots and their
 preserved copies in the job, series, requester, feed, source-policy and IRC
 stores and their migrations, and the native transfer state (ownership and
@@ -53,8 +53,9 @@ symbolic link between inspection and open is still followed, which stays within
 the private-directory trust model above. The link-count and permission checks
 remain as defense in depth.
 
-`identity.bin` holds a random 256-bit store identity and checksum. `tree.bin`
-contains 4 KiB checksummed pages. Page zero holds the identity, sequence,
+`identity.bin` holds a random 256-bit store identity and checksum. `redo.bin`
+holds the [redo log](#transaction-and-recovery). `tree.bin` contains 4 KiB
+checksummed pages. Page zero holds the identity, sequence,
 root, allocation counter and record count; remaining pages hold ordered keys
 and either value references or child references. Nodes have at most 32 items;
 child levels strictly decrease and child upper keys must match their parents.
@@ -67,8 +68,9 @@ written in an envelope that binds the key, length and checksum, inside the
 value log described below. Stores written before the value log keep their
 values as one file per key under `objects/XX/REMAINING_HEX`; those files stay
 readable, and replacing or deleting such a key removes its file. Reads never
-list a directory. Checksums detect corruption, not malicious rewrites by
-somebody who can replace state and its checksums.
+list a directory. Checksums (XXH64 for new pages, envelopes and redo records,
+SHA-256 for identity, segment headers and older pages) detect corruption, not
+malicious rewrites by somebody who can replace state and its checksums.
 
 ## Exact range summaries
 
@@ -78,10 +80,10 @@ is empty; a reversed range is refused. The scheduled job, library, series, reque
 this primitive for #246; feeds use bounded configured-source scheduling metadata. A tree entry can be a secondary key, so its count is not
 necessarily a count of jobs, episodes or transfers.
 
-New branch pages (`MYNOUIN2`) carry an optional checked cardinality beside
-each child reference; leaves retain `MYNOUIN1`. Inserts, replacements,
-splits, deletions and root collapse maintain known cardinalities in the same
-WAL transaction as the records. The range read subtracts two ranks and reads
+Counted branch pages (`MYNOUIN4`, earlier `MYNOUIN2`) carry an optional
+checked cardinality beside each child reference; leaves use `MYNOUIN3` (earlier
+`MYNOUIN1`). Inserts, replacements, splits, deletions and root collapse
+maintain known cardinalities in the same transaction as the records. The range read subtracts two ranks and reads
 the first key, at most three root-to-leaf paths with at most 32 links per node.
 It does not read values, enumerate files, or scan all the rows of the range.
 Counts describe index keys; they do not verify the contents of record values.
@@ -97,7 +99,7 @@ The caller repeats this operation until it returns `true`, with a branch-page
 budget of 1–256. Each batch stages at most budget plus tree height branch pages;
 child visits and redo validation cost `O(32 * (budget + height))`. Completed
 subtree totals and partial parents persist, so a restart resumes rather than
-rescanning completed subtrees. The operation writes metadata-only WAL batches,
+rescanning completed subtrees. The operation writes metadata-only redo batches,
 keeps the root allocation, records and value-log bytes unchanged, and advances
 the sequence. Redo validates that existing keys/pointers are unchanged and that
 new counts match their child nodes. An uncertain write pauses reads and writes
@@ -115,51 +117,50 @@ Regression tests compare ranges to independent ordered collections through
 growth, unordered churn, replacement, deletion, root collapse and restart;
 check equal timestamps and cold-page read bounds; and cover explicit legacy
 upgrade, restart between batches, read-only preservation, forged metadata redo,
-interruption and storage exhaustion at WAL, directory and tree stages. These
+interruption and storage exhaustion at redo, directory and tree stages. These
 synthetic checks establish correctness and operation bounds, not the multi-store
 macOS RSS/timing evidence recorded separately in [inventory-growth.md](inventory-growth.md).
 
 ## Value log
 
 On Apple platforms every durability flush is an `F_FULLFSYNC`, which flushes
-the whole drive cache and costs milliseconds; std offers no cheaper flush. One
-file per value therefore made a commit's cost grow with its record count. Each
-commit now writes all of its values into a single segment,
-`segments/<16 hex digits>`, numbered by the header's `head` counter. A segment
-starts with a magic, the store identity, its number and their SHA-256, followed
-by the envelopes in transaction order. The tree leaf keeps the segment number,
-the envelope offset and the first 20 bytes of the value's SHA-256 in the slot a
-record file used for its full digest, flagged in the length field, so page
-layout is unchanged. A read checks the segment header, the envelope checksum,
-its key and length, and the digest prefix. Segments are never rewritten after
-publication, so a location names exactly one envelope.
+the whole drive cache and costs milliseconds; std offers no cheaper flush. A
+commit therefore flushes one file, the [redo log](#transaction-and-recovery),
+and everything else it writes waits for a checkpoint.
+
+Values live in segments, `segments/<16 hex digits>`. A segment starts with a
+magic, the store identity, its number and their SHA-256, followed by envelopes
+in commit order. Commits append to segment `head` until it reaches 64 MiB (the
+header records its length), then start the next one. An envelope binds the
+key, the value length and an XXH64 checksum of both. The tree leaf keeps the
+segment number, the envelope offset, the value length and that checksum, so a
+read is one positioned read of the envelope and one checksum. Segments written
+before this format keep a SHA-256 digest prefix in the leaf and are read the
+same way, with SHA-256. Bytes are never rewritten once a record names them, so
+a location names exactly one envelope.
+
+Segment files are inspected (private directory, regular private file, header)
+when they are first opened, and up to 64 descriptors stay open; reads then
+skip those path checks. This narrows the private-directory trust model above:
+a segment file replaced while its descriptor is open is not noticed by reads
+until the next open, as for `tree.bin`. Commits still inspect the `segments`
+directory, and recovery inspects every path it writes.
 
 The header also records the oldest segment still in use (`tail`), how far the
 cleaner has read into it, the bytes of all segments and the bytes of envelopes
 still referenced. Once the segments exceed twice the referenced bytes plus
-8 MiB, each commit targets 4 MiB (or as much as it appends) from the
-oldest segments and rewrites every still-referenced envelope into its own
-segment, as an ordinary replacement in the same transaction. The cleaner stops
-before the commit would approach its change, page or WAL bounds, or retire
-more than 256 segments. A later commit resumes cleaning; corrupt or unsafe
-segment files are explicit errors. A segment read to its end leaves the log; its
-file is deleted after the root that no longer references it is durable.
+8 MiB, segment `head` stops taking appends and each commit targets 4 MiB (or
+as much as it appends) from the oldest segments, rewriting every
+still-referenced envelope at the end of the log as an ordinary replacement in
+the same transaction. The cleaner stops before the commit would approach its
+change, page or record bounds, or retire more than 256 segments. A later commit
+resumes cleaning; corrupt or unsafe segment files are explicit errors. A
+segment read to its end leaves the log; the checkpoint that makes the root
+durable deletes its file.
 
-An ordinary non-inline commit flushes the WAL, the store directory, its segment
-and the `segments` directory, the tree, and the store directory again when it
-retires the WAL: six flushes after the segment directory exists. The first
-non-inline commit also flushes the parent when it creates that directory, for
-seven flushes. Inline and deletion-only commits need fewer flushes. These costs
-do not grow with the record count. Deleting legacy record files adds a flush
-per affected object directory, and retiring cleaned segments adds one.
-`inventory::flush_tests` enforces each commit's bound and reports the initial,
-steady and mean costs separately.
-
-Existing stores need no migration: their record files are read in place and
-leave as their keys change. Releases before the value log refuse a store once
-any commit has written a segment, reporting invalid header padding. To keep a
-downgrade path, make a complete stopped-store backup before upgrading;
-restoring it loses changes made afterwards.
+Stores written before the value log keep their values as one file per key
+under `objects/XX/REMAINING_HEX`. Those files stay readable, and replacing or
+deleting such a key removes its file. Only these keys pay per-put path checks.
 
 The API validates the root at open and each referenced page/value on access;
 opening does not audit the entire inventory. Corruption on an untouched path
@@ -168,48 +169,137 @@ is reported when that path is read, never returned as an empty/absent result.
 ## Transaction and recovery
 
 One transaction contains at most 16,384 distinct key changes, 16,384 dirty pages
-and 128 MiB of WAL payload. These are operation bounds, not inventory bounds.
+and 128 MiB of redo payload. These are operation bounds, not inventory bounds.
 Primary and secondary keys can change together. Preparation verifies existing
 records, stages tree changes in memory and validates the resulting key changes.
 
-1. Create `transaction.tmp`, write the complete checksummed redo and synchronize
-   the file. This unpublished staging artifact has never applied any data.
-2. Rename it to `transaction.bin` and synchronize the store directory. Only
-   after this publication is durable may any record or tree page change.
-3. Write the transaction's segment under a private temporary name, synchronize
-   it, rename it to its number and synchronize `segments`. Remove legacy record
-   files of replaced or deleted keys and synchronize their directories (a WAL
-   from before the value log instead writes and synchronizes one record file
-   per put, and synchronizes `objects` when it created a directory). Apply page
-   images and the root, then synchronize the tree. Delete segments the cleaner
-   retired and synchronize `segments`.
-4. Remove the published WAL and synchronize the store directory before
-   acknowledging or preparing another transaction.
+`redo.bin` starts with two checkpoint slots, each holding a generation, the
+durable root and the oldest segment the previous checkpoint still kept, with
+an XXH64 checksum. The slot with the highest valid generation wins, so a torn
+slot write leaves the other one. Records follow from offset 16 KiB, each
+aligned to 4 KiB and carrying the slot's generation, its length and an XXH64
+checksum of the complete transaction: old and new roots, page images and every
+value it writes.
 
-Any error after staging begins blocks **all reads and writes** until reopen.
-The caller must inspect recovered state rather than automatically retrying:
-a failed commit response can mean a committed transaction. Validation failures
-before staging leave the existing store usable and unchanged.
+1. Write the record after the previous one and flush `redo.bin`. Once that
+   flush returns, the commit is durable and is acknowledged.
+2. Without flushing: append the values to the segment, write the page images
+   and the root to `tree.bin`, and remove legacy record files of replaced or
+   deleted keys.
+3. A checkpoint flushes every segment written since the previous one, the
+   directories whose entries changed, and `tree.bin`; then it writes the
+   other slot with the new root and flushes `redo.bin`. Only then are the
+   records discarded (the file is truncated to its slots) and retired segment
+   files removed. A checkpoint runs before a record would grow the log past
+   64 MiB, when an index is closed cleanly and after writable recovery.
 
-Writable open reads and validates the entire bounded published WAL before any
-repair. Its store identity, old/new metadata, sequence, page images, actions,
-segment locations and resulting key references must agree. Replay rebuilds
-the same segment bytes from the WAL, so a torn or missing segment of the
-interrupted transaction is rewritten. A valid redo may replace torn root,
-page or object content only for the images/keys it covers. Links, wrong types
-and public permissions remain errors. Existing segment directories, publication
-destinations and retirement candidates are checked before any replay mutation;
-inline-only commits also check an existing segment directory. Retirement is
-bounded to 256 segments both for normal commits and published redo.
-Complete corruption, truncated published
-WALs, cross-store WALs and stale roots are errors, with no repair. Replaying a
-valid transaction is idempotent. Only unpublished staging may be discarded.
+A commit costs one flush whatever its record count; inline, deletion and
+cleaning commits included. A checkpoint costs one flush per segment written
+since the previous one (usually one or two), one per changed directory, and
+two for the tree and the slot: about five, shared by every commit since the
+previous checkpoint. `inventory::flush_tests` enforces both bounds.
 
-Read-only open never repairs, creates, deletes or changes permissions. A pending
-transaction or unpublished staging reports that writable recovery is required.
-An interrupted initial creation is an explicit error, not a reason to initialize
-over an existing directory. Legacy journal/snapshot directories are never
-accepted as empty instances of this format.
+Any error after the record is written blocks **all reads and writes** until
+reopen. The caller must inspect recovered state rather than automatically
+retrying: a failed commit response can mean a committed transaction. When the
+redo flush itself fails, the record is cut off again before the error returns,
+so the change is lost unless the machine stopped first. Validation failures
+before the record leave the existing store usable and unchanged.
+
+Writable open reads the newest valid slot and every record after it whose
+generation matches and whose checksum is valid. Store identity, old and new
+roots (each record continues the previous one), sequence, page images, actions,
+segment locations and resulting key references must agree. The live root must
+be the checkpoint or a state a record reaches; anything else is a stale log
+and an error. Every path the replay will write or remove is inspected first;
+then each record is reapplied, rebuilding its segment bytes and pages, so a
+write the drive lost or tore before the checkpoint is restored. Replay is
+idempotent. Recovery then checkpoints and drops segment bytes no record
+names.
+
+A final record that fails its checksum or ends early is an interrupted write
+that was never acknowledged, and is ignored. A damaged record followed by an
+intact one of the same generation is corruption and an error, with no repair.
+Records of another store or an older generation end the log. Links, wrong
+types and public permissions remain errors. Retirement is bounded to 256
+segments for normal commits and replay.
+
+Read-only open never repairs, creates, deletes or changes permissions. It
+replays pending records in memory: their pages and segment bytes are served
+from memory, and nothing on disk changes. `Index::interrupted` reports that
+the last writer stopped without closing the index; migrations resume only a
+staging index that was closed cleanly and otherwise preserve it and start
+again. An interrupted initial creation is an explicit error, not a reason to
+initialize over an existing directory. Legacy journal/snapshot directories are
+never accepted as empty instances of this format.
+
+**Stores from earlier releases.** No migration step is needed. Writable open
+of a store without `redo.bin` replays a leftover `transaction.bin` (or
+discards an unpublished `transaction.tmp`) as earlier releases did, writes
+`redo.bin` with its first checkpoint, flushes it, and only then rewrites the
+root with the new header magic (`MYNOUI02`). A crash in between repeats the
+step. New pages use XXH64 page checksums and new magics (`MYNOUIN3`, and
+`MYNOUIN4` for counted branches); older pages stay readable until rewritten.
+A new-format root without `redo.bin` is an error, never a legacy store.
+
+**Downgrade.** Releases before the redo log refuse a store once it has been opened
+writable, because of the root magic. Keep a complete stopped-store backup
+before upgrading; restoring it loses the changes made afterwards.
+
+## Benchmark
+
+`examples/inventory_bench.rs` runs the workloads below through the public
+`Index` API only, on a fresh store:
+
+```sh
+cargo run --release --example inventory_bench -- /private/tmp/inventory-bench
+```
+
+Run on 2026-10-28 on macOS 27.2 (Apple silicon, APFS on the internal SSD),
+single thread, warm OS cache: 100,000 keys of 64 bytes inserted in random
+order, 2 KiB values. The inline rows use 24-byte inline values. Every engine
+flushes with `F_FULLFSYNC` before acknowledging a commit:
+
+- SQLite 3.46.0 in WAL mode with `synchronous=FULL`, `fullfsync=ON` and
+  `checkpoint_fullfsync=ON`.
+- redb 2.6.4 with its default immediate durability.
+- LMDB through heed 0.20.5 (lmdb-master-sys 0.2.6), default flags, 8 GiB map.
+
+The other engines ran from a separate harness kept out of the repository,
+since they would be dependencies. The reopen row includes closing, which for
+Mynou is a checkpoint.
+
+| Operation | Mynou 0.26 | Mynou | SQLite | redb | LMDB |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Load, 1,000 records per commit (rec/s) | 4,600 | **43,400** | 18,900 | 17,200 | 27,500 |
+| One-record commit, mean (ms) | 31–35 | **4.2** | 5.0 | 5.2 | 5.3 |
+| Updates, 100 per commit (rec/s) | 1,500 | **11,900** | 5,300 | 7,600 | 9,400 |
+| Point read (µs) | 88 | 2.2 | 4.7 | 2.1 | **1.4** |
+| Missing-key read (µs) | 17 | **0.8** | 2.8 | 2.1 | 1.2 |
+| Close and reopen (ms) | **0.3** | 27 | 26 | 27 | 3.2 |
+| Full scan, 200 per page (ms) | 6,600 | 130 | 194 | 184 | **47** |
+| Exact count of a 10,000-key range (µs) | 44 | **1.8** | 231 | 2,546 | 822 |
+| Deletes, 1,000 per commit (rec/s) | 3,900 | **55,600** | 20,700 | 30,800 | 27,500 |
+| Disk after load (MiB) | **224** | 269 | 408 | 515 | 368 |
+| Inline values: load (rec/s) | 6,300 | 62,800 | 51,400 | 62,300 | **80,400** |
+| Inline values: point read (µs) | 21 | **0.56** | 2.26 | 0.98 | 0.59 |
+
+Every engine ran in the same harness. Repeated runs varied by up to 20% for
+loads and 10% elsewhere; the in-repository example measures Mynou within that
+range. What the numbers do not show:
+
+- A one-record commit is bound by its single `F_FULLFSYNC` (about 3–4 ms on
+  this drive) in every engine; the differences there are small.
+- Point reads and scans spend about half their time in `pread`. LMDB maps the
+  file into memory, which the `unsafe_code = "forbid"` rule excludes here.
+- Closing now costs a checkpoint, about five flushes; the next open does no
+  work. The 0.26 store had nothing to flush at close.
+- The disk total includes the redo log, which holds up to 64 MiB of records
+  between checkpoints.
+- Loading 1,000 records per commit peaked at about 420 MiB of process RSS
+  against about 320 MiB in 0.26, from allocator retention of commit buffers;
+  it fell back to under 60 MiB once loading stopped.
+- One machine, one workload shape, one thread. These are not general rankings.
 
 ## Storage diagnostics and errors
 
@@ -241,13 +331,13 @@ lists the store-named error of each reading that failed.
 Every failed commit names its store (for example `Job storage`) and says what
 happened and what to do. The error carries no path, credential or media title.
 
-- **Full disk or quota.** Before publication the change was not saved and
-  nothing else changed: free disk space, then restart Mynou. After publication
-  the outcome is uncertain: existing records and recovery files are kept, and
-  the next start after freeing space finishes the change. A start that still
-  cannot recover for lack of space says so and keeps the WAL.
+- **Full disk or quota.** Before the redo record is written the change was
+  not saved and nothing else changed: free disk space, then restart Mynou.
+  After it the outcome is uncertain: existing records and recovery files are
+  kept, and the next start after freeing space finishes the change. A start
+  that still cannot recover for lack of space says so and keeps the redo log.
 - **Single record above 1 MiB**, and **a change above its operation bound**
-  (16,384 entries, or 128 MiB of write-ahead log including the index pages it
+  (16,384 entries, or 128 MiB of redo log including the index pages it
   rewrites): the change was not saved, existing records are
   unchanged, and the store remains usable. Report the item that produced it.
 - **Other write failures.** Before publication the change was not saved; after
@@ -255,9 +345,9 @@ happened and what to do. The error carries no path, credential or media title.
   until restart, which finishes recovery; keep the data directory intact.
 
 No error evicts records, falls back to another store or deletes recovery
-files. Tests inject a full disk while writing the WAL, the value-log segment
-or a legacy record file, the tree pages, and while synchronizing the store
-directory; each store reopens with every committed record.
+files. Tests inject a full disk while writing the redo record, the value-log
+segment or a legacy record file and the tree pages, and right after the redo
+flush; each store reopens with every committed record.
 
 ## Pagination and bounds
 
@@ -277,7 +367,7 @@ Memory and work depend on tree height, the bounded transaction and the requested
 page, rather than retaining all record identities in RAM. The implementation
 keeps at most 16,384 staged nodes plus at most one extra split path during
 preparation. Overlay validation may retain two copies of the completed staged
-map. Action/value buffers, WAL encoding/decoding buffers and response values
+map. Action/value buffers, redo encoding/decoding buffers and response values
 are also bounded. The height bound is 63; page allocation checks the file-offset
 representation. These are source-level bounds, not measured RSS or throughput.
 
@@ -371,12 +461,13 @@ little or no payload cost one leaf slot. A key may change between the two
 kinds in one transaction, and recovery replays that idempotently. Inline lengths and zero
 padding are validated like any other tree field.
 
-Decoded, checksum-verified pages are cached (at most 2,048, about 8 MiB) and the
-cache is cleared before every commit applies and on every open, so a cached page
-never outlives the pages it was read from. A page that is corrupted on disk
-after it was cached is reported on the next read after a reopen or commit, not
-before; the checksum guards storage faults, not a hostile rewrite of an open
-directory.
+Decoded, checksum-verified pages are cached and shared between reads, at most
+8,192 pages (32 MiB on disk, under 28 MiB decoded). That keeps every interior
+page and most leaves of a 100,000-key store in memory. A commit replaces the
+cached copies of the pages it wrote once its record is durable, and the cache
+starts empty on every open. A page that is corrupted on disk after it was
+cached is reported on the next read after a reopen, not before; the checksum
+guards storage faults, not a hostile rewrite of an open directory.
 
 ## Series storage
 
@@ -724,15 +815,16 @@ The first writable start validates the bounded legacy `MYNOUF01` snapshot and
 configured source bindings before publication. Exact private bytes are preserved
 as `feeds.legacy-DIGEST.bin`. `feeds.idx.migrating` binds its source digest and
 commits bounded batches with a migration cursor. A clean matching stage resumes;
-a foreign or unreadable stage is preserved intact under `feeds.idx.abandoned-*`
-before rebuilding. Unexpected contents and interrupted WAL are never recursively
+a foreign, unreadable or interrupted stage is preserved intact under
+`feeds.idx.abandoned-*` before rebuilding. Unexpected contents and pending redo
+records are never recursively
 deleted. Every record, active reference and count is verified before promotion.
 `feeds.bin` then becomes an identity-bound `MYNOUF02` marker. Promotion interrupted
 before marker publication is verified against the unchanged original on reopen.
 An unmarked index with an unfinished transaction is refused without repair.
 
 Read-only opens create and change nothing. Legacy summaries remain available
-with `needs_migration`; pending indexed transactions require writable recovery.
+with `needs_migration`; pending indexed changes are replayed in memory only.
 Uncertain writes block subsequent reads and changes until restart. Disk errors
 leave originals and recovery artifacts in place rather than evicting records.
 
@@ -901,8 +993,8 @@ refused. An interrupted promotion is reverified before publishing the marker.
 
 `announcements.bin` becomes a checked `MYNOUI05` marker bound to the index
 identity. Older binaries reject it. Read-only inspection never initializes,
-migrates, recovers redo, changes permissions or writes decisions. A pending
-index transaction requires writable recovery; corruption, public permissions,
+migrates, recovers redo, changes permissions or writes decisions; it replays a
+pending index transaction in memory only. Corruption, public permissions,
 links or mismatched proofs stop the operation. Incomplete creation artifacts are preserved rather than silently deleted or
 adopted. Failed writes report errors, and an uncertain
 commit blocks decisions until storage is reopened.
@@ -953,7 +1045,7 @@ available. Only `state: ready` readings carry counts and timestamps.
 Writable series-store startup now explicitly prepares missing legacy branch
 cardinalities through `prepare_range_counts(64)` batches after the existing
 snapshot migration/identity checks. Each batch is resumable through the ordinary
-WAL; failed preparation prevents writable startup until recovery succeeds.
+redo log; failed preparation prevents writable startup until recovery succeeds.
 Read-only startup and status do not perform this upgrade. See the range-count
 upgrade and **Downgrade** rules above: keep a stopped-store backup before the
 first writable upgrade; binaries predating `MYNOUIN2` must not open it for writes.
@@ -1116,7 +1208,7 @@ including successful idle passes. Clock rollback allows a fresh checkpoint.
 The value is the last durable checkpoint, not the latest in-memory tick, a
 whole-inventory traversal, or completed network work. Failed operations,
 interrupted passes and shutdown preserve it. A failed commit may recover its
-whole WAL transaction; an uncertain store becomes unavailable until reopened.
+whole redo record; an uncertain store becomes unavailable until reopened.
 Busy stores/runtime maps report `busy`; unprepared, uncertain or unreadable
 indexes report `unavailable` with a fixed recovery hint and no counts. Status
 publishes no account names, media titles, paths, source payloads or credentials.

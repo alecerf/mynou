@@ -231,7 +231,12 @@ fn uncertain_control_blocks_all_reads_until_writable_recovery() {
         assert!(storage.row(&paused.id).is_err());
         assert!(storage.guard().is_err());
         drop(storage);
-        assert!(Storage::open(&directory.0, true).is_err());
+        // A read-only open replays the logged control in memory only.
+        let before = contents(&directory.0);
+        let mut reader = Storage::open(&directory.0, true).unwrap();
+        assert_eq!(reader.row(&paused.id).unwrap(), Some(paused.clone()));
+        drop(reader);
+        assert_eq!(contents(&directory.0), before);
         let mut recovered = Storage::open(&directory.0, false).unwrap();
         recovered.initialize().unwrap();
         assert_eq!(recovered.row(&paused.id).unwrap(), Some(paused));

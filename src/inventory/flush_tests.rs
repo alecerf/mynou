@@ -2,7 +2,9 @@
 //!
 //! Each flush is one `F_FULLFSYNC` on Apple platforms, the dominant write
 //! cost there, so these tests count flushes per commit and print the wall
-//! time beside them. For a timed run on the current machine:
+//! time beside them. A commit flushes only its redo record; checkpoints,
+//! amortized over many commits, flush the files the records describe. For a
+//! timed run on the current machine:
 //!
 //! ```sh
 //! MYNOU_PERF_COMMITS=50 cargo test --release --lib inventory::flush_tests -- --nocapture --test-threads 1
@@ -96,14 +98,9 @@ fn measure(shape: Shape, records: u64) -> Cost {
         index.commit(changes).unwrap();
         elapsed += began.elapsed();
         let count = flushes() - before;
-        // The first value-log commit also makes its segments directory
-        // durable. Later commits reuse that directory; averaging must never
-        // conceal an individual commit that exceeds its own bound.
-        let limit = if commit == 0 && matches!(shape, Shape::Files | Shape::SpreadFiles) {
-            7
-        } else {
-            6
-        };
+        // Record files written before the value log flush themselves;
+        // averaging must never conceal a commit that exceeds its own bound.
+        let limit = 1;
         assert!(
             count <= limit,
             "{shape:?}, {records} records, commit {commit}: {count} flushes exceed {limit}"
@@ -175,7 +172,39 @@ fn a_cleaning_commit_adds_one_flush_for_retired_segments() {
         .commit(vec![Change::Put(key(false, 0), value.clone())])
         .unwrap();
     assert!(index.header.tail > tail);
-    assert!(flushes() - before <= 7);
+    assert_eq!(
+        flushes() - before,
+        1,
+        "retired segments wait for the checkpoint"
+    );
+    // The checkpoint flushes each segment written since the last one (here
+    // the sealed segment and its successor), the directories whose entries
+    // changed, the tree and the redo slot.
+    let before = flushes();
+    index.checkpoint();
+    assert!(flushes() - before <= 6, "{} flushes", flushes() - before);
+}
+
+#[test]
+fn a_checkpoint_costs_the_same_after_one_commit_or_a_thousand() {
+    let mut costs = Vec::new();
+    for commits in [1, 1000] {
+        let directory = Directory::new();
+        let mut index = Index::create(&directory.0).unwrap();
+        index
+            .commit(vec![Change::Put(key(false, 0), vec![1; 600])])
+            .unwrap();
+        index.checkpoint();
+        for id in 0..commits {
+            index
+                .commit(vec![Change::Put(key(false, id), vec![2; 600])])
+                .unwrap();
+        }
+        let before = flushes();
+        index.checkpoint();
+        costs.push(flushes() - before);
+    }
+    assert_eq!(costs[0], costs[1], "{costs:?}");
 }
 
 /// Restores the production cleaning threshold when a test ends.

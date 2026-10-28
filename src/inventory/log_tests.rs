@@ -1,12 +1,16 @@
-//! Value-log segments: one flushed file per commit, bounded cleaning and
-//! recovery, beside record files written before the log existed.
+//! Value-log segments: commits append to segment `head` until it reaches its
+//! target or cleaning is due, bounded cleaning and recovery, beside record
+//! files written before the log existed.
 
 use super::{
     CLEAN_SLACK_OVERRIDE, Change, Index, Key, Query,
-    persistence::{ENVELOPE_BYTES, Fault, SEGMENT_HEADER_BYTES},
+    persistence::{
+        ENVELOPE_BYTES, Fault, SEGMENT_HEADER_BYTES, SEGMENT_TARGET_OVERRIDE, redo_bodies,
+        rewrite_redo_body,
+    },
     tree::Header,
 };
-use crate::crypto::{random_bytes, sha256};
+use crate::crypto::random_bytes;
 use std::{
     collections::BTreeMap,
     fs,
@@ -45,6 +49,21 @@ impl Drop for Slack {
     }
 }
 
+/// Seals segment `head` after every commit, as the old one-file-per-commit
+/// log did, until the test ends.
+struct EverySegment;
+impl EverySegment {
+    fn set() -> Self {
+        SEGMENT_TARGET_OVERRIDE.with(|value| value.set(Some(1)));
+        Self
+    }
+}
+impl Drop for EverySegment {
+    fn drop(&mut self) {
+        SEGMENT_TARGET_OVERRIDE.with(|value| value.set(None));
+    }
+}
+
 fn key(id: u64) -> Key {
     let mut key = [0; 64];
     key[56..].copy_from_slice(&id.to_be_bytes());
@@ -79,13 +98,16 @@ fn segment_files(directory: &Path) -> BTreeMap<u64, u64> {
         .collect()
 }
 
-/// The header's log totals agree with the files and the expected values.
-fn assert_accounting(index: &Index, directory: &Path, model: &BTreeMap<u64, Vec<u8>>) {
+/// The header's log totals agree with the files and the expected values,
+/// once a checkpoint has removed the segments the cleaner retired.
+fn assert_accounting(index: &mut Index, directory: &Path, model: &BTreeMap<u64, Vec<u8>>) {
+    index.checkpoint();
     let header = index.header;
     let files = segment_files(directory);
+    let active = u64::from(header.head_length > 0);
     assert_eq!(
         files.keys().copied().collect::<Vec<_>>(),
-        (header.tail..header.head).collect::<Vec<_>>()
+        (header.tail..header.head + active).collect::<Vec<_>>()
     );
     assert_eq!(files.values().sum::<u64>(), header.log_bytes);
     let live: u64 = model
@@ -120,7 +142,7 @@ fn a_commit_writes_one_segment_whatever_its_record_count() {
         .unwrap();
     assert!(!directory.0.join("objects/00").exists());
     assert_eq!(segment_files(&directory.0).len(), 1);
-    assert_accounting(&index, &directory.0, &model);
+    assert_accounting(&mut index, &directory.0, &model);
     drop(index);
     let mut index = Index::open(&directory.0, true).unwrap();
     assert_values(&mut index, &model);
@@ -205,7 +227,8 @@ fn published_redo_rewrites_a_torn_or_missing_segment() {
                 .is_err()
         );
         drop(index);
-        let path = segment(&directory.0, 1);
+        // Both commits await replay, which rebuilds the segment they share.
+        let path = segment(&directory.0, 0);
         match damage {
             Some(length) => fs::OpenOptions::new()
                 .write(true)
@@ -218,7 +241,7 @@ fn published_redo_rewrites_a_torn_or_missing_segment() {
         let mut index = Index::open(&directory.0, false).unwrap();
         let model = BTreeMap::from([(1, vec![3; 90]), (2, vec![2; 70])]);
         assert_values(&mut index, &model);
-        assert_accounting(&index, &directory.0, &model);
+        assert_accounting(&mut index, &directory.0, &model);
     }
 }
 
@@ -322,6 +345,7 @@ fn redo_rejects_unsafe_segment_targets_before_changing_any_file() {
 #[test]
 fn redo_rejects_unsafe_retired_segments_before_changing_any_file() {
     let _slack = Slack::set(u64::MAX / 4);
+    let _every = EverySegment::set();
     for kind in UNSAFE_ENTRIES {
         CLEAN_SLACK_OVERRIDE.with(|value| value.set(Some(u64::MAX / 4)));
         let directory = Directory::new();
@@ -343,9 +367,9 @@ fn redo_rejects_unsafe_retired_segments_before_changing_any_file() {
                 .is_err()
         );
         drop(index);
-        let wal = fs::read(directory.0.join("transaction.bin")).unwrap();
+        let body = redo_bodies(&directory.0).pop().unwrap();
         let page_size = super::tree::PAGE_SIZE;
-        let after = Header::decode(&wal[16 + page_size..16 + 2 * page_size]).unwrap();
+        let after = Header::decode(&body[page_size..2 * page_size]).unwrap();
         assert!(after.tail >= 2, "the fixture must retire multiple segments");
         make_unsafe(&directory.0, &segment(&directory.0, 1), kind);
         let before = saved_entries(&directory.0);
@@ -410,7 +434,7 @@ fn cleaning_keeps_the_log_near_its_live_bytes_and_empties_it_after_deletes() {
             header.log_bytes,
             header.live_bytes
         );
-        assert_accounting(&index, &directory.0, &model);
+        assert_accounting(&mut index, &directory.0, &model);
     }
     assert!(index.header.tail > 0, "the cleaner never retired a segment");
     drop(index);
@@ -429,6 +453,7 @@ fn cleaning_keeps_the_log_near_its_live_bytes_and_empties_it_after_deletes() {
         (header.tail, header.log_bytes, header.live_bytes),
         (header.head, 0, 0)
     );
+    index.checkpoint();
     assert!(segment_files(&directory.0).is_empty());
 }
 
@@ -439,7 +464,7 @@ fn the_production_threshold_leaves_small_logs_alone() {
     let mut model = BTreeMap::new();
     churn(&mut index, &mut model, 30);
     assert_eq!(index.header.tail, 0);
-    assert_accounting(&index, &directory.0, &model);
+    assert_accounting(&mut index, &directory.0, &model);
 }
 
 #[test]
@@ -500,7 +525,7 @@ fn cleaning_commits_recover_at_every_boundary() {
             assert_eq!(index.header, before);
         }
         assert_values(&mut index, &replaced);
-        assert_accounting(&index, &directory.0, &replaced);
+        assert_accounting(&mut index, &directory.0, &replaced);
     }
 }
 
@@ -533,7 +558,7 @@ fn record_files_from_before_the_log_are_read_replaced_and_deleted() {
         .unwrap();
     assert_eq!(files(), 3);
     let model = BTreeMap::from([(1, value(1, 1))]);
-    assert_accounting(&index, &directory.0, &model);
+    assert_accounting(&mut index, &directory.0, &model);
     drop(index);
     let mut index = Index::open(&directory.0, true).unwrap();
     assert_eq!(index.get(&key(0)).unwrap(), Some(value(0, 0)));
@@ -604,6 +629,7 @@ fn inconsistent_value_log_metadata_is_rejected() {
 #[test]
 fn segment_retirement_is_bounded_in_live_commits_and_published_redo() {
     let _slack = Slack::set(u64::MAX / 4);
+    let every = EverySegment::set();
     let directory = Directory::new();
     let mut index = Index::create(&directory.0).unwrap();
     for round in 0..300 {
@@ -611,9 +637,10 @@ fn segment_retirement_is_bounded_in_live_commits_and_published_redo() {
             .commit(vec![Change::Put(key(1), value(1, round))])
             .unwrap();
     }
+    drop(every);
     let before = index.header;
-    assert_eq!(before.head, 300);
-    assert_eq!(before.tail, 0);
+    assert_eq!((before.head, before.tail), (299, 0));
+    assert!(before.head_length > 0);
     CLEAN_SLACK_OVERRIDE.with(|value| value.set(Some(0)));
     index.inject(Some(Fault::Published));
     let latest = value(1, 300);
@@ -624,33 +651,31 @@ fn segment_retirement_is_bounded_in_live_commits_and_published_redo() {
     );
     drop(index);
 
-    let wal_path = directory.0.join("transaction.bin");
-    let wal = fs::read(&wal_path).unwrap();
+    let redo_path = directory.0.join("redo.bin");
+    let redo = fs::read(&redo_path).unwrap();
+    let mut bodies = redo_bodies(&directory.0);
+    let last = bodies.len() - 1;
+    let body = bodies.pop().unwrap();
     let page_size = super::tree::PAGE_SIZE;
-    let header_start = 16 + page_size;
-    let header_end = header_start + page_size;
-    let mut after = Header::decode(&wal[header_start..header_end]).unwrap();
+    let mut after = Header::decode(&body[page_size..2 * page_size]).unwrap();
     assert_eq!(after.tail - before.tail, super::MAX_RETIRED_SEGMENTS);
     // A correctly checksummed but excessive retirement must reject before
     // probing paths or replaying any of the transaction's effects.
     after.tail += 1;
     Header::decode(&after.encode()).unwrap();
-    let mut excessive = wal.clone();
-    excessive[header_start..header_end].copy_from_slice(&after.encode());
-    let checksum_at = excessive.len() - 32;
-    let checksum = sha256(&excessive[..checksum_at]);
-    excessive[checksum_at..].copy_from_slice(&checksum);
-    fs::write(&wal_path, excessive).unwrap();
+    let mut excessive = body.clone();
+    excessive[page_size..2 * page_size].copy_from_slice(&after.encode());
+    rewrite_redo_body(&directory.0, last, &excessive);
     let saved = saved_entries(&directory.0);
     assert!(Index::open(&directory.0, false).is_err());
     assert_eq!(saved_entries(&directory.0), saved);
 
-    fs::write(&wal_path, wal).unwrap();
+    fs::write(&redo_path, redo).unwrap();
     let mut index = Index::open(&directory.0, false).unwrap();
     assert_eq!(index.header.tail - before.tail, super::MAX_RETIRED_SEGMENTS);
     let model = BTreeMap::from([(1, latest)]);
     assert_values(&mut index, &model);
-    assert_accounting(&index, &directory.0, &model);
+    assert_accounting(&mut index, &directory.0, &model);
     let tail = index.header.tail;
     index
         .commit(vec![Change::PutInline(key(2), b"x".to_vec())])
