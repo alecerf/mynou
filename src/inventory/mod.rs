@@ -5,6 +5,7 @@
 //! commit/recovery protocol and the remaining integration work.
 
 pub(crate) mod backlog;
+mod checksum;
 mod persistence;
 mod tree;
 #[cfg(test)]
@@ -84,7 +85,13 @@ pub struct Index {
     tree: File,
     header: Header,
     cache: tree::Cache,
+    segments: persistence::Segments,
+    /// Present whenever the index is writable.
+    redo: Option<Box<persistence::Redo>>,
     read_only: bool,
+    /// A read-only open found records a writable open has yet to apply:
+    /// the last writer stopped without closing the index.
+    interrupted: bool,
     poisoned: bool,
     #[cfg(test)]
     fault: Option<persistence::Fault>,
@@ -111,6 +118,13 @@ impl Index {
     pub(crate) fn valid_creation_prefix(identity: [u8; 32], bytes: &[u8]) -> bool {
         tree::Header::empty(identity).encode().starts_with(bytes)
     }
+    /// Size of the redo log a new store starts with.
+    pub(crate) const CREATION_REDO_BYTES: usize = persistence::CREATION_REDO_BYTES;
+    /// Whether `bytes` can be a redo log that creation of `identity` wrote,
+    /// or began to write, before the tree.
+    pub(crate) fn valid_creation_redo(identity: [u8; 32], bytes: &[u8]) -> bool {
+        persistence::creation_redo(identity).starts_with(bytes)
+    }
     #[cfg(test)]
     pub(crate) fn inject_creation(stage: Option<u8>) {
         persistence::CREATE_STOP.with(|s| s.set(stage));
@@ -127,6 +141,12 @@ impl Index {
         identity: [u8; 32],
     ) -> Result<Self> {
         persistence::open(directory, read_only, Some(identity))
+    }
+
+    /// Whether a read-only open found writes the last writer never closed.
+    /// Migrations resume only a staging index that was closed cleanly.
+    pub(crate) fn interrupted(&self) -> bool {
+        self.interrupted
     }
 
     /// The random identity chosen when the store was created.
@@ -152,6 +172,12 @@ impl Index {
     #[cfg(test)]
     pub(crate) fn inject(&mut self, fault: Option<Fault>) {
         self.fault = fault;
+    }
+
+    /// Checkpoints as a clean close would, so files match the root.
+    #[cfg(test)]
+    pub(crate) fn checkpoint(&mut self) {
+        persistence::close(self).unwrap();
     }
 
     fn available(&self) -> Result<()> {
@@ -199,7 +225,15 @@ impl Index {
         }
         let value = Tree::new(&mut self.tree, self.header, &mut self.cache).find(key)?;
         value
-            .map(|value| persistence::read_value(&self.directory, &self.header, key, value))
+            .map(|value| {
+                persistence::read_value(
+                    &self.directory,
+                    &self.header,
+                    &mut self.segments,
+                    key,
+                    value,
+                )
+            })
             .transpose()
     }
 
@@ -259,10 +293,9 @@ impl Index {
             actions: Vec::new(),
         };
         let bytes = transaction.encode()?;
-        self.cache.clear();
-        persistence::publish_and_apply(self, &transaction, &bytes)
+        persistence::commit(self, &transaction, &bytes)
             .map_err(|failure| failure.explain(self.name))?;
-        self.header = transaction.after;
+        self.applied(transaction);
         Ok(complete)
     }
 
@@ -301,7 +334,13 @@ impl Index {
                 more = true;
                 break;
             }
-            let data = persistence::read_value(&self.directory, &self.header, &key, value)?;
+            let data = persistence::read_value(
+                &self.directory,
+                &self.header,
+                &mut self.segments,
+                &key,
+                value,
+            )?;
             bytes += data.len();
             entries.push((key, data));
         }
@@ -388,18 +427,26 @@ impl Index {
                 format!("{name}: the change was not saved: {error}")
             }
         })?;
-        // Applying rewrites pages in place: nothing cached may outlive it.
-        self.cache.clear();
-        persistence::publish_and_apply(self, &transaction, &bytes)
-            .map_err(|failure| failure.explain(name))?;
-        self.header = transaction.after;
+        persistence::commit(self, &transaction, &bytes).map_err(|failure| failure.explain(name))?;
+        self.applied(transaction);
         Ok(self.header.sequence)
+    }
+
+    /// Adopts a durable commit. Applying rewrote its pages in place, so the
+    /// cache takes their new contents; retired segments are closed.
+    fn applied(&mut self, transaction: persistence::Transaction) {
+        self.segments
+            .retire(transaction.before.tail..transaction.after.tail);
+        self.header = transaction.after;
+        for (id, node) in transaction.pages {
+            self.cache.insert(id, std::sync::Arc::new(node));
+        }
     }
 
     /// Prepares a validated change without touching any file.
     fn stage(&mut self, changes: Vec<Change>) -> Result<(persistence::Transaction, Vec<u8>)> {
         let before = self.header;
-        let mut log = Log::new(before);
+        let mut log = Log::new(before)?;
         // Existing values are verified before staging; replacement is not a
         // silent repair of corrupt storage, and preparation changes no files.
         let mut actions = Vec::with_capacity(changes.len());
@@ -409,11 +456,18 @@ impl Index {
                 Change::PutInline(key, data) => (key, Some(data), true),
                 Change::Delete(key) => (key, None, false),
             };
-            let existed = self.get(&key)?.is_some();
-            if let Some(old) = Tree::new(&mut self.tree, before, &mut self.cache).find(&key)? {
+            let old = Tree::new(&mut self.tree, before, &mut self.cache).find(&key)?;
+            let existed = old.is_some();
+            let mut replaces_file = false;
+            if let Some(old) = old {
+                persistence::read_value(&self.directory, &before, &mut self.segments, &key, old)?;
                 log.release(old)?;
+                // Only a record written before the value log has a file.
+                replaces_file = !old.inline && !old.segment;
+                if replaces_file {
+                    persistence::check_value_path(&self.directory, &key)?;
+                }
             }
-            persistence::check_value_path(&self.directory, &key)?;
             #[cfg(test)]
             let legacy = self.legacy_records;
             #[cfg(not(test))]
@@ -428,6 +482,8 @@ impl Index {
                 inline,
                 existed,
                 segment,
+                replaces_file,
+                fast: true,
             });
         }
         let mut staged = Tree::new(&mut self.tree, before, &mut self.cache);
@@ -537,6 +593,11 @@ thread_local! { pub(crate) static CLEAN_SLACK_OVERRIDE: std::cell::Cell<Option<u
 struct Log {
     before: Header,
     number: u64,
+    /// Where this commit's bytes begin in segment `number`; zero when the
+    /// commit creates it and writes its header.
+    start: u64,
+    /// Segments below this number take no more appends and may be cleaned.
+    sealed: u64,
     end: u64,
     appended: u64,
     live_bytes: u64,
@@ -546,17 +607,27 @@ struct Log {
 }
 
 impl Log {
-    fn new(before: Header) -> Self {
-        Self {
+    /// Once cleaning is due, segment `head` stops taking appends, so this
+    /// commit can clean it and later ones never write to it again.
+    fn new(before: Header) -> Result<Self> {
+        let sealed = Self::cleaning_due(&before, 0);
+        let (number, start) = persistence::log_target(&before, sealed)?;
+        Ok(Self {
             before,
-            number: before.head,
-            end: persistence::SEGMENT_HEADER_BYTES,
+            number,
+            start,
+            sealed: if sealed {
+                before.head + u64::from(before.head_length > 0)
+            } else {
+                before.head
+            },
+            end: start.max(persistence::SEGMENT_HEADER_BYTES),
             appended: 0,
             live_bytes: before.live_bytes,
             tail: before.tail,
             tail_offset: before.tail_offset,
             log_bytes: before.log_bytes,
-        }
+        })
     }
 
     fn envelope_bytes(length: usize) -> u64 {
@@ -600,14 +671,14 @@ impl Log {
         staged: &mut Tree,
         actions: &mut Vec<persistence::Action>,
     ) -> Result<()> {
-        #[cfg(test)]
-        let slack = CLEAN_SLACK_OVERRIDE
-            .with(|value| value.get())
-            .unwrap_or(CLEAN_SLACK);
-        #[cfg(not(test))]
-        let slack = CLEAN_SLACK;
-        let total = self.log_bytes + self.segment_size();
-        if total <= self.live_bytes.saturating_mul(2).saturating_add(slack) {
+        if !Self::cleaning_due(
+            &Header {
+                log_bytes: self.log_bytes,
+                live_bytes: self.live_bytes,
+                ..self.before
+            },
+            self.segment_size(),
+        ) {
             return Ok(());
         }
         let budget = CLEAN_BUDGET.max(self.appended);
@@ -617,7 +688,7 @@ impl Log {
         let mut wal_bytes = actions.iter().try_fold(3 * page_bytes, |total, action| {
             total.checked_add(82 + action.data.as_ref().map_or(0, Vec::len) as u64)
         });
-        while self.tail < self.before.head
+        while self.tail < self.sealed
             && self.tail - self.before.tail < MAX_RETIRED_SEGMENTS
             && read < budget
         {
@@ -642,11 +713,10 @@ impl Log {
                     self.tail_offset = offset;
                     return Ok(());
                 }
-                let Some((key, data)) = segment.envelope(offset)? else {
+                let Some((key, data, current)) = segment.envelope(self.tail, offset)? else {
                     break;
                 };
                 let size = Self::envelope_bytes(data.len());
-                let current = tree::ValueRef::segment(self.tail, offset as u32, &data);
                 if staged.find(&key)? == Some(current) {
                     self.release(current)?;
                     let location = self.append(&data)?;
@@ -656,6 +726,8 @@ impl Log {
                         inline: false,
                         existed: true,
                         segment: Some(location),
+                        replaces_file: false,
+                        fast: true,
                     };
                     staged.change(&key, action.reference()?, true)?;
                     wal_bytes = wal_bytes.and_then(|bytes| bytes.checked_add(82 + size));
@@ -675,9 +747,22 @@ impl Log {
         Ok(())
     }
 
+    /// The log holds more than twice its live bytes plus the slack, counting
+    /// `adding` bytes this commit appends.
+    fn cleaning_due(header: &Header, adding: u64) -> bool {
+        #[cfg(test)]
+        let slack = CLEAN_SLACK_OVERRIDE
+            .with(|value| value.get())
+            .unwrap_or(CLEAN_SLACK);
+        #[cfg(not(test))]
+        let slack = CLEAN_SLACK;
+        header.log_bytes + adding > header.live_bytes.saturating_mul(2).saturating_add(slack)
+    }
+
+    /// Bytes this commit adds to the log, including a new segment's header.
     fn segment_size(&self) -> u64 {
-        if self.end > persistence::SEGMENT_HEADER_BYTES {
-            self.end
+        if self.appended > 0 {
+            self.end - self.start
         } else {
             0
         }
@@ -685,13 +770,13 @@ impl Log {
 
     fn finish(&self, header: &mut Header) -> Result<()> {
         let size = self.segment_size();
-        header.head = if size > 0 {
-            self.number
-                .checked_add(1)
-                .ok_or("Inventory segment number overflow")?
-        } else {
-            self.number
-        };
+        if size > 0 {
+            header.head = self.number;
+            header.head_length = self.end;
+        } else if self.sealed > self.before.head {
+            header.head = self.sealed;
+            header.head_length = 0;
+        }
         header.tail = self.tail;
         header.tail_offset = if self.tail == header.head {
             0
@@ -709,6 +794,11 @@ impl Log {
 
 impl Drop for Index {
     fn drop(&mut self) {
+        // A clean close checkpoints, so the next open replays nothing and a
+        // read-only open succeeds. After an uncertain commit, recovery does.
+        if !self.poisoned {
+            let _ = persistence::close(self);
+        }
         // A concurrently spawned child can briefly inherit the locked open
         // description before exec closes it. Release our ownership explicitly
         // so closing this index never waits for that child's descriptor.

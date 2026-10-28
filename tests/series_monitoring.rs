@@ -247,8 +247,9 @@ fn series_snapshot_restart_and_read_only_preview_preserve_settings_and_bytes() {
         .configure_series(&id, Some(false), None, None)
         .unwrap();
     let expected = engine.series_record(&id).unwrap();
-    let bytes = series_state(&cfg.store_dir);
     drop(engine);
+    // Closing checkpoints the redo log, so the bytes settle first.
+    let bytes = series_state(&cfg.store_dir);
     let preview = Engine::open_for_preview(cfg.clone()).unwrap();
     assert_eq!(preview.series_record(&id).unwrap(), expected);
     assert!(
@@ -311,10 +312,12 @@ fn corrupt_and_linked_series_storage_fails_before_series_data_is_used() {
         .iter()
         .map(|path| (path.clone(), fs::read(path).unwrap()))
         .collect();
+    // Segments hold many values each: damage every one of them.
     for (path, bytes) in &saved {
         let mut broken = bytes.clone();
-        let middle = broken.len() / 2;
-        broken[middle] ^= 0x55;
+        for byte in broken.iter_mut().skip(256).step_by(16) {
+            *byte ^= 0x55;
+        }
         fs::write(path, broken).unwrap();
     }
     let engine = Engine::open_for_management(cfg.clone()).unwrap();

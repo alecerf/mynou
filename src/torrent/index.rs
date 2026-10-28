@@ -1100,6 +1100,12 @@ fn check_creation(path: &Path, identity: [u8; 32]) -> Result<()> {
                     return Err("Foreign transfer creation tree".into());
                 }
             }
+            Some("redo.bin") => {
+                let bytes = checked_read(&entry.path(), Index::CREATION_REDO_BYTES)?;
+                if !complete || !Index::valid_creation_redo(identity, &bytes) {
+                    return Err("Foreign transfer creation redo log".into());
+                }
+            }
             Some("objects") => {
                 ensure_private_directory(&entry.path())?;
                 if !complete

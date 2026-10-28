@@ -441,6 +441,9 @@ impl Storage {
         let staging = self.directory.join("indexers.idx.migrating");
         let mut index = if exists(&staging)? {
             let reuse = Index::open(&staging, true).and_then(|mut index| {
+                if index.interrupted() {
+                    return Err("Indexer policy: interrupted migration stage".into());
+                }
                 check(&mut index)?;
                 if index.get(&SOURCE)?.as_deref() != Some(&source[..]) {
                     return Err("Indexer policy: foreign migration stage".into());

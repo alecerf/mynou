@@ -226,11 +226,8 @@ fn cursor_and_active_count_commit_atomically_at_every_crash_boundary() {
         assert!(storage.commit(record(2)).is_err());
         drop(storage);
         let before = contents(&directory.0);
-        if fault != Fault::Unlinked {
-            assert!(Storage::open(&directory.0, true).is_err());
-        } else {
-            drop(Storage::open(&directory.0, true).unwrap());
-        }
+        // A read-only open replays pending records in memory.
+        drop(Storage::open(&directory.0, true).unwrap());
         assert_eq!(contents(&directory.0), before);
         let mut reopened = Storage::open(&directory.0, false).unwrap();
         let expected = if fault == Fault::Staged {

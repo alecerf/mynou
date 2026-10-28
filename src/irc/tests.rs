@@ -423,6 +423,7 @@ fn partial_creation_writes_resume_only_when_they_match_the_prepublished_identity
         let mut held = None;
         if artifact.contains("identity") {
             fs::remove_file(stage.join("tree.bin")).unwrap();
+            fs::remove_file(stage.join("redo.bin")).unwrap();
             fs::remove_dir(stage.join("objects")).unwrap();
             let mut id = fs::read(stage.join("identity.bin")).unwrap();
             id.truncate(23);

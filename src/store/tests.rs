@@ -1476,16 +1476,15 @@ fn a_shared_group_commits_all_owners_or_none_at_every_crash_point() {
         assert!(store.get(&bystander.id).is_err());
         assert!(store.submit(request("Refused")).is_err());
         drop(store);
-        if fault != Fault::Unlinked {
-            // A read-only open reports that recovery is required and writes nothing.
-            let before = contents(&directory.0);
-            let error = Store::open_read_only(&directory.0).err().unwrap();
-            assert!(error.to_lowercase().contains("recover"), "{error}");
-            assert_eq!(contents(&directory.0), before);
-        }
+        let expected = if fault == Fault::Staged { 1 } else { 4 };
+        // A read-only open sees the same outcome and writes nothing.
+        let before = contents(&directory.0);
+        let mut reader = Store::open_read_only(&directory.0).unwrap();
+        assert_eq!(reader.list().unwrap().len(), expected, "{fault:?}");
+        drop(reader);
+        assert_eq!(contents(&directory.0), before);
         let mut store = Store::open(&directory.0).unwrap();
         let owners = store.list().unwrap();
-        let expected = if fault == Fault::Staged { 1 } else { 4 };
         assert_eq!(owners.len(), expected, "{fault:?}");
         assert_eq!(store.counts().unwrap().jobs, expected as u64);
         if fault != Fault::Staged {
@@ -2484,6 +2483,14 @@ fn interrupted_staging_commits_are_preserved_and_rebuilt_without_foreign_data_lo
         drop(index);
         private(&path.join("foreign.txt"), b"retain this unrelated file");
         expect_migrated(&directory.0, &jobs);
+        if fault == Fault::Staged {
+            // Nothing reached the disk: the cleanly closed stage resumes.
+            assert_eq!(
+                fs::read(directory.0.join("jobs.idx/foreign.txt")).unwrap(),
+                b"retain this unrelated file"
+            );
+            continue;
+        }
         let preserved = fs::read_dir(&directory.0)
             .unwrap()
             .filter_map(|entry| {

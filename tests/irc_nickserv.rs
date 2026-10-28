@@ -274,7 +274,6 @@ fn live_reconnect_and_restart_repeat_identification_and_retain_first_receipts() 
     // Duplicate receipt handling must still leave the entire IRC index and
     // its identity marker byte-for-byte unchanged, without creating jobs.
     let receipts = cfg.store_dir.join("announcements.idx");
-    let before = bytes(&receipts);
     let marker = fs::read(cfg.store_dir.join("announcements.bin")).unwrap();
     private(&e.irc_sources().unwrap());
     no_jobs(&e);
@@ -284,6 +283,8 @@ fn live_reconnect_and_restart_repeat_identification_and_retain_first_receipts() 
         Some(false)
     );
     drop(e);
+    // Closing checkpointed the redo log; from here the bytes must hold.
+    let before = bytes(&receipts);
     let e = Engine::open(cfg.clone()).unwrap();
     let workers = e.start();
     wait(|| health(&e).get("received").unwrap().as_str() == Some("1"));

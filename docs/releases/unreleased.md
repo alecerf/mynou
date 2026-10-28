@@ -43,3 +43,23 @@ from about 60 seconds to under 3.
 
 The [comparison and local measurements](/docs/torrent-benchmark.md) describe
 the workloads, verification and remaining limitations.
+
+## Changed: Faster storage with one flush per commit
+
+The disk index behind jobs, series, requesters, feeds, source policies, IRC
+announcements and transfers is 8 to 50 times faster on most operations. A
+commit now flushes
+only a redo log, once, instead of six times; tree pages and values reach their
+files in checkpoints shared by many commits. Values are checked with XXH64
+instead of SHA-256 twice, segment files stay open between reads, and the page
+cache holds 8,192 pages. On 100,000 records of 2 KiB, a one-record commit went
+from 31–35 ms to about 4 ms, loading from 4,600 to 43,000 records per second,
+a point read from 88 to 2.2 µs and a full scan from 6.6 s to 0.13 s. Closing a
+store now takes about 25 ms for its checkpoint. A read-only start after a crash
+now replays the pending log in memory instead of refusing the store.
+
+Stores are converted when Mynou first opens them for writing; earlier releases
+then refuse them, so keep a backup of the data directory from before the
+upgrade if you may go back. The
+[benchmark](/docs/inventory-storage.md#benchmark) compares the index with
+SQLite, redb and LMDB at the same durability.

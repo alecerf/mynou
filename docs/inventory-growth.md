@@ -97,7 +97,7 @@ representations and available disk remain physical/format constraints.
 
 | Path | Intentional surviving bounds |
 | --- | --- |
-| `src/inventory/{mod,tree,persistence}.rs` | 1 MiB index value; 200-row / 4 MiB pages; 16,384 changes/dirty pages and 128 MiB WAL per transaction; tree height 63; 2,048 cached pages; bounded log-cleaning work |
+| `src/inventory/{mod,tree,persistence}.rs` | 1 MiB index value; 200-row / 4 MiB pages; 16,384 changes/dirty pages and 128 MiB redo payload per transaction; 64 MiB redo log between checkpoints; tree height 63; 8,192 cached pages; bounded log-cleaning work |
 | `src/store/{legacy,layout,ops}.rs`, `src/store.rs` | 16 MiB per hydrated job (chunked); 1,000 events per job / 4,096 bytes per message; page hydration budget and 1,000 examined search rows; bounded claim/ownership windows and continuing cursors |
 | `src/series/{legacy,storage,engine}.rs` | Legacy 8 MiB snapshot input; 2,000 episodes/numbering decisions per scope/plan; 20,000-row calendar count/offset compatibility window with continuation beyond it; due-pass visit, attempt and time budgets |
 | `src/requesters/{mod,index,persistence}.rs` | Legacy 10,000 demands/operator interests and 16 MiB input; 16 MiB per demand; 512 demands/origins per patch or origins per demand; 32 configured accounts; compatibility offsets stop at 10,000, cursors continue |

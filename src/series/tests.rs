@@ -658,6 +658,10 @@ fn overlapping_scopes_keep_one_identity_per_catalog_episode() {
         .collect();
     season.anchors = super::numbering::initial_anchors(&season.plan);
     store.save(season.clone()).unwrap();
+    // Closing checkpoints the saves, so the files settle before the
+    // rejected writes below.
+    drop(store);
+    let mut store = SeriesStore::open(&directory.0, false).unwrap();
 
     let before = contents(&directory.0);
     // The same catalog identity under another number.

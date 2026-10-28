@@ -1,18 +1,25 @@
+use super::checksum::xxh64;
 use super::{Key, MAX_VALUE_BYTES, Query};
 use crate::{Result, crypto::sha256};
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, VecDeque},
     fs::File,
-    io::{Read, Seek, SeekFrom},
+    os::unix::fs::FileExt,
+    sync::Arc,
 };
 
 pub(super) const PAGE_SIZE: usize = 4096;
 const FANOUT: usize = 32;
 /// Operation bound on the distinct pages one transaction may rewrite.
 pub(super) const MAX_DIRTY_PAGES: usize = 16_384;
+// Pages written before XXH64 checksums carry SHA-256 and stay readable.
 const NODE_MAGIC: &[u8; 8] = b"MYNOUIN1";
 const COUNTED_MAGIC: &[u8; 8] = b"MYNOUIN2";
 const HEADER_MAGIC: &[u8; 8] = b"MYNOUI01";
+const FAST_NODE_MAGIC: &[u8; 8] = b"MYNOUIN3";
+const FAST_COUNTED_MAGIC: &[u8; 8] = b"MYNOUIN4";
+/// Also adds the active segment length; earlier releases refuse it.
+const FAST_HEADER_MAGIC: &[u8; 8] = b"MYNOUI02";
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct Header {
@@ -30,6 +37,9 @@ pub(super) struct Header {
     pub tail_offset: u64,
     pub log_bytes: u64,
     pub live_bytes: u64,
+    /// Bytes of segment `head`, which takes appends while it is below the
+    /// segment target; zero when it does not exist yet.
+    pub head_length: u64,
 }
 
 impl Header {
@@ -46,11 +56,12 @@ impl Header {
             tail_offset: 0,
             log_bytes: 0,
             live_bytes: 0,
+            head_length: 0,
         }
     }
     pub fn encode(self) -> [u8; PAGE_SIZE] {
         let mut bytes = [0; PAGE_SIZE];
-        bytes[..8].copy_from_slice(HEADER_MAGIC);
+        bytes[..8].copy_from_slice(FAST_HEADER_MAGIC);
         for (offset, value) in [
             (8, self.sequence),
             (16, self.root),
@@ -67,15 +78,31 @@ impl Header {
             (89, self.tail_offset),
             (97, self.log_bytes),
             (105, self.live_bytes),
+            (113, self.head_length),
         ] {
             bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
         }
         seal(&mut bytes);
         bytes
     }
+    /// The root format of releases before the redo log, for test fixtures.
+    #[cfg(test)]
+    pub fn encode_legacy(self) -> [u8; PAGE_SIZE] {
+        let mut bytes = self.encode();
+        bytes[..8].copy_from_slice(HEADER_MAGIC);
+        bytes[113..121].fill(0);
+        let digest = sha256(&bytes[..PAGE_SIZE - 32]);
+        bytes[PAGE_SIZE - 32..].copy_from_slice(&digest);
+        bytes
+    }
+    /// A root written before the redo log, which never has one.
+    pub fn is_legacy(bytes: &[u8]) -> bool {
+        bytes.get(..8) == Some(HEADER_MAGIC.as_slice())
+    }
     pub fn decode(bytes: &[u8]) -> Result<Self> {
-        check(bytes, HEADER_MAGIC)?;
-        if bytes[113..PAGE_SIZE - 32].iter().any(|byte| *byte != 0) {
+        let fast = check(bytes, HEADER_MAGIC, FAST_HEADER_MAGIC)?;
+        let used = if fast { 121 } else { 113 };
+        if bytes[used..PAGE_SIZE - 32].iter().any(|byte| *byte != 0) {
             return Err("Invalid inventory header padding".into());
         }
         let header = Self {
@@ -92,14 +119,19 @@ impl Header {
             tail_offset: integer(bytes, 89)?,
             log_bytes: integer(bytes, 97)?,
             live_bytes: integer(bytes, 105)?,
+            head_length: if fast { integer(bytes, 113)? } else { 0 },
         };
+        let smallest =
+            super::persistence::SEGMENT_HEADER_BYTES + super::persistence::ENVELOPE_BYTES;
         if header.tail > header.head
             || header.live_bytes > header.log_bytes
-            || (header.tail == header.head && (header.tail_offset != 0 || header.log_bytes != 0))
+            || header.head_length > header.log_bytes
+            || (header.head_length != 0
+                && (header.head_length < smallest || header.head_length > u64::from(u32::MAX)))
+            || (header.tail == header.head
+                && (header.tail_offset != 0 || header.log_bytes != header.head_length))
             || header.head.saturating_sub(header.tail)
-                > header.log_bytes
-                    / (super::persistence::SEGMENT_HEADER_BYTES
-                        + super::persistence::ENVELOPE_BYTES)
+                > (header.log_bytes - header.head_length) / smallest
             || (header.tail_offset != 0
                 && (header.tail_offset < super::persistence::SEGMENT_HEADER_BYTES
                     || header.tail_offset > u64::from(u32::MAX)
@@ -122,7 +154,8 @@ impl Header {
 
 /// A leaf reference names a legacy record file (`length` bytes whose SHA-256
 /// is `digest`), an envelope in a value-log segment (segment number, offset
-/// and the first 20 bytes of the SHA-256 in `digest`), or carries at most 32
+/// and either the first 20 bytes of the value's SHA-256 or, when `fast`, the
+/// envelope's XXH64 followed by zeros, in `digest`), or carries at most 32
 /// bytes inline in the tree page itself, zero-padded in the digest field.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct ValueRef {
@@ -130,10 +163,13 @@ pub(super) struct ValueRef {
     pub digest: [u8; 32],
     pub inline: bool,
     pub segment: bool,
+    pub fast: bool,
 }
 
 const INLINE_FLAG: u32 = 0x8000_0000;
 const SEGMENT_FLAG: u32 = 0x4000_0000;
+const FAST_FLAG: u32 = 0x2000_0000;
+const LENGTH_MASK: u32 = !(INLINE_FLAG | SEGMENT_FLAG | FAST_FLAG);
 pub(super) const MAX_INLINE_BYTES: usize = 32;
 
 impl ValueRef {
@@ -143,8 +179,10 @@ impl ValueRef {
             digest: sha256(data),
             inline: false,
             segment: false,
+            fast: false,
         }
     }
+    /// A value written before XXH64 envelopes, bound by its own SHA-256.
     pub fn segment(number: u64, offset: u32, data: &[u8]) -> Self {
         let mut digest = [0; 32];
         digest[..8].copy_from_slice(&number.to_le_bytes());
@@ -155,7 +193,26 @@ impl ValueRef {
             digest,
             inline: false,
             segment: true,
+            fast: false,
         }
+    }
+    /// A value bound to its envelope's checksum, so one hash verifies both.
+    pub fn logged(number: u64, offset: u32, length: u32, checksum: u64) -> Self {
+        let mut digest = [0; 32];
+        digest[..8].copy_from_slice(&number.to_le_bytes());
+        digest[8..12].copy_from_slice(&offset.to_le_bytes());
+        digest[12..20].copy_from_slice(&checksum.to_le_bytes());
+        Self {
+            length,
+            digest,
+            inline: false,
+            segment: true,
+            fast: true,
+        }
+    }
+    /// The envelope checksum of a `fast` segment reference.
+    pub fn checksum(&self) -> u64 {
+        u64::from_le_bytes(self.digest[12..20].try_into().unwrap_or_default())
     }
     /// Segment number and envelope offset of a segment reference.
     pub fn location(&self) -> (u64, u32) {
@@ -175,6 +232,7 @@ impl ValueRef {
             digest,
             inline: true,
             segment: false,
+            fast: false,
         })
     }
     pub fn inline_data(&self) -> &[u8] {
@@ -183,6 +241,8 @@ impl ValueRef {
     fn stored_length(self) -> u32 {
         if self.inline {
             self.length | INLINE_FLAG
+        } else if self.fast {
+            self.length | SEGMENT_FLAG | FAST_FLAG
         } else if self.segment {
             self.length | SEGMENT_FLAG
         } else {
@@ -262,7 +322,11 @@ impl Node {
         }
         let mut bytes = [0; PAGE_SIZE];
         let counted = matches!(&self.items, Items::Branch(items) if items.iter().any(|link| link.count.is_some()));
-        bytes[..8].copy_from_slice(if counted { COUNTED_MAGIC } else { NODE_MAGIC });
+        bytes[..8].copy_from_slice(if counted {
+            FAST_COUNTED_MAGIC
+        } else {
+            FAST_NODE_MAGIC
+        });
         self.count()?;
         bytes[8..16].copy_from_slice(&self.id.to_le_bytes());
         bytes[16] = self.level;
@@ -295,8 +359,14 @@ impl Node {
         Ok(bytes)
     }
     pub fn decode(bytes: &[u8], id: u64, level: u8, next: u64, identity: [u8; 32]) -> Result<Self> {
-        let counted = bytes.get(..8) == Some(COUNTED_MAGIC.as_slice());
-        check(bytes, if counted { COUNTED_MAGIC } else { NODE_MAGIC })?;
+        let magic = bytes.get(..8);
+        let counted =
+            magic == Some(COUNTED_MAGIC.as_slice()) || magic == Some(FAST_COUNTED_MAGIC.as_slice());
+        if counted {
+            check(bytes, COUNTED_MAGIC, FAST_COUNTED_MAGIC)?;
+        } else {
+            check(bytes, NODE_MAGIC, FAST_NODE_MAGIC)?;
+        }
         if counted && level == 0 {
             return Err("Invalid counted inventory leaf".into());
         }
@@ -315,17 +385,16 @@ impl Node {
             return Err("Invalid inventory node identity, level or count".into());
         }
         let mut cursor = 64;
-        let mut previous = None;
-        let mut leaves = Vec::new();
-        let mut branches = Vec::new();
+        let mut previous: Option<&[u8]> = None;
+        let mut leaves = Vec::with_capacity(if level == 0 { count } else { 0 });
+        let mut branches = Vec::with_capacity(if level == 0 { 0 } else { count });
         for _ in 0..count {
-            let key: Key = bytes[cursor..cursor + 64]
-                .try_into()
-                .map_err(|_| "Invalid inventory key")?;
-            if previous.is_some_and(|old| old >= key) {
+            let raw = &bytes[cursor..cursor + 64];
+            if previous.is_some_and(|old| old >= raw) {
                 return Err("Unordered inventory node".into());
             }
-            previous = Some(key);
+            previous = Some(raw);
+            let key: Key = raw.try_into().map_err(|_| "Invalid inventory key")?;
             if level == 0 {
                 let stored = u32::from_le_bytes(
                     bytes[cursor + 64..cursor + 68]
@@ -334,7 +403,8 @@ impl Node {
                 );
                 let inline = stored & INLINE_FLAG != 0;
                 let segment = stored & SEGMENT_FLAG != 0;
-                let length = stored & !(INLINE_FLAG | SEGMENT_FLAG);
+                let fast = stored & FAST_FLAG != 0;
+                let length = stored & LENGTH_MASK;
                 let digest: [u8; 32] = bytes[cursor + 68..cursor + 100]
                     .try_into()
                     .map_err(|_| "Invalid value digest")?;
@@ -345,6 +415,7 @@ impl Node {
                         MAX_VALUE_BYTES
                     }
                     || (inline && segment)
+                    || (fast && (!segment || digest[20..].iter().any(|byte| *byte != 0)))
                     || (inline && digest[length as usize..].iter().any(|byte| *byte != 0))
                 {
                     return Err("Oversized or malformed inventory value reference".into());
@@ -356,6 +427,7 @@ impl Node {
                         digest,
                         inline,
                         segment,
+                        fast,
                     },
                 ));
                 cursor += 100;
@@ -403,10 +475,51 @@ struct Bounds {
 }
 
 /// Decoded pages that were verified against their checksum and are still
-/// current. Cleared whenever a commit may have changed a page; at most
-/// `CACHE_NODES` entries (about 8 MiB) are kept.
-pub(super) type Cache = HashMap<u64, Node>;
-pub(super) const CACHE_NODES: usize = 2048;
+/// current. A commit replaces the pages it rewrote once they are applied;
+/// page identities are never reused, so other entries stay valid. At most
+/// `CACHE_NODES` entries (32 MiB of pages, under 28 MiB decoded) are kept,
+/// evicting the oldest first; only a store that large ever fills it.
+#[derive(Default)]
+pub(super) struct Cache {
+    nodes: HashMap<u64, Arc<Node>>,
+    order: VecDeque<u64>,
+    /// Pages a read-only open replayed from the redo log, never evicted:
+    /// the tree file may not hold them yet.
+    pinned: HashMap<u64, Arc<Node>>,
+}
+pub(super) const CACHE_NODES: usize = 8192;
+
+impl Cache {
+    pub fn new() -> Self {
+        Self::default()
+    }
+    pub fn pinned(pinned: HashMap<u64, Arc<Node>>) -> Self {
+        Self {
+            pinned,
+            ..Self::default()
+        }
+    }
+    fn get(&self, id: &u64) -> Option<&Arc<Node>> {
+        self.pinned.get(id).or_else(|| self.nodes.get(id))
+    }
+    pub fn insert(&mut self, id: u64, node: Arc<Node>) {
+        if self.nodes.insert(id, node).is_some() {
+            return;
+        }
+        self.order.push_back(id);
+        while self.nodes.len() > CACHE_NODES {
+            let Some(oldest) = self.order.pop_front() else {
+                break;
+            };
+            self.nodes.remove(&oldest);
+        }
+    }
+    #[cfg(test)]
+    pub fn clear(&mut self) {
+        self.nodes.clear();
+        self.order.clear();
+    }
+}
 
 pub(super) struct Tree<'a> {
     pub file: &'a mut File,
@@ -428,23 +541,30 @@ impl<'a> Tree<'a> {
             reads: 0,
         }
     }
-    fn node(&mut self, id: u64, level: u8, bounds: Bounds) -> Result<Node> {
+    /// A shared page: cached pages are not copied to be read. Edits take
+    /// their own copy.
+    fn node(&mut self, id: u64, level: u8, bounds: Bounds) -> Result<Arc<Node>> {
         if id == 0 || id >= self.header.next || level > 63 {
             return Err("Invalid inventory tree reference".into());
         }
-        let node = if let Some(node) = self.dirty.get(&id).or_else(|| self.cache.get(&id)) {
-            node.clone()
+        let node = if let Some(node) = self.dirty.get(&id) {
+            Arc::new(node.clone())
+        } else if let Some(node) = self.cache.get(&id) {
+            Arc::clone(node)
         } else {
             #[cfg(test)]
             {
                 self.reads += 1;
             }
             let bytes = read_page(self.file, id)?;
-            let node = Node::decode(&bytes, id, level, self.header.next, self.header.identity)?;
-            if self.cache.len() >= CACHE_NODES {
-                self.cache.clear();
-            }
-            self.cache.insert(id, node.clone());
+            let node = Arc::new(Node::decode(
+                &bytes,
+                id,
+                level,
+                self.header.next,
+                self.header.identity,
+            )?);
+            self.cache.insert(id, Arc::clone(&node));
             node
         };
         if node.level != level
@@ -470,10 +590,10 @@ impl<'a> Tree<'a> {
         let mut bounds = Bounds::default();
         for level in (0..=self.header.level).rev() {
             let node = self.node(id, level, bounds)?;
-            match node.items {
+            match &node.items {
                 Items::Leaf(items) => {
                     return Ok(items
-                        .binary_search_by_key(key, |(key, _)| *key)
+                        .binary_search_by(|(found, _)| found.cmp(key))
                         .ok()
                         .map(|index| items[index].1));
                 }
@@ -507,7 +627,7 @@ impl<'a> Tree<'a> {
         let mut rank = 0_u64;
         for level in (0..=self.header.level).rev() {
             let node = self.node(id, level, bounds)?;
-            match node.items {
+            match &node.items {
                 Items::Leaf(items) => {
                     return rank
                         .checked_add(items.partition_point(|(found, _)| found < key) as u64)
@@ -516,7 +636,7 @@ impl<'a> Tree<'a> {
                 Items::Branch(items) => {
                     let mut next = None;
                     let mut lower = bounds.lower;
-                    for child in items {
+                    for child in items.iter().copied() {
                         if child.key < *key {
                             rank = rank
                                 .checked_add(child.count.ok_or(
@@ -680,7 +800,7 @@ impl<'a> Tree<'a> {
         bounds: Bounds,
         budget: usize,
     ) -> Result<Option<u64>> {
-        let mut node = self.node(id, level, bounds)?;
+        let mut node = Arc::unwrap_or_clone(self.node(id, level, bounds)?);
         if let Some(count) = node.count()? {
             return Ok(Some(count));
         }
@@ -744,9 +864,9 @@ impl<'a> Tree<'a> {
         rows: &mut Vec<(Key, ValueRef)>,
     ) -> Result<()> {
         let node = self.node(link.page, level, bounds)?;
-        match node.items {
+        match &node.items {
             Items::Leaf(items) => {
-                for (key, value) in items {
+                for (key, value) in items.iter().copied() {
                     if key < query.start || query.after.is_some_and(|after| key <= after) {
                         continue;
                     }
@@ -761,7 +881,7 @@ impl<'a> Tree<'a> {
             }
             Items::Branch(items) => {
                 let mut lower = bounds.lower;
-                for child in items {
+                for child in items.iter().copied() {
                     if query
                         .end
                         .is_some_and(|end| lower.is_some_and(|previous| previous >= end))
@@ -840,7 +960,7 @@ impl<'a> Tree<'a> {
                 self.header.root = link.page;
                 while self.header.level > 0 {
                     let node = self.node(self.header.root, self.header.level, Bounds::default())?;
-                    let Items::Branch(items) = node.items else {
+                    let Items::Branch(items) = &node.items else {
                         return Err("Invalid inventory root kind".into());
                     };
                     if items.len() != 1 {
@@ -897,7 +1017,7 @@ impl<'a> Tree<'a> {
         key: &Key,
         value: Option<ValueRef>,
     ) -> Result<Vec<Link>> {
-        let mut node = self.node(id, level, bounds)?;
+        let mut node = Arc::unwrap_or_clone(self.node(id, level, bounds)?);
         match &mut node.items {
             Items::Leaf(items) => match (items.binary_search_by_key(key, |(key, _)| *key), value) {
                 (Ok(index), Some(value)) => items[index].1 = value,
@@ -974,8 +1094,7 @@ pub(super) fn offset(id: u64) -> Result<u64> {
 }
 pub(super) fn read_page(file: &mut File, id: u64) -> Result<[u8; PAGE_SIZE]> {
     let mut bytes = [0; PAGE_SIZE];
-    file.seek(SeekFrom::Start(offset(id)?))
-        .and_then(|_| file.read_exact(&mut bytes))
+    file.read_exact_at(&mut bytes, offset(id)?)
         .map_err(|error| format!("Cannot read inventory page: {error}"))?;
     Ok(bytes)
 }
@@ -986,16 +1105,26 @@ fn integer(bytes: &[u8], offset: usize) -> Result<u64> {
             .map_err(|_| "Invalid inventory integer")?,
     ))
 }
+/// Pages end with the XXH64 of everything before the 32-byte checksum
+/// field, then zeros.
 fn seal(bytes: &mut [u8; PAGE_SIZE]) {
-    let digest = sha256(&bytes[..PAGE_SIZE - 32]);
-    bytes[PAGE_SIZE - 32..].copy_from_slice(&digest);
+    let digest = xxh64(&bytes[..PAGE_SIZE - 32]);
+    bytes[PAGE_SIZE - 32..PAGE_SIZE - 24].copy_from_slice(&digest.to_le_bytes());
+    bytes[PAGE_SIZE - 24..].fill(0);
 }
-fn check(bytes: &[u8], magic: &[u8; 8]) -> Result<()> {
-    if bytes.len() != PAGE_SIZE
-        || &bytes[..8] != magic
-        || sha256(&bytes[..PAGE_SIZE - 32]).as_slice() != &bytes[PAGE_SIZE - 32..]
-    {
+/// Accepts the SHA-256 page of `legacy` or the XXH64 page of `fast`, and
+/// says which one it was.
+fn check(bytes: &[u8], legacy: &[u8; 8], fast: &[u8; 8]) -> Result<bool> {
+    let body = PAGE_SIZE - 32;
+    let valid = bytes.len() == PAGE_SIZE
+        && if &bytes[..8] == fast {
+            xxh64(&bytes[..body]).to_le_bytes() == bytes[body..body + 8]
+                && bytes[body + 8..].iter().all(|byte| *byte == 0)
+        } else {
+            &bytes[..8] == legacy && sha256(&bytes[..body]).as_slice() == &bytes[body..]
+        };
+    if !valid {
         return Err("Invalid inventory page format or checksum".into());
     }
-    Ok(())
+    Ok(&bytes[..8] == fast)
 }

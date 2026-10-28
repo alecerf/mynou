@@ -112,8 +112,9 @@ fn an_explicit_default_selector_preserves_pending_legacy_reviews_and_storage() {
     let e = Engine::open(cfg.clone()).unwrap();
     let row = irc_support::receive(&e, 7);
     let query = irc_support::reviewed(&e, row_id(&row), "acknowledge");
-    let before = irc_support::bytes(&cfg.store_dir);
     drop(e);
+    // Closing checkpoints the redo logs, so the bytes settle first.
+    let before = irc_support::bytes(&cfg.store_dir);
     rule(&mut v).insert("requester", Value::Null);
     let e = Engine::open(config::from_json(&v, &dir.0).unwrap()).unwrap();
     assert_eq!(irc_support::bytes(&cfg.store_dir), before);
@@ -281,8 +282,9 @@ fn selector_edits_invalidate_pending_grabs_and_review_guards_without_reinterpret
     let row = receive(&e, "1234567890abcdef1234567890abcdef12345678", 7);
     let review = irc_support::reviewed(&e, row_id(&row), "acknowledge");
     let original = e.irc_announcement(row_id(&row)).unwrap();
-    let before = state_except_irc_freshness(&cfg.store_dir);
     drop(e);
+    // Closing checkpoints the redo logs, so the bytes settle first.
+    let before = state_except_irc_freshness(&cfg.store_dir);
     cfg.irc.rules[0].requester = Some("bob".into());
     let e = Engine::open(cfg.clone()).unwrap();
     assert_eq!(outcome(&e.irc_route_pending().unwrap()), "idle");
