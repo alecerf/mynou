@@ -45,8 +45,15 @@ fn saved_settings_are_validated_and_survive_reopening() {
     let _turn = SECRETS.lock().unwrap_or_else(|e| e.into_inner());
     let dir = Directory::new();
     let engine = open(&dir);
+    // Folders show as full paths, under the data directory by default.
+    let defaults = super::full_folders(config::default_json(), &engine.config.data_dir).unwrap();
+    let movies = engine.config.data_dir.join("library/movies");
+    assert_eq!(
+        defaults.get("library").and_then(|l| l.get("movies_root")),
+        Some(&json::Value::String(movies.to_string_lossy().into_owned()))
+    );
     let report = call(&engine, "GET", "/api/settings", "");
-    assert_eq!(report.get("settings"), Some(&config::default_json()));
+    assert_eq!(report.get("settings"), Some(&defaults));
     assert_eq!(report.get("applying"), Some(&json::Value::Bool(false)));
     // Invalid documents are refused and change nothing.
     for body in [
@@ -57,10 +64,27 @@ fn saved_settings_are_validated_and_survive_reopening() {
     }
     assert_eq!(
         call(&engine, "GET", "/api/settings", "").get("settings"),
-        Some(&config::default_json())
+        Some(&defaults)
     );
     let mut document = config::default_json();
     document.insert("workers", 3_u32);
+    // A folder must not be a file.
+    let mut library = json::Value::object();
+    library.insert("movies_root", "~");
+    library.insert("series_root", "/etc/hosts");
+    let mut file = document.clone();
+    file.insert("library", library);
+    let mut body = json::Value::object();
+    body.insert("settings", file);
+    assert!(
+        route(
+            &engine,
+            "POST",
+            "/api/settings",
+            json::stringify(&body).as_bytes()
+        )
+        .is_err()
+    );
     let mut body = json::Value::object();
     body.insert("settings", document.clone());
     let reply = call(&engine, "POST", "/api/settings", &json::stringify(&body));
@@ -71,7 +95,11 @@ fn saved_settings_are_validated_and_survive_reopening() {
     drop(engine);
     let config = config::load(&dir.0).unwrap();
     assert_eq!(config.workers, 3);
-    assert_eq!(config.document, document);
+    // Saved with full folder paths.
+    assert_eq!(
+        config.document,
+        super::full_folders(document, &config.data_dir).unwrap()
+    );
     assert_eq!(config.store_dir, dir.0.join("state/jobs"));
 }
 

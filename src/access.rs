@@ -1,6 +1,8 @@
 //! Network access. On loopback, Mynou answers this machine without sign-in.
 //! Listening on another address also needs the owner's password: clients on
-//! the network sign in once and keep a signed session cookie. Only a PBKDF2
+//! the network sign in once and keep a signed session cookie. The owner may
+//! instead open Mynou to the local network: computers at a private address
+//! then need no sign-in, and any other still does. Only a PBKDF2
 //! hash of the password and the random key that signs sessions are stored,
 //! and changing the password replaces the key, which ends every session.
 //!
@@ -177,14 +179,29 @@ pub fn stored(store_dir: &Path) -> Result<Option<Credentials>> {
     crate::store::Store::open_read_only(store_dir)?.access()
 }
 
-/// Refuses a listener other machines can reach until a password is set.
-pub fn require(listen: &str, password_set: bool) -> Result<()> {
-    if !password_set && !loopback(listen) {
+/// Refuses a listener other machines can reach until a password is set or
+/// the owner opened the local network.
+pub fn require(listen: &str, password_set: bool, local_network_open: bool) -> Result<()> {
+    if !password_set && !local_network_open && !loopback(listen) {
         return Err(format!(
-            "Mynou does not listen on {listen} without a password: the API would be open to the network. Set a network access password in Settings, Network, from this Mac, or listen on 127.0.0.1"
+            "Mynou does not listen on {listen} without a password: the API would be open to the network. Set a network access password in Settings, Network, from this Mac, open Mynou to the local network, or listen on 127.0.0.1"
         ));
     }
     Ok(())
+}
+
+/// Whether a peer is on the local network: a private or link-local address,
+/// which the internet cannot reach this machine from. A router forwarding a
+/// port keeps the public address of whoever connects.
+pub fn local_network(peer: IpAddr) -> bool {
+    match peer.to_canonical() {
+        IpAddr::V4(ip) => ip.is_private() || ip.is_link_local() || ip.is_loopback(),
+        // Unique local fc00::/7 and link-local fe80::/10.
+        IpAddr::V6(ip) => {
+            let first = ip.segments()[0];
+            ip.is_loopback() || first & 0xfe00 == 0xfc00 || first & 0xffc0 == 0xfe80
+        }
+    }
 }
 
 /// Whether a listen address is loopback only (anything unparsable counts as
@@ -567,12 +584,39 @@ mod tests {
     }
 
     #[test]
+    fn only_private_and_link_local_peers_are_on_the_local_network() {
+        for peer in [
+            "10.0.0.5",
+            "172.16.3.4",
+            "172.31.255.1",
+            "192.168.1.20",
+            "169.254.9.9",
+            "::ffff:192.168.1.20",
+            "fd12:3456::1",
+            "fe80::1",
+            "127.0.0.1",
+        ] {
+            assert!(local_network(peer.parse().unwrap()), "{peer}");
+        }
+        for peer in [
+            "8.8.8.8",
+            "172.32.0.1",
+            "100.64.0.1",
+            "2001:db8::1",
+            "::ffff:8.8.8.8",
+        ] {
+            assert!(!local_network(peer.parse().unwrap()), "{peer}");
+        }
+    }
+
+    #[test]
     fn listeners_and_names() {
-        assert!(require("127.0.0.1:8787", false).is_ok());
-        assert!(require("[::1]:8787", false).is_ok());
-        assert!(require("0.0.0.0:80", false).is_err());
-        assert!(require("[::]:80", false).is_err());
-        assert!(require("0.0.0.0:80", true).is_ok());
+        assert!(require("127.0.0.1:8787", false, false).is_ok());
+        assert!(require("[::1]:8787", false, false).is_ok());
+        assert!(require("0.0.0.0:80", false, false).is_err());
+        assert!(require("[::]:80", false, false).is_err());
+        assert!(require("0.0.0.0:80", true, false).is_ok());
+        assert!(require("0.0.0.0:80", false, true).is_ok());
         assert_eq!(
             bonjour_name("<dict>\n\t<key>LocalHostName</key>\n\t<string>Studio-Mac</string>"),
             Some("Studio-Mac".into())

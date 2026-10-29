@@ -117,7 +117,7 @@ disabled:
 | --- | --- | --- |
 | Library folders | Library | |
 | Downloads | Downloads (folders, port 6881, limits, seeding) | |
-| Plex server and watchlist | Plex | Plex token |
+| Plex server and watchlist | Plex: **Connect to Plex**, then choose the server | |
 | TMDB catalog, to find titles and follow series | TMDB catalog | TMDB token |
 | Sources to search | Indexers | API key of each source |
 | How torrents connect | VPN: a WireGuard profile, or your own connection | |

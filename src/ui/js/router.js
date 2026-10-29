@@ -26,7 +26,8 @@ function show(hash) {
   // Source states now live beside their settings.
   if (name === 'sources') { history.replaceState(null, '', '#settings'); name = 'settings'; }
   if (!views[name]) name = 'dashboard';
-  const changed = currentView() !== name || currentParam() !== param;
+  const moved = currentView() !== name;
+  const changed = moved || currentParam() !== param;
   if (changed) views[currentView()]?.leave?.();
   for (const section of document.querySelectorAll('.view')) section.hidden = section.id !== `view-${name}`;
   for (const link of document.querySelectorAll('#nav a, #mobile-nav a, .request-button')) {
@@ -37,7 +38,9 @@ function show(hash) {
   document.title = `${title} · Mynou`;
   views[name].render?.();
   Motion.nav();
-  if (changed) { Motion.enter($(`#view-${name}`)); scrollTo({ top: 0, behavior: 'instant' }); }
+  // Another page of the same view, such as a settings page, enters alone,
+  // under a title and a menu that stay put.
+  if (changed) { Motion.enter(moved ? $(`#view-${name}`) : views[name].page?.() ?? $(`#view-${name}`)); scrollTo({ top: 0, behavior: 'instant' }); }
 }
 
 export const route = () => show(location.hash.slice(1));

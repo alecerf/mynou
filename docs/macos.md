@@ -68,15 +68,19 @@ curl -s -X POST -H 'Content-Type: application/json' \
 Settings are validated before they are saved: fields this version does not know
 are ignored, so check the spelling of a setting you add by hand, and an invalid
 document leaves the saved one unchanged. The running service applies saved settings by restarting its
-engine; a new `listen` address applies at the next start. Relative paths
-resolve against the data directory.
+engine; a new `listen` address applies at the next start. The movies, series
+and download folders are full paths on this Mac (`~/` is the home folder);
+the Settings view shows them so and refuses a relative one. Through the API, a
+relative path still resolves against the data directory, and is saved as the
+full path.
 
 | Setting | Default | Purpose |
 | --- | --- | --- |
 | `library.movies_root`, `library.series_root` | `library/movies`, `library/series` | Where imports go |
 | `downloads` | enabled, `downloads`, `state/torrents`, port 6881, seeding, DHT and PEX on | BitTorrent client; see [transfers](transfers.md) |
-| `listen` | `127.0.0.1:8787` | API and web interface listener; another address needs a password ([network access](#network-access)) |
+| `listen` | `127.0.0.1:8787` | API and web interface listener; another address needs a password or `access.local_network_open` ([network access](#network-access)) |
 | `access.allowed_hosts` | none | More host names other computers may use ([network access](#network-access)) |
+| `access.local_network_open` | `false` | Computers on the local network need no sign-in ([network access](#network-access)) |
 | `workers` | `2` (1 to 32) | Requests processed at the same time |
 | `max_attempts` | `10` (up to 1,000) | Automatic retries of a failed request, with growing delays |
 | `minimum_seeders` | `1` | Candidates with fewer seeders are rejected |
@@ -108,11 +112,25 @@ runs no other media manager. Then check a search from **New request**.
 
 ## Connect Plex
 
-Set `plex.enabled`, `plex.url` and the movie and series section IDs
-(`plex.movies_section`, `plex.series_section`), and save the token as the
-`MYNOU_PLEX_TOKEN` secret. The default URL `http://127.0.0.1:32400` reaches Plex on the
-same Mac; use the server's address for Plex elsewhere. `plex.watchlist_url` only
-needs changing for a different watchlist service.
+In **Settings, Plex & TMDB**, click **Connect to Plex** and sign in on the Plex
+page that opens (allow the pop-up if the browser asks). Mynou saves the account
+token as the `MYNOU_PLEX_TOKEN` secret, without showing it, and lists the
+servers the account owns; with several, choose one. Mynou then:
+
+- finds an address of that server that answers from this Mac: Plex on this Mac
+  (`http://127.0.0.1:32400`) first, then the server's addresses on the local
+  network, then the others Plex publishes, never a relay;
+- picks its film and series libraries: the one whose folder holds Mynou's
+  movies or series folder (through the path mappings below), else the one
+  already chosen, else the first. **Films go to** and **Series go to** change
+  them from a list of the server's libraries;
+- saves `plex.url`, `plex.movies_section`, `plex.series_section` and
+  `plex.enabled`, and applies them.
+
+**Change server** chooses again, and **Disconnect** removes the token and turns
+Plex off. The same settings can still be written by hand, with the token saved
+as the secret. `plex.watchlist_url` only needs changing for a different
+watchlist service.
 
 Plex and Mynou should see the library at the same paths. If Plex sees it under a
 different prefix, for example a network share mounted elsewhere, add a mapping
@@ -151,15 +169,17 @@ your local network:
 
 1. On the Mac running Mynou (in person, with Screen Sharing, or through
    `ssh -L 8787:127.0.0.1:8787`), open **Settings, Network** and save a
-   password of at least 10 characters.
+   password of at least 10 characters, or turn on **No password on the local
+   network**, or both.
 2. Turn on **Allow other computers**, choose the port (80 lets addresses leave
    it out) and save. `listen` becomes `0.0.0.0:PORT`; restart Mynou to apply it
    (`mynou service --action stop`, then `--action start`).
 3. From another computer, open `http://NAME.local` (or `http://NAME.local:PORT`),
-   the address the Network page shows, and sign in.
+   the address the Network page shows, and sign in unless the local network
+   needs no password.
 
 Mynou refuses a `listen` address other than loopback, at startup and when
-settings are saved, until a password is set. `0.0.0.0` (or `[::]`) listens on
+settings are saved, until a password is set or the local network is open. `0.0.0.0` (or `[::]`) listens on
 every address. macOS lets an ordinary account use a port below 1024, such as 80,
 only on these addresses, not on one specific address such as `192.168.1.20:80`.
 With the macOS firewall on, the first start on the network asks whether
@@ -178,6 +198,12 @@ How requests are checked:
   no sign-in, so `mynou update`, `mynou service` and local scripts work as
   before. A reverse proxy on the same Mac would therefore pass every request as
   local: do not put one in front of Mynou.
+- With **No password on the local network** (`access.local_network_open`),
+  computers at a private or link-local address (`10.0.0.0/8`, `172.16.0.0/12`,
+  `192.168.0.0/16`, `169.254.0.0/16`, `fc00::/7`, `fe80::/10`) need no sign-in
+  either. Anyone on that network can then use Mynou: turn it on only on a
+  network you trust. A router forwarding a port keeps the public address of
+  whoever connects, so they still need the password.
 - Other computers sign in with the password (`POST /api/session` with
   `{"password": "..."}`) and get a session cookie (`HttpOnly`,
   `SameSite=Strict`) valid for 30 days. Without it, `/api` routes and `/ws`
@@ -191,7 +217,7 @@ How requests are checked:
   random salt) and the random key that signs sessions; the API never returns
   them. The password is set and removed on this Mac only (`POST /api/access`),
   a new one signs every other computer out, and it can be removed only once
-  network access is off.
+  network access is off or the local network needs no password.
 
 Mynou serves plain HTTP. On your own network that is usually acceptable, but
 anyone who can watch the traffic, for example on a shared or public Wi-Fi, can

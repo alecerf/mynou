@@ -70,6 +70,8 @@ pub struct Config {
     /// Host names the owner allows besides the detected ones, when `listen`
     /// is reachable from the network.
     pub allowed_hosts: Vec<String>,
+    /// Computers on the local network use Mynou without signing in.
+    pub local_network_open: bool,
     pub movies_root: PathBuf,
     pub series_root: PathBuf,
     pub downloads: DownloadConfig,
@@ -321,6 +323,13 @@ fn allowed_hosts(value: &Value) -> Result<Vec<String>> {
         .collect()
 }
 
+fn local_network_open(value: &Value) -> Result<bool> {
+    match value.get("access") {
+        Some(section) => boolean(section, "local_network_open", false),
+        None => Ok(false),
+    }
+}
+
 fn monitoring(value: &Value) -> Result<Monitoring> {
     let Some(section) = value.get("monitoring") else {
         return Ok(Monitoring::default());
@@ -442,11 +451,13 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
         return Err("Configuration: invalid concurrency or timing settings".into());
     }
     let listen = text(v, "listen", "127.0.0.1:8787")?;
-    // Another address also needs a password: see `access::require`.
+    // Another address also needs a password, or the local network opened:
+    // see `access::require`.
     listen
         .parse::<std::net::SocketAddr>()
         .map_err(|_| "Configuration: listen requires an IP address and port, such as 127.0.0.1:8787 or 0.0.0.0:80")?;
     let allowed_hosts = allowed_hosts(v)?;
+    let local_network_open = local_network_open(v)?;
     for url in [
         text(p, "url", "http://127.0.0.1:32400")?,
         text(
@@ -519,6 +530,7 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
         document: v.clone(),
         listen,
         allowed_hosts,
+        local_network_open,
         movies_root: path(&base, text(library, "movies_root", "library/movies")?)?,
         series_root: path(&base, text(library, "series_root", "library/series")?)?,
         downloads: DownloadConfig {
