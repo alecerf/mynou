@@ -75,7 +75,8 @@ resolve against the data directory.
 | --- | --- | --- |
 | `library.movies_root`, `library.series_root` | `library/movies`, `library/series` | Where imports go |
 | `downloads` | enabled, `downloads`, `state/torrents`, port 6881, seeding, DHT and PEX on | BitTorrent client; see [transfers](transfers.md) |
-| `listen` | `127.0.0.1:8787` | API and web interface listener |
+| `listen` | `127.0.0.1:8787` | API and web interface listener; another address needs a password ([network access](#network-access)) |
+| `access.allowed_hosts` | none | More host names other computers may use ([network access](#network-access)) |
 | `workers` | `2` (1 to 32) | Requests processed at the same time |
 | `max_attempts` | `10` (up to 1,000) | Automatic retries of a failed request, with growing delays |
 | `minimum_seeders` | `1` | Candidates with fewer seeders are rejected |
@@ -139,9 +140,63 @@ The API listens on `127.0.0.1:8787`. `/healthz` reports liveness. While
 Mynou validates its storage after a start, `/readyz` answers 503 `starting`
 (`failed` if validation found an inconsistency), only reads are served and
 `startup` in `/api/status` shows the stage and rows checked; requests, workers
-and transfers begin once it is `ready`. The API has no sign-in:
-`listen` must be a loopback address, and requests must name it
-(`127.0.0.1`, `localhost` or `[::1]`) and come from no other site's page.
+and transfers begin once it is `ready`. On loopback the API has no sign-in;
+requests must name it (`127.0.0.1`, `localhost` or `[::1]`) and come from no
+other site's page.
+
+## Network access
+
+By default only this Mac can open Mynou. To use it from other computers on
+your local network:
+
+1. On the Mac running Mynou (in person, with Screen Sharing, or through
+   `ssh -L 8787:127.0.0.1:8787`), open **Settings, Network** and save a
+   password of at least 10 characters.
+2. Turn on **Allow other computers**, choose the port (80 lets addresses leave
+   it out) and save. `listen` becomes `0.0.0.0:PORT`; restart Mynou to apply it
+   (`mynou service --action stop`, then `--action start`).
+3. From another computer, open `http://NAME.local` (or `http://NAME.local:PORT`),
+   the address the Network page shows, and sign in.
+
+Mynou refuses a `listen` address other than loopback, at startup and when
+settings are saved, until a password is set. `0.0.0.0` (or `[::]`) listens on
+every address. macOS lets an ordinary account use a port below 1024, such as 80,
+only on these addresses, not on one specific address such as `192.168.1.20:80`.
+With the macOS firewall on, the first start on the network asks whether
+`mynou` may accept incoming connections; allow it, or other computers cannot
+connect.
+
+How requests are checked:
+
+- Every request except `/healthz`, `/readyz` and the interface's files must
+  name an allowed host in `Host`: `127.0.0.1`, `localhost`, `[::1]`, an address
+  of this Mac, this Mac's `NAME.local` (from its Sharing settings), or a name
+  in `access.allowed_hosts`. A domain rebound to this Mac is refused (DNS
+  rebinding). An `Origin`, which browsers send with cross-site writes and
+  sockets, must be the same as `Host`, for HTTP requests and `/ws`.
+- Connections from this Mac, from loopback or from the Mac's own address, need
+  no sign-in, so `mynou update`, `mynou service` and local scripts work as
+  before. A reverse proxy on the same Mac would therefore pass every request as
+  local: do not put one in front of Mynou.
+- Other computers sign in with the password (`POST /api/session` with
+  `{"password": "..."}`) and get a session cookie (`HttpOnly`,
+  `SameSite=Strict`) valid for 30 days. Without it, `/api` routes and `/ws`
+  answer 401. Scripts on another computer sign in the same way and send the
+  cookie back. `DELETE /api/session` signs out.
+- After 5 failed sign-ins from one address, or 30 in all, within 15 minutes,
+  sign-in waits until the window ends. Failures are logged without the password:
+  the service journal (`.mynou-service/events.log`) records `sign_in_refused`
+  or `sign_in_throttled`, and `mynou serve` also prints the address.
+- Mynou keeps a PBKDF2-HMAC-SHA256 hash of the password (600,000 iterations,
+  random salt) and the random key that signs sessions; the API never returns
+  them. The password is set and removed on this Mac only (`POST /api/access`),
+  a new one signs every other computer out, and it can be removed only once
+  network access is off.
+
+Mynou serves plain HTTP. On your own network that is usually acceptable, but
+anyone who can watch the traffic, for example on a shared or public Wi-Fi, can
+read the password and the session cookie. Do not open Mynou on a network you do
+not trust, and do not forward its port from your router to the internet.
 
 Port 6881/TCP accepts BitTorrent peers; whether peers can reach it depends on
 your firewall and router. DHT and UDP trackers use outgoing connections only.

@@ -1,8 +1,9 @@
-//! Local HTTP API with bounded requests and no framework. It has no sign-in:
-//! it listens on loopback only and answers requests from this machine, never
-//! from a page of another site.
+//! HTTP API with bounded requests and no framework. It answers this machine
+//! without sign-in and, once `listen` is reachable from the network, other
+//! machines with a session (see `access`), never a page of another site.
 use crate::{
     Result,
+    access::{self, Access, SignIn},
     engine::{Engine, lock, public_job},
     integrations,
     json::{self, Value},
@@ -32,10 +33,18 @@ const WRITE_CHUNK: usize = 16_384;
 pub struct Api {
     listener: TcpListener,
     engine: Arc<Engine>,
+    access: Arc<Access>,
 }
 fn listen(address: &str) -> Result<TcpListener> {
-    let listener =
-        TcpListener::bind(address).map_err(|e| format!("Cannot bind the API listener: {e}"))?;
+    let listener = TcpListener::bind(address).map_err(|e| {
+        let hint = match address.parse::<SocketAddr>() {
+            Ok(a) if a.port() < 1024 && !a.ip().is_unspecified() => {
+                "; macOS lets an account use a port below 1024 only on 0.0.0.0 or [::]"
+            }
+            _ => "",
+        };
+        format!("Cannot bind the API listener on {address}: {e}{hint}")
+    })?;
     listener.set_nonblocking(true).map_err(|e| e.to_string())?;
     Ok(listener)
 }
@@ -45,22 +54,32 @@ fn listen(address: &str) -> Result<TcpListener> {
 /// refuses every other route as unavailable.
 pub struct Startup {
     listener: TcpListener,
+    access: Arc<Access>,
     ready: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
 }
 
 impl Startup {
-    pub fn bind(config: &crate::config::Config) -> Result<Self> {
+    /// Refuses a listener reachable from the network until `access` has a
+    /// password.
+    pub fn bind(config: &crate::config::Config, access: Arc<Access>) -> Result<Self> {
+        access::require(&config.listen, access.is_set())?;
         let listener = listen(&config.listen)?;
         let ready = Arc::new(AtomicBool::new(false));
         let thread = {
             let listener = listener.try_clone().map_err(|e| e.to_string())?;
             let ready = ready.clone();
+            let gate = Gate {
+                access: access.clone(),
+                listener: listener.local_addr().map_err(|e| e.to_string())?,
+                allowed_hosts: config.allowed_hosts.clone(),
+            };
             let directories = vec![config.store_dir.clone(), config.downloads.state_dir.clone()];
-            thread::spawn(move || starting(&listener, &directories, &ready))
+            thread::spawn(move || starting(&listener, &gate, &directories, &ready))
         };
         Ok(Self {
             listener,
+            access,
             ready,
             thread: Some(thread),
         })
@@ -76,6 +95,7 @@ impl Startup {
         Ok(Api {
             listener: self.listener.try_clone().map_err(|e| e.to_string())?,
             engine,
+            access: self.access.clone(),
         })
     }
 
@@ -93,15 +113,49 @@ impl Drop for Startup {
     }
 }
 
-fn starting(listener: &TcpListener, directories: &[PathBuf], ready: &AtomicBool) {
+/// What a request must satisfy before anything but health and the interface
+/// is answered.
+#[derive(Clone)]
+struct Gate {
+    access: Arc<Access>,
+    listener: SocketAddr,
+    allowed_hosts: Vec<String>,
+}
+
+impl Gate {
+    /// The `Host` names this listener and an `Origin`, when sent, is this one.
+    fn addressed(&self, headers: &BTreeMap<String, String>) -> bool {
+        let host = headers.get("host").map(String::as_str).unwrap_or("");
+        access::allowed_host(host, self.listener, &self.allowed_hosts)
+            && headers
+                .get("origin")
+                .is_none_or(|origin| ws::same_origin(origin, host))
+    }
+
+    /// From this machine, or signed in.
+    fn admitted(&self, local: bool, headers: &BTreeMap<String, String>) -> bool {
+        local
+            || self
+                .access
+                .signed_in(headers.get("cookie").map(String::as_str))
+    }
+}
+
+/// Whether a connection comes from this machine (see `access::local_peer`).
+fn local(stream: &TcpStream) -> bool {
+    matches!((stream.peer_addr(), stream.local_addr()), (Ok(peer), Ok(local)) if access::local_peer(peer, local))
+}
+
+fn starting(listener: &TcpListener, gate: &Gate, directories: &[PathBuf], ready: &AtomicBool) {
     let mut threads: Vec<JoinHandle<()>> = Vec::new();
     while !ready.load(Ordering::Acquire) {
         threads.retain(|thread| !thread.is_finished());
         match listener.accept() {
             Ok((mut stream, _)) if threads.len() < 8 => {
                 let directories = directories.to_vec();
+                let gate = gate.clone();
                 threads.push(thread::spawn(move || {
-                    let _ = starting_connection(&mut stream, &directories);
+                    let _ = starting_connection(&mut stream, &gate, &directories);
                 }));
             }
             Ok((mut stream, _)) => {
@@ -124,7 +178,7 @@ fn starting(listener: &TcpListener, directories: &[PathBuf], ready: &AtomicBool)
     }
 }
 
-fn starting_connection(stream: &mut TcpStream, directories: &[PathBuf]) -> Result<()> {
+fn starting_connection(stream: &mut TcpStream, gate: &Gate, directories: &[PathBuf]) -> Result<()> {
     let HttpRequest {
         method,
         target: path,
@@ -140,8 +194,12 @@ fn starting_connection(stream: &mut TcpStream, directories: &[PathBuf]) -> Resul
     if method == "GET" && (path == "/healthz" || path == "/readyz") {
         return respond(stream, if path == "/healthz" { 200 } else { 503 }, status);
     }
-    if !from_this_machine(&headers) {
+    if !gate.addressed(&headers) {
         return respond(stream, 403, error(FOREIGN));
+    }
+    // Signing in waits for storage; the interface keeps asking until then.
+    if path != "/api/session" && !gate.admitted(local(stream), &headers) {
+        return respond(stream, 401, error(SIGN_IN));
     }
     if method == "GET" && path == "/api/status" {
         let directories: Vec<_> = directories.iter().map(PathBuf::as_path).collect();
@@ -159,9 +217,12 @@ fn starting_connection(stream: &mut TcpStream, directories: &[PathBuf]) -> Resul
 
 impl Api {
     pub fn bind(engine: Arc<Engine>) -> Result<Self> {
+        let access = Arc::new(Access::new(lock(&engine.store)?.access()?));
+        access::require(&engine.config.listen, access.is_set())?;
         Ok(Self {
             listener: listen(&engine.config.listen)?,
             engine,
+            access,
         })
     }
     pub fn address(&self) -> Result<SocketAddr> {
@@ -182,6 +243,7 @@ impl Api {
         self.engine.supervised.store(supervised, Ordering::Release);
         let mut workers = supervised.then(|| self.engine.start());
         let mut threads: Vec<JoinHandle<()>> = Vec::new();
+        let listener = self.listener.local_addr().map_err(|e| e.to_string())?;
         while !self.engine.stopped.load(Ordering::Acquire) {
             if supervised && (self.engine.vpn_needs_reload() || self.engine.settings_need_reload())
             {
@@ -243,8 +305,15 @@ impl Api {
             match self.listener.accept() {
                 Ok((mut stream, _)) if threads.len() < 32 => {
                     let engine = self.engine.clone();
+                    // Allowed names follow the settings the engine runs with.
+                    let gate = Gate {
+                        access: self.access.clone(),
+                        listener,
+                        allowed_hosts: engine.config.allowed_hosts.clone(),
+                    };
                     threads.push(thread::spawn(move || {
-                        let _ = connection(&mut stream, &engine);
+                        let local = local(&stream);
+                        let _ = connection(&mut stream, &engine, &gate, local);
                     }));
                 }
                 Ok((mut stream, _)) => {
@@ -367,7 +436,12 @@ fn read_request(stream: &mut TcpStream) -> Result<HttpRequest> {
         body,
     })
 }
-fn connection(stream: &mut TcpStream, engine: &Arc<Engine>) -> Result<()> {
+fn connection(
+    stream: &mut TcpStream,
+    engine: &Arc<Engine>,
+    gate: &Gate,
+    local: bool,
+) -> Result<()> {
     let HttpRequest {
         method,
         target: path,
@@ -404,13 +478,10 @@ fn connection(stream: &mut TcpStream, engine: &Arc<Engine>) -> Result<()> {
     {
         return respond_asset(stream, asset);
     }
-    if !from_this_machine(&headers) {
+    if !gate.addressed(&headers) {
         return respond(stream, 403, error(FOREIGN));
     }
-    if method == "GET" && path == "/ws" {
-        return upgrade(stream, engine, &headers);
-    }
-    if method == "POST"
+    if matches!(method.as_str(), "POST" | "DELETE")
         && !body.is_empty()
         && headers
             .get("content-type")
@@ -422,32 +493,183 @@ fn connection(stream: &mut TcpStream, engine: &Arc<Engine>) -> Result<()> {
             error("Content-Type application/json is required"),
         );
     }
+    if path == "/api/session" {
+        return session(stream, engine, gate, local, &method, &headers, &body);
+    }
+    if !gate.admitted(local, &headers) {
+        return respond(stream, 401, error(SIGN_IN));
+    }
+    if path == "/api/access" {
+        let (status, value) = match network_access(engine, gate, local, &method, &body) {
+            Ok(reply) => reply,
+            Err(e) => (400, error(&e)),
+        };
+        return respond(stream, status, value);
+    }
+    if method == "GET" && path == "/ws" {
+        return upgrade(stream, engine, &headers);
+    }
     match route(engine, &method, &path, &body) {
         Ok((status, value)) => respond(stream, status, value),
         Err(e) => respond(stream, 400, error(&e)),
     }
 }
-const FOREIGN: &str = "Mynou answers only pages and commands on this machine";
+const FOREIGN: &str = "Mynou answers only its own host names and pages; add this name to the allowed host names in Settings, Network";
+const SIGN_IN: &str = "Sign in to use Mynou from this computer";
 
-/// Whether a request comes from this machine and not from a page of another
-/// site. The `Host` must name loopback literally, so a domain rebound to
-/// loopback is refused, and an `Origin`, which browsers send with every
-/// cross-site write and socket, must be this one.
-fn from_this_machine(headers: &BTreeMap<String, String>) -> bool {
-    let host = headers.get("host").map(String::as_str).unwrap_or("");
-    local_host(host)
-        && headers
-            .get("origin")
-            .is_none_or(|origin| ws::same_origin(origin, host))
+fn password(body: &[u8]) -> Result<Option<String>> {
+    if body.len() > 4096 {
+        return Err("The password is too long".into());
+    }
+    let value = control_body(body, &["password"], false)?;
+    match value.get("password") {
+        Some(Value::String(password)) => Ok(Some(password.clone())),
+        Some(Value::Null) => Ok(None),
+        _ => Err("password must be a string or null".into()),
+    }
 }
 
-/// Whether a `Host` header names this machine literally.
-fn local_host(host: &str) -> bool {
-    let name = match host.rsplit_once(':') {
-        Some((name, port)) if !port.is_empty() && port.bytes().all(|b| b.is_ascii_digit()) => name,
-        _ => host,
+fn session_cookie(value: &str, max_age: u64) -> String {
+    format!(
+        "Set-Cookie: {}={value}; Path=/; Max-Age={max_age}; HttpOnly; SameSite=Strict\r\n",
+        access::COOKIE
+    )
+}
+
+/// Records a refused sign-in without the password: the service journal takes
+/// a fixed code, the terminal also the address.
+fn note_refusal(engine: &Engine, stream: &TcpStream, code: &str) {
+    let _ = crate::service::log(&engine.config.data_dir, code);
+    if let Ok(peer) = stream.peer_addr() {
+        eprintln!("mynou: {} from {}", code.replace('_', " "), peer.ip());
+    }
+}
+
+/// `GET` tells whether this client must and did sign in, `POST` signs in
+/// with the password and `DELETE` signs out.
+fn session(
+    stream: &mut TcpStream,
+    engine: &Engine,
+    gate: &Gate,
+    local: bool,
+    method: &str,
+    headers: &BTreeMap<String, String>,
+    body: &[u8],
+) -> Result<()> {
+    let mut value = Value::object();
+    match method {
+        "GET" => {
+            value.insert("required", !local);
+            value.insert("signed_in", gate.admitted(local, headers));
+            value.insert("password_set", gate.access.is_set());
+            respond(stream, 200, value)
+        }
+        "POST" => {
+            let password = match password(body) {
+                Ok(Some(password)) => password,
+                Ok(None) => return respond(stream, 400, error("password is required")),
+                Err(e) => return respond(stream, 400, error(&e)),
+            };
+            let peer = stream.peer_addr().map_err(|e| e.to_string())?.ip();
+            match gate.access.sign_in(peer, &password)? {
+                SignIn::Session(cookie) => {
+                    value.insert("signed_in", true);
+                    respond_with(
+                        stream,
+                        200,
+                        value,
+                        &session_cookie(&cookie, access::SESSION_SECS),
+                    )
+                }
+                SignIn::Wrong => {
+                    note_refusal(engine, stream, "sign_in_refused");
+                    respond(stream, 401, error("Wrong password"))
+                }
+                SignIn::Throttled(wait) => {
+                    note_refusal(engine, stream, "sign_in_throttled");
+                    let minutes = wait.as_secs().div_ceil(60);
+                    respond(
+                        stream,
+                        429,
+                        error(&format!(
+                            "Too many failed sign-ins: try again in {minutes} min"
+                        )),
+                    )
+                }
+                SignIn::Unset => respond(
+                    stream,
+                    403,
+                    error(
+                        "Network access has no password yet: set one in Settings, Network, on the Mac running Mynou",
+                    ),
+                ),
+            }
+        }
+        "DELETE" => {
+            value.insert("signed_in", false);
+            respond_with(stream, 200, value, &session_cookie("", 0))
+        }
+        _ => respond(stream, 404, error("Not found")),
+    }
+}
+
+/// Network access as the Settings page shows it (`GET`), and the password,
+/// which only this machine may set or remove (`POST {"password"}`, null to
+/// remove). A new password signs every other client out.
+fn network_access(
+    engine: &Engine,
+    gate: &Gate,
+    local: bool,
+    method: &str,
+    body: &[u8],
+) -> Result<(u16, Value)> {
+    let report = || {
+        let mut value = Value::object();
+        value.insert("password_set", gate.access.is_set());
+        value.insert("from_this_mac", local);
+        value.insert("listen", engine.config.listen.as_str());
+        value.insert(
+            "local_name",
+            access::local_name().map_or(Value::Null, |name| Value::String(format!("{name}.local"))),
+        );
+        value.insert(
+            "address",
+            access::network_address().map_or(Value::Null, |ip| Value::String(ip.to_string())),
+        );
+        value
     };
-    matches!(name, "127.0.0.1" | "[::1]") || name.eq_ignore_ascii_case("localhost")
+    match method {
+        "GET" => Ok((200, report())),
+        "POST" => {
+            if !local {
+                return Ok((
+                    403,
+                    error("Change the network access password on the Mac running Mynou"),
+                ));
+            }
+            let credentials = match password(body)? {
+                Some(password) => Some(access::Credentials::new(&password)?),
+                None => {
+                    let saved = lock(&engine.saved_settings)?
+                        .as_ref()
+                        .and_then(|document| document.get("listen")?.as_str().map(String::from));
+                    if !access::loopback(&engine.config.listen)
+                        || saved.is_some_and(|listen| !access::loopback(&listen))
+                    {
+                        return Ok((
+                            409,
+                            error("Turn off network access before removing its password"),
+                        ));
+                    }
+                    None
+                }
+            };
+            lock(&engine.store)?.save_access(credentials.as_ref())?;
+            gate.access.replace(credentials);
+            Ok((200, report()))
+        }
+        _ => Ok((404, error("Not found"))),
+    }
 }
 pub(crate) fn route(
     engine: &Arc<Engine>,
@@ -1241,6 +1463,15 @@ fn upgrade(
 fn respond(stream: &mut TcpStream, status: u16, value: Value) -> Result<()> {
     respond_within(stream, status, value, RESPONSE_DEADLINE)
 }
+fn respond_with(stream: &mut TcpStream, status: u16, value: Value, extra: &str) -> Result<()> {
+    write_response(
+        stream,
+        status,
+        &json::stringify(&value),
+        extra,
+        RESPONSE_DEADLINE,
+    )
+}
 fn respond_within(
     stream: &mut TcpStream,
     status: u16,
@@ -1256,6 +1487,15 @@ fn respond_body_within(
     body: &str,
     limit: Duration,
 ) -> Result<()> {
+    write_response(stream, status, body, "", limit)
+}
+fn write_response(
+    stream: &mut TcpStream,
+    status: u16,
+    body: &str,
+    extra: &str,
+    limit: Duration,
+) -> Result<()> {
     let reason = match status {
         200 => "OK",
         201 => "Created",
@@ -1263,12 +1503,14 @@ fn respond_body_within(
         401 => "Unauthorized",
         403 => "Forbidden",
         404 => "Not Found",
+        409 => "Conflict",
         415 => "Unsupported Media Type",
+        429 => "Too Many Requests",
         503 => "Service Unavailable",
         _ => "Error",
     };
     let head = format!(
-        "HTTP/1.1 {status} {reason}\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nX-Frame-Options: DENY\r\nContent-Security-Policy: frame-ancestors 'none'\r\n\r\n",
+        "HTTP/1.1 {status} {reason}\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nX-Frame-Options: DENY\r\nContent-Security-Policy: frame-ancestors 'none'\r\n{extra}\r\n",
         body.len()
     );
     let deadline = Instant::now() + limit;
@@ -1444,22 +1686,39 @@ mod tests {
         assert!(body.starts_with("{\"data\":\"aaaa"));
         assert!(body.ends_with("\"}"));
     }
+    fn headers(host: &str, origin: Option<&str>) -> BTreeMap<String, String> {
+        let mut headers = BTreeMap::from([("host".to_owned(), host.to_owned())]);
+        if let Some(origin) = origin {
+            headers.insert("origin".to_owned(), origin.to_owned());
+        }
+        headers
+    }
+    fn gate(listener: &str, allowed: &[&str]) -> Gate {
+        Gate {
+            access: Arc::new(Access::default()),
+            listener: listener.parse().unwrap(),
+            allowed_hosts: allowed.iter().map(|name| name.to_string()).collect(),
+        }
+    }
     #[test]
-    fn only_requests_from_this_machine_are_answered() {
-        let headers = |host: &str, origin: Option<&str>| {
-            let mut headers = BTreeMap::from([("host".to_owned(), host.to_owned())]);
-            if let Some(origin) = origin {
-                headers.insert("origin".to_owned(), origin.to_owned());
-            }
-            headers
-        };
+    fn only_requests_addressed_to_this_listener_are_answered() {
+        let loopback = gate("127.0.0.1:8787", &[]);
+        let lan = gate("192.0.2.10:80", &["mynou.example"]);
         for (host, origin) in [
             ("127.0.0.1:8787", None),
             ("localhost:8787", Some("http://localhost:8787")),
             ("LOCALHOST", None),
             ("[::1]:8787", Some("http://[::1]:8787")),
         ] {
-            assert!(from_this_machine(&headers(host, origin)), "{host}");
+            assert!(loopback.addressed(&headers(host, origin)), "{host}");
+            assert!(lan.addressed(&headers(host, origin)), "{host}");
+        }
+        for (host, origin) in [
+            ("192.0.2.10", Some("http://192.0.2.10")),
+            ("mynou.example", None),
+        ] {
+            assert!(!loopback.addressed(&headers(host, origin)), "{host}");
+            assert!(lan.addressed(&headers(host, origin)), "{host}");
         }
         // A rebound name, another machine's address or a page of another site.
         for (host, origin) in [
@@ -1470,12 +1729,160 @@ mod tests {
             ("192.168.1.2:8787", None),
             ("127.0.0.1:8787", Some("http://evil.example")),
             ("127.0.0.1:8787", Some("null")),
+            ("mynou.example", Some("http://evil.example")),
+            ("192.0.2.10", Some("http://192.0.2.10:8080")),
         ] {
             assert!(
-                !from_this_machine(&headers(host, origin)),
+                !loopback.addressed(&headers(host, origin)),
                 "{host} {origin:?}"
             );
+            assert!(!lan.addressed(&headers(host, origin)), "{host} {origin:?}");
         }
+    }
+    /// One request to `connection`, as from this machine or another one.
+    fn exchange(
+        engine: &Arc<Engine>,
+        gate: &Gate,
+        local: bool,
+        request: &str,
+    ) -> (u16, String, Value) {
+        let (mut server, mut client) = loopback();
+        client.write_all(request.as_bytes()).unwrap();
+        connection(&mut server, engine, gate, local).unwrap();
+        drop(server);
+        let mut text = String::new();
+        client.read_to_string(&mut text).unwrap();
+        let (head, body) = text.split_once("\r\n\r\n").unwrap();
+        (
+            head[9..12].parse().unwrap(),
+            head.to_owned(),
+            json::parse(body).unwrap(),
+        )
+    }
+    #[test]
+    fn other_machines_sign_in_and_this_one_needs_not() {
+        let root = std::env::temp_dir()
+            .canonicalize()
+            .unwrap()
+            .join(format!("mynou-access-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let mut value = crate::config::default_json();
+        value.insert("listen", "127.0.0.1:0");
+        let mut config = crate::config::from_json(&value, &root).unwrap();
+        config.downloads_enabled = false;
+        let engine = Engine::open(config).unwrap();
+        // Listening on the network without a password is refused.
+        value.insert("listen", "0.0.0.0:80");
+        let mut body = Value::object();
+        body.insert("settings", value.clone());
+        let error = engine.update_settings(&body).err().unwrap();
+        assert!(error.contains("without a password"), "{error}");
+
+        let credentials = access::Credentials::with_iterations("correct horse battery", 2).unwrap();
+        lock(&engine.store)
+            .unwrap()
+            .save_access(Some(&credentials))
+            .unwrap();
+        assert!(engine.update_settings(&body).is_ok());
+        let mut gate = gate("192.0.2.10:80", &["mynou.example"]);
+        gate.access = Arc::new(Access::new(Some(credentials)));
+        let get = |path: &str, extra: &str, local: bool| {
+            exchange(
+                &engine,
+                &gate,
+                local,
+                &format!("GET {path} HTTP/1.1\r\nHost: mynou.example\r\n{extra}\r\n"),
+            )
+        };
+        let post = |path: &str, body: &str, extra: &str, local: bool| {
+            exchange(
+                &engine,
+                &gate,
+                local,
+                &format!(
+                    "POST {path} HTTP/1.1\r\nHost: mynou.example\r\nContent-Type: application/json\r\nContent-Length: {}\r\n{extra}\r\n{body}",
+                    body.len()
+                ),
+            )
+        };
+        assert_eq!(get("/healthz", "", false).0, 200);
+        assert_eq!(get("/api/status", "", false).0, 401);
+        assert_eq!(get("/ws", "Upgrade: websocket\r\n", false).0, 401);
+        assert_eq!(get("/api/status", "", true).0, 200);
+        let (status, _, report) = get("/api/session", "", false);
+        assert_eq!(status, 200);
+        assert_eq!(
+            json::stringify(&report),
+            r#"{"password_set":true,"required":true,"signed_in":false}"#
+        );
+
+        assert_eq!(
+            post(
+                "/api/session",
+                r#"{"password":"wrong password"}"#,
+                "",
+                false
+            )
+            .0,
+            401
+        );
+        let (status, head, _) = post(
+            "/api/session",
+            r#"{"password":"correct horse battery"}"#,
+            "",
+            false,
+        );
+        assert_eq!(status, 200);
+        let cookie = head
+            .lines()
+            .find_map(|line| line.strip_prefix("Set-Cookie: "))
+            .unwrap();
+        assert!(
+            cookie.ends_with("; Path=/; Max-Age=2592000; HttpOnly; SameSite=Strict"),
+            "{cookie}"
+        );
+        let session = format!("Cookie: {}\r\n", cookie.split(';').next().unwrap());
+        assert_eq!(get("/api/status", &session, false).0, 200);
+        // A rebound name or a page of another site, even with a session.
+        let (status, _, _) = exchange(
+            &engine,
+            &gate,
+            false,
+            &format!("GET /api/status HTTP/1.1\r\nHost: evil.example\r\n{session}\r\n"),
+        );
+        assert_eq!(status, 403);
+        assert_eq!(
+            post(
+                "/api/sync",
+                "{}",
+                &format!("{session}Origin: http://evil.example\r\n"),
+                false
+            )
+            .0,
+            403
+        );
+
+        // Only this machine changes the password; reports never show it.
+        let (status, _, report) = get("/api/access", &session, false);
+        assert_eq!(status, 200);
+        assert!(!json::stringify(&report).contains("pbkdf2"));
+        assert_eq!(report.get("from_this_mac"), Some(&Value::Bool(false)));
+        assert_eq!(
+            post("/api/access", r#"{"password":null}"#, &session, false).0,
+            403
+        );
+        // The saved settings listen on the network: the password stays.
+        assert_eq!(post("/api/access", r#"{"password":null}"#, "", true).0, 409);
+        value.insert("listen", "127.0.0.1:0");
+        body.insert("settings", value);
+        engine.update_settings(&body).unwrap();
+        assert_eq!(post("/api/access", r#"{"password":null}"#, "", true).0, 200);
+        assert!(lock(&engine.store).unwrap().access().unwrap().is_none());
+        assert_eq!(get("/api/status", &session, false).0, 401);
+        engine.stopped.store(true, Ordering::Release);
+        drop(engine);
+        let _ = std::fs::remove_dir_all(&root);
     }
     #[test]
     fn the_startup_listener_reports_migration_progress_and_refuses_other_routes() {
@@ -1484,7 +1891,7 @@ mod tests {
         value.insert("listen", "127.0.0.1:0");
         let mut config = crate::config::from_json(&value, &root).unwrap();
         config.store_dir = root.join("store");
-        let startup = Startup::bind(&config).unwrap();
+        let startup = Startup::bind(&config, Arc::new(Access::default())).unwrap();
         let address = startup.address().unwrap();
         let tracker = crate::progress::Tracker::start(&config.store_dir, "series", Some(10));
         tracker.stage("copying", 4);

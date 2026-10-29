@@ -106,8 +106,9 @@ mynou serve
 It keeps its data in `~/Library/Application Support/Mynou` (use `--dir DIR` or
 `MYNOU_HOME` for another place) and creates that folder on first start.
 
-**2. Open <http://127.0.0.1:8787/>**. There is no account or sign-in: Mynou
-listens on your Mac alone.
+**2. Open <http://127.0.0.1:8787/>**. There is no account or sign-in on your
+Mac. To use Mynou from other computers on your network, see
+[network access](docs/macos.md#network-access).
 
 **3. Open the Settings view** and turn on what you use. Plex and TMDB start
 disabled:
@@ -149,11 +150,13 @@ HTML, CSS and JavaScript embedded in the executable, with no build step.
   of a followed series, **Choose a release** lists what the indexers offer,
   with why each release was kept or rejected, and downloads the one you pick.
 
-It has no sign-in, so it listens on a loopback address only and answers pages
-and commands of this Mac, never a page of another site.
+By default it listens on a loopback address only and answers pages and
+commands of this Mac, without sign-in, never a page of another site. Settings,
+Network can open it to your local network: other computers then sign in with a
+password ([network access](docs/macos.md#network-access)).
 
-Everything is also available over HTTP from this Mac: `/api` routes, and
-`/healthz` and `/readyz` for health.
+Everything is also available over HTTP: `/api` routes, and `/healthz` and
+`/readyz` for health.
 
 ## Features
 

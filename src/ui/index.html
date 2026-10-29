@@ -19,6 +19,7 @@
   <link rel="modulepreload" href="/js/store.js">
   <link rel="modulepreload" href="/js/sources.js">
   <link rel="modulepreload" href="/js/router.js">
+  <link rel="modulepreload" href="/js/session.js">
   <link rel="modulepreload" href="/js/dashboard.js">
   <link rel="modulepreload" href="/js/library.js">
   <link rel="modulepreload" href="/js/jobs.js">
@@ -195,6 +196,10 @@
             <div class="setting-intro"><h2>VPN</h2><p class="hint">Torrents go through your WireGuard tunnel. Plex, TMDB and this page do not.</p></div>
             <div id="settings-vpn" class="setting-list"></div>
           </section>
+          <section class="setting-group" data-page="network">
+            <div class="setting-intro"><h2>Network access</h2><p class="hint">Use Mynou from other computers on your local network. Other computers sign in with a password; this Mac never needs to.</p></div>
+            <div id="settings-network" class="setting-list"></div>
+          </section>
           <section class="setting-group" data-page="indexers">
             <div class="setting-intro"><h2>Indexers</h2><p class="hint">Where Mynou looks for releases.</p></div>
             <div class="setting-list">
@@ -216,6 +221,18 @@
   </div>
 
   <nav id="mobile-nav" class="mobile-nav" aria-label="Main views"></nav>
+
+  <dialog id="sign-in" aria-labelledby="sign-in-title">
+    <form id="sign-in-form" class="sheet">
+      <h2 id="sign-in-title">Sign in to Mynou</h2>
+      <p class="muted">This computer reaches Mynou over the network. Enter the password set on the Mac running it.</p>
+      <label class="field">Password
+        <input name="password" type="password" autocomplete="current-password" required maxlength="1024">
+      </label>
+      <p id="sign-in-error" class="error" role="alert"></p>
+      <div class="actions"><button class="primary">Sign in</button></div>
+    </form>
+  </dialog>
 
   <dialog id="detail" aria-labelledby="detail-title">
     <header class="detail-hero">

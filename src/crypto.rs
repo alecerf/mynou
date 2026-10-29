@@ -82,6 +82,35 @@ fn hmac_parts(key: &[u8], messages: &[&[u8]]) -> [u8; 32] {
     outer.finalize()
 }
 
+/// The first 32-byte block of PBKDF2-HMAC-SHA256 (RFC 8018). The padded key
+/// states are hashed once, so each iteration costs two compressions.
+pub fn pbkdf2_sha256(password: &[u8], salt: &[u8], iterations: u32) -> [u8; 32] {
+    let mut normalized = [0u8; 64];
+    if password.len() > normalized.len() {
+        normalized[..32].copy_from_slice(&sha256(password));
+    } else {
+        normalized[..password.len()].copy_from_slice(password);
+    }
+    let mut inner = Sha256::new();
+    let mut outer = Sha256::new();
+    inner.update(&normalized.map(|b| b ^ 0x36));
+    outer.update(&normalized.map(|b| b ^ 0x5c));
+    let mac = |message: &[&[u8]]| {
+        let mut hash = inner.clone();
+        message.iter().for_each(|part| hash.update(part));
+        let mut result = outer.clone();
+        result.update(&hash.finalize());
+        result.finalize()
+    };
+    let mut block = mac(&[salt, &1u32.to_be_bytes()]);
+    let mut output = block;
+    for _ in 1..iterations {
+        block = mac(&[&block]);
+        output.iter_mut().zip(block).for_each(|(o, b)| *o ^= b);
+    }
+    output
+}
+
 pub fn hkdf_extract(salt: &[u8], input_key_material: &[u8]) -> [u8; 32] {
     hmac_sha256(salt, input_key_material)
 }
@@ -136,6 +165,22 @@ mod tests {
             )
             .as_slice(),
             bytes("60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54")
+        );
+    }
+    #[test]
+    fn pbkdf2_rfc7914() {
+        assert_eq!(
+            pbkdf2_sha256(b"passwd", b"salt", 1).as_slice(),
+            bytes("55ac046e56e3089fec1691c22544b605f94185216dde0465e68b9d57c20dacbc")
+        );
+        assert_eq!(
+            pbkdf2_sha256(b"Password", b"NaCl", 80000).as_slice(),
+            bytes("4ddcd8f60b98be21830cee5ef22701f9641a4418d04c0414aeff08876b34ab56")
+        );
+        // A password longer than a block is hashed first, as in HMAC.
+        assert_eq!(
+            pbkdf2_sha256(&[b'p'; 100], b"salt", 2).as_slice(),
+            bytes("7fb39a0c2291de62231e50ab5f6805b83bab97446d73dccf38114fb21c055427")
         );
     }
     #[test]

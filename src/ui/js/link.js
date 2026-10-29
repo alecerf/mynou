@@ -8,10 +8,19 @@ class Link extends EventTarget {
   #attempt = 0;
   #timer = 0;
   #extra = new Set();   // topics a sheet watches while it is open
+  #stopped = false;
   state = 'closed';
 
   connect() {
+    this.#stopped = false;
     this.#open();
+  }
+
+  /** Closes the socket and stops reconnecting until `connect`. */
+  disconnect() {
+    this.#stopped = true;
+    clearTimeout(this.#timer);
+    this.#socket?.close(1000);
   }
 
   #setState(state) {
@@ -37,6 +46,7 @@ class Link extends EventTarget {
       for (const { reject } of this.#pending.values()) reject(new Error('Connection lost'));
       this.#pending.clear();
       this.#setState('closed');
+      if (this.#stopped) return;
       const delay = Math.min(15000, 500 * 2 ** this.#attempt++) * (0.7 + Math.random() * 0.6);
       this.#timer = setTimeout(() => this.#open(), delay);
     });

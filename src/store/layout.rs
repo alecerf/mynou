@@ -83,6 +83,8 @@ pub(super) const SETTINGS_KEY: Key = single(T_META, 13);
 pub(super) const SECRETS_KEY: Key = single(T_META, 14);
 // single(T_META, 15) held the digest of the API access token, removed with
 // the sign-in; older stores may still carry it, so it is not reused.
+/// The network access password hash and session key; null once removed.
+pub(super) const ACCESS_KEY: Key = single(T_META, 16);
 pub(super) const MIGRATION_SOURCE_KEY: Key = single(T_MIGRATION, 0);
 pub(super) const MIGRATION_CURSOR_KEY: Key = single(T_MIGRATION, 1);
 

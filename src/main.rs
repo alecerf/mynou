@@ -271,7 +271,11 @@ fn execute(args: Args) -> Result<()> {
     }
     ensure_data_dir(&path)?;
     // The listener answers health and migration progress while storage opens.
-    let startup = mynou::server::Startup::bind(&config)?;
+    let access = mynou::access::stored(&config.store_dir)?;
+    let startup = mynou::server::Startup::bind(
+        &config,
+        std::sync::Arc::new(mynou::access::Access::new(access)),
+    )?;
     record_endpoint(&path, startup.address()?)?;
     if !supervised {
         eprintln!(

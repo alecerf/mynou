@@ -59,7 +59,8 @@ Gluetun-protected source requires this explicit setting on every indexer and IRC
 source; an omitted field preserves ordinary discovery behavior. See
 [protected sources](protected-sources.md) for configuration, readiness and recovery.
 Plex, catalog and the management API retain ordinary/LAN networking. The local
-API is plain HTTP and answers only this machine, without signing in. Protected connectors ignore environment HTTP proxies.
+API is plain HTTP and answers this machine without signing in; other machines
+sign in once [network access](macos.md#network-access) is on. Protected connectors ignore environment HTTP proxies.
 
 The host sends outer encrypted UDP to the configured literal VPN endpoint.
 The VPN server and the ISP can see the outer connection's source IP. The VPN

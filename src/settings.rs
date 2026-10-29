@@ -57,6 +57,7 @@ impl Engine {
     pub fn update_settings(&self, body: &Value) -> Result<Value> {
         let document = document(body)?;
         let config = config::from_json(document, &self.config.data_dir)?;
+        crate::access::require(&config.listen, lock(&self.store)?.access()?.is_some())?;
         *lock(&self.settings_error)? = None;
         let mut value = Value::object();
         if self.supervised.load(Ordering::Acquire) {

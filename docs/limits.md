@@ -121,9 +121,11 @@ a DHT client and PEX reception. Peer data uses TCP only.
   and HTTP CONNECT proxies (`HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`); local
   management commands bypass the proxy. HTTP/2 and HTTP/3 are not supported.
 - The API accepts HTTP/1.1 requests with a declared content length and bodies
-  up to 1 MiB; it rejects chunked request bodies and ambiguous headers. It has
-  no sign-in: `listen` must be a loopback address, and a request must name
-  loopback in its `Host` and carry no other site's `Origin`.
+  up to 1 MiB; it rejects chunked request bodies and ambiguous headers. A request
+  must name an allowed host in its `Host` and carry no other site's `Origin`.
+  This machine needs no sign-in; a `listen` address other than loopback needs a
+  password, and other machines sign in with it
+  ([network access](macos.md#network-access)).
 - The TLS client supports TLS 1.3 with X25519 and ChaCha20-Poly1305/SHA-256,
   and TLS 1.2 for servers without it: ECDHE with X25519 or P-256,
   AES-128-GCM or ChaCha20-Poly1305 with the SHA-256 PRF, secure renegotiation
