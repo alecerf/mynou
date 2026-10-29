@@ -18,9 +18,10 @@ use crate::xml::{MAX_XML, parse_xml};
 
 /// Items of one parsed response or one catalog plan; never an inventory total.
 const MAX_ITEMS: usize = 100_000;
-/// Items requested per Plex page. Listings are read page by page under a
-/// deadline, so no total item or page count applies.
-const PAGE_SIZE: usize = 200;
+/// Items requested per Plex page, at most what the watchlist service accepts:
+/// it refuses 200. Listings are read page by page under a deadline, so no
+/// total item or page count applies.
+const PAGE_SIZE: usize = 100;
 const SEARCH_BUDGET: Duration = Duration::from_secs(90);
 const SEARCH_EXPIRED: &str = "Search: indexer search exceeded its time budget";
 /// The outcome of a requester account poll that ran out of time, before or
@@ -563,10 +564,29 @@ fn fetch_json_before(
             }
         })?;
     if !(200..300).contains(&response.status) {
-        return Err(format!("Plex: HTTP response {}", response.status));
+        return Err(match plex_refusal(&response.body) {
+            Some(reason) => format!("Plex: HTTP response {}: {reason}", response.status),
+            None => format!("Plex: HTTP response {}", response.status),
+        });
     }
     json::parse(std::str::from_utf8(&response.body).map_err(|_| "Plex: invalid UTF-8")?)
         .map_err(|_| "Plex: invalid JSON response".into())
+}
+
+/// The reason Plex gives with a refusal, `{"Error":{"message"}}` or
+/// `{"errors":[{"message"}]}`, shortened to one printable line.
+fn plex_refusal(body: &[u8]) -> Option<String> {
+    let value = json::parse(std::str::from_utf8(body).ok()?).ok()?;
+    let message = value
+        .get("Error")
+        .and_then(|e| string(e, "message"))
+        .or_else(|| string(value.get("errors")?.as_array()?.first()?, "message"))?;
+    let line: String = message
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(200)
+        .collect();
+    (!line.trim().is_empty()).then_some(line)
 }
 /// The next page of a requester account's watchlist sweep, after confirming
 /// that the account token still belongs to the expected Plex user.

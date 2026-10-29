@@ -573,12 +573,12 @@ fn plex_availability_scans_listings_beyond_the_former_item_limit_one_page_at_a_t
     config.plex.token_override = Some("fixture".into());
     // The only playable copy is item 100,001: every page is read in turn.
     assert!(integrations::available(&config, &movie()).unwrap());
-    assert_eq!(served.load(Ordering::Acquire), 501);
+    assert_eq!(served.load(Ordering::Acquire), 1001);
     let mut absent = movie();
     absent.tmdb_id = Some(7);
     served.store(0, Ordering::Release);
     assert!(!integrations::available(&config, &absent).unwrap());
-    assert_eq!(served.load(Ordering::Acquire), 501);
+    assert_eq!(served.load(Ordering::Acquire), 1001);
     // A match on the first page stops reading at once.
     let mut listing_now = items.lock().unwrap();
     let last = listing_now.pop().unwrap();

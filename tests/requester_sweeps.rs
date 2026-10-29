@@ -266,7 +266,7 @@ fn an_entry_that_cannot_be_resolved_keeps_the_entries_before_it() {
 fn the_single_account_watchlist_resumes_its_sweep_across_passes_and_restarts() {
     let dir = Directory::new();
     let accounts = Accounts::open();
-    accounts.watchlist("alice", movies(0..1_700));
+    accounts.watchlist("alice", movies(0..850));
     let mut cfg = accounts.config(&dir.0);
     cfg.requesters.accounts.clear();
     cfg.plex.enabled = true;
@@ -283,11 +283,11 @@ fn the_single_account_watchlist_resumes_its_sweep_across_passes_and_restarts() {
             .count()
     };
     let engine = Engine::open_for_management(cfg.clone()).unwrap();
-    assert_eq!(engine.sync().unwrap(), 200 + 7 * 199);
+    assert_eq!(engine.sync().unwrap(), 100 + 7 * 99);
     assert_eq!(reads(), 8);
     drop(engine);
     let engine = Engine::open_for_management(cfg).unwrap();
-    assert_eq!(engine.sync().unwrap(), 1_700 - (200 + 7 * 199));
+    assert_eq!(engine.sync().unwrap(), 850 - (100 + 7 * 99));
     assert_eq!(reads(), 9);
     // The next sweep starts from the top; submissions are idempotent.
     assert_eq!(engine.sync().unwrap(), 0);

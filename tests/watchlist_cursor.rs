@@ -10,7 +10,7 @@ use requester_support::{Accounts, movie};
 fn a_single_account_sweep_resumes_before_any_job_was_submitted() {
     let dir = Directory::new();
     let accounts = Accounts::open();
-    let mut items: Vec<_> = (0..1_699)
+    let mut items: Vec<_> = (0..849)
         .map(|id| {
             let mut item = Value::object();
             item.insert("type", "artist");
