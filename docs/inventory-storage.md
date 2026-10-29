@@ -291,8 +291,8 @@ range. What the numbers do not show:
 - A one-record commit is bound by its single `F_FULLFSYNC` (about 3–4 ms on
   this drive) in every engine; the differences there are small.
 - Point reads and scans spend about half their time in `pread`. LMDB maps the
-  file into memory, which needs `unsafe` and turns I/O errors into crashes;
-  the only `unsafe` allowed here is for the SHA instructions.
+  file into memory, which needs `unsafe` and turns I/O errors into crashes,
+  so the inventory keeps `pread`.
 - Closing now costs a checkpoint, about five flushes; the next open does no
   work. The 0.26 store had nothing to flush at close.
 - The disk total includes the redo log, which holds up to 64 MiB of records

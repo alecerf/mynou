@@ -276,8 +276,9 @@ The executable is `target/release/mynou`.
 
 Bug reports and feature ideas are welcome through the
 [issue templates](https://github.com/alecerf/mynou/issues/new/choose). Product
-code stays on the Rust standard library: no dependency, no external helper,
-and no `unsafe` outside `src/crypto/sha_arm.rs`.
+code stays on the Rust standard library: no dependency and no external helper.
+`unsafe` is allowed where the standard library offers no safe way, such as
+processor intrinsics; see [architecture](docs/architecture.md).
 
 Found a vulnerability? Do not open a public issue; follow
 [SECURITY.md](SECURITY.md).

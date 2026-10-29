@@ -18,6 +18,12 @@ blocks call `#[target_feature]` functions, and the module is compiled only
 when the build enables those instructions. The portable compressors remain
 the fallback on other targets and the reference its tests compare against.
 
+`unsafe` is acceptable when it is needed, for example for processor
+intrinsics that safe code cannot reach. The SHA module shows the preferred
+shape: the smallest dedicated module opted in with `#[allow(unsafe_code)]`,
+a portable safe fallback, and tests that compare the two. The binary keeps
+`#![forbid(unsafe_code)]`.
+
 | Former component | Rust replacement |
 | --- | --- |
 | Go BitTorrent engine | `src/torrent.rs` and `src/torrent/` |
