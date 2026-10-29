@@ -11,6 +11,7 @@ use crate::{
     json::Value,
 };
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 
 fn document(body: &Value) -> Result<&Value> {
@@ -19,18 +20,57 @@ fn document(body: &Value) -> Result<&Value> {
         .ok_or_else(|| "settings must be an object".to_owned())
 }
 
+/// The folders a person types: full paths on the machine running Mynou.
+const FOLDERS: [(&str, &str, &str); 3] = [
+    ("library", "movies_root", "Movies folder"),
+    ("library", "series_root", "Series folder"),
+    ("downloads", "data_dir", "Download folder"),
+];
+
+/// The document with its folders as full paths on this machine: `~/` is the
+/// home folder, and a relative path, as in the defaults and older documents,
+/// is under the data directory. A folder may not be a file.
+fn full_folders(mut document: Value, data_dir: &Path) -> Result<Value> {
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    for (section, key, label) in FOLDERS {
+        let Some(Value::String(folder)) = document.get_mut(section).and_then(|s| s.get_mut(key))
+        else {
+            continue;
+        };
+        let typed = folder.trim();
+        let path = match (typed.strip_prefix("~/"), &home) {
+            (Some(rest), Some(home)) => home.join(rest),
+            _ => PathBuf::from(typed),
+        };
+        let path = config::path(data_dir, path.to_string_lossy().into_owned())?;
+        if path.exists() && !path.is_dir() {
+            return Err(format!(
+                "{label}: {} is a file, not a folder",
+                path.display()
+            ));
+        }
+        *folder = path.to_string_lossy().into_owned();
+    }
+    Ok(document)
+}
+
 impl Engine {
-    /// Saved settings (or the defaults), the document the engine runs with,
-    /// and whether a change is still applying or failed to apply.
-    pub fn settings(&self) -> Result<Value> {
+    /// The settings being applied, else the saved ones, else the defaults,
+    /// with full folder paths.
+    pub(crate) fn current_settings(&self) -> Result<Value> {
         let saved = lock(&self.saved_settings)?.clone();
         let pending = lock(&self.pending_settings)?
             .as_ref()
             .map(|config| config.document.clone());
-        let current = pending
-            .clone()
-            .or(saved)
-            .unwrap_or_else(config::default_json);
+        let current = pending.or(saved).unwrap_or_else(config::default_json);
+        Ok(full_folders(current.clone(), &self.config.data_dir).unwrap_or(current))
+    }
+
+    /// Saved settings (or the defaults), the document the engine runs with,
+    /// and whether a change is still applying or failed to apply.
+    pub fn settings(&self) -> Result<Value> {
+        let pending = lock(&self.pending_settings)?.is_some();
+        let current = self.current_settings()?;
         let mut value = Value::object();
         value.insert(
             "restart_required",
@@ -38,12 +78,15 @@ impl Engine {
         );
         value.insert("settings", current);
         value.insert("active", self.config.document.clone());
-        value.insert("defaults", config::default_json());
+        value.insert(
+            "defaults",
+            full_folders(config::default_json(), &self.config.data_dir)?,
+        );
         value.insert(
             "data_dir",
             self.config.data_dir.to_string_lossy().into_owned(),
         );
-        value.insert("applying", pending.is_some());
+        value.insert("applying", pending);
         value.insert(
             "error",
             lock(&self.settings_error)?
@@ -55,9 +98,13 @@ impl Engine {
 
     /// Validates and saves a whole settings document (`{"settings": {...}}`).
     pub fn update_settings(&self, body: &Value) -> Result<Value> {
-        let document = document(body)?;
+        let document = &full_folders(document(body)?.clone(), &self.config.data_dir)?;
         let config = config::from_json(document, &self.config.data_dir)?;
-        crate::access::require(&config.listen, lock(&self.store)?.access()?.is_some())?;
+        crate::access::require(
+            &config.listen,
+            lock(&self.store)?.access()?.is_some(),
+            config.local_network_open,
+        )?;
         *lock(&self.settings_error)? = None;
         let mut value = Value::object();
         if self.supervised.load(Ordering::Acquire) {

@@ -21,21 +21,20 @@ const SETTING_PAGES = [
 const MB = 1_000_000;
 const SETTING_GROUPS = [
   ['library', 'Library', 'Where finished films and series are filed.', [
-    ['library.movies_root', 'Movies folder', 'text'],
-    ['library.series_root', 'Series folder', 'text'],
+    ['library.movies_root', 'Movies folder', 'text', { folder: true, hint: 'A full path on the Mac running Mynou.' }],
+    ['library.series_root', 'Series folder', 'text', { folder: true, hint: 'A full path on the Mac running Mynou.' }],
   ]],
   ['downloads', 'Downloads', 'How the built-in client fetches releases.', [
-    ['downloads.data_dir', 'Download folder', 'text'],
+    ['downloads.data_dir', 'Download folder', 'text', { folder: true, hint: 'A full path on the Mac running Mynou.' }],
     ['downloads.max_active', 'Downloads at once', 'number'],
     ['downloads.max_peers', 'Peers per download', 'number', { hint: 'More peers, faster downloads. Up to 256, shared between active downloads.' }],
     ['downloads.download_limit_bps', 'Download speed limit', 'number', { scale: MB, unit: 'MB/s', zero: 'No limit' }],
     ['downloads.upload_limit_bps', 'Upload speed limit', 'number', { scale: MB, unit: 'MB/s', zero: 'No limit' }],
   ]],
   ['services', 'Plex', 'Your server and its watchlist.', [
-    ['plex.url', 'Server address', 'text'],
-    ['plex.token_env', 'Token', 'secret'],
-    ['plex.movies_section', 'Movies section', 'text', { hint: 'The library number shown in Plex.' }],
-    ['plex.series_section', 'Series section', 'text'],
+    ['plex.server', 'Server', 'plex'],
+    ['plex.movies_section', 'Films go to', 'section', { kind: 'movie' }],
+    ['plex.series_section', 'Series go to', 'section', { kind: 'show' }],
     ['plex.watchlist', 'Watchlist', 'sync'],
   ]],
   ['services', 'TMDB', 'Titles, years and episode lists.', [
@@ -49,7 +48,7 @@ const SETTING_GROUPS = [
   ]],
 ];
 const INDEXER_KINDS = ['torznab', 'json', 'rss'];
-const settings = { report: null, document: null, secrets: [], access: null, loading: false };
+const settings = { report: null, document: null, secrets: [], access: null, loading: false, plexSections: null };
 
 const getPath = (object, path) => path.split('.').reduce((value, key) => value?.[key], object);
 function setPath(object, path, value) {
@@ -81,6 +80,103 @@ const shown = (value, type, scale = 1) => {
   return type === 'number' ? String(Math.round((Number(value) / scale) * 100) / 100) : String(value);
 };
 
+// Plex connects in one click: Plex's own page signs in, then a server is chosen.
+const plexConnected = () => Boolean(settingValue('plex.enabled')) && secretSource(String(settingValue('plex.token_env') ?? '')) !== 'missing';
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function plexRows() {
+  const connected = plexConnected();
+  const account = h('div', { class: 'setting-row toggle', id: 'plex-account' },
+    h('div', { class: 'setting-label' },
+      h('span', {}, connected ? 'Server' : 'Account', h('span', { class: 'badge', dataset: { tone: connected ? 'ok' : 'warn' } }, connected ? 'Connected' : 'Not connected')),
+      h('p', { class: 'hint' }, connected ? String(settingValue('plex.url') ?? '') : 'Sign in with Plex, then Mynou finds your server and its libraries.')),
+    h('span', { class: 'secret' }, connected
+      ? [h('button', { type: 'button', class: 'secondary', dataset: { plexAct: 'servers' } }, 'Change server'),
+        h('button', { type: 'button', class: 'ghost danger', dataset: { plexAct: 'disconnect' } }, 'Disconnect')]
+      // Signed in without a server yet: only the choice remains.
+      : secretSource(String(settingValue('plex.token_env') ?? '')) === 'missing'
+        ? h('button', { type: 'button', dataset: { plexAct: 'connect' } }, 'Connect to Plex')
+        : [h('button', { type: 'button', dataset: { plexAct: 'servers' } }, 'Choose a server'),
+          h('button', { type: 'button', class: 'ghost danger', dataset: { plexAct: 'disconnect' } }, 'Disconnect')]));
+  const servers = h('div', { class: 'setting-row', id: 'plex-servers', hidden: true },
+    h('div', { class: 'setting-label' }, h('span', {}, 'Choose a server'), h('p', { class: 'hint' }, 'The account owns several.')),
+    h('span', { class: 'secret', dataset: { list: '' } }));
+  const fragment = document.createDocumentFragment();
+  fragment.append(account, servers);
+  return fragment;
+}
+
+/** Sections the server offers for films or series; the saved one until they load. */
+function sectionOptions(select, kind) {
+  const value = select.dataset.shown;
+  const sections = (settings.plexSections ?? []).filter((s) => s.type === kind);
+  const options = sections.some((s) => s.key === value) || !value ? sections : [{ key: value, title: `Section ${value}` }, ...sections];
+  select.replaceChildren(...options.map((s) => h('option', { value: s.key, selected: s.key === value }, s.title)));
+}
+
+async function loadPlexSections() {
+  if (!plexConnected()) return;
+  try {
+    settings.plexSections = itemsOf((await link.http('GET', '/api/plex/sections')).sections);
+  } catch { return; /* the saved numbers stay shown */ }
+  for (const select of $('#settings-form').querySelectorAll('select[data-kind]')) sectionOptions(select, select.dataset.kind);
+}
+
+async function connectPlex() {
+  if (!$('#save-bar').hidden) throw new Error('Save or discard your changes first');
+  // The window opens on the click itself, or the browser blocks it.
+  const popup = open('', 'plex-sign-in', 'popup,width=560,height=720');
+  if (!popup) throw new Error('Allow pop-ups for Mynou, then connect again');
+  try {
+    const pin = await link.http('POST', '/api/plex/pin', {});
+    popup.location = pin.url;
+    const until = Date.now() + 10 * 60_000;
+    for (;;) {
+      await sleep(1500);
+      const closed = popup.closed;
+      if ((await link.http('GET', `/api/plex/pin/${pin.id}`)).signed_in) break;
+      if (closed) throw new Error('Plex sign-in cancelled');
+      if (Date.now() > until) throw new Error('The Plex sign-in expired: try again');
+    }
+  } finally { popup.close(); }
+  settings.secrets = itemsOf((await link.call('GET', '/api/secrets')).secrets);
+  await chooseServer();
+}
+
+async function chooseServer() {
+  if (!$('#save-bar').hidden) throw new Error('Save or discard your changes first');
+  const servers = itemsOf((await link.http('GET', '/api/plex/servers')).servers);
+  if (!servers.length) throw new Error('This Plex account owns no server');
+  if (servers.length === 1) { await useServer(servers[0].id); return; }
+  const row = $('#plex-servers');
+  $('[data-list]', row).replaceChildren(...servers.map((server) =>
+    h('button', { type: 'button', class: server.current ? '' : 'secondary', dataset: { plexServer: server.id } }, server.name)));
+  row.hidden = false;
+  Motion.animate(row, [{ opacity: 0, transform: 'translateY(-6px)' }, { opacity: 1, transform: 'none' }], { duration: 220 });
+}
+
+async function useServer(id) {
+  const reply = await link.http('POST', '/api/plex/server', { id });
+  await applied(reply);
+  settings.plexSections = null;
+  await loadSettings();
+  const found = [reply.movies_section && `films in ${reply.movies_section}`, reply.series_section && `series in ${reply.series_section}`].filter(Boolean);
+  toast(`Connected to ${reply.name}${found.length ? `: ${found.join(', ')}` : ''}`);
+}
+
+async function plexAction(button) {
+  const action = button.dataset.plexAct;
+  if (action === 'connect') await connectPlex();
+  else if (action === 'servers') await chooseServer();
+  else if (action === 'disconnect') {
+    if (!$('#save-bar').hidden) throw new Error('Save or discard your changes first');
+    if (!confirm('Disconnect Plex? Mynou stops filing into it and reading the watchlist.')) return;
+    await applied(await link.http('POST', '/api/plex/disconnect', {}));
+    await loadSettings();
+    toast('Plex disconnected');
+  }
+}
+
 function settingRow([path, label, type, options = {}]) {
   const value = settingValue(path);
   const id = `setting-${path.replaceAll('.', '-')}`;
@@ -89,8 +185,14 @@ function settingRow([path, label, type, options = {}]) {
     h('label', { htmlFor: id }, label, source ? h('span', { class: 'badge', dataset: { tone: SOURCE_TONES[source] } }, SOURCE_LABELS[source]) : null),
     options.hint ? h('p', { class: 'hint' }, options.hint) : null);
   let control;
+  if (type === 'plex') return plexRows();
+  if (type === 'section') {
+    const select = h('select', { id, dataset: { path, type: 'text', kind: options.kind, shown: String(value ?? '') } });
+    sectionOptions(select, options.kind);
+    return h('div', { class: 'setting-row', hidden: !plexConnected() }, text, select);
+  }
   if (type === 'sync') {
-    return h('div', { class: 'setting-row toggle', id: 'plex-watchlist', hidden: !settingValue('plex.enabled') },
+    return h('div', { class: 'setting-row toggle', id: 'plex-watchlist', hidden: !plexConnected() },
       h('div', { class: 'setting-label' }, h('span', {}, label), h('p', { class: 'hint', dataset: { live: 'watchlist' } })),
       h('button', { type: 'button', class: 'secondary', dataset: { act: 'sync' } }, icon('sync'), 'Sync now'));
   }
@@ -102,8 +204,8 @@ function settingRow([path, label, type, options = {}]) {
     const display = options.zero && Number(value) === 0 ? '' : shown(value, type, options.scale);
     const input = h('input', {
       id, type: 'text', inputMode: type === 'number' ? (options.scale === MB ? 'decimal' : 'numeric') : undefined,
-      value: display, placeholder: options.zero ?? '', spellcheck: false,
-      dataset: { path, type, shown: display, scale: options.scale ?? 1, zero: options.zero ? '1' : '' },
+      value: display, placeholder: options.zero ?? (options.folder ? '/Volumes/Media' : ''), spellcheck: false,
+      dataset: { path, type, shown: display, scale: options.scale ?? 1, zero: options.zero ? '1' : '', folder: options.folder ? '1' : '' },
     });
     control = options.unit ? h('span', { class: 'with-unit' }, input, h('span', { class: 'unit', 'aria-hidden': 'true' }, options.unit)) : input;
   }
@@ -153,6 +255,8 @@ function readSettingsForm() {
     } else {
       value = input.value.trim();
       if (!value && before === undefined) continue;
+      // Folders are on the Mac running Mynou, wherever this page is open.
+      if (input.dataset.folder && !/^~?\//.test(value)) throw new Error(`${$(`label[for="${input.id}"]`).textContent} needs a full path on the Mac running Mynou, starting with /`);
     }
     // A field left at its default stays out of a document that omits it.
     if (before === undefined && value === getPath(settings.report?.defaults, path)) continue;
@@ -217,6 +321,7 @@ function networkRows() {
   const active = listenParts(access.listen).port;
   const where = access.local_name ?? access.address;
   const address = where ? `${location.protocol}//${where}${active === '80' ? '' : `:${active}`}` : null;
+  const open = Boolean(getPath(settings.document, 'access.local_network_open'));
   const state = settings.report.restart_required ? 'Restart Mynou to apply the change.'
     : exposed(access.listen) ? (address ? `From another computer, open ${address}.` : 'Other computers can open Mynou.')
     : 'Only this Mac can open Mynou.';
@@ -226,6 +331,8 @@ function networkRows() {
   return [
     row(h('label', { htmlFor: 'network-on' }, 'Allow other computers'), state,
       h('input', { id: 'network-on', type: 'checkbox', class: 'switch', checked: on, disabled: !mac, dataset: { shown: String(on) } }), true),
+    row(h('label', { htmlFor: 'network-open' }, 'No password on the local network'), 'Computers at home or at the office open Mynou directly. Any other one still needs the password.',
+      h('input', { id: 'network-open', type: 'checkbox', class: 'switch', checked: open, disabled: !mac, dataset: { shown: String(open) } }), true),
     row(h('label', { htmlFor: 'network-port' }, 'Port'), 'With 80, addresses need no port.',
       h('input', { id: 'network-port', type: 'text', inputMode: 'numeric', value: port, disabled: !mac, spellcheck: false, dataset: { shown: port } })),
     row(h('label', { htmlFor: 'network-hosts' }, 'Other host names'), `Mynou already answers this Mac's addresses${access.local_name ? ` and ${access.local_name}` : ''}. Add other names, separated by commas.`,
@@ -234,7 +341,7 @@ function networkRows() {
       h('span', { class: 'secret' },
         h('input', { id: 'network-password', type: 'password', autocomplete: 'new-password', maxLength: 1024, disabled: !mac, placeholder: access.password_set ? 'Type to replace' : 'Choose a password' }),
         h('button', { type: 'button', class: 'secondary', disabled: !mac, dataset: { networkAct: 'password' } }, 'Save password'),
-        access.password_set && !on && mac ? h('button', { type: 'button', class: 'ghost danger', dataset: { networkAct: 'remove' } }, 'Remove') : null)),
+        access.password_set && (!on || open) && mac ? h('button', { type: 'button', class: 'ghost danger', dataset: { networkAct: 'remove' } }, 'Remove') : null)),
     mac ? null : row(h('span', {}, 'This computer'), 'Network access changes only on the Mac running Mynou.',
       h('button', { type: 'button', class: 'ghost', dataset: { networkAct: 'sign-out' } }, 'Sign out')),
   ].filter(Boolean);
@@ -245,11 +352,13 @@ function readNetwork(document) {
   const on = $('#network-on');
   if (!on || on.disabled) return;
   const port = $('#network-port').value.trim();
+  const open = $('#network-open');
   if (String(on.checked) !== on.dataset.shown || port !== $('#network-port').dataset.shown) {
     if (!/^\d{1,5}$/.test(port) || Number(port) < 1 || Number(port) > 65535) throw new Error('Port needs a number from 1 to 65535');
-    if (on.checked && !settings.access.password_set) throw new Error('Save a password first, then allow other computers');
+    if (on.checked && !open.checked && !settings.access.password_set) throw new Error('Save a password or turn on No password on the local network, then allow other computers');
     document.listen = `${on.checked ? '0.0.0.0' : '127.0.0.1'}:${Number(port)}`;
   }
+  if (String(open.checked) !== open.dataset.shown) setPath(document, 'access.local_network_open', open.checked);
   const hosts = $('#network-hosts');
   if (hosts.value.trim() !== hosts.dataset.shown) {
     setPath(document, 'access.allowed_hosts', hosts.value.split(/[\s,]+/).filter(Boolean));
@@ -271,13 +380,13 @@ async function networkAction(button) {
 
 const settingsState = (text) => { const state = $('#settings-state'); state.textContent = text; state.hidden = !text; };
 
-async function saveSettings(document) {
-  const reply = await link.call('POST', '/api/settings', { settings: document });
+/** Waits until the service applied a settings change. */
+async function applied(reply) {
   if (reply.state === 'applying') {
     settingsState('Applying the new settings…');
     // The service restarts its engine; wait until the change has landed.
     for (let i = 0; i < 60; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      await sleep(1000);
       const report = await link.call('GET', '/api/settings').catch(() => null);
       if (report && !report.applying) {
         if (report.error) throw new Error(report.error);
@@ -285,6 +394,11 @@ async function saveSettings(document) {
       }
     }
   }
+}
+
+async function saveSettings(document) {
+  const reply = await link.call('POST', '/api/settings', { settings: document });
+  await applied(reply);
   await loadSettings();
   toast(reply.restart_required ? 'Settings saved; restart Mynou to apply them' : 'Settings applied');
 }
@@ -459,6 +573,10 @@ views.settings = {
       dirty();
     });
     form.addEventListener('click', (event) => {
+      const plex = event.target.closest('[data-plex-act]');
+      if (plex) { act(plex, () => plexAction(plex)); return; }
+      const server = event.target.closest('[data-plex-server]');
+      if (server) { act(server, () => useServer(server.dataset.plexServer)); return; }
       const remove = event.target.closest('#settings-indexers [data-act="remove"]');
       if (remove) { remove.closest('li').remove(); dirty(); return; }
       const sync = event.target.closest('[data-act="sync"]');
@@ -470,6 +588,7 @@ views.settings = {
       if (forget) act(forget, async () => { await saveSecret(forget.dataset.forget, null); this.paint(); }, 'Secret removed');
     });
   },
+  page: () => $('#settings-form'),
   render() {
     showPage();
     // Live updates never overwrite fields being edited.
@@ -500,6 +619,7 @@ views.settings = {
     syncDependents();
     showPage();
     this.paintLive();
+    loadPlexSections();
   },
   /** States that change while the page is open; inputs are never touched. */
   paintLive() {

@@ -61,9 +61,9 @@ pub struct Startup {
 
 impl Startup {
     /// Refuses a listener reachable from the network until `access` has a
-    /// password.
+    /// password or the local network is open.
     pub fn bind(config: &crate::config::Config, access: Arc<Access>) -> Result<Self> {
-        access::require(&config.listen, access.is_set())?;
+        access::require(&config.listen, access.is_set(), config.local_network_open)?;
         let listener = listen(&config.listen)?;
         let ready = Arc::new(AtomicBool::new(false));
         let thread = {
@@ -73,6 +73,7 @@ impl Startup {
                 access: access.clone(),
                 listener: listener.local_addr().map_err(|e| e.to_string())?,
                 allowed_hosts: config.allowed_hosts.clone(),
+                local_network_open: config.local_network_open,
             };
             let directories = vec![config.store_dir.clone(), config.downloads.state_dir.clone()];
             thread::spawn(move || starting(&listener, &gate, &directories, &ready))
@@ -120,6 +121,7 @@ struct Gate {
     access: Arc<Access>,
     listener: SocketAddr,
     allowed_hosts: Vec<String>,
+    local_network_open: bool,
 }
 
 impl Gate {
@@ -132,12 +134,21 @@ impl Gate {
                 .is_none_or(|origin| ws::same_origin(origin, host))
     }
 
-    /// From this machine, or signed in.
-    fn admitted(&self, local: bool, headers: &BTreeMap<String, String>) -> bool {
+    /// Needs no sign-in: from this machine, or from the local network once
+    /// the owner opened it.
+    fn free(&self, stream: &TcpStream, local: bool) -> bool {
         local
-            || self
-                .access
-                .signed_in(headers.get("cookie").map(String::as_str))
+            || self.local_network_open
+                && stream
+                    .peer_addr()
+                    .is_ok_and(|peer| access::local_network(peer.ip()))
+    }
+
+    /// Needs no sign-in, or signed in.
+    fn admitted(&self, free: bool, headers: &BTreeMap<String, String>) -> bool {
+        free || self
+            .access
+            .signed_in(headers.get("cookie").map(String::as_str))
     }
 }
 
@@ -198,7 +209,7 @@ fn starting_connection(stream: &mut TcpStream, gate: &Gate, directories: &[PathB
         return respond(stream, 403, error(FOREIGN));
     }
     // Signing in waits for storage; the interface keeps asking until then.
-    if path != "/api/session" && !gate.admitted(local(stream), &headers) {
+    if path != "/api/session" && !gate.admitted(gate.free(stream, local(stream)), &headers) {
         return respond(stream, 401, error(SIGN_IN));
     }
     if method == "GET" && path == "/api/status" {
@@ -218,7 +229,11 @@ fn starting_connection(stream: &mut TcpStream, gate: &Gate, directories: &[PathB
 impl Api {
     pub fn bind(engine: Arc<Engine>) -> Result<Self> {
         let access = Arc::new(Access::new(lock(&engine.store)?.access()?));
-        access::require(&engine.config.listen, access.is_set())?;
+        access::require(
+            &engine.config.listen,
+            access.is_set(),
+            engine.config.local_network_open,
+        )?;
         Ok(Self {
             listener: listen(&engine.config.listen)?,
             engine,
@@ -310,6 +325,7 @@ impl Api {
                         access: self.access.clone(),
                         listener,
                         allowed_hosts: engine.config.allowed_hosts.clone(),
+                        local_network_open: engine.config.local_network_open,
                     };
                     threads.push(thread::spawn(move || {
                         let local = local(&stream);
@@ -493,10 +509,11 @@ fn connection(
             error("Content-Type application/json is required"),
         );
     }
+    let free = gate.free(stream, local);
     if path == "/api/session" {
-        return session(stream, engine, gate, local, &method, &headers, &body);
+        return session(stream, engine, gate, free, &method, &headers, &body);
     }
-    if !gate.admitted(local, &headers) {
+    if !gate.admitted(free, &headers) {
         return respond(stream, 401, error(SIGN_IN));
     }
     if path == "/api/access" {
@@ -551,7 +568,7 @@ fn session(
     stream: &mut TcpStream,
     engine: &Engine,
     gate: &Gate,
-    local: bool,
+    free: bool,
     method: &str,
     headers: &BTreeMap<String, String>,
     body: &[u8],
@@ -559,8 +576,8 @@ fn session(
     let mut value = Value::object();
     match method {
         "GET" => {
-            value.insert("required", !local);
-            value.insert("signed_in", gate.admitted(local, headers));
+            value.insert("required", !free);
+            value.insert("signed_in", gate.admitted(free, headers));
             value.insert("password_set", gate.access.is_set());
             respond(stream, 200, value)
         }
@@ -650,11 +667,19 @@ fn network_access(
             let credentials = match password(body)? {
                 Some(password) => Some(access::Credentials::new(&password)?),
                 None => {
-                    let saved = lock(&engine.saved_settings)?
-                        .as_ref()
-                        .and_then(|document| document.get("listen")?.as_str().map(String::from));
-                    if !access::loopback(&engine.config.listen)
-                        || saved.is_some_and(|listen| !access::loopback(&listen))
+                    // Without a password, the network needs the local network open.
+                    let saved = lock(&engine.saved_settings)?.as_ref().map(|document| {
+                        let listen = document.get("listen").and_then(Value::as_str);
+                        let open = document
+                            .get("access")
+                            .and_then(|a| a.get("local_network_open"))
+                            .and_then(Value::as_bool)
+                            == Some(true);
+                        listen.is_none_or(access::loopback) || open
+                    });
+                    if !(access::loopback(&engine.config.listen)
+                        || engine.config.local_network_open)
+                        || saved == Some(false)
                     {
                         return Ok((
                             409,
@@ -683,7 +708,13 @@ pub(crate) fn route(
             (method, path),
             (
                 "POST",
-                "/api/shutdown" | "/api/vpn/control" | "/api/settings" | "/api/secrets"
+                "/api/shutdown"
+                    | "/api/vpn/control"
+                    | "/api/settings"
+                    | "/api/secrets"
+                    | "/api/plex/pin"
+                    | "/api/plex/server"
+                    | "/api/plex/disconnect"
             )
         )
         && engine.starting.load(Ordering::Acquire)
@@ -727,6 +758,20 @@ pub(crate) fn route(
                 reply,
             ))
         }
+        ("POST", "/api/plex/pin") => Ok((200, engine.plex_pin()?)),
+        ("GET", path) if path.starts_with("/api/plex/pin/") => {
+            let id = path["/api/plex/pin/".len()..]
+                .parse()
+                .map_err(|_| "Invalid PIN")?;
+            Ok((200, engine.plex_pin_state(id)?))
+        }
+        ("GET", "/api/plex/servers") => Ok((200, engine.plex_servers()?)),
+        ("POST", "/api/plex/server") => Ok((
+            200,
+            engine.plex_choose(&control_body(body, &["id"], false)?)?,
+        )),
+        ("GET", "/api/plex/sections") => Ok((200, engine.plex_sections()?)),
+        ("POST", "/api/plex/disconnect") => Ok((200, engine.plex_disconnect()?)),
         ("GET", "/api/secrets") => Ok((200, engine.secrets()?)),
         ("POST", "/api/secrets") => {
             if body.len() > 16_384 {
@@ -1698,6 +1743,7 @@ mod tests {
             access: Arc::new(Access::default()),
             listener: listener.parse().unwrap(),
             allowed_hosts: allowed.iter().map(|name| name.to_string()).collect(),
+            local_network_open: false,
         }
     }
     #[test]
@@ -1852,6 +1898,25 @@ mod tests {
             &format!("GET /api/status HTTP/1.1\r\nHost: evil.example\r\n{session}\r\n"),
         );
         assert_eq!(status, 403);
+        // Opened to the local network, a computer there needs no sign-in
+        // (these test connections come from 127.0.0.1).
+        let open = Gate {
+            local_network_open: true,
+            ..gate.clone()
+        };
+        let request = "GET /api/status HTTP/1.1\r\nHost: mynou.example\r\n\r\n";
+        assert_eq!(exchange(&engine, &open, false, request).0, 200);
+        assert_eq!(
+            exchange(
+                &engine,
+                &open,
+                false,
+                "GET /api/session HTTP/1.1\r\nHost: mynou.example\r\n\r\n"
+            )
+            .2
+            .get("required"),
+            Some(&Value::Bool(false))
+        );
         assert_eq!(
             post(
                 "/api/sync",

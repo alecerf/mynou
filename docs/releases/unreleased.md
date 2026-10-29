@@ -1,3 +1,29 @@
+## Added: Connect Plex in one click
+
+Settings, Plex & TMDB now has **Connect to Plex**: Plex's own page opens, you
+sign in there, and Mynou keeps the token without showing it. It then lists the
+servers your account owns, finds an address of the one you choose that answers
+from this Mac (Plex on the same Mac first, then the local network), and picks
+its film and series libraries, by matching their folders with Mynou's library
+folders. Each library can be changed from a list of names; the server address,
+the token and section numbers are no longer typed. See
+[connect Plex](/docs/macos.md#connect-plex).
+
+## Added: No password on the local network
+
+Settings, Network can let computers on your local network use Mynou without
+signing in. Only private and link-local addresses count; any other computer
+still needs the password, and without one it cannot sign in. Network access no
+longer needs a password when this is on. See
+[network access](/docs/macos.md#network-access).
+
+## Changed: Folders are full paths
+
+The movies, series and download folders are shown and saved as full paths on
+the Mac running Mynou. The Settings view refuses a relative path; `~/` is your
+home folder. An older relative setting reads as before, under the data
+directory, and is saved as a full path the next time settings are saved.
+
 ## Fixed: A damaged extra no longer fails an import
 
 When a download held several media files, a single one that could not be read,
