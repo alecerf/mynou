@@ -67,6 +67,9 @@ pub struct Config {
     pub document: Value,
     pub store_dir: PathBuf,
     pub listen: String,
+    /// Host names the owner allows besides the detected ones, when `listen`
+    /// is reachable from the network.
+    pub allowed_hosts: Vec<String>,
     pub movies_root: PathBuf,
     pub series_root: PathBuf,
     pub downloads: DownloadConfig,
@@ -290,6 +293,34 @@ fn path_mappings(plex: &Value) -> Result<Vec<PathMapping>> {
     Ok(mappings)
 }
 
+fn allowed_hosts(value: &Value) -> Result<Vec<String>> {
+    let Some(section) = value.get("access") else {
+        return Ok(Vec::new());
+    };
+    expect_object(section)?;
+    let Some(names) = section.get("allowed_hosts") else {
+        return Ok(Vec::new());
+    };
+    let names = names
+        .as_array()
+        .ok_or("Configuration: access.allowed_hosts must be an array")?;
+    if names.len() > crate::access::MAX_ALLOWED_HOSTS {
+        return Err(format!(
+            "Configuration: access.allowed_hosts allows at most {} names",
+            crate::access::MAX_ALLOWED_HOSTS
+        ));
+    }
+    names
+        .iter()
+        .map(|name| {
+            crate::access::check_allowed_host(
+                name.as_str()
+                    .ok_or("Configuration: access.allowed_hosts takes strings")?,
+            )
+        })
+        .collect()
+}
+
 fn monitoring(value: &Value) -> Result<Monitoring> {
     let Some(section) = value.get("monitoring") else {
         return Ok(Monitoring::default());
@@ -411,15 +442,11 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
         return Err("Configuration: invalid concurrency or timing settings".into());
     }
     let listen = text(v, "listen", "127.0.0.1:8787")?;
-    // The API has no sign-in: only this machine may reach it.
-    if !listen
+    // Another address also needs a password: see `access::require`.
+    listen
         .parse::<std::net::SocketAddr>()
-        .map_err(|_| "Configuration: listen requires an IP address and port")?
-        .ip()
-        .is_loopback()
-    {
-        return Err("Configuration: listen must be a loopback address such as 127.0.0.1".into());
-    }
+        .map_err(|_| "Configuration: listen requires an IP address and port, such as 127.0.0.1:8787 or 0.0.0.0:80")?;
+    let allowed_hosts = allowed_hosts(v)?;
     for url in [
         text(p, "url", "http://127.0.0.1:32400")?,
         text(
@@ -491,6 +518,7 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
         data_dir: base.clone(),
         document: v.clone(),
         listen,
+        allowed_hosts,
         movies_root: path(&base, text(library, "movies_root", "library/movies")?)?,
         series_root: path(&base, text(library, "series_root", "library/series")?)?,
         downloads: DownloadConfig {

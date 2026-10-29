@@ -69,6 +69,16 @@ before enabling automation, and verify its status after restart. Source/IRC
 protection remains the separate scope of #337; service installation does not
 extend the delivered torrent protection boundary.
 
+## Reach the service from other computers
+
+The service listens on `127.0.0.1:8787` until you turn on network access in
+Settings, Network ([network access](macos.md#network-access)): set a password
+first, then a port, and restart the service to bind it. The launchd account is
+an ordinary one: it can listen on port 80 on `0.0.0.0`, not on one specific
+address. `service status`, `mynou update` and the stop command keep reaching
+the local API without signing in. On a headless Mac, open the Settings view
+through Screen Sharing or `ssh -L 8787:127.0.0.1:8787 MAC` before turning it on.
+
 ## Stop, restart and uninstall
 
 ```sh

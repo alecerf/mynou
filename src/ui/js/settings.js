@@ -5,6 +5,7 @@ import { Motion } from './motion.js';
 import { link } from './link.js';
 import { data, views, itemsOf, currentParam } from './store.js';
 import { INDEXER_ERRORS, plexError, indexerReports } from './sources.js';
+import { signOut } from './session.js';
 
 // The settings document keeps every field; the groups below edit the common
 // ones in place and leave the others untouched. Saving sends the whole document,
@@ -12,7 +13,7 @@ import { INDEXER_ERRORS, plexError, indexerReports } from './sources.js';
 // Settings come in pages, #settings/<page>, all in one form so a change on one
 // page survives a visit to another until it is saved or discarded.
 const SETTING_PAGES = [
-  ['library', 'Library'], ['downloads', 'Downloads'], ['vpn', 'VPN'], ['indexers', 'Indexers'], ['services', 'Plex & TMDB'],
+  ['library', 'Library'], ['downloads', 'Downloads'], ['vpn', 'VPN'], ['indexers', 'Indexers'], ['services', 'Plex & TMDB'], ['network', 'Network'],
 ];
 // A group is [page, title, description, fields]; a field is [path, label, type, options]: `hint` explains it, `when` names the
 // switch it depends on, `scale` and `unit` show a stored number in friendlier
@@ -48,7 +49,7 @@ const SETTING_GROUPS = [
   ]],
 ];
 const INDEXER_KINDS = ['torznab', 'json', 'rss'];
-const settings = { report: null, document: null, secrets: [], loading: false };
+const settings = { report: null, document: null, secrets: [], access: null, loading: false };
 
 const getPath = (object, path) => path.split('.').reduce((value, key) => value?.[key], object);
 function setPath(object, path, value) {
@@ -166,6 +167,7 @@ function readSettingsForm() {
   for (const [path, on] of [['plex.enabled', present('plex.token_env')], ['catalog.enabled', present('catalog.token_env')]]) {
     if (on !== Boolean(settingValue(path))) setPath(document, path, on);
   }
+  readNetwork(document);
   document.indexers = [...$('#settings-indexers').children].map((row) => {
     const indexer = { ...row._indexer };
     for (const input of row.querySelectorAll('[data-field]')) {
@@ -187,11 +189,84 @@ function typedSecrets() {
 }
 
 async function loadSettings() {
-  const [report, secrets] = await Promise.all([link.call('GET', '/api/settings'), link.call('GET', '/api/secrets')]);
+  // Network access is answered over HTTP only, never through the socket.
+  const [report, secrets, access] = await Promise.all([link.call('GET', '/api/settings'), link.call('GET', '/api/secrets'), link.http('GET', '/api/access')]);
   settings.report = report;
   settings.document = report.settings;
   settings.secrets = itemsOf(secrets.secrets);
+  settings.access = access;
   views.settings.paint();
+}
+
+// Network access: the switch and the port make `listen`, saved with the form.
+// The password applies at once, and only on the Mac running Mynou.
+const listenParts = (listen) => {
+  const text = String(listen ?? '');
+  const at = text.lastIndexOf(':');
+  return { host: text.slice(0, at), port: text.slice(at + 1) };
+};
+const exposed = (listen) => !/^(127\.\d+\.\d+\.\d+|\[::1\])$/.test(listenParts(listen).host);
+
+function networkRows() {
+  const access = settings.access;
+  const mac = access.from_this_mac;
+  const listen = settingValue('listen');
+  const on = exposed(listen);
+  const { port } = listenParts(listen);
+  const hosts = itemsOf(getPath(settings.document, 'access.allowed_hosts')).join(', ');
+  const active = listenParts(access.listen).port;
+  const where = access.local_name ?? access.address;
+  const address = where ? `${location.protocol}//${where}${active === '80' ? '' : `:${active}`}` : null;
+  const state = settings.report.restart_required ? 'Restart Mynou to apply the change.'
+    : exposed(access.listen) ? (address ? `From another computer, open ${address}.` : 'Other computers can open Mynou.')
+    : 'Only this Mac can open Mynou.';
+  const row = (label, hint, control, toggle = false) => h('div', { class: `setting-row${toggle ? ' toggle' : ''}` },
+    h('div', { class: 'setting-label' }, label, hint ? h('p', { class: 'hint' }, hint) : null), control);
+  const badge = h('span', { class: 'badge', dataset: { tone: access.password_set ? 'ok' : 'warn' } }, access.password_set ? 'Set' : 'Not set');
+  return [
+    row(h('label', { htmlFor: 'network-on' }, 'Allow other computers'), state,
+      h('input', { id: 'network-on', type: 'checkbox', class: 'switch', checked: on, disabled: !mac, dataset: { shown: String(on) } }), true),
+    row(h('label', { htmlFor: 'network-port' }, 'Port'), 'With 80, addresses need no port.',
+      h('input', { id: 'network-port', type: 'text', inputMode: 'numeric', value: port, disabled: !mac, spellcheck: false, dataset: { shown: port } })),
+    row(h('label', { htmlFor: 'network-hosts' }, 'Other host names'), `Mynou already answers this Mac's addresses${access.local_name ? ` and ${access.local_name}` : ''}. Add other names, separated by commas.`,
+      h('input', { id: 'network-hosts', type: 'text', value: hosts, disabled: !mac, spellcheck: false, placeholder: 'None', dataset: { shown: hosts } })),
+    row(h('label', { htmlFor: 'network-password' }, 'Password', badge), 'At least 10 characters. A new password signs every other computer out.',
+      h('span', { class: 'secret' },
+        h('input', { id: 'network-password', type: 'password', autocomplete: 'new-password', maxLength: 1024, disabled: !mac, placeholder: access.password_set ? 'Type to replace' : 'Choose a password' }),
+        h('button', { type: 'button', class: 'secondary', disabled: !mac, dataset: { networkAct: 'password' } }, 'Save password'),
+        access.password_set && !on && mac ? h('button', { type: 'button', class: 'ghost danger', dataset: { networkAct: 'remove' } }, 'Remove') : null)),
+    mac ? null : row(h('span', {}, 'This computer'), 'Network access changes only on the Mac running Mynou.',
+      h('button', { type: 'button', class: 'ghost', dataset: { networkAct: 'sign-out' } }, 'Sign out')),
+  ].filter(Boolean);
+}
+
+/** Folds the switch, port and host names into the document, when changed. */
+function readNetwork(document) {
+  const on = $('#network-on');
+  if (!on || on.disabled) return;
+  const port = $('#network-port').value.trim();
+  if (String(on.checked) !== on.dataset.shown || port !== $('#network-port').dataset.shown) {
+    if (!/^\d{1,5}$/.test(port) || Number(port) < 1 || Number(port) > 65535) throw new Error('Port needs a number from 1 to 65535');
+    if (on.checked && !settings.access.password_set) throw new Error('Save a password first, then allow other computers');
+    document.listen = `${on.checked ? '0.0.0.0' : '127.0.0.1'}:${Number(port)}`;
+  }
+  const hosts = $('#network-hosts');
+  if (hosts.value.trim() !== hosts.dataset.shown) {
+    setPath(document, 'access.allowed_hosts', hosts.value.split(/[\s,]+/).filter(Boolean));
+  }
+}
+
+async function networkAction(button) {
+  const action = button.dataset.networkAct;
+  if (action === 'sign-out') { await signOut(); return; }
+  let password = null;
+  if (action === 'password') {
+    password = $('#network-password').value;
+    if ([...password].length < 10) throw new Error('The password needs at least 10 characters');
+  } else if (!confirm('Remove the network access password?')) return;
+  settings.access = await link.http('POST', '/api/access', { password });
+  $('#settings-network').replaceChildren(...networkRows());
+  toast(password === null ? 'Password removed' : 'Password saved');
 }
 
 const settingsState = (text) => { const state = $('#settings-state'); state.textContent = text; state.hidden = !text; };
@@ -336,6 +411,13 @@ views.settings = {
       });
     });
     $('#settings-discard').addEventListener('click', () => this.paint());
+    const network = $('#settings-network');
+    // The password applies at once: typing it never marks the settings unsaved.
+    network.addEventListener('input', (event) => { if (event.target.id === 'network-password') event.stopPropagation(); });
+    network.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-network-act]');
+      if (button) act(button, () => networkAction(button));
+    });
     const vpn = $('#settings-vpn');
     // VPN controls apply at once: they never mark the settings unsaved.
     vpn.addEventListener('input', (event) => event.stopPropagation());
@@ -413,6 +495,7 @@ views.settings = {
         h('div', { class: 'setting-list' }, fields.map(settingRow)))));
     // Saved indexers keep their position, which is also the order of the live reports.
     $('#settings-indexers').replaceChildren(...itemsOf(settings.document.indexers).map((indexer, i) => Object.assign(indexerRow(indexer), { _saved: i })));
+    $('#settings-network').replaceChildren(...networkRows());
     $('#save-bar').hidden = true;
     syncDependents();
     showPage();

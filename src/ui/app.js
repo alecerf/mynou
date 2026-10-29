@@ -10,6 +10,7 @@ import { link } from './js/link.js';
 import { data, views, currentView, jobsTail, transfersTail, libraryTail, resetTail, refreshTail, pageMembership, sampleTransfers } from './js/store.js';
 import { refreshJobSearch } from './js/jobs.js';
 import { VIEWS, route } from './js/router.js';
+import { setupSession, connect } from './js/session.js';
 import './js/dashboard.js';
 import './js/transfers.js';
 import './js/library.js';
@@ -62,9 +63,10 @@ function setup() {
     queued = true;
     requestAnimationFrame(() => { queued = false; views[currentView()]?.render?.(); });
   });
+  setupSession();
   addEventListener('hashchange', route);
   route();
-  link.connect();
+  connect();
 }
 
 setup();

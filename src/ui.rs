@@ -28,6 +28,7 @@ const MODULES: &[(&str, &str)] = modules![
     "releases",
     "requests",
     "router",
+    "session",
     "settings",
     "sources",
     "store",

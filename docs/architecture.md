@@ -138,9 +138,11 @@ Web UI / API         Plex watchlists   IRC announcements
 - `net`, `tls`, `pki` and `crypto` implement HTTP/1.1, the TLS 1.3 and 1.2 client, X.509
   validation and the primitives they need. A failed negotiation never disables
   certificate validation.
-- `server` serves the API and the health routes on a loopback listener, with
-  no sign-in: a request must name loopback in its `Host` and carry no other
-  site's `Origin`. `ui` embeds the web interface (`src/ui/`: plain HTML, CSS
+- `server` serves the API and the health routes, on a loopback listener by
+  default: a request must name an allowed host in its `Host` and carry no other
+  site's `Origin`. `access` decides who may call it: this machine without
+  sign-in, other machines with a signed session cookie once `listen` is a
+  network address and a password is set ([network access](macos.md#network-access)). `ui` embeds the web interface (`src/ui/`: plain HTML, CSS
   and JavaScript, no build step). `ws` implements a bounded RFC 6455 WebSocket
   on the same listener: the client offers the `mynou.v1` subprotocol, the
   origin must match the host, and at most eight sockets may be open. Calls reach the same `route` function as HTTP, and subscribed

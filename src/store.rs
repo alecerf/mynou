@@ -1548,6 +1548,19 @@ impl Store {
         self.save_record(layout::SECRETS_KEY, &value)
     }
 
+    /// The network access credentials, when a password is set.
+    pub fn access(&mut self) -> Result<Option<crate::access::Credentials>> {
+        match self.record(layout::ACCESS_KEY)? {
+            None | Some(Value::Null) => Ok(None),
+            Some(value) => crate::access::Credentials::from_json(&value).map(Some),
+        }
+    }
+
+    pub fn save_access(&mut self, credentials: Option<&crate::access::Credentials>) -> Result<()> {
+        let value = credentials.map_or(Value::Null, crate::access::Credentials::to_json);
+        self.save_record(layout::ACCESS_KEY, &value)
+    }
+
     fn record(&mut self, key: Key) -> Result<Option<Value>> {
         let Backend::Ready(index) = &mut self.backend else {
             return Ok(None);
