@@ -11,49 +11,59 @@ fn boxes(input: &mut Input, start: u64, end: u64) -> Result<Vec<BoxHeader>> {
     let mut at = start;
     let mut result = Vec::new();
     while at < end {
-        input.count()?;
-        if end - at < 8 {
-            return Err("Truncated MP4 header".into());
-        }
-        let head = input.read(at, 8)?;
-        let short_size = u32be(&head, 0)?;
-        let mut header_size = 8;
-        let size = match short_size {
-            0 => end - at,
-            1 => {
-                if end - at < 16 {
-                    return Err("Truncated MP4 extended size".into());
-                }
-                header_size = 16;
-                u64be(&input.read(at + 8, 8)?, 0)?
-            }
-            other => u64::from(other),
-        };
-        if head.get(4..8) == Some(b"uuid") {
-            header_size += 16;
-        }
-        if size < header_size {
-            return Err("Invalid MP4 box size".into());
-        }
-        let next = at.checked_add(size).ok_or("MP4 size overflow")?;
-        if next > end {
-            return Err("MP4 box extends beyond its container".into());
-        }
-        result.push(BoxHeader {
-            kind: head[4..8].try_into().map_err(|_| "Invalid MP4 box type")?,
-            data: at + header_size,
-            end: next,
-        });
-        at = next;
+        let header = next_box(input, at, end)?;
+        at = header.end;
+        result.push(header);
     }
     Ok(result)
+}
+
+/// Reads the box header at `at`. Walking a parent this way, instead of
+/// collecting every header first, keeps each large box from being skipped twice.
+fn next_box(input: &mut Input, at: u64, end: u64) -> Result<BoxHeader> {
+    input.count()?;
+    if end - at < 8 {
+        return Err("Truncated MP4 header".into());
+    }
+    let head = input.read(at, 8)?;
+    let short_size = u32be(&head, 0)?;
+    let mut header_size = 8;
+    let size = match short_size {
+        0 => end - at,
+        1 => {
+            if end - at < 16 {
+                return Err("Truncated MP4 extended size".into());
+            }
+            header_size = 16;
+            u64be(&input.read(at + 8, 8)?, 0)?
+        }
+        other => u64::from(other),
+    };
+    if head.get(4..8) == Some(b"uuid") {
+        header_size += 16;
+    }
+    if size < header_size {
+        return Err("Invalid MP4 box size".into());
+    }
+    let next = at.checked_add(size).ok_or("MP4 size overflow")?;
+    if next > end {
+        return Err("MP4 box extends beyond its container".into());
+    }
+    Ok(BoxHeader {
+        kind: head[4..8].try_into().map_err(|_| "Invalid MP4 box type")?,
+        data: at + header_size,
+        end: next,
+    })
 }
 
 pub(super) fn parse(input: &mut Input, media: &mut MediaFile) -> Result<()> {
     media.container = "mp4".into();
     let mut found_movie = false;
     let mut track_index = 0;
-    for top in boxes(input, 0, input.len)? {
+    let mut at = 0;
+    while at < input.len && !found_movie {
+        let top = next_box(input, at, input.len)?;
+        at = top.end;
         match &top.kind {
             b"ftyp" => {
                 if top.end - top.data < 8 {
@@ -64,8 +74,13 @@ pub(super) fn parse(input: &mut Input, media: &mut MediaFile) -> Result<()> {
                 }
             }
             b"moov" => {
+                // Everything Mynou reads is inside moov: nothing after it is visited.
                 found_movie = true;
-                for movie in boxes(input, top.data, top.end)? {
+                input.preload(top.data, top.end - top.data)?;
+                let mut at = top.data;
+                while at < top.end {
+                    let movie = next_box(input, at, top.end)?;
+                    at = movie.end;
                     match &movie.kind {
                         b"mvhd" => {
                             let data = input
@@ -178,65 +193,67 @@ fn track(input: &mut Input, header: BoxHeader, media: &mut MediaFile, index: usi
             }
             b"mdhd" => {
                 let data = input.read(item.data, (item.end - item.data).min(36) as usize)?;
-                (parsed.timescale, _, _) = timing(&data)?;
+                (parsed.timescale, parsed.sample_duration, _) = timing(&data)?;
                 let lang_at = if data[0] == 1 { 32 } else { 20 };
                 let language = u16be(&data, lang_at)?;
-                let bytes = [
-                    ((language >> 10) & 31) as u8 + 0x60,
-                    ((language >> 5) & 31) as u8 + 0x60,
-                    (language & 31) as u8 + 0x60,
-                ];
-                if bytes.iter().all(u8::is_ascii_lowercase) && &bytes != b"und" {
-                    parsed.language = Some(String::from_utf8_lossy(&bytes).into_owned());
+                if language < 0x400 {
+                    parsed.language = macintosh_language(language).map(str::to_owned);
+                } else {
+                    let bytes = [
+                        ((language >> 10) & 31) as u8 + 0x60,
+                        ((language >> 5) & 31) as u8 + 0x60,
+                        (language & 31) as u8 + 0x60,
+                    ];
+                    if bytes.iter().all(u8::is_ascii_lowercase) && &bytes != b"und" {
+                        parsed.language = Some(String::from_utf8_lossy(&bytes).into_owned());
+                    }
                 }
             }
             b"minf" => minf = Some(item),
             _ => {}
         }
     }
+    // Only video and audio tracks are reported.
+    let minf = minf.filter(|_| matches!(&parsed.kind, b"vide" | b"soun"));
     if let Some(minf) = minf {
         for item in boxes(input, minf.data, minf.end)? {
             if &item.kind != b"stbl" {
                 continue;
             }
-            for table in boxes(input, item.data, item.end)? {
+            let video = &parsed.kind == b"vide";
+            let mut described = false;
+            let mut timing_table = None;
+            let mut at = item.data;
+            // stsd comes first; a video track also needs its frame count, from
+            // stts or stsz, so the large tables after them are never read or skipped.
+            while at < item.end && !(described && (!video || parsed.frames > 0)) {
+                let table = next_box(input, at, item.end)?;
+                at = table.end;
                 match &table.kind {
-                    b"stsd" => sample_description(input, table, &mut parsed)?,
-                    b"stts" => {
-                        let head =
-                            input.read(table.data, (table.end - table.data).min(8) as usize)?;
-                        let count = u32be(&head, 4)?;
-                        let length = u64::from(count)
-                            .checked_mul(8)
-                            .and_then(|n| n.checked_add(8))
-                            .ok_or("MP4 timing table overflow")?;
-                        if length != table.end - table.data || count as usize > MAX_ELEMENTS {
-                            return Err("Invalid or oversized MP4 timing table".into());
+                    b"stsd" => {
+                        sample_description(input, table, &mut parsed)?;
+                        described = true;
+                    }
+                    // A constant frame rate needs a few entries, already buffered
+                    // after stsd; a long table is left for the stsz count.
+                    b"stts" if video && table.end - table.data <= 4_096 => {
+                        frame_timing(input, table, &mut parsed)?;
+                    }
+                    b"stts" => timing_table = Some(table),
+                    b"stsz" | b"stz2" if video => {
+                        if table.end - table.data < 12 {
+                            return Err("Truncated MP4 sample sizes".into());
                         }
-                        // Read in blocks to keep long tables from causing large allocations.
-                        let mut cursor = table.data + 8;
-                        for chunk in 0..count.div_ceil(512) {
-                            let entries = (count - chunk * 512).min(512);
-                            let data = input.read(cursor, entries as usize * 8)?;
-                            for at in (0..data.len()).step_by(8) {
-                                parsed.frames = parsed
-                                    .frames
-                                    .checked_add(u64::from(u32be(&data, at)?))
-                                    .ok_or("MP4 frame count overflow")?;
-                                let span = u64::from(u32be(&data, at)?)
-                                    .checked_mul(u64::from(u32be(&data, at + 4)?))
-                                    .ok_or("MP4 timing table duration overflow")?;
-                                parsed.sample_duration =
-                                    parsed
-                                        .sample_duration
-                                        .checked_add(span)
-                                        .ok_or("MP4 timing table duration overflow")?;
-                            }
-                            cursor += data.len() as u64;
-                        }
+                        parsed.frames = u64::from(u32be(&input.read(table.data, 12)?, 8)?);
                     }
                     _ => {}
                 }
+            }
+            if video
+                && (parsed.frames == 0 || parsed.sample_duration == 0)
+                && let Some(table) = timing_table
+            {
+                frame_timing(input, table, &mut parsed)?;
             }
         }
     }
@@ -272,6 +289,44 @@ fn track(input: &mut Input, header: BoxHeader, media: &mut MediaFile, index: usi
             title: None,
             default: parsed.default,
         });
+    }
+    Ok(())
+}
+
+/// Counts frames and their total duration from the timing table.
+fn frame_timing(input: &mut Input, table: BoxHeader, parsed: &mut Track) -> Result<()> {
+    parsed.frames = 0;
+    parsed.sample_duration = 0;
+    let head = input.read(table.data, (table.end - table.data).min(8) as usize)?;
+    let count = u32be(&head, 4)?;
+    let length = u64::from(count)
+        .checked_mul(8)
+        .and_then(|n| n.checked_add(8))
+        .ok_or("MP4 timing table overflow")?;
+    // One entry per frame is common in remuxed or variable-rate video; the box
+    // size and the metadata budget bound the work.
+    if length != table.end - table.data {
+        return Err("Invalid MP4 timing table".into());
+    }
+    // Read in blocks to keep long tables from causing large allocations.
+    let mut cursor = table.data + 8;
+    for chunk in 0..count.div_ceil(512) {
+        let entries = (count - chunk * 512).min(512);
+        let data = input.read(cursor, entries as usize * 8)?;
+        for at in (0..data.len()).step_by(8) {
+            parsed.frames = parsed
+                .frames
+                .checked_add(u64::from(u32be(&data, at)?))
+                .ok_or("MP4 frame count overflow")?;
+            let span = u64::from(u32be(&data, at)?)
+                .checked_mul(u64::from(u32be(&data, at + 4)?))
+                .ok_or("MP4 timing table duration overflow")?;
+            parsed.sample_duration = parsed
+                .sample_duration
+                .checked_add(span)
+                .ok_or("MP4 timing table duration overflow")?;
+        }
+        cursor += data.len() as u64;
     }
     Ok(())
 }
@@ -452,6 +507,16 @@ fn bits(data: &[u8], at: &mut usize, count: usize) -> Result<u32> {
         *at += 1;
     }
     Ok(value)
+}
+
+/// QuickTime stores a Macintosh language code below 0x400 instead of an ISO 639 code.
+fn macintosh_language(code: u16) -> Option<&'static str> {
+    const CODES: [&str; 34] = [
+        "eng", "fre", "ger", "ita", "dut", "swe", "spa", "dan", "por", "nor", "heb", "jpn", "ara",
+        "fin", "gre", "ice", "mlt", "tur", "hrv", "chi", "urd", "hin", "tha", "kor", "lit", "pol",
+        "hun", "est", "lav", "sme", "fao", "per", "rus", "chi",
+    ];
+    CODES.get(usize::from(code)).copied()
 }
 
 fn codec(kind: &[u8; 4]) -> String {

@@ -147,10 +147,22 @@ pub(super) fn parse(input: &mut Input, media: &mut MediaFile) -> Result<()> {
     while at < segment.end {
         let element = header(input, at, segment.end)?;
         match element.id {
-            0x114d9b74 => seek_head(input, element, &mut seeks)?,
+            0x114d9b74 => {
+                seek_head(input, element, &mut seeks)?;
+                parsed.insert((element.id, at));
+            }
             0x1549a966 | 0x1654ae6b | 0x1254c367 => {
                 parse_metadata(input, element, media)?;
                 parsed.insert((element.id, at));
+            }
+            // Clusters, Cues and attachments can span most of the file. Once Info
+            // and Tracks are read or indexed, the SeekHead leads to anything else.
+            _ if !seeks.is_empty()
+                && [0x1549a966, 0x1654ae6b]
+                    .iter()
+                    .all(|wanted| parsed.iter().chain(&seeks).any(|(id, _)| id == wanted)) =>
+            {
+                break;
             }
             _ => {}
         }
@@ -159,8 +171,11 @@ pub(super) fn parse(input: &mut Input, media: &mut MediaFile) -> Result<()> {
         }
         at = element.end;
     }
-    for (id, offset) in seeks {
-        if !matches!(id, 0x1549a966 | 0x1654ae6b | 0x1254c367) {
+    // A SeekHead may point to a second one, written after the clusters.
+    let mut next = 0;
+    while let Some(&(id, offset)) = seeks.get(next) {
+        next += 1;
+        if !matches!(id, 0x114d9b74 | 0x1549a966 | 0x1654ae6b | 0x1254c367) {
             continue;
         }
         let at = segment
@@ -174,7 +189,11 @@ pub(super) fn parse(input: &mut Input, media: &mut MediaFile) -> Result<()> {
         if target.id != id || target.unknown {
             return Err("Invalid Matroska SeekHead target".into());
         }
-        parse_metadata(input, target, media)?;
+        if id == 0x114d9b74 {
+            seek_head(input, target, &mut seeks)?;
+        } else {
+            parse_metadata(input, target, media)?;
+        }
         parsed.insert((id, at));
     }
     Ok(())

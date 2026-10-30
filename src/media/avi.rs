@@ -9,28 +9,35 @@ struct Chunk {
 fn chunks(input: &mut Input, mut at: u64, end: u64) -> Result<Vec<Chunk>> {
     let mut result = Vec::new();
     while at < end {
-        input.count()?;
-        if end - at < 8 {
-            return Err("Truncated AVI chunk".into());
-        }
-        let head = input.read(at, 8)?;
-        let size = u64::from(u32le(&head, 4)?);
-        let body = at + 8;
-        let next = body.checked_add(size).ok_or("AVI size overflow")?;
-        if next > end {
-            return Err("AVI chunk is out of bounds".into());
-        }
-        result.push(Chunk {
-            kind: head[..4].try_into().map_err(|_| "Invalid AVI chunk type")?,
-            data: body,
-            end: next,
-        });
-        at = next.checked_add(size & 1).ok_or("AVI alignment overflow")?;
-        if at > end {
-            return Err("Truncated AVI alignment".into());
-        }
+        let (chunk, next) = next_chunk(input, at, end)?;
+        result.push(chunk);
+        at = next;
     }
     Ok(result)
+}
+/// Reads the chunk header at `at` and returns the chunk and where the next one starts.
+fn next_chunk(input: &mut Input, at: u64, end: u64) -> Result<(Chunk, u64)> {
+    input.count()?;
+    if end - at < 8 {
+        return Err("Truncated AVI chunk".into());
+    }
+    let head = input.read(at, 8)?;
+    let size = u64::from(u32le(&head, 4)?);
+    let body = at + 8;
+    let next = body.checked_add(size).ok_or("AVI size overflow")?;
+    if next > end {
+        return Err("AVI chunk is out of bounds".into());
+    }
+    let after = next.checked_add(size & 1).ok_or("AVI alignment overflow")?;
+    if after > end {
+        return Err("Truncated AVI alignment".into());
+    }
+    let chunk = Chunk {
+        kind: head[..4].try_into().map_err(|_| "Invalid AVI chunk type")?,
+        data: body,
+        end: next,
+    };
+    Ok((chunk, after))
 }
 
 pub(super) fn parse(input: &mut Input, media: &mut MediaFile) -> Result<()> {
@@ -43,7 +50,13 @@ pub(super) fn parse(input: &mut Input, media: &mut MediaFile) -> Result<()> {
         return Err("Invalid AVI RIFF size".into());
     }
     let mut index = 0;
-    for item in chunks(input, 12, end)? {
+    let mut frame_micros = 0;
+    let mut total_frames = None;
+    let mut at = 12;
+    let mut described = false;
+    while at < end {
+        let (item, next) = next_chunk(input, at, end)?;
+        at = next;
         if &item.kind != b"LIST" {
             continue;
         }
@@ -51,22 +64,34 @@ pub(super) fn parse(input: &mut Input, media: &mut MediaFile) -> Result<()> {
             return Err("Truncated AVI list".into());
         }
         let kind = input.read(item.data, 4)?;
+        // The media data and the index after it fill the file; writers put
+        // INFO before them.
+        if kind == b"movi" && described {
+            break;
+        }
         if kind == b"hdrl" {
+            described = true;
             for entry in chunks(input, item.data + 4, item.end)? {
                 if &entry.kind == b"avih" {
                     let data = input.read(entry.data, (entry.end - entry.data).min(56) as usize)?;
-                    let micros = u32le(&data, 0)?;
-                    let frames = u32le(&data, 16)?;
-                    if micros > 0 && frames > 0 {
-                        media.duration_seconds =
-                            Some(f64::from(micros) * f64::from(frames) / 1_000_000.0);
+                    frame_micros = u32le(&data, 0)?;
+                    total_frames = total_frames.or(Some(u32le(&data, 16)?));
+                } else if &entry.kind == b"LIST" && entry.end - entry.data >= 4 {
+                    let kind = input.read(entry.data, 4)?;
+                    if kind == b"strl" {
+                        stream(input, entry, media, index)?;
+                        index += 1;
+                    } else if kind == b"odml" {
+                        // avih counts the first RIFF only; OpenDML holds the total.
+                        for header in chunks(input, entry.data + 4, entry.end)? {
+                            if &header.kind == b"dmlh" && header.end - header.data >= 4 {
+                                let frames = u32le(&input.read(header.data, 4)?, 0)?;
+                                if frames > 0 {
+                                    total_frames = Some(frames);
+                                }
+                            }
+                        }
                     }
-                } else if &entry.kind == b"LIST"
-                    && entry.end - entry.data >= 4
-                    && input.read(entry.data, 4)? == b"strl"
-                {
-                    stream(input, entry, media, index)?;
-                    index += 1;
                 }
             }
         } else if kind == b"INFO" {
@@ -87,6 +112,12 @@ pub(super) fn parse(input: &mut Input, media: &mut MediaFile) -> Result<()> {
                 }
             }
         }
+    }
+    if let Some(frames) = total_frames
+        && frame_micros > 0
+        && frames > 0
+    {
+        media.duration_seconds = Some(f64::from(frame_micros) * f64::from(frames) / 1_000_000.0);
     }
     Ok(())
 }
@@ -163,7 +194,11 @@ fn stream(input: &mut Input, parent: Chunk, media: &mut MediaFile, index: usize)
         });
     } else if &header[..4] == b"auds" {
         let format = format.ok_or("Missing AVI audio format")?;
-        let id = u16le(&format, 0)?;
+        let mut id = u16le(&format, 0)?;
+        // WAVE_FORMAT_EXTENSIBLE names the codec in its subformat GUID.
+        if id == 0xfffe && format.len() >= 26 && u16le(&format, 16)? >= 22 {
+            id = u16le(&format, 24)?;
+        }
         let channels = u16le(&format, 2)?;
         let sample_rate = u32le(&format, 4)?;
         if channels == 0 || sample_rate == 0 {
