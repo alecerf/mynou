@@ -1,4 +1,6 @@
 //! Durable orchestration. Locks never cover imports or Plex requests.
+#[cfg(test)]
+mod import_tests;
 mod startup;
 #[cfg(test)]
 mod startup_tests;
@@ -1320,60 +1322,10 @@ impl Engine {
         // publishes one destination, including recovery after a pre-journal crash.
         job.state = "importing".into();
         lock(&self.store)?.update(job.clone())?;
-        let mut candidates = Vec::new();
-        for file in &job.files {
-            let p = Path::new(file);
-            if !active.load(Ordering::Acquire) {
-                return Err("Processing interrupted".into());
-            }
-            // Ignore auxiliary torrent files and analyze each supported media file.
-            let ext = p
-                .extension()
-                .and_then(|v| v.to_str())
-                .unwrap_or("")
-                .to_ascii_lowercase();
-            if [
-                "mp4", "m4v", "mov", "mkv", "webm", "avi", "wav", "flac", "mp3",
-            ]
-            .contains(&ext.as_str())
-            {
-                let analysis = media::analyze(p)?;
-                if matches!(job.request.kind.as_str(), "movie" | "episode")
-                    && analysis.video_streams.is_empty()
-                {
-                    continue;
-                }
-                let score = (!analysis.video_streams.is_empty(), analysis.size_bytes);
-                candidates.push((score, p));
-            }
-        }
-        // Each request represents one movie or episode. Prefer the largest media
-        // file to avoid importing samples or mixing episodes from a pack.
-        candidates.sort_by_key(|c| c.0);
-        let source = candidates
-            .last()
-            .ok_or("No supported media found for this request")?
-            .1;
-        if job.request.kind == "episode" && job.pack_file.is_none() && job.files.len() > 1 {
-            let numbering = job.request.source_numbering.unwrap_or(
-                crate::numbering::SourceNumber::SeasonEpisode(crate::numbering::EpisodeNumber {
-                    season: job.request.season,
-                    episode: job.request.episode,
-                }),
-            );
-            let matching: Vec<_> = candidates
-                .iter()
-                .filter(|(_, path)| {
-                    numbering.matches_file(path, job.request.year, &job.request.title)
-                })
-                .collect();
-            if matching.len() != 1 {
-                return Err(
-                    "Ambiguous pack: exactly one file matching the episode is required".into(),
-                );
-            }
-            let path = matching[0].1;
-            let imported = self.import_version(path, &config.series_root, job, active)?;
+        let pack = job.request.kind == "episode" && job.pack_file.is_none() && job.files.len() > 1;
+        let source = import_source(&job.files, &job.request, pack, active)?;
+        if pack {
+            let imported = self.import_version(source, &config.series_root, job, active)?;
             job.imports.push(imported.to_string_lossy().into_owned());
         } else {
             let root = if job.request.kind == "episode" {
@@ -1400,6 +1352,91 @@ impl Engine {
                 status.available_files.contains(&expected)
             })
     }
+}
+
+/// The file of a download to import: the largest supported media file with
+/// video, or for an episode in a pack the single file named for it.
+fn import_source<'a>(
+    files: &'a [String],
+    request: &Request,
+    pack: bool,
+    active: &AtomicBool,
+) -> Result<&'a Path> {
+    // Supported media files, largest first, sized without opening them.
+    let mut supported = Vec::new();
+    for file in files {
+        let p = Path::new(file);
+        // Ignore auxiliary torrent files.
+        let ext = p
+            .extension()
+            .and_then(|v| v.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        if [
+            "mp4", "m4v", "mov", "mkv", "webm", "avi", "wav", "flac", "mp3",
+        ]
+        .contains(&ext.as_str())
+        {
+            let size = std::fs::metadata(p).map(|m| m.len()).unwrap_or(0);
+            supported.push((size, p));
+        }
+    }
+    // Among equal sizes the last listed file wins, as it always has.
+    supported.reverse();
+    supported.sort_by_key(|(size, _)| std::cmp::Reverse(*size));
+    let video_only = matches!(request.kind.as_str(), "movie" | "episode");
+    if pack {
+        let numbering =
+            request
+                .source_numbering
+                .unwrap_or(crate::numbering::SourceNumber::SeasonEpisode(
+                    crate::numbering::EpisodeNumber {
+                        season: request.season,
+                        episode: request.episode,
+                    },
+                ));
+        // Only files named for this episode are analyzed.
+        supported.retain(|(_, path)| numbering.matches_file(path, request.year, &request.title));
+    }
+    // A damaged or unsupported extra, such as a truncated sample, is skipped
+    // rather than failing the import; its error is kept if nothing else serves.
+    let mut failure = None;
+    let mut candidates = Vec::new();
+    for (_, p) in supported {
+        if !active.load(Ordering::Acquire) {
+            return Err("Processing interrupted".into());
+        }
+        let analysis = match media::analyze(p) {
+            Ok(analysis) => analysis,
+            Err(e) => {
+                failure.get_or_insert(format!("{}: {e}", p.display()));
+                continue;
+            }
+        };
+        let video = !analysis.video_streams.is_empty();
+        if video_only && !video {
+            continue;
+        }
+        candidates.push((video, p));
+        // Each request represents one movie or episode: the largest file with
+        // video wins, which avoids importing samples. A pack needs every match
+        // to prove that only one file holds the episode.
+        if video && !pack {
+            break;
+        }
+    }
+    if pack && candidates.len() != 1 {
+        return Err("Ambiguous pack: exactly one file matching the episode is required".into());
+    }
+    let (_, source) = *candidates
+        .iter()
+        .find(|(video, _)| *video)
+        .or(candidates.first())
+        .ok_or_else(|| match &failure {
+            Some(failure) => format!("No supported media found for this request ({failure})"),
+            None => "No supported media found for this request".into(),
+        })?;
+    Ok(source)
 }
 
 pub struct Workers {

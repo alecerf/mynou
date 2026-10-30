@@ -479,3 +479,195 @@ fn avi_streams_and_negative_bitmap_height() {
     assert_eq!(media.audio_streams[0].index, 1);
     assert_eq!(media.audio_streams[0].codec, "pcm_s16le");
 }
+
+fn seek(id: u32, position: u64) -> Vec<u8> {
+    element(
+        0x4dbb,
+        &[
+            element(0x53ab, &id.to_be_bytes()),
+            element(0x53ac, &position.to_be_bytes()),
+        ]
+        .concat(),
+    )
+}
+
+#[test]
+fn matroska_skips_clusters_and_follows_a_second_seek_head() {
+    let info = element(
+        0x1549a966,
+        &[
+            element(0x2ad7b1, &[0x0f, 0x42, 0x40]),
+            element(0x4489, &3_000_f64.to_be_bytes()),
+        ]
+        .concat(),
+    );
+    let tracks = element(
+        0x1654ae6b,
+        &element(
+            0xae,
+            &[
+                element(0x83, &[1]),
+                element(0x86, b"V_MPEG4/ISO/AVC"),
+                element(
+                    0xe0,
+                    &[
+                        element(0xb0, &1_920_u16.to_be_bytes()),
+                        element(0xba, &1_080_u16.to_be_bytes()),
+                    ]
+                    .concat(),
+                ),
+            ]
+            .concat(),
+        ),
+    );
+    let clusters: Vec<u8> = (0..100)
+        .flat_map(|_| element(0x1f43b675, &[0x55; 32 * 1024]))
+        .collect();
+    let first_len = element(0x114d9b74, &seek(0x114d9b74, 0)).len();
+    let second_at = (first_len + info.len() + tracks.len() + clusters.len()) as u64;
+    let second_len = element(0x114d9b74, &seek(0x1254c367, 0)).len();
+    let tags = element(
+        0x1254c367,
+        &element(
+            0x7373,
+            &element(
+                0x67c8,
+                &[element(0x45a3, b"TITLE"), element(0x4487, b"Tagged title")].concat(),
+            ),
+        ),
+    );
+    let segment = [
+        element(0x114d9b74, &seek(0x114d9b74, second_at)),
+        info,
+        tracks,
+        clusters,
+        element(0x114d9b74, &seek(0x1254c367, second_at + second_len as u64)),
+        tags,
+    ]
+    .concat();
+    let data = [
+        element(0x1a45dfa3, &element(0x4282, b"matroska")),
+        element(0x18538067, &segment),
+    ]
+    .concat();
+    let fixture = Fixture::new("clusters.mkv", &data);
+    mynou::media::take_io_stats();
+    let media = analyze(fixture.path()).unwrap();
+    let io = mynou::media::take_io_stats();
+    assert_eq!(media.title, "Tagged title");
+    assert_eq!(media.duration_seconds, Some(3.0));
+    assert_eq!(media.video_streams[0].codec, "h264");
+    assert!(io.reads < 10, "clusters must not be read: {io:?}");
+}
+
+fn mp4_box(kind: &[u8; 4], data: &[u8]) -> Vec<u8> {
+    [
+        &((data.len() + 8) as u32).to_be_bytes(),
+        kind.as_slice(),
+        data,
+    ]
+    .concat()
+}
+
+#[test]
+fn mp4_long_timing_table_and_macintosh_language() {
+    let frames = 150_000_u32;
+    let mut mvhd = vec![0; 100];
+    mvhd[12..16].copy_from_slice(&24_000_u32.to_be_bytes());
+    mvhd[16..20].copy_from_slice(&(frames * 1_001).to_be_bytes());
+    let mut mdhd = vec![0; 24];
+    mdhd[12..16].copy_from_slice(&24_000_u32.to_be_bytes());
+    mdhd[16..20].copy_from_slice(&(frames * 1_001).to_be_bytes());
+    mdhd[20..22].copy_from_slice(&1_u16.to_be_bytes()); // Macintosh code 1: French
+    let mut hdlr = vec![0; 24];
+    hdlr[8..12].copy_from_slice(b"vide");
+    let mut sample = vec![0; 78];
+    sample[24..26].copy_from_slice(&1_920_u16.to_be_bytes());
+    sample[26..28].copy_from_slice(&1_080_u16.to_be_bytes());
+    let stsd = [
+        &[0, 0, 0, 0, 0, 0, 0, 1],
+        mp4_box(b"avc1", &sample).as_slice(),
+    ]
+    .concat();
+    // Alternating frame durations leave one entry per frame, as in a remux from Matroska.
+    let mut stts = [[0_u8; 4], frames.to_be_bytes()].concat();
+    for frame in 0..frames {
+        stts.extend_from_slice(&1_u32.to_be_bytes());
+        stts.extend_from_slice(&(1_000 + frame % 2 * 2).to_be_bytes());
+    }
+    let stbl = mp4_box(
+        b"stbl",
+        &[mp4_box(b"stsd", &stsd), mp4_box(b"stts", &stts)].concat(),
+    );
+    let mdia = mp4_box(
+        b"mdia",
+        &[
+            mp4_box(b"mdhd", &mdhd),
+            mp4_box(b"hdlr", &hdlr),
+            mp4_box(b"minf", &stbl),
+        ]
+        .concat(),
+    );
+    let trak = mp4_box(b"trak", &[mp4_box(b"tkhd", &[0, 0, 0, 1]), mdia].concat());
+    let data = [
+        mp4_box(b"ftyp", b"isom\0\0\0\0"),
+        mp4_box(b"moov", &[mp4_box(b"mvhd", &mvhd), trak].concat()),
+    ]
+    .concat();
+    let fixture = Fixture::new("long.mp4", &data);
+    let media = analyze(fixture.path()).unwrap();
+    let video = &media.video_streams[0];
+    assert!((video.frame_rate.unwrap() - 24_000.0 / 1_001.0).abs() < 1e-9);
+    assert_eq!(video.language.as_deref(), Some("fre"));
+    assert_eq!(
+        media.duration_seconds,
+        Some(f64::from(frames) * 1_001.0 / 24_000.0)
+    );
+}
+
+#[test]
+fn avi_opendml_total_frames_and_extensible_audio() {
+    let mut avih = vec![0; 56];
+    avih[..4].copy_from_slice(&40_000_u32.to_le_bytes());
+    avih[16..20].copy_from_slice(&50_u32.to_le_bytes()); // first RIFF only
+    let mut strh = vec![0; 56];
+    strh[..4].copy_from_slice(b"auds");
+    let mut format = vec![0; 40];
+    format[..2].copy_from_slice(&0xfffe_u16.to_le_bytes());
+    format[2..4].copy_from_slice(&6_u16.to_le_bytes());
+    format[4..8].copy_from_slice(&48_000_u32.to_le_bytes());
+    format[16..18].copy_from_slice(&22_u16.to_le_bytes());
+    format[24..26].copy_from_slice(&0x2000_u16.to_le_bytes());
+    let audio = riff_chunk(
+        b"LIST",
+        &[
+            b"strl".as_slice(),
+            &riff_chunk(b"strh", &strh),
+            &riff_chunk(b"strf", &format),
+        ]
+        .concat(),
+    );
+    let odml = riff_chunk(
+        b"LIST",
+        &[
+            b"odml".as_slice(),
+            &riff_chunk(b"dmlh", &500_u32.to_le_bytes()),
+        ]
+        .concat(),
+    );
+    let hdrl = riff_chunk(
+        b"LIST",
+        &[
+            b"hdrl".as_slice(),
+            &riff_chunk(b"avih", &avih),
+            &audio,
+            &odml,
+        ]
+        .concat(),
+    );
+    let fixture = Fixture::new("long.avi", &riff(b"AVI ", &hdrl));
+    let media = analyze(fixture.path()).unwrap();
+    assert_eq!(media.duration_seconds, Some(20.0));
+    assert_eq!(media.audio_streams[0].codec, "ac3");
+    assert_eq!(media.audio_streams[0].channels, Some(6));
+}

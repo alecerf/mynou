@@ -16,6 +16,9 @@ use std::path::Path;
 const MAX_METADATA: usize = 8 * 1024 * 1024;
 const MAX_METADATA_TOTAL: usize = 64 * 1024 * 1024;
 const MAX_ELEMENTS: usize = 100_000;
+/// Metadata blocks up to this size are read at once rather than header by
+/// header: on an SSD, one jump costs about as much as reading this much.
+const PRELOAD: u64 = 256 * 1024;
 
 #[derive(Debug, Clone)]
 pub struct MediaFile {
@@ -208,12 +211,59 @@ fn positive(value: Option<f64>) -> Option<f64> {
     value.filter(|n| n.is_finite() && *n > 0.0)
 }
 
+/// Reads issued to the operating system by [`analyze`] on this thread, for benchmarks.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct IoStats {
+    pub reads: u64,
+    pub bytes: u64,
+    /// Reads that do not start where the previous one ended.
+    pub jumps: u64,
+}
+thread_local! {
+    static IO: std::cell::Cell<IoStats> = const { std::cell::Cell::new(IoStats { reads: 0, bytes: 0, jumps: 0 }) };
+}
+/// Returns the counters since the previous call and resets them.
+pub fn take_io_stats() -> IoStats {
+    IO.with(|io| io.take())
+}
+
+struct Counted {
+    file: File,
+    position: u64,
+    next_read: Option<u64>,
+}
+impl Read for Counted {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let n = self.file.read(buf)?;
+        IO.with(|io| {
+            let mut stats = io.get();
+            stats.reads += 1;
+            stats.bytes += n as u64;
+            if self.next_read.is_some_and(|at| at != self.position) {
+                stats.jumps += 1;
+            }
+            io.set(stats);
+        });
+        self.position += n as u64;
+        self.next_read = Some(self.position);
+        Ok(n)
+    }
+}
+impl Seek for Counted {
+    fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64> {
+        self.position = self.file.seek(pos)?;
+        Ok(self.position)
+    }
+}
+
 struct Input {
-    file: BufReader<File>,
+    file: BufReader<Counted>,
     len: u64,
     elements: usize,
     position: u64,
     metadata_bytes: usize,
+    /// A preloaded block and its offset in the file.
+    window: (u64, Vec<u8>),
 }
 impl Input {
     fn open(path: &Path) -> Result<Self> {
@@ -227,11 +277,19 @@ impl Input {
             return Err("The media must be a regular file".into());
         }
         Ok(Self {
-            file: BufReader::with_capacity(16 * 1024, file),
+            file: BufReader::with_capacity(
+                16 * 1024,
+                Counted {
+                    file,
+                    position: 0,
+                    next_read: None,
+                },
+            ),
             len: meta.len(),
             elements: 0,
             position: 0,
             metadata_bytes: 0,
+            window: (0, Vec::new()),
         })
     }
     fn read(&mut self, offset: u64, size: usize) -> Result<Vec<u8>> {
@@ -251,6 +309,27 @@ impl Input {
         if end > self.len {
             return Err("Truncated media file".into());
         }
+        let (start, window) = &self.window;
+        if offset >= *start && end <= start + window.len() as u64 {
+            let at = (offset - start) as usize;
+            return Ok(window[at..at + size].to_vec());
+        }
+        let mut data = vec![0; size];
+        self.fill(offset, &mut data)?;
+        Ok(data)
+    }
+    /// Reads `size` bytes at `offset` in one request when they fit in
+    /// [`PRELOAD`], so that later reads inside them touch no file.
+    fn preload(&mut self, offset: u64, size: u64) -> Result<()> {
+        if size > PRELOAD || offset.checked_add(size).is_none_or(|end| end > self.len) {
+            return Ok(());
+        }
+        let mut data = vec![0; size as usize];
+        self.fill(offset, &mut data)?;
+        self.window = (offset, data);
+        Ok(())
+    }
+    fn fill(&mut self, offset: u64, data: &mut [u8]) -> Result<()> {
         let relative = i128::from(offset) - i128::from(self.position);
         if let Ok(relative) = i64::try_from(relative) {
             self.file
@@ -261,12 +340,11 @@ impl Input {
                 .seek(SeekFrom::Start(offset))
                 .map_err(|e| format!("Media seek: {e}"))?;
         }
-        let mut data = vec![0; size];
         self.file
-            .read_exact(&mut data)
+            .read_exact(data)
             .map_err(|e| format!("Media read: {e}"))?;
-        self.position = end;
-        Ok(data)
+        self.position = offset + data.len() as u64;
+        Ok(())
     }
     fn count(&mut self) -> Result<()> {
         self.elements += 1;
