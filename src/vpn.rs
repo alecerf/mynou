@@ -27,7 +27,6 @@ const STORAGE: &str = "Cannot persist private VPN intent; torrent networking rem
 const DISABLED: &str = "# mynou-vpn-v1 disabled\n";
 const ENABLED: &str = "# mynou-vpn-v1 enabled\n";
 const REVOKED: &str = "# mynou-vpn-v1 revoked\n";
-const UNCHOSEN: &str = "Choose a VPN profile or your own connection before torrents start";
 /// Opt-in NAT-PMP forwarding to the profile's DNS gateway (owner decision, #223).
 const FORWARDING: &str = "# mynou-forwarding natpmp\n";
 
@@ -36,9 +35,6 @@ enum Mode {
     Disabled,
     Enabled,
     Revoked,
-    /// No `vpn.conf` yet: torrents wait until the operator imports a profile
-    /// or chooses Direct. Never persisted; any control writes a real intent.
-    Unchosen,
 }
 struct Intent {
     mode: Mode,
@@ -76,7 +72,7 @@ impl Intent {
     }
     fn document(&self) -> String {
         let mut text = match self.mode {
-            Mode::Disabled | Mode::Unchosen => DISABLED,
+            Mode::Disabled => DISABLED,
             Mode::Enabled => ENABLED,
             Mode::Revoked => REVOKED,
         }
@@ -170,6 +166,58 @@ impl Network for Gate {
         }
     }
 }
+/// Direct networking for work that does not go through the VPN while it is
+/// on. It ends with the gate's generation, so nothing leaves while the VPN
+/// changes.
+pub(crate) struct Bypass {
+    gate: Arc<Gate>,
+    direct: Arc<dyn Network>,
+}
+impl Bypass {
+    pub(crate) fn new(gate: Arc<Gate>) -> Self {
+        Self {
+            gate,
+            direct: crate::torrent::transport::direct(),
+        }
+    }
+    fn network(&self) -> Result<&Arc<dyn Network>> {
+        if self.gate.retired.load(Ordering::Acquire) {
+            return Err(UNAVAILABLE.into());
+        }
+        Ok(&self.direct)
+    }
+}
+impl Network for Bypass {
+    fn generation(&self) -> Result<Option<String>> {
+        self.network()?.generation()
+    }
+    fn publication(&self) -> Result<Box<dyn Publication + '_>> {
+        let guard = self.gate.fence.read().map_err(|_| UNAVAILABLE)?;
+        let inner = self.network()?.publication()?;
+        Ok(Box::new(Lease {
+            _gate: guard,
+            _inner: inner,
+        }))
+    }
+    fn connect(&self, a: SocketAddr, timeout: Duration) -> Result<Box<dyn NetworkStream>> {
+        self.network()?.connect(a, timeout)
+    }
+    fn resolve(&self, a: &str, deadline: Instant) -> Result<Vec<SocketAddr>> {
+        self.network()?.resolve(a, deadline)
+    }
+    fn datagram(&self, ipv6: bool) -> Result<Box<dyn NetworkDatagram>> {
+        self.network()?.datagram(ipv6)
+    }
+    fn listen(&self, a: SocketAddr) -> Result<Box<dyn NetworkListener>> {
+        self.network()?.listen(a)
+    }
+    fn http(&self) -> HttpClient {
+        match self.network() {
+            Ok(inner) => inner.http(),
+            Err(_) => HttpClient::new().with_connector(Arc::new(Refused)),
+        }
+    }
+}
 struct Refused;
 impl HttpConnector for Refused {
     fn connect(&self, _: &str, _: u16, _: Instant) -> Result<Box<dyn NetworkStream>> {
@@ -205,15 +253,8 @@ pub(crate) struct Operator {
     changed: AtomicBool,
 }
 impl Operator {
+    /// A store without `vpn.conf` has the VPN off: everything goes direct.
     pub(crate) fn load(directory: &Path, runtime: bool) -> Arc<Self> {
-        Self::load_with(directory, runtime, false)
-    }
-    /// As the service loads it: a store that never chose waits for a choice
-    /// instead of using Direct, so no torrent leaves before a profile exists.
-    pub(crate) fn load_for_service(directory: &Path) -> Arc<Self> {
-        Self::load_with(directory, true, true)
-    }
-    fn load_with(directory: &Path, runtime: bool, choose: bool) -> Arc<Self> {
         let path = directory.join("vpn.conf");
         let missing = matches!(fs::symlink_metadata(&path), Err(e) if e.kind() == std::io::ErrorKind::NotFound);
         let loaded = if missing {
@@ -232,9 +273,7 @@ impl Operator {
             error: None,
             telemetry: None,
         };
-        if missing && choose {
-            state.mode = Mode::Unchosen;
-        } else if let Some(intent) = intent {
+        if let Some(intent) = intent {
             state.document = intent.document();
             state.mode = intent.mode;
             state.forwarding = intent.forwarding;
@@ -310,6 +349,13 @@ impl Operator {
                     .lock()
                     .is_ok_and(|s| s.error.is_none() && s.mode == Mode::Enabled))
     }
+    /// The VPN is on, or its intent cannot be read: traffic chosen for the
+    /// VPN waits for the tunnel instead of going direct.
+    pub(crate) fn protecting(&self) -> bool {
+        self.state.lock().map_or(true, |state| {
+            state.mode != Mode::Disabled || state.error.is_some()
+        })
+    }
     pub(crate) fn changed(&self) -> bool {
         self.changed.load(Ordering::Acquire)
     }
@@ -325,10 +371,7 @@ impl Operator {
             return value;
         };
         forwarding_json(&mut value, &state, gate);
-        value.insert(
-            "enabled",
-            !matches!(state.mode, Mode::Disabled | Mode::Unchosen),
-        );
+        value.insert("enabled", state.mode != Mode::Disabled);
         value.insert("profile_present", state.document.contains("[Interface]"));
         if let Some(error) = state.error {
             value.insert("state", "error");
@@ -347,10 +390,6 @@ impl Operator {
             Mode::Revoked => {
                 value.insert("state", "blocked");
                 value.insert("reason", "Profile revoked by operator");
-            }
-            Mode::Unchosen => {
-                value.insert("state", "unchosen");
-                value.insert("reason", UNCHOSEN);
             }
             Mode::Enabled => {
                 if let Some(driver) = &state.driver {
@@ -425,13 +464,7 @@ impl Operator {
         if self.changed() {
             return Err("VPN generation is already retiring; retry after reload".into());
         }
-        let mut intent = if state.mode == Mode::Unchosen {
-            Intent {
-                mode: Mode::Unchosen,
-                forwarding: false,
-                profile: None,
-            }
-        } else if state.error.is_none() {
+        let mut intent = if state.error.is_none() {
             Intent::decode(&state.document)?
         } else {
             Intent {
@@ -630,13 +663,6 @@ impl crate::engine::Engine {
         };
         operator.control(gate, action, profile)
     }
-    /// No VPN mode was ever chosen, so torrents and startup wait for one.
-    pub(crate) fn vpn_unchosen(&self) -> bool {
-        self.vpn
-            .as_ref()
-            .and_then(|operator| operator.state.lock().ok())
-            .is_some_and(|state| state.mode == Mode::Unchosen)
-    }
     pub(crate) fn vpn_ready(&self) -> bool {
         match (&self.vpn, &self.vpn_gate) {
             (Some(operator), Some(gate)) => operator.ready(gate),
@@ -653,6 +679,7 @@ impl crate::engine::Engine {
     pub(crate) fn forwarded_port(&self) -> Option<u16> {
         self.vpn_gate
             .as_ref()
+            .filter(|_| self.torrents_protected)
             .and_then(|gate| gate.forwarder.get())
             .and_then(Forwarder::advertise)
     }

@@ -5,7 +5,7 @@ use crate::{
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Component, Path, PathBuf};
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 
 /// Secret values in one store record, and the size of each.
 pub const MAX_SECRETS: usize = 256;
@@ -45,11 +45,30 @@ pub struct Plex {
     pub token_override: Option<String>,
     pub path_mappings: Vec<PathMapping>,
 }
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Catalog {
     pub enabled: bool,
     pub url: String,
     pub token_env: String,
+    /// The VPN, when TMDB goes through it; the engine sets it.
+    pub(crate) network: Option<Arc<dyn crate::torrent::transport::Network>>,
+}
+impl std::fmt::Debug for Catalog {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Catalog")
+            .field("enabled", &self.enabled)
+            .field("url", &self.url)
+            .finish_non_exhaustive()
+    }
+}
+/// What goes through the VPN while it is on. With the VPN off, all of it is
+/// direct.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct VpnUses {
+    pub torrents: bool,
+    /// Indexers and IRC sources.
+    pub indexers: bool,
+    pub tmdb: bool,
 }
 #[derive(Clone, Debug)]
 pub struct Source {
@@ -72,6 +91,7 @@ pub struct Config {
     pub allowed_hosts: Vec<String>,
     /// Computers on the local network use Mynou without signing in.
     pub local_network_open: bool,
+    pub vpn: VpnUses,
     pub movies_root: PathBuf,
     pub series_root: PathBuf,
     pub downloads: DownloadConfig,
@@ -168,6 +188,14 @@ pub fn default_json() -> Value {
                 ("enabled", false.into()),
                 ("url", "https://api.themoviedb.org/3".into()),
                 ("token_env", "MYNOU_TMDB_TOKEN".into()),
+            ]),
+        ),
+        (
+            "vpn",
+            object(vec![
+                ("torrents", true.into()),
+                ("indexers", false.into()),
+                ("tmdb", false.into()),
             ]),
         ),
         ("series_packs", object(vec![("enabled", false.into())])),
@@ -330,6 +358,33 @@ fn local_network_open(value: &Value) -> Result<bool> {
     }
 }
 
+/// Only torrents go through the VPN unless chosen otherwise. A document from
+/// before these choices keeps sources it marked `protected` behind the VPN.
+fn vpn_uses(value: &Value) -> Result<VpnUses> {
+    let protected = |list: Option<&Value>| {
+        list.and_then(Value::as_array).is_some_and(|sources| {
+            sources
+                .iter()
+                .any(|s| s.get("protection").and_then(Value::as_str) == Some("protected"))
+        })
+    };
+    let legacy = protected(value.get("indexers"))
+        || protected(value.get("irc").and_then(|irc| irc.get("sources")));
+    let Some(section) = value.get("vpn") else {
+        return Ok(VpnUses {
+            torrents: true,
+            indexers: legacy,
+            tmdb: false,
+        });
+    };
+    expect_object(section)?;
+    Ok(VpnUses {
+        torrents: boolean(section, "torrents", true)?,
+        indexers: boolean(section, "indexers", legacy)?,
+        tmdb: boolean(section, "tmdb", false)?,
+    })
+}
+
 fn monitoring(value: &Value) -> Result<Monitoring> {
     let Some(section) = value.get("monitoring") else {
         return Ok(Monitoring::default());
@@ -458,6 +513,7 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
         .map_err(|_| "Configuration: listen requires an IP address and port, such as 127.0.0.1:8787 or 0.0.0.0:80")?;
     let allowed_hosts = allowed_hosts(v)?;
     let local_network_open = local_network_open(v)?;
+    let vpn = vpn_uses(v)?;
     for url in [
         text(p, "url", "http://127.0.0.1:32400")?,
         text(
@@ -489,20 +545,21 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
     };
     let base = absolute_path(base)?;
     let requesters = crate::requesters::Settings::from_json(v.get("requesters"), &base)?;
-    let irc = match v.get("irc") {
+    let mut irc = match v.get("irc") {
         Some(v) => crate::irc::Settings::from_json(v, &selection)?,
         None => crate::irc::Settings::default(),
     };
-    for source in &irc.sources {
-        if source.protection == crate::source_network::Protection::Protected
-            && let Some(lookup) = &source.announcement_lookup
-            && !sources.iter().any(|s| {
-                s.options.id.as_deref() == Some(&lookup.indexer)
-                    && s.options.protection == crate::source_network::Protection::Protected
-            })
-        {
-            return Err("IRC: protected lookup requires a protected indexer".into());
-        }
+    // Indexers and IRC sources go through the VPN together, as chosen.
+    let protection = if vpn.indexers {
+        crate::source_network::Protection::Protected
+    } else {
+        crate::source_network::Protection::Direct
+    };
+    for source in &mut sources {
+        source.options.protection = protection;
+    }
+    for source in &mut irc.sources {
+        source.protection = protection;
     }
     if irc.rules.iter().any(|r| {
         r.requester
@@ -531,6 +588,7 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
         listen,
         allowed_hosts,
         local_network_open,
+        vpn,
         movies_root: path(&base, text(library, "movies_root", "library/movies")?)?,
         series_root: path(&base, text(library, "series_root", "library/series")?)?,
         downloads: DownloadConfig {
@@ -573,6 +631,7 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
             enabled: boolean(c, "enabled", false)?,
             url: text(c, "url", "https://api.themoviedb.org/3")?,
             token_env: text(c, "token_env", "MYNOU_TMDB_TOKEN")?,
+            network: None,
         },
         sources,
         requesters,

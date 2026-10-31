@@ -47,6 +47,12 @@ const SETTING_GROUPS = [
     ['updates.automatic', 'Update Mynou automatically', 'check', { hint: 'Checked once a day.' }],
   ]],
 ];
+// What goes through the VPN while it is on; saved with the other settings.
+const VPN_USES = [
+  ['vpn.torrents', 'Torrents', 'check', { hint: 'Peers and trackers see the VPN’s address instead of yours.' }],
+  ['vpn.indexers', 'Indexers', 'check', { hint: 'Searches and feeds, IRC announces included.' }],
+  ['vpn.tmdb', 'TMDB', 'check', { hint: 'Titles, posters and episode lists.' }],
+];
 const INDEXER_KINDS = ['torznab', 'json', 'rss'];
 const settings = { report: null, document: null, secrets: [], access: null, loading: false, plexSections: null };
 
@@ -406,9 +412,9 @@ async function saveSettings(document) {
 // VPN: its controls apply at once, outside the settings document and Save.
 const VPN_STATES = {
   protected: ['Protected', 'ok'], connecting: ['Connecting', 'warn'], reconnecting: ['Reconnecting', 'warn'],
-  disabled: ['Off', 'warn'], blocked: ['Blocked', 'bad'], error: ['Error', 'bad'], unchosen: ['Not chosen', 'warn'],
+  disabled: ['Off', 'warn'], blocked: ['Blocked', 'bad'], error: ['Error', 'bad'],
 };
-const VPN_DONE = { enable: 'VPN turned on: connecting', disable: 'Torrents use your own connection' };
+const VPN_DONE = { enable: 'VPN turned on: connecting', disable: 'VPN turned off: everything uses your own connection' };
 const VPN_REASONS = {
   GaveUp: 'The VPN server never answered. Check the profile, or try another server.',
   Expired: 'The session expired.', Failed: 'The tunnel failed.', EndpointChanged: 'The server address changed.',
@@ -453,19 +459,17 @@ function paintVpn() {
   const age = Number(vpn?.handshake_age_secs);
   $('.hint', row('state')).textContent = external ? 'This Mynou uses an outside network; it runs no VPN of its own.'
     : vpn?.state === 'protected' ? `${vpn.ipv6 ? 'IPv4 and IPv6.' : 'IPv4 only.'} ${Number.isFinite(age) && vpn.handshake_age_secs !== null ? `Last handshake ${age} s ago.` : 'Connected.'}`
-    : vpn?.state === 'disabled' ? (profile ? 'Torrents use your own connection.' : 'Import a profile to protect your torrents.')
+    : vpn?.state === 'disabled' ? (profile ? 'Everything uses your own connection.' : 'Import a profile to use a VPN.')
     : vpn?.state === 'connecting' ? 'Waiting for the VPN server to answer.'
-    : vpn?.state === 'unchosen' ? 'Torrents wait until you choose: import a WireGuard profile, or use your own connection.'
     : vpn?.reason && vpn.reason !== VPN_RESTARTING ? VPN_REASONS[vpn.reason] ?? vpn.reason : '';
   // A failed tunnel is retried from here: turning it off would send torrents direct.
   const failed = vpn?.enabled && !revoked && (vpn.state === 'error' || (vpn.state === 'blocked' && vpn.reason !== VPN_RESTARTING));
   const enable = $('[data-vpn-act="enable"]', list);
   enable.hidden = external || !profile || (vpn.enabled && !revoked && !failed);
   enable.textContent = failed ? 'Try again' : 'Turn on';
-  const unchosen = vpn?.state === 'unchosen';
-  const disable = $('[data-vpn-act="disable"]', list);
-  disable.hidden = external || !(vpn?.enabled || unchosen);
-  disable.textContent = unchosen ? 'Use my own connection' : 'Turn off';
+  $('[data-vpn-act="disable"]', list).hidden = external || !vpn?.enabled;
+  // The choices only matter while the VPN is on.
+  $('#settings-vpn-uses').hidden = external || !vpn?.enabled;
   row('profile').hidden = !vpn || external;
   const imported = $('.badge', row('profile'));
   imported.textContent = profile ? 'Imported' : 'Not imported';
@@ -540,9 +544,7 @@ views.settings = {
       if (!button) return;
       const action = button.dataset.vpnAct;
       if (action === 'import') { $('[data-vpn="file"]', vpn).click(); return; }
-      if (action === 'disable' && !confirm(data.get('status')?.data?.vpn?.state === 'unchosen'
-        ? 'Use your own connection? Peers and trackers will see your address.'
-        : 'Turn off the VPN? Torrents will then use your own connection.')) return;
+      if (action === 'disable' && !confirm('Turn off the VPN? Everything will then use your own connection.')) return;
       act(button, () => vpnControl({ action }), VPN_DONE[action]);
     });
     vpn.addEventListener('change', (event) => {
@@ -615,6 +617,7 @@ views.settings = {
     // Saved indexers keep their position, which is also the order of the live reports.
     $('#settings-indexers').replaceChildren(...itemsOf(settings.document.indexers).map((indexer, i) => Object.assign(indexerRow(indexer), { _saved: i })));
     $('#settings-network').replaceChildren(...networkRows());
+    $('#settings-vpn-uses').replaceChildren(...VPN_USES.map(settingRow));
     $('#save-bar').hidden = true;
     syncDependents();
     showPage();

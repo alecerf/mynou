@@ -120,11 +120,11 @@ disabled:
 | Plex server and watchlist | Plex: **Connect to Plex**, then choose the server | |
 | TMDB catalog, to find titles and follow series | TMDB catalog | TMDB token |
 | Sources to search | Indexers | API key of each source |
-| How torrents connect | VPN: a WireGuard profile, or your own connection | |
+| What goes through a VPN | VPN: a WireGuard profile, then torrents, indexers, TMDB | |
 
-Torrents wait until the VPN page has a choice: import your provider's WireGuard
-profile, or choose **Use my own connection**. The overview shows this until it
-is done.
+Without a VPN profile, everything uses your own connection. Once you import
+your provider's WireGuard profile, torrents go through it; indexers and TMDB
+can too.
 
 Saving validates the settings and applies them at once; an invalid change is
 refused and leaves the saved settings untouched. Tokens are kept in Mynou's

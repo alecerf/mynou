@@ -123,6 +123,18 @@ fn client() -> HttpClient {
         .with_max_body(MAX_XML)
 }
 
+/// TMDB goes through the VPN when the settings choose it, and then fails
+/// while the VPN is not connected.
+fn catalog_client(config: &Config) -> HttpClient {
+    match &config.catalog.network {
+        Some(network) => network
+            .http()
+            .with_timeout(Duration::from_secs(20))
+            .with_max_body(MAX_XML),
+        None => client(),
+    }
+}
+
 fn percent(text: &str) -> String {
     const HEX: &[u8; 16] = b"0123456789ABCDEF";
     let mut out = String::with_capacity(text.len());
@@ -167,11 +179,12 @@ fn endpoint(base: &str, path: &str) -> Result<String> {
 }
 
 fn fetch_json_sized(
+    client: HttpClient,
     url: &str,
     headers: &[(String, String)],
     service: &str,
 ) -> Result<(Value, usize)> {
-    let response = client()
+    let response = client
         .request("GET", url, headers, &[])
         .map_err(|_| format!("{service}: network request failed"))?;
     if !(200..300).contains(&response.status) {
@@ -673,7 +686,8 @@ fn catalog_json(config: &Config, path: &str, pairs: &[(&str, String)]) -> Result
         // Copy the JSON tree outside the shared lock.
         return Ok(value.as_ref().clone());
     }
-    let (value, payload_bytes) = fetch_json_sized(&url, &headers, "TMDB catalog")?;
+    let (value, payload_bytes) =
+        fetch_json_sized(catalog_client(config), &url, &headers, "TMDB catalog")?;
     let cached = Arc::new(value.clone());
     catalog_cache()
         .lock()
@@ -878,7 +892,7 @@ pub fn catalog_poster_from(config: &Config, base: &str, path: &str) -> Result<Va
     let url = match cached {
         Some(url) => url,
         None => {
-            let response = client()
+            let response = catalog_client(config)
                 .with_max_body(MAX_POSTER_BYTES)
                 .request("GET", &key, &[], &[])
                 .map_err(|_| "Catalog: poster request failed")?;
@@ -1169,7 +1183,7 @@ fn fresh_catalog(
     };
     headers.push(("Authorization".into(), format!("Bearer {token}")));
     let url = query(&endpoint(&config.catalog.url, path)?, pairs)?;
-    let response = client()
+    let response = catalog_client(config)
         .with_timeout(remaining_search_time(deadline)?.min(Duration::from_secs(20)))
         .request("GET", &url, &headers, &[])
         .map_err(|_| "TMDB catalog: request failed")?;

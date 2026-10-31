@@ -1,31 +1,18 @@
 # Protected indexers and IRC
 
-Set `"protection": "protected"` on each indexer and IRC source whose discovery
-traffic must use Mynou's native WireGuard network. This includes source DNS,
-form login, bearer/basic authentication, searches, feeds, details, private
-metainfo retrieval and IRC TLS registration, SASL/NickServ and reconnection.
-A protected IRC lookup must reference a protected indexer; configuration rejects
-a direct lookup target. Plex, the catalog and management remain on their ordinary
-or LAN connections.
+Turn on **Indexers** in **Settings → VPN** (`"vpn": {"indexers": true}`) to send
+the discovery traffic of every indexer and IRC source through Mynou's native
+WireGuard network while the VPN is on. This includes source DNS, form login,
+bearer/basic authentication, searches, feeds, details, private metainfo
+retrieval and IRC TLS registration, SASL/NickServ and reconnection. All sources
+follow the one switch. With the VPN off, they are direct. Plex and management
+remain on their ordinary or LAN connections. TMDB has its own switch.
 
-A source without the field retains `"direct"` behavior for compatibility.
-Enabling torrent VPN alone does **not** change a direct source's discovery policy.
-For migration from Gluetun-protected indexers/Autobrr, mark **every** corresponding
-indexer and IRC source protected before starting Mynou. A minimal source fragment:
-
-```json
-{
-  "id": "private-source-protected",
-  "name": "Private source",
-  "kind": "torznab",
-  "url": "https://source.example/api",
-  "api_key_env": "MYNOU_SOURCE_KEY",
-  "protection": "protected",
-  "watch": { "enabled": true, "interval_secs": 900 }
-}
-```
-
-Use `ircs://server.example:6697` and the same `protection` field in an IRC source.
+The switch is off unless chosen. A document saved before it existed, without a
+`vpn` section, turns it on when any source has the former per-source
+`"protection": "protected"`. That field is still accepted, but the switch
+decides. For migration from Gluetun-protected indexers/Autobrr, turn the switch
+on before starting Mynou. Use `ircs://server.example:6697` for IRC sources.
 Existing TLS verification and authentication requirements still apply. Source
 HTTP redirects, including login and private metainfo redirects, remain refused;
 no credentials or body are forwarded to a second origin.
@@ -33,9 +20,9 @@ no credentials or body are forwarded to a second origin.
 ## Readiness and recovery
 
 Import and enable a supported native VPN profile using the
-[operator controls](wireguard-operator.md). A protected source refuses work when
-no protected generation is ready, including when the engine has Direct transport,
-before startup readiness, after revocation and on a retired engine. It never
+[operator controls](wireguard-operator.md). With the switch on and the VPN
+on, a source refuses work when no protected generation is ready: while the VPN
+connects, after revocation and on a retired engine. It never
 consults the environment HTTP proxy or falls back to host DNS/TCP. The tunnel
 reaches IPv6 destinations only when the profile routes IPv6; otherwise IPv6 is
 rejected rather than retried on the host.
@@ -55,11 +42,8 @@ suppression and pending work. Ephemeral sessions are cleared when the captured
 network generation changes; cookies are never persisted. Retrying failed discovery
 does not create demand or bypass requester/profile/source policy.
 
-Protection participates in the source binding. Changing an existing stable
-source's policy requires a new source ID, as with other identity-bound settings;
-old receipts/cursors remain associated with the old source. Review the new
-configuration before restart. New sources establish a fresh feed baseline.
-Do not erase state to force a policy change through.
+Protection does not take part in the source binding: turning the switch on or
+off keeps each source's receipts, cursors and policy.
 
 `GET /api/indexers`, `GET /api/feeds` and `GET /api/irc` report `protection` and `protection_ready` per source without endpoints, credentials,
 cookies or network generation tokens. Readiness describes transport authority,
@@ -72,7 +56,7 @@ virtual services, with no ordinary application listener. Positive exchanges cove
 TLS form login, feed polling, detail search, private metainfo retrieval, redirect
 refusal, IRC TLS/SASL, reconnect, restart and durable receipt deduplication. Other
 cases cover in-flight cancellation, retained queued demand/feed cursors, generation
-replacement, IPv6 rejection, configuration and identity constraints.
+replacement, IPv6 rejection and configuration constraints.
 
 The five protocol/lifecycle fixtures are included in the required
 [attempted-host-I/O observer](host-io-observer.md). They permit only their declared

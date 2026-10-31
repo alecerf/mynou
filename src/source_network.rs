@@ -56,7 +56,7 @@ impl crate::engine::Engine {
         &self,
         protection: Protection,
     ) -> Result<Box<dyn Publication + '_>> {
-        let lease = protection.publication(Some(&self.torrent_network))?;
+        let lease = protection.publication(Some(&self.source_network))?;
         if self.stopped.load(std::sync::atomic::Ordering::Acquire) {
             return Err("Source: operation stopped".into());
         }

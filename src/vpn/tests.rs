@@ -290,7 +290,7 @@ fn revoke_closes_admission_before_waiting_for_an_existing_publication() {
 }
 
 #[test]
-fn revoked_startup_keeps_workers_and_listeners_closed_but_allows_recovery_controls() {
+fn revoked_startup_keeps_torrents_closed_but_allows_recovery_controls() {
     let directory = Directory::new();
     let config = directory.config();
     let engine = Engine::open_for_management(config.clone()).unwrap();
@@ -300,16 +300,11 @@ fn revoked_startup_keeps_workers_and_listeners_closed_but_allows_recovery_contro
     engine.vpn_control(&body("revoke")).unwrap();
     drop(engine);
     let engine = Engine::open_serving(config).unwrap();
-    for _ in 0..20 {
-        assert!(!engine.startup_step().unwrap());
-    }
-    assert!(engine.starting.load(Ordering::Acquire));
-    assert_eq!(
-        crate::server::route(&engine, "POST", "/api/jobs", b"{}")
-            .unwrap()
-            .0,
-        503
-    );
+    // Startup completes; only torrents wait for the VPN.
+    while !engine.startup_step().unwrap() {}
+    assert!(engine.transfers_waiting());
+    assert!(engine.torrent_publication().is_err());
+    assert!(!engine.tick().unwrap());
     let report = crate::server::route(&engine, "GET", "/api/vpn", &[])
         .unwrap()
         .1;
@@ -455,9 +450,8 @@ fn owner_loss_never_replaces_a_captured_engine_transport_with_direct() {
     drop(engine);
     let replacement =
         Engine::open_operator(directory.config(), true, false, true, Some(operator)).unwrap();
-    for _ in 0..14 {
-        assert!(!replacement.startup_step().unwrap());
-    }
+    while !replacement.startup_step().unwrap() {}
+    assert!(replacement.transfers_waiting());
     assert!(replacement.torrent_publication().is_err());
     assert_eq!(
         replacement.vpn_status().get("enabled"),
@@ -524,7 +518,6 @@ fn supervisor_replaces_retired_generations_and_keeps_management_api_reachable() 
         assert!(Instant::now() < deadline);
         thread::sleep(Duration::from_millis(20));
     }
-    assert_eq!(call("GET", "/readyz", "").status, 503);
     assert_eq!(
         call("POST", "/api/vpn/control", "{\"action\":\"disable\"}").status,
         202
@@ -550,7 +543,7 @@ fn supervisor_replaces_retired_generations_and_keeps_management_api_reachable() 
 }
 
 #[test]
-fn unauthenticated_startup_stays_closed_even_without_download_workers_and_restart_keeps_intent() {
+fn unauthenticated_tunnel_keeps_torrents_closed_without_download_workers_and_keeps_intent() {
     use std::net::UdpSocket;
     let directory = Directory::new();
     let endpoint = UdpSocket::bind("127.0.0.1:0").unwrap();
@@ -570,9 +563,7 @@ fn unauthenticated_startup_stays_closed_even_without_download_workers_and_restar
     let mut config = directory.config();
     config.downloads_enabled = false;
     let engine = Engine::open_operator(config.clone(), true, false, true, Some(operator)).unwrap();
-    for _ in 0..15 {
-        assert!(!engine.startup_step().unwrap());
-    }
+    while !engine.startup_step().unwrap() {}
     assert_eq!(state(&engine.vpn_status()), "connecting");
     assert_redacted(&engine.vpn_status());
     assert!(engine.torrent_publication().is_err());
@@ -959,6 +950,7 @@ fn forwarded_port_is_listened_on_in_the_tunnel_then_renewed_changed_and_lost() {
             Engine::open_operator(config.clone(), true, false, true, Some(operator.clone()))
                 .unwrap();
         while !engine.startup_step().unwrap() {}
+        engine.start_protected_transfers();
         engine
     };
     let inbound = |port: u16| {
@@ -1043,48 +1035,4 @@ pub(crate) fn load_operator(config: &crate::config::Config, driver: HttpTunnel) 
         state.driver = Some(driver);
     }
     operator
-}
-
-#[test]
-fn a_service_without_intent_waits_for_a_choice_and_never_starts_direct() {
-    let directory = Directory::new();
-    let config = directory.config();
-    fs::create_dir_all(&config.store_dir).unwrap();
-    let operator = Operator::load_for_service(&config.store_dir);
-    let gate = operator.gate();
-    let report = operator.report(&gate);
-    assert_eq!(state(&report), "unchosen");
-    assert_eq!(report.get("enabled"), Some(&Value::Bool(false)));
-    assert!(gate.publication().is_err());
-    assert!(!operator.ready(&gate));
-    for action in ["enable", "reconnect", "revoke", "enable-forwarding"] {
-        assert!(operator.control(&gate, action, None).is_err());
-        assert_eq!(state(&operator.report(&gate)), "unchosen");
-    }
-    assert!(!stored(&config).exists());
-    // Choosing Direct is explicit and durable.
-    operator.control(&gate, "disable", None).unwrap();
-    let intent = Intent::decode(&profile::read_private_text(&stored(&config)).unwrap()).unwrap();
-    assert!(intent.mode == Mode::Disabled && intent.profile.is_none());
-    let operator = Operator::load_for_service(&config.store_dir);
-    let gate = operator.gate();
-    assert_eq!(state(&operator.report(&gate)), "disabled");
-    assert!(gate.publication().is_ok());
-    // Engines opened outside the service keep the Direct default.
-    let directory = Directory::new();
-    let engine = Engine::open_for_management(directory.config()).unwrap();
-    assert_eq!(state(&engine.vpn_status()), "disabled");
-}
-
-#[test]
-fn an_import_ends_the_wait_for_a_choice() {
-    let directory = Directory::new();
-    let config = directory.config();
-    fs::create_dir_all(&config.store_dir).unwrap();
-    let operator = Operator::load_for_service(&config.store_dir);
-    let gate = operator.gate();
-    let profile = profile::parse(PROFILE).unwrap();
-    assert_redacted(&operator.control(&gate, "import", Some(profile)).unwrap());
-    let intent = Intent::decode(&profile::read_private_text(&stored(&config)).unwrap()).unwrap();
-    assert!(intent.mode == Mode::Enabled && intent.profile.is_some());
 }

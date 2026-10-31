@@ -193,8 +193,9 @@
         <form id="settings-form" class="settings" autocomplete="off">
           <div id="settings-groups"></div>
           <section class="setting-group" data-page="vpn">
-            <div class="setting-intro"><h2>VPN</h2><p class="hint">Torrents go through your WireGuard tunnel. Plex, TMDB and this page do not.</p></div>
+            <div class="setting-intro"><h2>VPN</h2><p class="hint">Choose what goes through your WireGuard tunnel. With the VPN off, everything uses your own connection. Plex and this page never go through it.</p></div>
             <div id="settings-vpn" class="setting-list"></div>
+            <div id="settings-vpn-uses" class="setting-list" hidden></div>
           </section>
           <section class="setting-group" data-page="network">
             <div class="setting-intro"><h2>Network access</h2><p class="hint">Use Mynou from other computers on your local network. Other computers sign in with a password, unless the local network needs none; this Mac never needs to.</p></div>

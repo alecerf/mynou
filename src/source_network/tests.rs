@@ -55,7 +55,6 @@ fn source(url: &str, watch: bool) -> Value {
     v.insert("kind", "torznab");
     v.insert("url", url);
     v.insert("api_key_env", "MYNOU_UNSET_DISCOVERY_KEY");
-    v.insert("protection", "protected");
     if watch {
         let mut w = Value::object();
         w.insert("enabled", true);
@@ -63,8 +62,14 @@ fn source(url: &str, watch: bool) -> Value {
     }
     v
 }
-fn settings(source: Value) -> Value {
+/// Settings that send indexers and IRC sources through the VPN.
+fn protected() -> Value {
     let mut v = config::default_json();
+    v.get_mut("vpn").unwrap().insert("indexers", true);
+    v
+}
+fn settings(source: Value) -> Value {
+    let mut v = protected();
     v.insert("indexers", Value::Array(vec![source]));
     v.get_mut("downloads").unwrap().insert("enabled", true);
     v
@@ -355,12 +360,11 @@ fn protection_is_strict_and_never_uses_an_unbound_or_direct_network() {
 }
 
 fn irc_settings(port: u16) -> Value {
-    let mut v = config::default_json();
+    let mut v = protected();
     let mut irc = Value::object();
     let mut s = Value::object();
     for (k, val) in [
         ("id", "protected"),
-        ("protection", "protected"),
         ("nickname", "mynou"),
         ("channel", "#announces"),
         ("sender", "announce!bot@fixture"),
@@ -538,54 +542,6 @@ fn replaced_generation_requires_a_fresh_engine_and_ipv6_never_falls_back() {
         )
         .is_err()
     );
-}
-
-#[test]
-fn protected_lookup_cannot_select_a_direct_indexer_and_policy_changes_require_new_identity() {
-    let dir = Directory::new();
-    let mut cfg = settings(source("https://source.invalid/api", false));
-    let engine = Engine::open_with_network(
-        config::from_json(&cfg, &dir.0).unwrap(),
-        Arc::new(crate::torrent::transport::Direct),
-        false,
-    )
-    .unwrap();
-    drop(engine);
-    let Value::Array(sources) = cfg.get_mut("indexers").unwrap() else {
-        panic!()
-    };
-    sources[0].insert("protection", "direct");
-    assert!(
-        Engine::open_with_network(
-            config::from_json(&cfg, &dir.0).unwrap(),
-            Arc::new(crate::torrent::transport::Direct),
-            false
-        )
-        .is_err()
-    );
-    let mut irc = irc_settings(6697).get("irc").unwrap().clone();
-    let Value::Array(irc_sources) = irc.get_mut("sources").unwrap() else {
-        panic!()
-    };
-    let mut lookup = Value::object();
-    lookup.insert("type", "bracketed");
-    lookup.insert("lookup_indexer", "synthetic");
-    lookup.insert("details_prefix", "https://source.invalid/details/");
-    let mut categories = Value::object();
-    categories.insert("Movies", "movie");
-    lookup.insert("categories", categories);
-    irc_sources[0].insert("announcement_format", lookup);
-    cfg.insert("irc", irc);
-    assert!(
-        config::from_json(&cfg, &dir.0)
-            .unwrap_err()
-            .contains("protected lookup requires a protected indexer")
-    );
-    let Value::Array(sources) = cfg.get_mut("indexers").unwrap() else {
-        panic!()
-    };
-    sources[0].insert("protection", "protected");
-    assert!(config::from_json(&cfg, &dir.0).is_ok());
 }
 
 #[test]

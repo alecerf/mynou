@@ -23,7 +23,7 @@ For each enabled source, record:
 | Authentication | Required method, renewal/expiry behavior and credential variable names; keep values private |
 | Pagination | Page/cursor contract, termination and result bounds, or evidence that one page is sufficient |
 | Limits | Rate limits, retry policy, response size and request deadlines |
-| Protection | Whether the source must use `"protection": "protected"`, including authentication, DNS and downloads |
+| Protection | Whether the source needs the VPN's **Indexers** switch (`"vpn": {"indexers": true}`), including authentication, DNS and downloads |
 
 Compare the contract against [current source support](sources.md). In
 particular, HTML scraping, interactive challenges, arbitrary authentication

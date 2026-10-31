@@ -22,7 +22,7 @@ impl Engine {
                         v.insert("protection", s.protection.name());
                         v.insert(
                             "protection_ready",
-                            s.protection.check(Some(&self.torrent_network)).is_ok(),
+                            s.protection.check(Some(&self.source_network)).is_ok(),
                         );
                         if let Some(h) = runtime.health.get(&s.id) {
                             v.insert("health", h.to_json());
