@@ -726,6 +726,7 @@ pub(crate) fn route(
     }
     match (method, path) {
         ("GET", "/api/status") => Ok((200, engine.status()?)),
+        ("GET", "/api/stats") => Ok((200, engine.stats()?)),
         ("GET", "/api/vpn") => Ok((200, engine.vpn_status())),
         ("GET", "/api/update") => Ok((200, crate::update::report())),
         ("POST", "/api/update") => Ok((200, crate::update::check_now())),

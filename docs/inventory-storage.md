@@ -324,7 +324,7 @@ They are sizes, not limits: Mynou reports no maximum inventory size, and
 available disk space remains the physical bound.
 
 The status never waits for a busy store and never fails because one store
-cannot be read. Readings from such a store (`jobs`, `active`, `ready`,
+cannot be read. Readings from such a store (`jobs`, `active`, `ready`, `library`,
 `monitored_series`, `torrents` and the transfer byte totals) are `null`; its
 `storage` entry says `busy` or shows `commit_uncertain`, and `storage_errors`
 lists the store-named error of each reading that failed.

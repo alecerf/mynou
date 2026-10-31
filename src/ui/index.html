@@ -18,6 +18,7 @@
   <link rel="modulepreload" href="/js/link.js">
   <link rel="modulepreload" href="/js/store.js">
   <link rel="modulepreload" href="/js/sources.js">
+  <link rel="modulepreload" href="/js/stats.js">
   <link rel="modulepreload" href="/js/router.js">
   <link rel="modulepreload" href="/js/session.js">
   <link rel="modulepreload" href="/js/dashboard.js">
@@ -95,6 +96,16 @@
         <dl id="stats" class="summary-strip"></dl>
         <div class="section-heading"><h2>In progress</h2></div>
         <div id="in-motion" class="in-motion"></div>
+        <div class="stat-panels">
+          <section class="panel" aria-labelledby="t-requests"><h2 id="t-requests">Requests</h2><div id="panel-requests"></div></section>
+          <section class="panel" aria-labelledby="t-watchlist"><h2 id="t-watchlist">Watchlist</h2><div id="panel-watchlist"></div></section>
+          <section class="panel" aria-labelledby="t-downloads"><h2 id="t-downloads">Downloads</h2><div id="panel-downloads"></div></section>
+          <section class="panel" aria-labelledby="t-health"><h2 id="t-health">Health</h2><div id="panel-health"></div></section>
+        </div>
+        <div class="section-heading"><h2 id="t-series-stats">Series followed</h2></div>
+        <div id="series-stats" class="series-stats" aria-labelledby="t-series-stats"></div>
+        <div class="section-heading"><h2 id="t-history">Fetched by Mynou, last 12 weeks</h2></div>
+        <figure id="history" class="history-chart" aria-labelledby="t-history"></figure>
         <div class="dashboard-bottom">
           <section aria-labelledby="t-fresh">
             <div class="section-heading"><h2 id="t-fresh">Recently added</h2><a class="text-link" href="#library">Library <svg class="icon" aria-hidden="true"><use href="#i-arrow"></use></svg></a></div>
