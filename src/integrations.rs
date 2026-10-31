@@ -2451,6 +2451,49 @@ fn plex_section<'a>(config: &'a Config, request: &Request) -> Result<&'a str> {
     Ok(section)
 }
 
+/// Films, series and episodes in the chosen Plex sections. Each count is one
+/// request for an empty page that carries the total.
+pub(crate) fn plex_library_counts(config: &Config) -> Result<[u64; 3]> {
+    let headers = plex_headers(config)?;
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let count = |section: &str, kind: &str| -> Result<u64> {
+        let url = query(
+            &endpoint(&config.plex.url, &format!("library/sections/{section}/all"))?,
+            &[
+                ("type", kind.into()),
+                ("X-Plex-Container-Start", "0".into()),
+                ("X-Plex-Container-Size", "0".into()),
+            ],
+        )?;
+        let value = fetch_json_before(&url, &headers, deadline, PLEX_POLL_DEADLINE)?;
+        let container = value
+            .get("MediaContainer")
+            .ok_or("Plex: missing MediaContainer")?;
+        integer(container, "totalSize")
+            .or_else(|| integer(container, "size"))
+            .ok_or_else(|| "Plex: missing library total".into())
+    };
+    Ok([
+        count(&config.plex.movies_section, "1")?,
+        count(&config.plex.series_section, "2")?,
+        count(&config.plex.series_section, "4")?,
+    ])
+}
+
+/// The films and series on the watchlist, at most `limit`.
+pub(crate) fn plex_watchlist(config: &Config, limit: usize) -> Result<Vec<Request>> {
+    let headers = plex_headers(config)?;
+    let deadline = Instant::now() + Duration::from_secs(60);
+    let mut requests = Vec::new();
+    plex_find_before(&config.plex.watchlist_url, &headers, deadline, |item| {
+        if let Some(request) = watchlist_request(item)? {
+            requests.push(request);
+        }
+        Ok(requests.len() >= limit)
+    })?;
+    Ok(requests)
+}
+
 /// Asks Plex to scan the section after the atomic import.
 pub fn refresh(config: &Config, request: &Request) -> Result<()> {
     if !config.plex.enabled {

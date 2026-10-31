@@ -17,6 +17,16 @@ still needs the password, and without one it cannot sign in. Network access no
 longer needs a password when this is on. See
 [network access](/docs/macos.md#network-access).
 
+## Added: Statistics on the overview
+
+The overview now shows how many films, series and episodes Plex holds; your
+watchlist and how much of it is already in Plex; requests by kind, fetched by
+Mynou or already in Plex; downloads, speeds and share ratio; the health of the
+VPN, the watchlist and the indexers, with recent failures; each followed series
+with its aired episodes and the next one to air; and a chart of what Mynou
+fetched each week. `GET /api/stats` serves the same figures. See
+[everyday use](/docs/macos.md#everyday-use).
+
 ## Changed: Choose what goes through the VPN
 
 Settings, VPN now has a switch for each use of the VPN: **Torrents**,

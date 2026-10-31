@@ -7,6 +7,7 @@ import { data, views, itemsOf, titleOf, byUpdated, transferOf, transferSizes, ra
 import { plexError, sourceProblems } from './sources.js';
 import { createJobRow, updateJobRow, wireJobRows, openJob } from './jobs.js';
 import { createMediaCard, updateLibraryCard, openLibraryEntry } from './library.js';
+import { paintStats } from './stats.js';
 
 // Overview: alerts, what is on its way, what was collected and what finished.
 
@@ -33,12 +34,14 @@ views.dashboard = {
       if (!stats.querySelector('.loading')) stats.replaceChildren(skeleton('lines', 3));
     } else {
       stats.querySelector('.empty')?.remove();
-      const cards = [['Ready to watch', status.ready], ['In progress', status.active], ['Series followed', status.monitored_series]];
+      const plex = data.get('stats')?.data?.plex;
+      const cards = [['Films in Plex', plex?.films], ['Series in Plex', plex?.series], ['Episodes in Plex', plex?.episodes],
+        ['Fetched by Mynou', status.library], ['In progress', status.active], ['Series followed', status.monitored_series]];
       reconcile(stats, cards, (c) => c[0],
         () => h('div', { class: 'stat' }, h('dt'), h('dd')),
         (el, [name, value]) => {
           const dd = $('dd', el);
-          const text = String(value ?? '–');
+          const text = value === undefined || value === null ? '–' : Number(value).toLocaleString();
           // A count that moves rises into place; the first paint does not.
           if (dd.textContent && dd.textContent !== text) Motion.tick(dd);
           dd.textContent = text;
@@ -59,6 +62,8 @@ views.dashboard = {
         for (const el of box.children) Motion.animate(el, [{ opacity: 0.4, transform: 'translateY(-6px)' }, { opacity: 1, transform: 'none' }], { duration: 220 });
       }
     }
+
+    paintStats();
 
     const jobs = itemsOf(data.get('jobs')?.data);
     if (!data.get('jobs')) {

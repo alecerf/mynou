@@ -4,6 +4,7 @@ mod import_tests;
 mod startup;
 #[cfg(test)]
 mod startup_tests;
+mod stats;
 
 use crate::{
     Result,
@@ -18,7 +19,7 @@ use std::{
     path::Path,
     sync::{
         Arc, Mutex, MutexGuard, OnceLock,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
     thread::{self, JoinHandle},
     time::{Duration, Instant},
@@ -112,6 +113,9 @@ pub struct Engine {
     pub(crate) read_only: bool,
     pub stopped: AtomicBool,
     pub last_sync_error: Mutex<Option<String>>,
+    /// When the watchlist was last read whole without an error; 0 before.
+    pub(crate) last_sync_at: AtomicU64,
+    stats: Mutex<stats::Cache>,
     pub last_upgrade_error: Mutex<Option<String>>,
     pub last_series_error: Mutex<Option<String>>,
     /// The saved settings document, so that reading it never waits for storage.
@@ -311,6 +315,8 @@ impl Engine {
             read_only,
             stopped: AtomicBool::new(false),
             last_sync_error: Mutex::new(None),
+            last_sync_at: AtomicU64::new(0),
+            stats: Mutex::new(stats::Cache::default()),
             last_upgrade_error: Mutex::new(None),
             last_series_error: Mutex::new(None),
             saved_settings: Mutex::new(saved_settings),
@@ -699,6 +705,15 @@ impl Engine {
         v.insert("jobs", count(|counts| counts.jobs));
         v.insert("active", count(|counts| counts.active));
         v.insert("ready", count(|counts| counts.ready));
+        // Films and episodes Mynou filed itself.
+        v.insert("library", count(|counts| counts.library));
+        v.insert(
+            "last_sync_at",
+            match self.last_sync_at.load(Ordering::Acquire) {
+                0 => Value::Null,
+                at => Value::Number(at as f64),
+            },
+        );
         v.insert("stopped", self.stopped.load(Ordering::Acquire));
         v.insert("startup", self.startup_status()?);
         v.insert(
@@ -884,6 +899,15 @@ impl Engine {
             let engine = self.clone();
             handles.push(thread::spawn(move || engine.start_protected_transfers()));
         }
+        {
+            let engine = self.clone();
+            handles.push(thread::spawn(move || {
+                while !engine.stopped.load(Ordering::Acquire) {
+                    engine.refresh_stats();
+                    engine.wait(60_000);
+                }
+            }));
+        }
         crate::irc::client::start(self, handles);
         crate::irc::routing::start(self, handles);
         crate::irc::lookup::start(self, handles);
@@ -938,6 +962,9 @@ impl Engine {
             handles.push(thread::spawn(move || {
                 while !engine.stopped.load(Ordering::Acquire) {
                     let error = engine.sync().err();
+                    if error.is_none() {
+                        engine.last_sync_at.store(store::now(), Ordering::Release);
+                    }
                     if let Ok(mut current) = engine.last_sync_error.lock() {
                         *current = error;
                     }

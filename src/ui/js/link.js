@@ -1,4 +1,4 @@
-const TOPICS = ['status', 'jobs', 'transfers', 'library', 'series', 'indexers', 'feeds', 'irc', 'requesters'];
+const TOPICS = ['status', 'jobs', 'transfers', 'library', 'series', 'indexers', 'feeds', 'irc', 'requesters', 'stats'];
 
 /** One WebSocket with request/response calls, pushed topics and an HTTP fallback. */
 class Link extends EventTarget {

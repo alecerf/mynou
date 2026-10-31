@@ -163,6 +163,13 @@ and transfers begin once it is `ready`. On loopback the API has no sign-in;
 requests must name it (`127.0.0.1`, `localhost` or `[::1]`) and come from no
 other site's page.
 
+The Overview shows what Plex holds, your watchlist, requests by kind, downloads,
+health, each followed series and what Mynou fetched in the last 12 weeks.
+`GET /api/stats` serves these figures. A background pass computes them every
+minute, and reads Plex's library and watchlist every ten minutes; it is `null`
+until the first pass. Each film or episode counts once, by its most advanced
+request: fetched by Mynou, already in Plex, in progress, failed or cancelled.
+
 ## Network access
 
 By default only this Mac can open Mynou. To use it from other computers on

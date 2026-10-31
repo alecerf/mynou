@@ -33,7 +33,7 @@ const WRITE_LIMIT: Duration = Duration::from_secs(10);
 const FAST: Duration = Duration::from_secs(1);
 const SLOW: Duration = Duration::from_secs(5);
 /// Topic name, API path and refresh period.
-const TOPICS: [(&str, &str, Duration); 9] = [
+const TOPICS: [(&str, &str, Duration); 10] = [
     ("status", "/api/status", FAST),
     ("jobs", "/api/jobs?limit=50", FAST),
     ("transfers", "/api/transfers", FAST),
@@ -43,6 +43,7 @@ const TOPICS: [(&str, &str, Duration); 9] = [
     ("feeds", "/api/feeds", SLOW),
     ("irc", "/api/irc", SLOW),
     ("requesters", "/api/requesters", SLOW),
+    ("stats", "/api/stats", SLOW),
 ];
 static OPEN: AtomicUsize = AtomicUsize::new(0);
 
