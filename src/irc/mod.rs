@@ -361,9 +361,6 @@ impl Source {
         if let Some(lookup) = &self.announcement_lookup {
             v.insert("announcement_format", lookup.configuration());
         }
-        if self.protection == crate::source_network::Protection::Protected {
-            v.insert("protection", "protected");
-        }
         digest(crate::json::stringify(&v).as_bytes())
     }
     pub fn public_json(&self) -> Value {
@@ -372,9 +369,6 @@ impl Source {
         v.insert("enabled", self.enabled);
         v.insert("channel", self.channel.clone());
         v.insert("tls_required", self.url.starts_with("ircs://"));
-        if self.protection == crate::source_network::Protection::Protected {
-            v.insert("protection", "protected");
-        }
         v.insert("magnet_configured", self.magnet_template.is_some());
         v.insert(
             "announcement_format",

@@ -2,6 +2,8 @@
 //! one page (200 rows) of one store with the locks it needs, then releases
 //! them. Nothing writes before every read-only provenance stage passes, and
 //! workers, API mutations and native transfers wait until the last stage.
+//! Transfers that go through the VPN also wait for it to connect, without
+//! holding back the workers.
 //! A restart validates again from the first stage: the stores may have
 //! changed while Mynou was stopped, so no earlier progress is trusted.
 use super::{Engine, cancel_orphaned_transfers, lock, retire_transfers};
@@ -81,10 +83,6 @@ impl Engine {
         let current = lock(&self.startup)?.clone();
         if let Some(error) = current.error {
             return Err(error);
-        }
-        if current.stage == 12 && self.start_downloads && !self.vpn_ready() {
-            self.wait(50);
-            return Ok(false);
         }
         if current.stage < STAGES.len() {
             let page = self.startup_page(&current);
@@ -195,7 +193,9 @@ impl Engine {
                 Ok((rows, (!done).then_some([0; 64])))
             }
             12 => {
-                self.start_transfers()?;
+                if !self.transfers_waiting() || self.vpn_ready() {
+                    self.start_transfers()?;
+                }
                 Ok((0, None))
             }
             _ => Ok((0, None)),
@@ -221,6 +221,33 @@ impl Engine {
         lock(&self.requester_store)?.initialize()?;
         lock(&self.irc_store)?.initialize()?;
         Ok(())
+    }
+
+    /// Transfers go through the VPN and its client is not open yet.
+    pub(crate) fn transfers_waiting(&self) -> bool {
+        self.torrents_protected
+            && self.start_downloads
+            && self.config.downloads_enabled
+            && self.downloads.get().is_none()
+    }
+
+    /// Waits for the VPN to connect, then opens the transfers that wait for
+    /// it. The VPN's sources and TMDB need the connection too.
+    pub(crate) fn start_protected_transfers(&self) {
+        while !self.stopped.load(Ordering::Acquire) {
+            if self.vpn_ready() {
+                if self.transfers_waiting()
+                    && let Err(error) = self.start_transfers()
+                {
+                    eprintln!("mynou: transfers did not start: {error}");
+                    if let Ok(mut startup) = lock(&self.startup) {
+                        startup.error = Some(error);
+                    }
+                }
+                return;
+            }
+            self.wait(250);
+        }
     }
 
     /// Opens the native client once requester cancellation settled, then

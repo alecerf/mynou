@@ -63,9 +63,6 @@ impl Options {
             self.min_interval_ms.to_string().into(),
             self.auth_binding(),
         ];
-        if self.protection == crate::source_network::Protection::Protected {
-            parts.push("protected".into());
-        }
         // Only a mapped source binds its mapping, so earlier bindings stay valid.
         if !self.mapping.canonical().is_empty() {
             parts.push(self.mapping.canonical().into());

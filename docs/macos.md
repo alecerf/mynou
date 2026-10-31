@@ -38,8 +38,9 @@ Start the service:
 
 The first start creates `~/Library/Application Support/Mynou`, private to your
 account. Open <http://127.0.0.1:8787/>; there is no sign-in. Then set Mynou up in the **Settings** view: library folders, downloads, Plex, TMDB, sources and their
-tokens. Plex and TMDB turn on once their token is saved. Torrents wait until
-**Settings → VPN** has a choice: a WireGuard profile, or your own connection.
+tokens. Plex and TMDB turn on once their token is saved. Without a VPN,
+everything uses your own connection; **Settings → VPN** imports a WireGuard
+profile and chooses what goes through it: torrents, indexers, TMDB.
 Use ordinary folders you own rather than
 paths through symbolic links: imports never overwrite files and refuse
 symbolic links.

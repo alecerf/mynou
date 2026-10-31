@@ -192,7 +192,7 @@ impl Read for ProtectedStream {
         let deadline = Instant::now() + timeout.unwrap_or(Duration::from_secs(180));
         loop {
             if self.engine.upgrade().is_none_or(|e| {
-                e.stopped.load(Ordering::Acquire) || e.torrent_network.generation().is_err()
+                e.stopped.load(Ordering::Acquire) || e.source_network.generation().is_err()
             }) {
                 return Err(std::io::ErrorKind::ConnectionAborted.into());
             }
@@ -286,7 +286,7 @@ fn send(stream: &mut Stream, line: &str) -> Result<()> {
         .map_err(|_| "IRC: cannot send command".into())
 }
 fn connected(engine: &Arc<Engine>, source: &Source) -> Result<()> {
-    source.protection.check(Some(&engine.torrent_network))?;
+    source.protection.check(Some(&engine.source_network))?;
     let password = credential(&source.password_env)?;
     let key = credential(&source.join_key_env)?;
     let mut authentication = source
@@ -302,7 +302,7 @@ fn connected(engine: &Arc<Engine>, source: &Source) -> Result<()> {
     let (url, tls) = source.endpoint()?;
     let deadline = Instant::now() + Duration::from_secs(10);
     let stream = if source.protection == crate::source_network::Protection::Protected {
-        let network = &engine.torrent_network;
+        let network = &engine.source_network;
         let authority = if url.host.contains(':') {
             format!("[{}]:{}", url.host, url.port)
         } else {

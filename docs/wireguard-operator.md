@@ -40,15 +40,20 @@ forwarding is reported separately ([below](#port-forwarding)).
 
 ## State and recovery
 
-States are `unchosen`, `disabled`, `connecting`, `protected`, `reconnecting`,
-`blocked` and `error`. `unchosen` is a service whose store has no `vpn.conf`:
-torrent work and startup wait, and requests are refused, until a profile is
-imported or `disable` chooses Direct, which is then saved. Nothing uses Direct
-before that explicit choice. New torrent work, including metadata inspections without download
-workers, cannot use Direct while the persisted intent requires protection.
-Startup exposes status and VPN controls while workers and the torrent listener
-wait for a protected generation. Plex, catalog and management keep their existing
-ordinary network boundary. Only the outer VPN UDP uses the ordinary torrent
+States are `disabled`, `connecting`, `protected`, `reconnecting`, `blocked` and
+`error`. A store without `vpn.conf` is `disabled`: everything is direct until a
+profile is imported.
+
+While the VPN is on, the `vpn` settings choose what goes through it:
+`torrents` (on unless chosen otherwise), `indexers` (every indexer and IRC
+source, see [protected sources](protected-sources.md)) and `tmdb` (off unless
+chosen). What is chosen never falls back to Direct: new torrent work, including
+metadata inspections without download workers, waits for a protected
+generation, and protected sources and TMDB fail until there is one. What is not
+chosen is direct, and still stops with each engine generation. Startup does not
+wait for the tunnel: workers start, and only the native transfers and the
+torrent listener wait for a protected generation. Plex and management always
+keep their ordinary or LAN connections. Only the outer VPN UDP uses the ordinary torrent
 path. Endpoint hostnames and IPv6 outer endpoints are unsupported; inner IPv6
 is carried when the profile routes it (see [profiles](wireguard-profiles.md)),
 and the status reports `ipv6: true` while such a tunnel is protected.

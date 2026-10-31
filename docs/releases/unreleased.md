@@ -17,6 +17,18 @@ still needs the password, and without one it cannot sign in. Network access no
 longer needs a password when this is on. See
 [network access](/docs/macos.md#network-access).
 
+## Changed: Choose what goes through the VPN
+
+Settings, VPN now has a switch for each use of the VPN: **Torrents**,
+**Indexers** (IRC sources included) and **TMDB**. Torrents go through the VPN
+unless you turn it off; indexers and TMDB only if you turn them on. Without a VPN
+profile, or with the VPN off, everything uses your own connection: a new
+installation no longer waits for a VPN choice before it does anything. While the
+VPN connects, only what goes through it waits; the Plex watchlist, TMDB and the
+rest start at once. The per-source `"protection"` setting gives way to the
+Indexers switch; an older document that protected a source turns it on. See
+[protected sources](/docs/protected-sources.md).
+
 ## Changed: Folders are full paths
 
 The movies, series and download folders are shown and saved as full paths on

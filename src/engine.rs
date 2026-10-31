@@ -80,6 +80,10 @@ pub struct Engine {
     downloads: OnceLock<Client>,
     /// The one network of torrent transfers and metadata inspection.
     pub(crate) torrent_network: Arc<dyn crate::torrent::transport::Network>,
+    /// The network of protected indexers, IRC sources and TMDB: the VPN.
+    pub(crate) source_network: Arc<dyn crate::torrent::transport::Network>,
+    /// Torrents go through the VPN, so transfers wait for it.
+    pub(crate) torrents_protected: bool,
     pub(crate) vpn: Option<Arc<crate::vpn::Operator>>,
     pub(crate) vpn_gate: Option<Arc<crate::vpn::Gate>>,
     start_downloads: bool,
@@ -159,13 +163,6 @@ impl Engine {
         Self::open_operator(config, true, false, true, None)
     }
 
-    /// As `mynou serve` opens it: a store that never chose a VPN mode keeps
-    /// torrents waiting until a profile is imported or Direct is chosen.
-    pub fn open_for_service(config: Config) -> Result<Arc<Self>> {
-        let operator = crate::vpn::Operator::load_for_service(&config.store_dir);
-        Self::open_operator(config, true, false, true, Some(operator))
-    }
-
     pub(crate) fn open_operator(
         config: Config,
         start_downloads: bool,
@@ -232,8 +229,33 @@ impl Engine {
         torrent_network: Arc<dyn crate::torrent::transport::Network>,
         operator: Option<(Arc<crate::vpn::Operator>, Arc<crate::vpn::Gate>)>,
     ) -> Result<Arc<Self>> {
+        // While the VPN is on, the settings choose what goes through it; with
+        // it off, everything is direct. A supplied network carries all of it.
+        let protecting = operator
+            .as_ref()
+            .is_none_or(|(operator, _)| operator.protecting());
+        let torrents_protected = protecting && config.vpn.torrents;
+        let source_network = torrent_network.clone();
+        let torrent_network: Arc<dyn crate::torrent::transport::Network> = match &operator {
+            Some((_, gate)) if protecting && !torrents_protected => {
+                Arc::new(crate::vpn::Bypass::new(gate.clone()))
+            }
+            _ => torrent_network,
+        };
+        let protection = if protecting && config.vpn.indexers {
+            crate::source_network::Protection::Protected
+        } else {
+            crate::source_network::Protection::Direct
+        };
         for source in &mut config.sources {
-            source.options.network = Some(torrent_network.clone());
+            source.options.network = Some(source_network.clone());
+            source.options.protection = protection;
+        }
+        for source in &mut config.irc.sources {
+            source.protection = protection;
+        }
+        if protecting && config.vpn.tmdb {
+            config.catalog.network = Some(source_network.clone());
         }
         let indexer_store =
             crate::indexers::policy::SourceStore::open(&config.store_dir, &config, read_only)?;
@@ -261,6 +283,8 @@ impl Engine {
             series_unreadable: Mutex::new(std::collections::BTreeMap::new()),
             downloads: OnceLock::new(),
             torrent_network,
+            source_network,
+            torrents_protected,
             vpn,
             vpn_gate,
             start_downloads,
@@ -856,6 +880,10 @@ impl Engine {
     }
 
     fn spawn_workers(self: &Arc<Self>, handles: &mut Vec<JoinHandle<()>>) {
+        if self.vpn.is_some() {
+            let engine = self.clone();
+            handles.push(thread::spawn(move || engine.start_protected_transfers()));
+        }
         crate::irc::client::start(self, handles);
         crate::irc::routing::start(self, handles);
         crate::irc::lookup::start(self, handles);
@@ -953,11 +981,8 @@ impl Engine {
     pub fn tick(self: &Arc<Self>) -> Result<bool> {
         // A retired VPN generation suspends acquisition, not the request's
         // retry budget. Its durable intent gates restart until protected again.
-        if self
-            .vpn_gate
-            .as_ref()
-            .is_some_and(|gate| crate::torrent::transport::Network::generation(&**gate).is_err())
-        {
+        // Transfers that wait for the VPN to connect suspend it the same way.
+        if self.torrent_network.generation().is_err() || self.transfers_waiting() {
             return Ok(false);
         }
         let Some(mut job) = self.claim_requester_job()? else {
@@ -981,11 +1006,7 @@ impl Engine {
             }
             store.check_ready_promotion(&job)
         });
-        if result.is_err()
-            && self.vpn_gate.as_ref().is_some_and(|gate| {
-                crate::torrent::transport::Network::generation(&**gate).is_err()
-            })
-        {
+        if result.is_err() && self.torrent_network.generation().is_err() {
             store.release_lease(&job.id, &lease)?;
             return Ok(false);
         }

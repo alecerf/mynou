@@ -215,10 +215,11 @@ impl Fixture {
             Vec::new(),
         );
         let mut settings = config::default_json();
+        settings.get_mut("vpn").unwrap().insert("indexers", true);
         settings.insert("listen", "127.0.0.1:0");
         settings.insert("poll_interval_ms", 50_u32);
         settings.insert("selection", json::parse(r#"{"profiles":{"load":{"resolutions":[2160,1080,720],"cutoff_resolution":2160}},"movie_profile":"load","episode_profile":"load"}"#).unwrap());
-        settings.insert("indexers", json::parse(&format!(r#"[{{"name":"load-source","id":"load-source","kind":"torznab","url":"http://10.7.0.1:{}/api","protection":"protected","api_key_env":"MYNOU_LOAD_ABSENT_KEY","watch":{{"enabled":true,"interval_secs":60}},"cross_seed":{{"enabled":true,"interval_secs":60}}}}]"#,source.port)).unwrap());
+        settings.insert("indexers", json::parse(&format!(r#"[{{"name":"load-source","id":"load-source","kind":"torznab","url":"http://10.7.0.1:{}/api","api_key_env":"MYNOU_LOAD_ABSENT_KEY","watch":{{"enabled":true,"interval_secs":60}},"cross_seed":{{"enabled":true,"interval_secs":60}}}}]"#,source.port)).unwrap());
         let mut config = config::from_json(&settings, &root.join("engine")).unwrap();
         config.downloads = downloads.clone();
         config.download_policy.download_limit_bps = 64 << 10;

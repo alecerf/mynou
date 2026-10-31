@@ -34,7 +34,7 @@ FIXTURES = (
     "tunnel_http::tests::network::generation_replacement_waits_for_old_publications_and_rejects_late_results",
     "vpn::tests::real_native_owner_is_used_for_protected_startup_dns_and_revocation",
     "vpn::tests::owner_loss_never_replaces_a_captured_engine_transport_with_direct",
-    "vpn::tests::unauthenticated_startup_stays_closed_even_without_download_workers_and_restart_keeps_intent",
+    "vpn::tests::unauthenticated_tunnel_keeps_torrents_closed_without_download_workers_and_keeps_intent",
     "vpn::tests::verified_bytes_user_pause_and_priorities_survive_owner_loss_and_a_new_protected_engine",
     "vpn::tests::recovered_owner_requires_a_new_engine_and_never_reauthorizes_delayed_old_work",
     "pack::tunnel_tests::shared_pack_preview_and_guarded_apply_use_tunnel_metadata_without_workers",
