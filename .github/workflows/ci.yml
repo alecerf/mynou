@@ -162,6 +162,11 @@ jobs:
       - name: Run all Rust test harnesses in parallel
         env:
           MYNOU_CRYPTO_FIXTURES: ${{ runner.temp }}/mynou-crypto-vectors.json
+          # The harnesses run without cargo, so `[env]` in .cargo/config.toml
+          # does not reach them; keep these equal to it.
+          MYNOU_TEST_SECRET_A: mynou-test-secret-a
+          MYNOU_TEST_SECRET_B: mynou-test-secret-b
+          MYNOU_TEST_INVALID_TOKEN: "invalid token: spaces/and:colons"
         run: |
           # On macOS, sync_all is F_FULLFSYNC (a whole-drive cache flush), and
           # the growing-inventory tests issue tens of thousands of them (#238).
