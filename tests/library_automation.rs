@@ -422,6 +422,11 @@ fn enabled_background_monitoring_records_a_check_and_respects_the_polling_interv
     };
     monitoring.insert("enabled".into(), true.into());
     monitoring.insert("interval_secs".into(), 60_u32.into());
+    // Looking for better versions runs only while downloads are on.
+    let Value::Object(downloads) = value.get_mut("downloads").unwrap() else {
+        panic!("downloads section")
+    };
+    downloads.insert("enabled".into(), true.into());
     let engine = Engine::open(config::from_json(&value, &directory.0).unwrap()).unwrap();
     let original = local_import(&engine, &directory.0, "Fixture Movie");
     engine.set_baseline(&original.id, BASELINE).unwrap();
