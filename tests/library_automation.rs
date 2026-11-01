@@ -622,6 +622,40 @@ fn native_upgrade_imports_a_distinct_version_and_retains_both_files_after_restar
             .imports,
         ready.imports
     );
+    // The replaced file is listed as an earlier version, and only it is
+    // deleted; the current version cannot be.
+    let earlier = resumed.earlier_versions().unwrap();
+    let entries = earlier.get("earlier").unwrap().as_array().unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(
+        entries[0].get("id").and_then(Value::as_str),
+        Some(original.id.as_str())
+    );
+    assert_eq!(
+        entries[0].get("replaced_by").and_then(Value::as_str),
+        Some(ready.id.as_str())
+    );
+    let size = include_bytes!("fixtures/demo.mp4").len() as f64;
+    assert_eq!(earlier.get("bytes").and_then(Value::as_f64), Some(size));
+    assert!(resumed.delete_earlier_version(&ready.id).is_err());
+    let deleted = resumed.delete_earlier_version(&original.id).unwrap();
+    assert_eq!(
+        deleted.get("freed_bytes").and_then(Value::as_f64),
+        Some(size)
+    );
+    assert!(!Path::new(&original.imports[0]).exists());
+    assert!(Path::new(&ready.imports[0]).is_file());
+    assert!(
+        resumed
+            .earlier_versions()
+            .unwrap()
+            .get("earlier")
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(library_ids(&resumed), std::slice::from_ref(&ready.id));
 }
 
 #[test]

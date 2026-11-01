@@ -100,6 +100,15 @@ impl Fence {
     }
 }
 
+/// Fuzzing entry for the packet parsers; see `crate::fuzzing`.
+#[doc(hidden)]
+pub(crate) fn fuzz(data: &[u8]) {
+    ipv4::fuzz(data);
+    tcp::fuzz(data);
+    udp::fuzz(data);
+    dns::fuzz(data);
+}
+
 #[cfg(test)]
 #[path = "netstack/support.rs"]
 pub(crate) mod support;

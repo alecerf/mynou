@@ -42,6 +42,11 @@ pub trait Network: Send + Sync {
     fn resolve(&self, authority: &str, deadline: Instant) -> Result<Vec<SocketAddr>>;
     /// An unconnected datagram socket of one address family.
     fn datagram(&self, ipv6: bool) -> Result<Box<dyn NetworkDatagram>>;
+    /// An IPv4 datagram socket bound to `port` of this network, which peers
+    /// can reach: the DHT node answers on it. Unsupported by default.
+    fn bind_datagram(&self, _port: u16) -> Result<Box<dyn NetworkDatagram + Sync>> {
+        Err("This network has no bound datagram socket".into())
+    }
     /// The HTTP client of tracker requests, before per-request limits.
     fn http(&self) -> HttpClient;
     /// A listener bound to `address` of this network; port 0 picks a port.
@@ -87,6 +92,12 @@ impl Network for Direct {
     fn datagram(&self, ipv6: bool) -> Result<Box<dyn NetworkDatagram>> {
         let socket = UdpSocket::bind(if ipv6 { "[::]:0" } else { "0.0.0.0:0" })
             .map_err(|_| "Could not create UDP socket")?;
+        Ok(Box::new(socket))
+    }
+
+    fn bind_datagram(&self, port: u16) -> Result<Box<dyn NetworkDatagram + Sync>> {
+        let socket = UdpSocket::bind(SocketAddr::from(([0, 0, 0, 0], port)))
+            .map_err(|_| "BitTorrent UDP port unavailable")?;
         Ok(Box::new(socket))
     }
 

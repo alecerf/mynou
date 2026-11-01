@@ -280,6 +280,8 @@ struct PeerTask {
     uploading: Arc<AtomicBool>,
     /// Pieces verified through any peer.
     done: Arc<wire::Pieces>,
+    /// The connectable peers passed on in PEX messages.
+    swarm: Arc<wire::Swarm>,
     events: SyncSender<Event>,
 }
 
@@ -426,6 +428,7 @@ fn peer_worker(mut task: PeerTask) {
             )?,
         };
         peer.watch(task.done.clone());
+        peer.share_swarm(task.swarm.clone(), task.address);
         peer.prepare_download(&task.meta, &task.stop)?;
         send(EventKind::Connected {
             availability: offered(&peer),
@@ -443,6 +446,7 @@ fn peer_worker(mut task: PeerTask) {
                     }
                     // A peer fetching from this side is answered while idle.
                     Err(mpsc::TryRecvError::Empty) => {
+                        peer.send_pex(&task.stop)?;
                         let busy = peer.serve_between_pieces(&task.meta, &task.stop)?;
                         task.uploading.store(peer.uploading(), Ordering::Release);
                         // HAVEs and unchokes read here reach the coordinator.
@@ -530,6 +534,8 @@ fn peer_worker(mut task: PeerTask) {
                 availability: offered(&peer),
                 peers: std::mem::take(&mut peer.discovered),
             })?;
+            // A busy connection never idles: PEX also follows pieces.
+            peer.send_pex(&task.stop)?;
             // The coordinator alone can issue the next command. Each worker
             // therefore owns at most piece_claims(meta) payloads, including
             // queued results.
@@ -846,6 +852,7 @@ pub(super) fn download(
     // Peers may fetch verified pieces from this side while it downloads.
     // Duplicate requests near the end stop once one copy is verified.
     let pieces = Arc::new(wire::Pieces::new(&have));
+    let swarm = Arc::new(wire::Swarm::default());
     let serving = config.seed.then(|| wire::Serving {
         pieces: pieces.clone(),
         base: base.clone(),
@@ -980,6 +987,7 @@ pub(super) fn download(
                     serving: serving.clone(),
                     uploading: uploading.clone(),
                     done: pieces.clone(),
+                    swarm: swarm.clone(),
                     events: events.clone(),
                     corrupt: corrupt.clone(),
                 };
@@ -1215,6 +1223,18 @@ pub(super) fn download(
                 })
                 .collect();
             let known = addresses.len();
+            if !meta.private && config.pex {
+                // Only peers dialled here are known to accept connections.
+                swarm.set(
+                    group
+                        .workers
+                        .iter()
+                        .flatten()
+                        .filter(|worker| worker.outbound && worker.availability.is_some())
+                        .map(|worker| worker.address)
+                        .collect(),
+                );
+            }
             with_generation(jobs, stop, id, |job| {
                 job.live_peers = live;
                 job.known_peers = known;

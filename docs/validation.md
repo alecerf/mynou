@@ -16,6 +16,7 @@ commit only: an earlier green run does not validate later changes.
 | Release policy | Pull requests | Version changes only in a release PR |
 | CodeQL | Pull requests, pushes to `trunk`, weekly schedule, manual dispatch | Required security analysis; Rust and JavaScript selected by diff |
 | WireGuard interoperability | Manual dispatch only | Optional isolated independent-peer test |
+| Parser fuzzing | Pull requests changing a parser; weekly schedule; manual dispatch | Mutates inputs of every parser that reads untrusted bytes; see [parser fuzzing](#parser-fuzzing) |
 
 ## Mynou CI
 
@@ -161,6 +162,29 @@ Slower harnesses start first, using recorded timings. Timings change the order
 only, never the set of tests. Logs, `report.json` and a duration table are kept in
 the `mynou-tests-<commit>` artifact for seven days, including failed runs. Test
 builds omit debug symbols; debug assertions and overflow checks stay enabled.
+
+## Parser fuzzing
+
+Release builds abort on a panic, so one panicking parser stops the whole
+service. [`examples/parser_fuzz.rs`](../examples/parser_fuzz.rs) feeds mutated
+inputs, with the standard library only, to bencode, torrent metadata, tracker
+replies and compact peers, JSON, XML, URLs, IRC lines, WireGuard profiles,
+WebSocket frames, X.509, the TLS messages read before keys (records,
+ServerHello, extensions, certificates, tickets), uTP packets fed to a live
+connection, DHT queries and answers, IPv4, TCP, UDP and DNS packets
+(checksums made valid so the headers are reached), and MP4, Matroska and AVI
+files. Private parsers are reached through the hidden `mynou::fuzzing` module.
+
+```sh
+cargo run --release --example parser_fuzz -- 1000000
+cargo run --release --example parser_fuzz -- 1000000 tls packets
+```
+
+The first argument is the number of inputs per parser; others select parsers.
+`SEED` changes the sequence. On a panic the input is saved to
+`target/parser-fuzz/crash-PARSER.bin`, and `REPLAY=that-file` runs it again.
+The workflow runs a million inputs per parser with the run id as seed and keeps
+a crashing input as an artifact.
 
 ## Caches
 

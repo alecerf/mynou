@@ -3,8 +3,9 @@
 //! the network sign in once and keep a signed session cookie. The owner may
 //! instead open Mynou to the local network: computers at a private address
 //! then need no sign-in, and any other still does. Only a PBKDF2
-//! hash of the password and the random key that signs sessions are stored,
-//! and changing the password replaces the key, which ends every session.
+//! hash of the password, the random key that signs sessions and the sessions
+//! signed out before they expired are stored; changing the password replaces
+//! the key, which ends every session.
 //!
 //! Every request, signed in or not, must name an allowed host, so a domain
 //! rebound to this machine is refused, and a page of another site cannot
@@ -35,6 +36,9 @@ const WINDOW: Duration = Duration::from_secs(15 * 60);
 const FAILURES_PER_PEER: u32 = 5;
 /// Addresses remembered at once; beyond them, new addresses wait.
 const MAX_PEERS: usize = 1024;
+/// Signed-out sessions remembered until they expire. One more sign-out
+/// renews the session key instead, which ends every session.
+const MAX_REVOKED: usize = 256;
 pub const MAX_ALLOWED_HOSTS: usize = 32;
 
 fn hex(bytes: &[u8]) -> String {
@@ -70,13 +74,15 @@ pub fn check_password(password: &str) -> Result<()> {
     Ok(())
 }
 
-/// The stored password hash and the key that signs sessions.
+/// The stored password hash, the key that signs sessions and the nonces of
+/// sessions signed out before their expiry.
 #[derive(Clone)]
 pub struct Credentials {
     iterations: u32,
     salt: [u8; 16],
     hash: [u8; 32],
     key: [u8; 32],
+    revoked: BTreeMap<[u8; 16], u64>,
 }
 
 impl Credentials {
@@ -92,6 +98,7 @@ impl Credentials {
             salt,
             hash: pbkdf2_sha256(password.as_bytes(), &salt, iterations),
             key: random_bytes()?,
+            revoked: BTreeMap::new(),
         })
     }
 
@@ -99,8 +106,25 @@ impl Credentials {
     pub fn renewed(&self) -> Result<Self> {
         Ok(Self {
             key: random_bytes()?,
+            revoked: BTreeMap::new(),
             ..self.clone()
         })
+    }
+
+    /// These credentials with the session `value` signed out, or `None` when
+    /// it is not a valid session. Expired nonces are forgotten; when
+    /// `MAX_REVOKED` are still remembered, the key is renewed instead.
+    pub fn signed_out(&self, value: &str, now: u64) -> Result<Option<Self>> {
+        let Some((nonce, expiry)) = self.session_nonce(value, now) else {
+            return Ok(None);
+        };
+        let mut next = self.clone();
+        next.revoked.retain(|_, until| *until > now);
+        if next.revoked.len() >= MAX_REVOKED {
+            return self.renewed().map(Some);
+        }
+        next.revoked.insert(nonce, expiry);
+        Ok(Some(next))
     }
 
     pub fn verify(&self, password: &str) -> bool {
@@ -123,6 +147,17 @@ impl Credentials {
             ),
         );
         value.insert("session_key", hex(&self.key));
+        if !self.revoked.is_empty() {
+            value.insert(
+                "signed_out",
+                Value::Array(
+                    self.revoked
+                        .iter()
+                        .map(|(nonce, expiry)| Value::String(format!("{expiry}.{}", hex(nonce))))
+                        .collect(),
+                ),
+            );
+        }
         value
     }
 
@@ -153,6 +188,18 @@ impl Credentials {
                 .and_then(Value::as_str)
                 .and_then(unhex)
                 .ok_or_else(invalid)?,
+            revoked: match value.get("signed_out") {
+                None => BTreeMap::new(),
+                Some(Value::Array(items)) if items.len() <= MAX_REVOKED => items
+                    .iter()
+                    .map(|item| {
+                        let (expiry, nonce) = item.as_str()?.split_once('.')?;
+                        Some((unhex(nonce)?, expiry.parse().ok()?))
+                    })
+                    .collect::<Option<_>>()
+                    .ok_or_else(invalid)?,
+                Some(_) => return Err(invalid()),
+            },
         })
     }
 
@@ -169,15 +216,19 @@ impl Credentials {
         Ok(format!("{claim}.{}", self.signature(&claim)))
     }
 
+    /// The nonce and expiry of a session this key signed and that has not
+    /// expired, signed out or not.
+    fn session_nonce(&self, value: &str, now: u64) -> Option<([u8; 16], u64)> {
+        let (claim, signature) = value.rsplit_once('.')?;
+        let (expiry, nonce) = claim.split_once('.')?;
+        let expiry = expiry.parse::<u64>().ok().filter(|expiry| *expiry > now)?;
+        constant_time_eq(signature.as_bytes(), self.signature(claim).as_bytes()).then_some(())?;
+        Some((unhex(nonce)?, expiry))
+    }
+
     fn valid_session(&self, value: &str, now: u64) -> bool {
-        let Some((claim, signature)) = value.rsplit_once('.') else {
-            return false;
-        };
-        let Some((expiry, _)) = claim.split_once('.') else {
-            return false;
-        };
-        expiry.parse::<u64>().is_ok_and(|expiry| expiry > now)
-            && constant_time_eq(signature.as_bytes(), self.signature(claim).as_bytes())
+        self.session_nonce(value, now)
+            .is_some_and(|(nonce, _)| !self.revoked.contains_key(&nonce))
     }
 }
 
@@ -328,13 +379,7 @@ impl Access {
 
     /// Whether the request carries a valid session cookie.
     pub fn signed_in(&self, cookie_header: Option<&str>) -> bool {
-        let Some(value) = cookie_header.and_then(|header| {
-            header.split(';').find_map(|pair| {
-                pair.trim()
-                    .strip_prefix(COOKIE)
-                    .and_then(|rest| rest.strip_prefix('='))
-            })
-        }) else {
+        let Some(value) = session_cookie(cookie_header) else {
             return false;
         };
         self.credentials
@@ -343,6 +388,40 @@ impl Access {
             .as_ref()
             .is_some_and(|credentials| credentials.valid_session(value, now()))
     }
+
+    /// The credentials with the request's session signed out, when it carries
+    /// a valid one. The caller saves them, then puts them in force with
+    /// `replace`.
+    pub fn sign_out(&self, cookie_header: Option<&str>) -> Result<Option<Credentials>> {
+        let (Some(value), Some(credentials)) = (session_cookie(cookie_header), self.current())
+        else {
+            return Ok(None);
+        };
+        credentials.signed_out(value, now())
+    }
+}
+
+/// The value of the session cookie in a `Cookie` header.
+fn session_cookie(cookie_header: Option<&str>) -> Option<&str> {
+    cookie_header?.split(';').find_map(|pair| {
+        pair.trim()
+            .strip_prefix(COOKIE)
+            .and_then(|rest| rest.strip_prefix('='))
+    })
+}
+
+/// Whether a proxy forwarded the request. Its peer is then the proxy, not
+/// the client, so neither locality nor the local network can be trusted.
+pub fn proxied(headers: &BTreeMap<String, String>) -> bool {
+    [
+        "forwarded",
+        "x-forwarded-for",
+        "x-forwarded-host",
+        "x-real-ip",
+        "via",
+    ]
+    .iter()
+    .any(|name| headers.contains_key(*name))
 }
 
 /// Whether a connection comes from this machine: from loopback, or from the
@@ -510,6 +589,28 @@ mod tests {
         assert!(access.signed_in(Some(&format!("theme=dark; {COOKIE}={cookie}"))));
         assert!(!access.signed_in(Some(&format!("x{COOKIE}={cookie}"))));
         assert!(!access.signed_in(None));
+        // Signing out ends this session only, and survives a reload.
+        let SignIn::Session(other) = access
+            .sign_in(IpAddr::from([192, 0, 2, 11]), "correct horse battery")
+            .unwrap()
+        else {
+            panic!("the password was refused");
+        };
+        let header = format!("{COOKIE}={other}");
+        let next = access.sign_out(Some(&header)).unwrap().unwrap();
+        let next = Credentials::from_json(&next.to_json()).unwrap();
+        access.replace(Some(next));
+        assert!(!access.signed_in(Some(&header)));
+        assert!(access.sign_out(Some(&header)).unwrap().is_some());
+        assert!(access.sign_out(Some("other=1")).unwrap().is_none());
+        assert!(access.signed_in(Some(&format!("{COOKIE}={cookie}"))));
+        // Past the limit, a sign-out renews the key and ends every session.
+        let mut full = access.current().unwrap();
+        for n in 0..MAX_REVOKED {
+            full.revoked.insert([n as u8; 16], u64::MAX);
+        }
+        let renewed = full.signed_out(&cookie, now()).unwrap().unwrap();
+        assert!(renewed.revoked.is_empty() && renewed.key != full.key);
         // Signing out everywhere keeps the password and ends the session.
         let renewed = access.current().unwrap().renewed().unwrap();
         assert!(renewed.verify("correct horse battery"));

@@ -1,7 +1,7 @@
 import { $, h, icon } from './dom.js';
 import { artFor } from './components.js';
 import { collectionEntries, openCollectionEntry } from './library.js';
-import { VIEWS } from './router.js';
+import { VIEWS, STORAGE_VIEW } from './router.js';
 import { setTheme } from './theme.js';
 
 // The search palette: one field to find a title, go to a page, request
@@ -45,7 +45,7 @@ function titles(query) {
 }
 
 function pages(query) {
-  const all = [...VIEWS.map(([id, name]) => [id, name]), ['requests', 'New request']];
+  const all = [...VIEWS.map(([id, name]) => [id, name]), ['requests', 'New request'], STORAGE_VIEW];
   return all.filter(([, name]) => matches(name, query))
     .map(([id, name]) => ({ group: 'Go to', title: name, icon: id === 'requests' ? 'requests' : id, run: () => { location.hash = `#${id}`; } }));
 }

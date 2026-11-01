@@ -156,6 +156,9 @@ impl Network for Gate {
     fn datagram(&self, ipv6: bool) -> Result<Box<dyn NetworkDatagram>> {
         self.network()?.datagram(ipv6)
     }
+    fn bind_datagram(&self, port: u16) -> Result<Box<dyn NetworkDatagram + Sync>> {
+        self.network()?.bind_datagram(port)
+    }
     fn listen(&self, a: SocketAddr) -> Result<Box<dyn NetworkListener>> {
         self.network()?.listen(a)
     }
@@ -207,6 +210,9 @@ impl Network for Bypass {
     }
     fn datagram(&self, ipv6: bool) -> Result<Box<dyn NetworkDatagram>> {
         self.network()?.datagram(ipv6)
+    }
+    fn bind_datagram(&self, port: u16) -> Result<Box<dyn NetworkDatagram + Sync>> {
+        self.network()?.bind_datagram(port)
     }
     fn listen(&self, a: SocketAddr) -> Result<Box<dyn NetworkListener>> {
         self.network()?.listen(a)

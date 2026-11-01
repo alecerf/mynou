@@ -32,7 +32,9 @@ struct Flows {
 }
 
 /// Delegates to the tunnel `Network` and observes every peer flow the engine
-/// opens through it; the info hash is read from the outgoing handshake.
+/// opens through it; the info hash is read from the outgoing handshake. It
+/// binds no UDP port, so the engine dials TCP only: these tests measure the
+/// tunnel's TCP flows.
 struct Observed {
     inner: Arc<dyn Network>,
     flows: Arc<Mutex<Flows>>,

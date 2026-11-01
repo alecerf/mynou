@@ -225,6 +225,7 @@
   .page-heading h1 { margin: 0.8rem 0 0.65rem; }
   .page-heading .intro { font-size: 1rem; max-width: 40rem; }
   .page-heading > :is(.primary, .secondary) { margin-bottom: 0.2rem; }
+  .heading-actions { display: flex; flex-wrap: wrap; justify-content: end; gap: 0.6rem; margin-bottom: 0.2rem; }
   .welcome { padding-top: 1rem; padding-bottom: 1.9rem; }
   .section-heading { display: flex; align-items: end; justify-content: space-between; gap: 1.25rem; margin: 2.5rem 0 1.4rem; }
   .section-heading h2 { font-size: 1.5rem; }
@@ -962,9 +963,10 @@
     h1 { font-size: 2.125rem; }
     .page-heading { gap: 1rem; padding: 1.4rem 0 1.75rem; }
     .page-heading .intro { font-size: 0.9375rem; line-height: 1.7; }
-    .page-heading > .primary, .page-heading > .secondary { padding: 0.6rem; }
+    .page-heading > .primary, .page-heading > .secondary, .heading-actions > .secondary { padding: 0.6rem; }
+    .heading-actions { flex-wrap: nowrap; }
     /* The words leave the screen, not the accessibility tree. */
-    .page-heading > .primary span, .page-heading > .secondary span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+    .page-heading > .primary span, .page-heading > .secondary span, .heading-actions > .secondary span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
     .welcome > .secondary { padding: 0.6rem 0.9rem; }
     .section-heading { align-items: start; }
     .section-heading h2 { font-size: 1.375rem; }
@@ -1323,6 +1325,7 @@
 
   /* ---------------------------------------------------- transfers -- */
   .summary-strip.transfer-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: 1.5rem; }
+  .summary-strip.storage-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 44rem; }
   .transfer-tiles dt[data-tone="accent"]::before {
     content: ""; display: inline-block; width: 6px; height: 6px; margin-inline-end: 0.45rem; vertical-align: 0.15em;
     border-radius: 50%; background: var(--ok); animation: pulse 2.4s ease-out infinite;
@@ -1362,7 +1365,7 @@
     .summary-strip.transfer-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     /* The icon by the poster tells the state; the title gets the width. */
     #transfers .buttons .badge { display: none; }
-    .transfer-tiles > :first-child { grid-column: 1 / -1; }
+    .transfer-tiles:not(.storage-tiles) > :first-child { grid-column: 1 / -1; }
     /* The navigation floats above the page, a pill of glass. */
     .mobile-nav {
       inset: auto 0.75rem max(0.75rem, env(safe-area-inset-bottom)) 0.75rem; padding: 0.35rem;

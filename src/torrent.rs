@@ -3,6 +3,8 @@
 mod control;
 #[path = "torrent/cross_seed.rs"]
 mod cross_seed;
+#[path = "torrent/dht_node.rs"]
+mod dht_node;
 #[path = "torrent/discovery.rs"]
 mod discovery;
 #[path = "torrent/index.rs"]
@@ -21,6 +23,8 @@ mod queue;
 mod selection;
 #[path = "torrent/transport.rs"]
 pub mod transport;
+#[path = "torrent/utp.rs"]
+mod utp;
 #[path = "torrent/wire.rs"]
 pub(crate) mod wire;
 use control::RateGate;
@@ -245,6 +249,8 @@ pub struct Client {
     stop: Arc<AtomicBool>,
     manager: Option<JoinHandle<()>>,
     listener: Option<JoinHandle<()>>,
+    /// uTP and the DHT node on the BitTorrent UDP port.
+    hub: Option<Arc<utp::Hub>>,
     policy: Arc<PolicyRuntime>,
 }
 
@@ -1711,27 +1717,51 @@ impl Client {
         network: Arc<dyn transport::Network>,
     ) -> Result<Self> {
         policy.validate()?;
-        let policy = Arc::new(PolicyRuntime {
-            seed_queue: queue::SeedQueue::new(config.max_seeding),
-            download: Arc::new(RateGate::new(policy.download_limit_bps)?),
-            upload: Arc::new(RateGate::new(policy.upload_limit_bps)?),
-            policy,
-            network,
-        });
+        let download = Arc::new(RateGate::new(policy.download_limit_bps)?);
+        let upload = Arc::new(RateGate::new(policy.upload_limit_bps)?);
         if !(1..=256).contains(&config.max_peers) {
             return Err("Invalid peer connection count".into());
         }
         mkdir_private(&config.state_dir)?;
         mkdir_private(&config.data_dir)?;
-        let listener = policy
-            .network
-            .listen(SocketAddr::from(([0, 0, 0, 0], config.listen_port)))?;
+        let listener = network.listen(SocketAddr::from(([0, 0, 0, 0], config.listen_port)))?;
         config.listen_port = listener.port();
         let index = Arc::new(Mutex::new(index::TransferIndex::open(&mut config)?));
         let map = BTreeMap::new();
         let jobs = Arc::new(Mutex::new(map));
         let stop = Arc::new(AtomicBool::new(false));
         let id = peer_id()?;
+        // The same port over UDP, for uTP and the DHT node. Best effort:
+        // without it peers use TCP only and lookups stay read-only.
+        let hub = network
+            .bind_datagram(config.listen_port)
+            .ok()
+            .and_then(|socket| {
+                utp::Hub::start(network.clone(), socket, config.dht, stop.clone()).ok()
+            });
+        let (network, listener): (
+            Arc<dyn transport::Network>,
+            Box<dyn transport::NetworkListener>,
+        ) = match &hub {
+            Some(hub) => (
+                Arc::new(utp::WithUtp {
+                    inner: network,
+                    hub: hub.clone(),
+                }),
+                Box::new(utp::Listener {
+                    tcp: listener,
+                    hub: hub.clone(),
+                }),
+            ),
+            None => (network, listener),
+        };
+        let policy = Arc::new(PolicyRuntime {
+            seed_queue: queue::SeedQueue::new(config.max_seeding),
+            download,
+            upload,
+            policy,
+            network,
+        });
         let manager = {
             let admission = admission.clone();
             let jobs = jobs.clone();
@@ -1764,6 +1794,7 @@ impl Client {
             stop,
             manager: Some(manager),
             listener: Some(listener),
+            hub,
             policy,
         })
     }
@@ -2689,6 +2720,9 @@ impl Drop for Client {
         }
         if let Some(handle) = self.listener.take() {
             let _ = handle.join();
+        }
+        if let Some(hub) = self.hub.take() {
+            hub.join();
         }
         if let Ok(mut jobs) = self.jobs.lock() {
             for job in jobs.values_mut() {
@@ -4690,6 +4724,39 @@ fn serve_peer(
         }
     }
     Ok(())
+}
+
+/// Fuzzing entries for torrent metadata and tracker replies; see
+/// `crate::fuzzing`.
+#[doc(hidden)]
+pub(crate) fn fuzz_metainfo(data: &[u8]) {
+    let _ = metainfo::Meta::parse(data);
+    let _ = metainfo::raw_info(data);
+}
+
+#[doc(hidden)]
+pub(crate) fn fuzz_tracker(data: &[u8]) {
+    discovery::fuzz(data);
+}
+
+#[doc(hidden)]
+pub(crate) fn fuzz_utp(data: &[u8]) {
+    utp::fuzz(data);
+}
+
+#[doc(hidden)]
+pub(crate) fn fuzz_dht(data: &[u8]) {
+    dht_node::fuzz(data);
+}
+
+/// Peers the DHT knows for `hash`, without announcing: for
+/// `examples/peer_connect_probe.rs`, which times connections to them.
+#[doc(hidden)]
+pub fn probe_dht_peers(
+    network: &dyn transport::Network,
+    hash: &[u8; 20],
+) -> Result<Vec<std::net::SocketAddr>> {
+    discovery::dht_lookup(network, hash, 6881, false, &AtomicBool::new(false), &[])
 }
 
 #[cfg(test)]

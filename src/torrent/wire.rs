@@ -4,12 +4,12 @@ use super::{
 };
 use crate::{Result, bencode::Value, net::NetworkStream};
 use std::{
-    collections::{BTreeMap, VecDeque},
+    collections::{BTreeMap, BTreeSet, VecDeque},
     io::Read,
     net::SocketAddr,
     path::PathBuf,
     sync::{
-        Arc,
+        Arc, RwLock,
         atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering},
     },
     time::{Duration, Instant},
@@ -132,8 +132,68 @@ pub struct Peer {
     fresh: bool,
     /// Pieces verified by any peer of this download.
     done: Option<Arc<Pieces>>,
+    pex_out: Option<PexOut>,
     /// Pieces abandoned here, whose late blocks are ignored.
     cancelled: VecDeque<usize>,
+}
+
+/// The connectable peers of one public download, which its connections pass
+/// on to their peers in PEX messages (BEP 11). The download refreshes it.
+#[derive(Default)]
+pub struct Swarm(RwLock<Vec<SocketAddr>>);
+impl Swarm {
+    pub fn set(&self, peers: Vec<SocketAddr>) {
+        *self.0.write().unwrap_or_else(|e| e.into_inner()) = peers;
+    }
+    fn get(&self) -> Vec<SocketAddr> {
+        self.0.read().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+}
+
+/// At most one PEX message a minute (BEP 11), with at most 50 peers added and
+/// 50 dropped.
+const PEX_EVERY: Duration = Duration::from_secs(60);
+const PEX_MAX: usize = 50;
+
+/// What this connection told its peer about the swarm.
+struct PexOut {
+    swarm: Arc<Swarm>,
+    sent: BTreeSet<SocketAddr>,
+    next: Instant,
+    /// The peer's own address, never sent back to it.
+    own: SocketAddr,
+}
+
+/// Compact peers: 4 or 16 address bytes and the port, big-endian.
+fn compact(peers: &[SocketAddr], ipv6: bool) -> Vec<u8> {
+    let mut out = Vec::new();
+    for peer in peers.iter().filter(|peer| peer.is_ipv6() == ipv6) {
+        match peer.ip() {
+            std::net::IpAddr::V4(ip) => out.extend_from_slice(&ip.octets()),
+            std::net::IpAddr::V6(ip) => out.extend_from_slice(&ip.octets()),
+        }
+        out.extend_from_slice(&peer.port().to_be_bytes());
+    }
+    out
+}
+
+/// A `ut_pex` payload. Each added peer is flagged reachable (0x10): only
+/// peers this side dialled are shared.
+pub fn pex_message(added: &[SocketAddr], dropped: &[SocketAddr]) -> Vec<u8> {
+    let flags = |ipv6: bool| {
+        Value::Bytes(vec![
+            0x10;
+            added.iter().filter(|p| p.is_ipv6() == ipv6).count()
+        ])
+    };
+    crate::bencode::encode(&value_dict(&[
+        (b"added", Value::Bytes(compact(added, false))),
+        (b"added.f", flags(false)),
+        (b"added6", Value::Bytes(compact(added, true))),
+        (b"added6.f", flags(true)),
+        (b"dropped", Value::Bytes(compact(dropped, false))),
+        (b"dropped6", Value::Bytes(compact(dropped, true))),
+    ]))
 }
 
 /// An incoming connection whose handshake named a torrent being downloaded,
@@ -599,9 +659,14 @@ impl Peer {
             return Err("Download interrupted".into());
         }
         let mut stream = connection?;
+        // A VPN that accepts connections itself (Proton's VPN Accelerator)
+        // connects even a dead peer at once: only the handshake tells. Live
+        // peers answered within 0.8 s through it (p99, torrent-benchmark.md),
+        // so a download waits 3 seconds for the answer, metadata 5.
+        let wait = Duration::from_secs(if stop.is_some() { 3 } else { 5 });
         let deadline = end
-            .unwrap_or(Instant::now() + Duration::from_secs(5))
-            .min(Instant::now() + Duration::from_secs(5));
+            .unwrap_or(Instant::now() + wait)
+            .min(Instant::now() + wait);
         let extensions = match handshake_deadline(&mut *stream, hash, id, true, stop, deadline) {
             Ok(extensions) => extensions,
             // Peers that require encryption hang up on a plaintext handshake.
@@ -725,8 +790,53 @@ impl Peer {
             upload,
             fresh: false,
             done: None,
+            pex_out: None,
             cancelled: VecDeque::new(),
         })
+    }
+
+    /// Passes the download's swarm on to this peer, at `address`, once a
+    /// minute, when PEX is allowed (never for a private torrent). The first
+    /// message waits a minute too, so a short connection sends none.
+    pub fn share_swarm(&mut self, swarm: Arc<Swarm>, address: SocketAddr) {
+        if self.pex_allowed {
+            self.pex_out = Some(PexOut {
+                swarm,
+                sent: BTreeSet::new(),
+                next: Instant::now() + PEX_EVERY,
+                own: address,
+            });
+        }
+    }
+
+    /// Sends the peers added to and dropped from the swarm since the last
+    /// message, when one is due and the peer takes `ut_pex`.
+    pub fn send_pex(&mut self, stop: &AtomicBool) -> Result<()> {
+        let (Some(out), Some(ext)) = (&mut self.pex_out, self.pex_id) else {
+            return Ok(());
+        };
+        if Instant::now() < out.next {
+            return Ok(());
+        }
+        out.next = Instant::now() + PEX_EVERY;
+        let now: BTreeSet<SocketAddr> = out
+            .swarm
+            .get()
+            .into_iter()
+            .filter(|peer| *peer != out.own)
+            .collect();
+        let added: Vec<_> = now.difference(&out.sent).take(PEX_MAX).copied().collect();
+        let dropped: Vec<_> = out.sent.difference(&now).take(PEX_MAX).copied().collect();
+        if added.is_empty() && dropped.is_empty() {
+            return Ok(());
+        }
+        for peer in &dropped {
+            out.sent.remove(peer);
+        }
+        out.sent.extend(&added);
+        let mut payload = vec![ext];
+        payload.extend(pex_message(&added, &dropped));
+        write_message(&mut *self.stream, 20, &payload, Some(stop))
     }
 
     /// Pieces of this download verified meanwhile through other peers are
@@ -1754,8 +1864,95 @@ mod tests {
             upload: None,
             fresh: false,
             done: None,
+            pex_out: None,
             cancelled: VecDeque::new(),
         }
+    }
+
+    #[test]
+    fn pex_passes_on_added_and_dropped_peers_once_a_minute() {
+        let a: SocketAddr = "192.0.2.1:6881".parse().unwrap();
+        let b: SocketAddr = "[2001:db8::2]:51413".parse().unwrap();
+        let c: SocketAddr = "198.51.100.3:7000".parse().unwrap();
+        let own: SocketAddr = "203.0.113.9:6881".parse().unwrap();
+        let payload = pex_message(&[a, b], &[c]);
+        assert_eq!(
+            super::super::discovery::pex_peers(&payload).unwrap(),
+            [a, b]
+        );
+        let parsed = crate::bencode::parse(&payload).unwrap();
+        assert_eq!(
+            value_field(&parsed, b"added.f").unwrap().as_bytes(),
+            Some(&[0x10][..])
+        );
+        assert_eq!(
+            value_field(&parsed, b"dropped")
+                .unwrap()
+                .as_bytes()
+                .unwrap()
+                .len(),
+            6
+        );
+
+        let swarm = Arc::new(Swarm::default());
+        swarm.set(vec![a, b, own]);
+        let (mut peer, mut remote) = peer_pair(None);
+        // A private torrent never shares its swarm.
+        peer.share_swarm(swarm.clone(), own);
+        assert!(peer.pex_out.is_none());
+        peer.pex_allowed = true;
+        peer.pex_id = Some(7);
+        peer.share_swarm(swarm.clone(), own);
+        let stop = AtomicBool::new(false);
+        let read = |remote: &mut TcpStream| {
+            let mut head = [0; 6];
+            remote.read_exact(&mut head).unwrap();
+            assert_eq!(&head[4..], &[20, 7]);
+            let mut body = vec![0; u32::from_be_bytes(head[..4].try_into().unwrap()) as usize - 2];
+            remote.read_exact(&mut body).unwrap();
+            crate::bencode::parse(&body).unwrap()
+        };
+        // Nothing before a minute has passed.
+        peer.send_pex(&stop).unwrap();
+        peer.pex_out.as_mut().unwrap().next = Instant::now();
+        peer.send_pex(&stop).unwrap();
+        let first = read(&mut remote);
+        assert_eq!(
+            value_field(&first, b"added")
+                .unwrap()
+                .as_bytes()
+                .unwrap()
+                .len(),
+            6
+        );
+        assert_eq!(
+            value_field(&first, b"added6")
+                .unwrap()
+                .as_bytes()
+                .unwrap()
+                .len(),
+            18
+        );
+        swarm.set(vec![b, c]);
+        peer.pex_out.as_mut().unwrap().next = Instant::now();
+        peer.send_pex(&stop).unwrap();
+        let second = read(&mut remote);
+        let peers = |value: &Value, key: &[u8]| {
+            super::super::discovery::decode_peers(
+                value_field(value, key).unwrap().as_bytes().unwrap(),
+                false,
+            )
+            .unwrap()
+        };
+        assert_eq!(peers(&second, b"added"), [c]);
+        assert_eq!(peers(&second, b"dropped"), [a]);
+        // No change, no message: the next one read is a later change.
+        peer.pex_out.as_mut().unwrap().next = Instant::now();
+        peer.send_pex(&stop).unwrap();
+        swarm.set(vec![b]);
+        peer.pex_out.as_mut().unwrap().next = Instant::now();
+        peer.send_pex(&stop).unwrap();
+        assert_eq!(peers(&read(&mut remote), b"dropped"), [c]);
     }
 
     fn three_piece_meta() -> Meta {
@@ -2428,6 +2625,7 @@ mod tests {
                 upload: None,
                 fresh: false,
                 done: None,
+                pex_out: None,
                 cancelled: VecDeque::new(),
             };
             let result = peer.fetch_piece(&mut meta, 0, &mut |_| None, &AtomicBool::new(false));

@@ -499,9 +499,12 @@ fn dht_search(
                 (b"q", Value::Bytes(b"get_peers".to_vec())),
                 (
                     b"a",
+                    // Read-only (BEP 43): this short-lived socket is no node
+                    // to keep; the DHT node on the BitTorrent port is.
                     dict(&[
                         (b"id", Value::Bytes(id.to_vec())),
                         (b"info_hash", Value::Bytes(hash.to_vec())),
+                        (b"ro", Value::Int(1)),
                     ]),
                 ),
             ]);
@@ -611,6 +614,16 @@ pub fn value_field<'a>(v: &'a Value, key: &[u8]) -> Option<&'a Value> {
     field(v, key)
 }
 
+/// Fuzzing entry: `data` as a tracker reply, compact peers and a PEX message.
+#[doc(hidden)]
+pub(crate) fn fuzz(data: &[u8]) {
+    if let Ok(value) = crate::bencode::parse(data) {
+        let _ = parse_tracker_reply(&value);
+    }
+    let _ = decode_peers(data, false);
+    let _ = decode_peers(data, true);
+    let _ = pex_peers(data);
+}
 #[cfg(test)]
 mod tests {
     use super::*;

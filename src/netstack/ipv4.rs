@@ -203,6 +203,24 @@ pub fn build(
     Ok(packet)
 }
 
+/// Fuzzing entry: `data` as a packet whose header checksum is made valid.
+#[doc(hidden)]
+pub(super) fn fuzz(data: &[u8]) {
+    let Ok(config) = IpConfig::new(Ipv4Addr::new(10, 2, 0, 2), Ipv4Addr::UNSPECIFIED, 0) else {
+        return;
+    };
+    let mut bytes = data.to_vec();
+    let header = usize::from(bytes.first().map_or(0, |b| b & 0x0f)) * 4;
+    if header >= HEADER_LEN && bytes.len() >= header {
+        bytes[10..12].fill(0);
+        let sum = checksum(&bytes[..header]);
+        bytes[10..12].copy_from_slice(&sum.to_be_bytes());
+    }
+    for protocol in [PROTOCOL_UDP, PROTOCOL_TCP] {
+        let _ = parse_protocol(&config, &bytes, protocol);
+    }
+}
+
 #[cfg(test)]
 #[path = "ipv4_tests.rs"]
 mod tests;

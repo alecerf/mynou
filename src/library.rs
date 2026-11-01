@@ -148,7 +148,109 @@ pub fn validate_baseline(
     })
 }
 
+/// Earlier versions one listing returns at most, and the time it may spend.
+const MAX_EARLIER: usize = 500;
+const EARLIER_BUDGET: Duration = Duration::from_secs(5);
+
 impl Engine {
+    /// Earlier versions still on disk: ready imports that a later version of
+    /// the same film or episode replaced. Mynou never deletes them by itself.
+    pub fn earlier_versions(&self) -> Result<Value> {
+        let started = Instant::now();
+        let mut entries = Vec::new();
+        let mut total = 0_u64;
+        let mut limited = false;
+        let mut after: Option<String> = None;
+        'pages: loop {
+            let page = lock(&self.store)?.page(after.as_deref(), 200)?;
+            for job in &page.jobs {
+                if job.state != "ready" || job.imports.is_empty() || job.shared_file.is_some() {
+                    continue;
+                }
+                let current = {
+                    let mut store = lock(&self.store)?;
+                    if store.is_library_tip(&job.id)? {
+                        continue;
+                    }
+                    store.current_media_job(&job.request.media_key())?
+                };
+                let Some(current) = current.filter(|current| {
+                    current.id != job.id && current.state == "ready" && import_exists(current)
+                }) else {
+                    continue;
+                };
+                let files = crate::organizer::earlier_files(job, &current, &self.config);
+                if files.is_empty() {
+                    continue;
+                }
+                if entries.len() == MAX_EARLIER {
+                    limited = true;
+                    break 'pages;
+                }
+                let bytes: u64 = files.iter().map(|(_, length)| length).sum();
+                total += bytes;
+                let mut value = public_job(job);
+                value.insert("media_key", job.request.media_key());
+                value.insert("replaced_by", current.id.clone());
+                value.insert(
+                    "replaced_by_release",
+                    current
+                        .release
+                        .as_ref()
+                        .map_or(Value::Null, |release| release.title.clone().into()),
+                );
+                value.insert(
+                    "earlier_files",
+                    Value::Array(
+                        files
+                            .into_iter()
+                            .map(|(path, length)| {
+                                let mut file = Value::object();
+                                file.insert("path", path);
+                                file.insert("bytes", Value::Number(length as f64));
+                                file
+                            })
+                            .collect(),
+                    ),
+                );
+                value.insert("bytes", Value::Number(bytes as f64));
+                entries.push(value);
+            }
+            after = page.next;
+            if after.is_none() {
+                break;
+            }
+            if started.elapsed() > EARLIER_BUDGET {
+                limited = true;
+                break;
+            }
+        }
+        let mut value = Value::object();
+        value.insert("earlier", Value::Array(entries));
+        value.insert("bytes", Value::Number(total as f64));
+        value.insert("limited", limited);
+        Ok(value)
+    }
+
+    /// Deletes the files of an earlier version, never those of the version
+    /// that replaced it, then asks Plex to look again.
+    pub fn delete_earlier_version(&self, id: &str) -> Result<Value> {
+        if self.read_only {
+            return Err("Read-only preview cannot delete files".into());
+        }
+        let config = self.config.clone();
+        let (job, freed) = lock(&self.store)?.delete_earlier_version(id, |job, current| {
+            crate::organizer::delete_earlier_files(job, current, &config)
+        })?;
+        if self.config.plex.enabled {
+            // Plex marks the file unavailable until it scans the folder again.
+            let _ = integrations::refresh(&self.configuration_for(&job)?, &job.request);
+        }
+        let mut value = public_job(&job);
+        value.insert("freed_bytes", Value::Number(freed as f64));
+        Ok(value)
+    }
+
     /// Returns a page of owned ready versions; an unfinished child cannot
     /// replace its parent.
     pub fn library(&self, after: Option<&str>, limit: usize) -> Result<Value> {

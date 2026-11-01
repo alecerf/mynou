@@ -43,5 +43,34 @@ mod xml;
 
 pub type Result<T> = std::result::Result<T, String>;
 
+/// Entry points for `examples/parser_fuzz.rs` into parsers that are not
+/// otherwise public. Each takes untrusted bytes and must never panic.
+#[doc(hidden)]
+pub mod fuzzing {
+    pub fn metainfo(data: &[u8]) {
+        crate::torrent::fuzz_metainfo(data);
+    }
+    pub fn tracker(data: &[u8]) {
+        crate::torrent::fuzz_tracker(data);
+    }
+    pub fn tls(data: &[u8]) {
+        crate::tls::fuzz(data);
+    }
+    pub fn packets(data: &[u8]) {
+        crate::netstack::fuzz(data);
+    }
+    pub fn utp(data: &[u8]) {
+        crate::torrent::fuzz_utp(data);
+    }
+    pub fn dht(data: &[u8]) {
+        crate::torrent::fuzz_dht(data);
+    }
+    pub fn xml(data: &[u8]) {
+        if let Ok(text) = std::str::from_utf8(data) {
+            let _ = crate::xml::parse_xml(text);
+        }
+    }
+}
+
 #[cfg(test)]
 mod growth;
