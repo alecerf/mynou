@@ -12,6 +12,17 @@ use mynou::integrations;
 use mynou::json::{self, Value};
 use mynou::store::{RecordedRelease, Request};
 
+/// A data directory for this test process, so that nothing lands in the
+/// repository (Plex calls save the installation's identifier there).
+fn base() -> &'static Path {
+    static BASE: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+    BASE.get_or_init(|| {
+        let path = std::env::temp_dir().join(format!("mynou-integrations-{}", std::process::id()));
+        std::fs::create_dir_all(&path).unwrap();
+        path
+    })
+}
+
 struct Fixture {
     url: String,
     calls: Arc<AtomicUsize>,
@@ -94,7 +105,7 @@ impl Fixture {
     }
 
     fn plex_config(&self) -> Config {
-        let mut config = config::from_json(&config::default_json(), Path::new(".")).unwrap();
+        let mut config = config::from_json(&config::default_json(), base()).unwrap();
         config.plex.enabled = true;
         config.plex.url = self.url.clone();
         config.plex.token_override = Some("fixture-upgrade-secret".into());
@@ -330,7 +341,7 @@ fn malformed_paths_cannot_confirm_an_upgrade_or_leak_into_errors() {
 
 #[test]
 fn disabled_plex_confirms_only_a_nonempty_import_list() {
-    let config = config::from_json(&config::default_json(), Path::new(".")).unwrap();
+    let config = config::from_json(&config::default_json(), base()).unwrap();
     assert!(!integrations::available_import(&config, &movie(), &[]).unwrap());
     assert!(
         integrations::available_import(&config, &movie(), &imports(&["/library/new.mp4"])).unwrap()
@@ -357,7 +368,7 @@ fn structured_selection_agrees_with_search_and_the_redacted_public_preview() {
         )
         .unwrap(),
     );
-    let mut config = config::from_json(&value, Path::new(".")).unwrap();
+    let mut config = config::from_json(&value, base()).unwrap();
     config.sources.push(Source {
         options: Default::default(),
         name: "fixture".into(),
@@ -428,7 +439,7 @@ fn structured_selection_cannot_return_a_rejected_or_missing_candidate() {
     ] {
         let body = body.to_owned();
         let fixture = Fixture::open(move |_, _| (200, body.clone()));
-        let mut config = config::from_json(&config::default_json(), Path::new(".")).unwrap();
+        let mut config = config::from_json(&config::default_json(), base()).unwrap();
         config.sources.push(Source {
             options: Default::default(),
             name: "fixture".into(),
@@ -472,7 +483,7 @@ fn unrecordable_titles_do_not_win_acquisition_and_remain_explained_in_the_previe
     ]);
     let body = json::stringify(&releases);
     let fixture = Fixture::open(move |_, _| (200, body.clone()));
-    let mut config = config::from_json(&config::default_json(), Path::new(".")).unwrap();
+    let mut config = config::from_json(&config::default_json(), base()).unwrap();
     config.sources.push(Source {
         options: Default::default(),
         name: "fixture".into(),
@@ -488,6 +499,8 @@ fn unrecordable_titles_do_not_win_acquisition_and_remain_explained_in_the_previe
         integrations::search(&config, &movie()).unwrap()
     );
     RecordedRelease {
+        source_id: selected.source_id,
+        size_bytes: selected.size_bytes,
         title: selected.title,
         profile: selected.profile,
     }
@@ -527,7 +540,7 @@ fn a_shared_deadline_discards_earlier_candidates_when_a_later_indexer_is_slow() 
                 .into(),
         )
     });
-    let mut config = config::from_json(&config::default_json(), Path::new(".")).unwrap();
+    let mut config = config::from_json(&config::default_json(), base()).unwrap();
     for fixture in [&fast, &slow] {
         config.sources.push(Source {
             options: Default::default(),

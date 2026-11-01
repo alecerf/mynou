@@ -195,6 +195,15 @@ impl Fixture {
                                 SERVER.octets()
                             };
                             answer.extend_from_slice(&ip);
+                            if query.payload.windows(8).any(|s| s == b"fallback") {
+                                answer[6..8].copy_from_slice(&2u16.to_be_bytes());
+                                let length = answer.len();
+                                answer[length - 4..].copy_from_slice(&[10, 7, 0, 99]);
+                                answer.extend_from_slice(&[
+                                    0xc0, 0x0c, 0, 1, 0, 1, 0, 0, 0, 60, 0, 4,
+                                ]);
+                                answer.extend_from_slice(&SERVER.octets());
+                            }
                             tunnel
                                 .udp_send_to(resolver, (query.source, query.source_port), &answer)
                                 .unwrap();
@@ -821,6 +830,18 @@ fn writes_are_chunked_and_backpressure_respects_the_write_timeout() {
     }
     assert!(sent > 0);
     assert!(start.elapsed() < Duration::from_secs(2));
+}
+
+#[test]
+fn a_silent_first_address_leaves_time_for_the_next_candidate() {
+    let f = Fixture::new();
+    // The fixture's resolver returns this silent address first, then SERVER.
+    let stream = f.connector.connect(
+        "fallback.example",
+        8080,
+        Instant::now() + Duration::from_millis(600),
+    );
+    assert!(stream.is_ok(), "fallback failed: {:?}", stream.err());
 }
 
 #[path = "tunnel_network_tests.rs"]

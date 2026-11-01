@@ -4,19 +4,23 @@ The `mynou::inventory::Index` Rust API is the storage foundation for
 [growing inventories](https://github.com/alecerf/mynou/issues/106). Jobs and
 history, series and numbering, requester demand, retained feeds, source policies,
 IRC announcements, cross-seed discovery and native transfers use private disk
-indexes. Library tips and their monitoring entries share the job index. Legacy snapshots remain only
-as migration inputs or preserved recovery copies, not as current inventory caps.
+indexes. Library tips and their monitoring entries share the job index.
 
-| Store | Recovery and downgrade guidance |
+Mynou reads only the current format of each store. There is no migration from
+earlier storage formats and no downgrade path: a store written by an earlier
+development build is refused at open and must be recreated (stop Mynou, move
+the store directory aside, start again).
+
+| Store | Storage and recovery |
 | --- | --- |
-| Jobs, history and library tips | [Job migration and downgrade](#job-migration-and-downgrade), [index upgrades](#indexed-library-monitoring) |
-| Series, episodes and numbering | [Downgrade and recovery](#downgrade-and-recovery) |
-| Requester demand and operator interests | [Requester migration and downgrade](#requester-migration-and-downgrade) |
+| Jobs, history and library tips | [Job storage](#job-storage), [library monitoring](#indexed-library-monitoring) |
+| Series, episodes and numbering | [Series storage](#series-storage) |
+| Requester demand and operator interests | [Requester storage](#requester-storage) |
 | Retained feeds and captured routing | [Feed storage](#feed-storage), [captured feed routing](#captured-feed-routing) |
 | Source policies | [Source policy storage](#source-policy-storage) |
 | IRC announcements | [IRC announcement storage](#irc-announcement-storage) |
 | Cross-seed discovery | [Automatic cross-seed discovery](transfers.md#automatic-cross-seed-discovery) |
-| Native transfers | [Transfer storage migration and downgrade](transfers.md#storage-migration-and-downgrade) |
+| Native transfers | [Transfer storage](transfers.md#storage) |
 
 Per-record, page, transaction and configured-source bounds still apply; see
 [limits](limits.md). Removing total inventory caps does not establish scalability:
@@ -37,17 +41,13 @@ who can rewrite the owner's directory while it is in use.
 Open policy: private store files and locks are opened with
 `O_NOFOLLOW | O_NONBLOCK`, named per target in `src/store.rs` (macOS, and Linux
 on x86-64 and arm64; other targets do not build). This covers index files, redo logs,
-record files, value-log segments, staging locks, legacy snapshots and their
-preserved copies in the job, series, requester, feed, source-policy and IRC
-stores and their migrations, and the native transfer state (ownership and
-creation locks and the persisted `.torrent`, `.source`, `.control`, `.paused`
-and `.seed` files). If the final path component is swapped for a symbolic link
+value-log segments and locks of the job, series, requester, feed, source-policy
+and IRC stores, and the native transfer state (ownership lock and the persisted
+`.torrent`, `.source`, `.control`, `.paused` and `.seed` files). If the final path component is swapped for a symbolic link
 after inspection, the open itself refuses it, so the target is never read. A
 FIFO or device returns at once instead of blocking, and the descriptor is
 refused unless it is the inspected regular file (same device and inode). A
-missing job store lock is created exclusively, and a leftover legacy journal is
-checked against its preserved copy again through the descriptor that empties it.
-Directory synchronization opens without blocking and refuses non-directories.
+missing job store lock is created exclusively. Directory synchronization opens without blocking and refuses non-directories.
 `O_NOFOLLOW` covers only the final component. A parent directory swapped for a
 symbolic link between inspection and open is still followed, which stays within
 the private-directory trust model above. The link-count and permission checks
@@ -56,20 +56,28 @@ remain as defense in depth.
 `identity.bin` holds a random 256-bit store identity and checksum. `redo.bin`
 holds the [redo log](#transaction-and-recovery). `tree.bin` contains 4 KiB
 checksummed pages. Page zero holds the identity, sequence,
-root, allocation counter and record count; remaining pages hold ordered keys
-and either value references or child references. Nodes have at most 32 items;
+root, allocation counter, record count and the head of the free list;
+remaining pages hold ordered keys and either value references or child
+references. Nodes have at most 32 items;
 child levels strictly decrease and child upper keys must match their parents.
 Offsets/counts use checked arithmetic, supported offsets fit a signed 64-bit
 file offset, and there is no configured total inventory cap.
 
+Pages are rewritten in place. A page that deletions empty, or a root left
+behind when the tree loses a level, becomes a free page (`MYNOUIF1`) that names
+the next free page; the header names the first. Splits and new roots take a
+free page before the file grows, in the same transaction and redo record as
+the change that frees or reuses it. The file never shrinks, and pages that are
+only partly full are not merged: a store that deletes most of its records
+keeps those pages until new records fill them. A branch that references a free
+page, or a free list that names a page in use, is corruption and an error.
+
 Keys are 64-byte ordered binary values. Callers must define table/range
 prefixes and identity encodings. Values have at most 1 MiB. Each value is
 written in an envelope that binds the key, length and checksum, inside the
-value log described below. Stores written before the value log keep their
-values as one file per key under `objects/XX/REMAINING_HEX`; those files stay
-readable, and replacing or deleting such a key removes its file. Reads never
-list a directory. Checksums (XXH64 for new pages, envelopes and redo records,
-SHA-256 for identity, segment headers and older pages) detect corruption, not
+value log described below. Reads never list a directory. Checksums (XXH64 for
+pages, envelopes and redo records, SHA-256 for identity and segment headers)
+detect corruption, not
 malicious rewrites by somebody who can replace state and its checksums.
 
 ## Exact range summaries
@@ -80,44 +88,19 @@ is empty; a reversed range is refused. The scheduled job, library, series, reque
 this primitive for #246; feeds use bounded configured-source scheduling metadata. A tree entry can be a secondary key, so its count is not
 necessarily a count of jobs, episodes or transfers.
 
-Counted branch pages (`MYNOUIN4`, earlier `MYNOUIN2`) carry an optional
-checked cardinality beside each child reference; leaves use `MYNOUIN3` (earlier
-`MYNOUIN1`). Inserts, replacements, splits, deletions and root collapse
-maintain known cardinalities in the same transaction as the records. The range read subtracts two ranks and reads
-the first key, at most three root-to-leaf paths with at most 32 links per node.
-It does not read values, enumerate files, or scan all the rows of the range.
-Counts describe index keys; they do not verify the contents of record values.
-
-Old branches remain readable by point/page APIs, with unknown counts kept
-explicit. Reading a range that needs unknown counts returns an upgrade error
-instead of a partial count or a scan. Opening an index does not migrate it.
-An ordinary write can fill counts along the path it already changes; completing
-legacy counts is an explicit `prepare_range_counts(budget)` operation used by
-writable series and job-store startup. There is no separate migration command.
-
-The caller repeats this operation until it returns `true`, with a branch-page
-budget of 1–256. Each batch stages at most budget plus tree height branch pages;
-child visits and redo validation cost `O(32 * (budget + height))`. Completed
-subtree totals and partial parents persist, so a restart resumes rather than
-rescanning completed subtrees. The operation writes metadata-only redo batches,
-keeps the root allocation, records and value-log bytes unchanged, and advances
-the sequence. Redo validates that existing keys/pointers are unchanged and that
-new counts match their child nodes. An uncertain write pauses reads and writes
-until writable recovery, as for ordinary transactions. Read-only callers never
-upgrade. A completed upgrade is a no-op when repeated.
-
-**Downgrade:** earlier binaries reject the new branch-page magic (including
-inside a pending WAL); they must not write a partially or fully upgraded store.
-Keep a complete stopped-store backup before a new binary writes to an index or
-before explicitly upgrading counts. Downgrading requires stopping Mynou and
-restoring that consistent backup, which loses later changes. This increment
-does not touch live stores or existing migration backups.
+Branch pages (`MYNOUIN4`) carry the checked cardinality of each child beside
+its reference; leaves use `MYNOUIN3`. Inserts, replacements, splits, deletions
+and root collapse maintain cardinalities in the same transaction as the
+records. The range read subtracts two ranks and reads the first key, at most
+three root-to-leaf paths with at most 32 links per node. It does not read
+values, enumerate files, or scan all the rows of the range. Counts describe
+index keys; they do not verify the contents of record values.
 
 Regression tests compare ranges to independent ordered collections through
 growth, unordered churn, replacement, deletion, root collapse and restart;
-check equal timestamps and cold-page read bounds; and cover explicit legacy
-upgrade, restart between batches, read-only preservation, forged metadata redo,
-interruption and storage exhaustion at redo, directory and tree stages. These
+check equal timestamps and cold-page read bounds; and cover inconsistent
+cardinalities, read-only preservation, interruption and storage exhaustion at
+redo, directory and tree stages. These
 synthetic checks establish correctness and operation bounds, not the multi-store
 macOS RSS/timing evidence recorded separately in [inventory-growth.md](inventory-growth.md).
 
@@ -134,9 +117,7 @@ in commit order. Commits append to segment `head` until it reaches 64 MiB (the
 header records its length), then start the next one. An envelope binds the
 key, the value length and an XXH64 checksum of both. The tree leaf keeps the
 segment number, the envelope offset, the value length and that checksum, so a
-read is one positioned read of the envelope and one checksum. Segments written
-before this format keep a SHA-256 digest prefix in the leaf and are read the
-same way, with SHA-256. Bytes are never rewritten once a record names them, so
+read is one positioned read of the envelope and one checksum. Bytes are never rewritten once a record names them, so
 a location names exactly one envelope.
 
 Segment files are inspected (private directory, regular private file, header)
@@ -157,10 +138,6 @@ change, page or record bounds, or retire more than 256 segments. A later commit
 resumes cleaning; corrupt or unsafe segment files are explicit errors. A
 segment read to its end leaves the log; the checkpoint that makes the root
 durable deletes its file.
-
-Stores written before the value log keep their values as one file per key
-under `objects/XX/REMAINING_HEX`. Those files stay readable, and replacing or
-deleting such a key removes its file. Only these keys pay per-put path checks.
 
 The API validates the root at open and each referenced page/value on access;
 opening does not audit the entire inventory. Corruption on an untouched path
@@ -184,8 +161,7 @@ value it writes.
 1. Write the record after the previous one and flush `redo.bin`. Once that
    flush returns, the commit is durable and is acknowledged.
 2. Without flushing: append the values to the segment, write the page images
-   and the root to `tree.bin`, and remove legacy record files of replaced or
-   deleted keys.
+   and the root to `tree.bin`.
 3. A checkpoint flushes every segment written since the previous one, the
    directories whose entries changed, and `tree.bin`; then it writes the
    other slot with the new root and flushes `redo.bin`. Only then are the
@@ -226,25 +202,14 @@ segments for normal commits and replay.
 
 Read-only open never repairs, creates, deletes or changes permissions. It
 replays pending records in memory: their pages and segment bytes are served
-from memory, and nothing on disk changes. `Index::interrupted` reports that
-the last writer stopped without closing the index; migrations resume only a
-staging index that was closed cleanly and otherwise preserve it and start
-again. An interrupted initial creation is an explicit error, not a reason to
-initialize over an existing directory. Legacy journal/snapshot directories are
-never accepted as empty instances of this format.
+from memory, and nothing on disk changes. An existing directory is never
+initialized over. A store without `redo.bin` is refused ("Inventory redo log
+is missing"), as is any page, envelope or root in another format.
 
-**Stores from earlier releases.** No migration step is needed. Writable open
-of a store without `redo.bin` replays a leftover `transaction.bin` (or
-discards an unpublished `transaction.tmp`) as earlier releases did, writes
-`redo.bin` with its first checkpoint, flushes it, and only then rewrites the
-root with the new header magic (`MYNOUI02`). A crash in between repeats the
-step. New pages use XXH64 page checksums and new magics (`MYNOUIN3`, and
-`MYNOUIN4` for counted branches); older pages stay readable until rewritten.
-A new-format root without `redo.bin` is an error, never a legacy store.
-
-**Downgrade.** Releases before the redo log refuse a store once it has been opened
-writable, because of the root magic. Keep a complete stopped-store backup
-before upgrading; restoring it loses the changes made afterwards.
+Each store builds a new index under `<name>.idx.creating`, writes its format
+and metadata, and only then renames it to `<name>.idx` and synchronizes the
+parent directory. A leftover `.creating` directory is an interrupted creation
+that held no record; the next writable start removes it and creates again.
 
 ## Benchmark
 
@@ -306,9 +271,9 @@ range. What the numbers do not show:
 
 `GET /api/status` includes `storage`, one entry per index:
 `jobs`, `series`, `requesters`, `announcements`, `sources`, `feeds` and
-`transfers`. Each entry has a `state` (`index`, `empty`, `needs_migration`,
-`legacy`, `migrating`, `not_open`, or `busy` when a long operation holds the
-store, so the status request never waits for it) and, for an open index:
+`transfers`. Each entry has a `state` (`index`, `empty`, `not_open`, or `busy`
+when a long operation holds the store, so the status request never waits for
+it) and, for an open index:
 
 - `entries`: index entries, including the store's own secondary keys, so it
   is larger than the number of jobs or series shown elsewhere in the status;
@@ -318,8 +283,7 @@ store, so the status request never waits for it) and, for an open index:
 - `sequence`, the commit counter, and `commit_uncertain`, true after a failed
   commit until Mynou restarts and recovery finishes.
 
-The job and series entries add `migrated_at_start`. These readings come from
-each index root, maintained by every commit; producing them reads no record.
+These readings come from each index root, maintained by every commit; producing them reads no record.
 They are sizes, not limits: Mynou reports no maximum inventory size, and
 available disk space remains the physical bound.
 
@@ -347,8 +311,7 @@ happened and what to do. The error carries no path, credential or media title.
 
 No error evicts records, falls back to another store or deletes recovery
 files. Tests inject a full disk while writing the redo record, the value-log
-segment or a legacy record file and the tree pages, and right after the redo
-flush; each store reopens with every committed record.
+segment and the tree pages, and right after the redo flush; each store reopens with every committed record.
 
 ## Pagination and bounds
 
@@ -377,8 +340,7 @@ are not reclaimed by this first increment; segment space is reclaimed by the
 cleaner described under [Value log](#value-log). Repeated churn can therefore consume extra
 disk space. Compaction/reclamation must be designed and verified before the
 integration claims scalable routine operation. The index API itself has no
-automatic cleanup or backup; migration and downgrade of series data are described
-under [Series storage](#series-storage). A backup is a stopped-store copy,
+automatic cleanup or backup. A backup is a stopped-store copy,
 including any recovery artifacts; a partial copy is not a backup.
 
 ## Listings and cursors
@@ -409,9 +371,7 @@ index keeps a counter.
 | Requests of a transfer | `GET /api/transfers/ID` | identifier (`request_ids_next`) | — |
 | Search candidates | `POST /api/search` | live search ranking | — |
 
-The requester and IRC history listings still accept a legacy `offset` (at most
-10,000 and 1,000) for old callers; only `after` reaches every row. IRC history
-also repeats `next` as `next_cursor`. Other lists are bounded by configuration
+The requester and IRC history listings page only by `after`. Other lists are bounded by configuration
 or retention and are returned whole: configured indexers (`GET /api/indexers`),
 feeds (`GET /api/feeds`), IRC sources and rules (`GET /api/irc`) and requester
 accounts (`GET /api/requesters`), and a job's retained history of at most 1,000
@@ -432,26 +392,13 @@ way, reads a few windows at a time and offers "Search further". When jobs change
 or the connection reopens, it reads the part already searched again, at most
 once per second, so jobs entering or leaving the filter appear or disappear.
 
-### Migration progress
+### Startup
 
-Each migration of an earlier storage format, and each resumable job index
-upgrade, reports its progress: `store` (`jobs`, `series`, `requesters`, `irc`,
-`feeds`, `indexers`, `transfers`, or the job index upgrades `library_schedule`
-and `upgrade_children`), `stage` (`validating`, `preserving`, `copying`,
-`indexing`, `verifying`, `promoting`, `complete`, or `failed` when it stopped
-with an error), `done` and `total` records (null when unknown in advance) and
-`resumed` when it continued an interrupted attempt. Reports never contain paths,
-titles or identifiers.
-
-`mynou serve` prints progress on standard error while it opens storage with
-write access (each stage change, then about once a second). It binds the API
-before opening storage: while it opens and migrates, `/healthz` answers
-`starting`, `/readyz` answers 503, `GET /api/status` returns
-`{"status":"starting","migrations":[...]}`, and every other route, including
-the web interface and `/ws`, answers 503. A request from another site's page or
-naming another host answers 403, as always. Once storage is open, `GET /api/status` keeps the
-`migrations` of this start. An interrupted migration resumes from its last
-durable batch on the next writable start, which then reports `resumed`.
+`mynou serve` binds the API before opening storage. While storage opens,
+`/healthz` answers `starting`, `/readyz` answers 503, `GET /api/status` returns
+`{"status":"starting"}`, and every other route, including the web interface and
+`/ws`, answers 503. A request from another site's page or naming another host
+answers 403, as always.
 
 ## Inline values and the page cache
 
@@ -472,9 +419,8 @@ guards storage faults, not a hostile rewrite of an open directory.
 
 ## Series storage
 
-`series.idx/` in the store directory is a private index. `series.json` is
-reduced to a schema 3 marker bound to that index; `series.legacy-<digest>.json`
-is the exact snapshot a migration started from (see below).
+`series.idx/` in the store directory is a private index, created on the first
+save; a store that never held a series has none.
 
 A series scope is one header record (settings, schedule, exclusions and counters)
 plus block records, one per season and 64 consecutive episode numbers, holding
@@ -519,13 +465,7 @@ earlier series-only Linux experiment.
 One hand-run of the `series_scale_report` harness (release build, Linux
 container on overlayfs, synthetic scopes of 3 seasons x 30 episodes, one reading
 process per size). These are indicative container numbers: CI does not run or
-enforce them, and file synchronization is cheaper there than on macOS. Migrating
-a snapshot at the old limits (128 scopes, 19,968 episodes, 8.3 MB) took 3.1 s in
-the same container. One CI run on a macOS runner (unoptimized test build, so a
-pessimistic figure) took 38 s for it; CI logs it as `series-migration-at-old-limits`
-but nothing asserts it, and the start-up delay of the release build on a real
-machine has not been measured. Expect a first start after upgrading to wait up to
-tens of seconds for a snapshot near the old limits.
+enforce them, and file synchronization is cheaper there than on macOS.
 
 | Scopes | Episodes | On disk | Open | 200-summary pages walked | Due pass | One scope save | Calendar page (200 rows) | Peak RSS reading |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -538,53 +478,13 @@ Building these inventories with the test-only bulk loader (16,384 changes per
 transaction, keys in random order) peaked at 30 to 139 MiB resident; that is the
 transaction bound, not steady-state use. Disk use is about 1 KiB per episode.
 
-### Migration from `series.json`
+### Recovery
 
-Opening storage with write access migrates a legacy snapshot (schema 1 or 2):
-
-1. The whole snapshot is validated first (checksum, every record and field bound,
-   duplicate scopes, identity invariants). An invalid snapshot is refused and
-   nothing is written.
-2. Its exact bytes are copied to `series.legacy-<digest>.json` (never replacing a
-   file with other contents).
-3. A staging index `series.idx.migrating` is filled one record per transaction;
-   the legacy digest and a cursor commit with the records, so an interrupted
-   migration resumes after the last record. A staging directory built from other
-   bytes is derived data and is rebuilt.
-4. Every record, index entry and counter is verified against the legacy parse.
-5. The staging directory is renamed to `series.idx`.
-6. `series.json` is atomically replaced by the schema 3 marker. Before this step
-   an older binary still finds the unchanged legacy file; after it, older binaries
-   reject the unsupported schema instead of reading stale or empty data.
-
-Migration runs on the first start with write access, before the service listens,
-and prints no progress; a failure stops the start. There is no validate-only or
-dry-run mode beyond the read-only `needs_migration` status. If verification fails
-(`Series migration verification failed`), `series.json` has not been touched:
-stop Mynou, remove the derived `series.idx.migrating` directory, and start again;
-if it fails again, keep `series.json` and the preserved copy and report it.
-
-Every step is safe to repeat. A legacy snapshot that differs from the one the
-index came from, a marker without its index and a marker bound to another index
-are refused, never overwritten. Read-only opens never migrate: they create and
-change nothing, and series calls report that the store has not been migrated.
-A store that never held series stays empty until the first series is saved,
-which creates the index and marker atomically.
-
-### Downgrade and recovery
-
-A downgrade is restoring the preserved snapshot: stop Mynou, move `series.idx`
-aside, copy `series.legacy-<digest>.json` to `series.json`. Everything saved after
-the migration (new series, refreshes, settings) is only in the index and is not in
-that copy; older binaries also refuse more than 128 scopes. Opening the restored
-snapshot with a newer binary while `series.idx` is still present is refused unless
-it is the unchanged snapshot that produced the index.
-
-A failed write never discards stored records: record files are replaced by
-rename, pages are rewritten in place only after the complete redo is durable, and
-an uncertain commit blocks the series store until restart, when the redo is
-replayed. If the disk is still full, opening reports the error and leaves the
-files as they are.
+A failed write never discards stored records: pages are rewritten in place only
+after the complete redo is durable, and an uncertain commit blocks the series
+store until restart, when the redo is replayed. If the disk is still full,
+opening reports the error and leaves the files as they are. Read-only opens
+create and change nothing.
 
 ## Job storage
 
@@ -600,8 +500,7 @@ There is no total job-count or job-store byte cap. Each job retains the old
 up to sixteen checked chunks, with their manifest and SHA-256 binding in the
 same transaction. History uses one record per event and a sequence index. The
 latest 1,000 events are retained per job; consecutive lease-renewal events fold
-into the latest heartbeat. Migration preserves every event retained by the
-previous globally bounded history, including maximum-size messages.
+into the latest heartbeat.
 
 `GET /api/jobs` and `GET /api/library` accept `limit` (1 to 200), `after`, and
 `q` and `state` to [search](#searching-jobs-and-the-library), and return
@@ -623,46 +522,16 @@ commits its cursor with the [captured generation](#captured-feed-routing).
 Transfer retirement settles at most 64 jobs (up to
 eight transfer debts each) per pass. Ownership lookups read at most two index
 entries and verify each against its job record (see
-[Job migration and downgrade](#job-migration-and-downgrade)); an entry its
+[Indexed library monitoring](#indexed-library-monitoring)); an entry its
 record contradicts is a storage error, never proof that nothing owns it.
 
-### Job migration and downgrade
+### Job index format
 
-The first **writable** start validates the legacy `snapshot.bin`/`journal.bin`
-formats 1 through 5, checksums, hash chain, snapshot invariants and every complete
-journal transaction before creating migration state. Service and management
-starts also preflight requester demand and IRC reservation relationships against
-the validated legacy jobs before publishing any migration files. Removed formats remain
-explicit errors. An incomplete final journal frame is ignored as an
-unacknowledged write, while the preserved journal retains its exact bytes.
-Read-only opens create or repair nothing; an unmigrated store reports that a
-writable start is needed. Legacy files must be private regular single-link files.
-
-Validated originals are preserved as `snapshot.legacy-DIGEST.bin` and
-`journal.legacy-DIGEST.bin` (only files with content need a backup), never
-replacing a copy with different bytes. `jobs.idx.migrating` records its source
-binding and migration cursor with each bounded chunk. A clean matching stage
-resumes; a stage that cannot be safely read, or belongs to different originals,
-is kept under a unique `jobs.idx.abandoned-*` name before rebuilding from the
-validated originals. Its contents, including unexpected files and interrupted
-transaction artifacts, are never recursively deleted.
-
-Migration verifies jobs, secondary entries, history and counters before atomic
-promotion to `jobs.idx`. It then replaces `snapshot.bin` with a marker bound to
-that index and empties `journal.bin` only when it matches its preserved copy.
-Crashes at promotion or marker publication settle on the next writable open.
-Different restored originals beside an existing index are refused. Disk errors
-leave preserved originals or the published index in place; normal index writes
-use the transaction/recovery protocol described above and never evict jobs to
-make space.
-
-Earlier binaries reject the new `MYNOUS09` marker. To downgrade, stop Mynou,
-back up the complete current store, move `jobs.idx` aside, and restore the matching
-preserved files to `snapshot.bin` and `journal.bin`; remove a legacy file if that
-original was absent. This restores only the pre-migration state: subsequent jobs
-and changes exist in the index and are **not** in the legacy copies. Keep the
-index separately if those changes must be recovered. Do not downgrade over live
-storage or mix backup pairs.
+The first writable start of a store that never held jobs creates `jobs.idx`
+in format `mynou-jobs/5` with its counters (see [Ownership and
+format](#ownership-and-format)). Any other format is refused. Disk errors leave
+the published index in place; writes use the transaction/recovery protocol
+described above and never evict jobs to make space.
 
 ### Indexed library monitoring
 
@@ -687,47 +556,23 @@ upgrade workflow. Storage failures stop the check and report the error instead
 of presenting it as a concurrent entry change. No measured throughput claim is
 made by this increment.
 
-The first writable open upgrades existing job indexes from `mynou-jobs/1` to
-`mynou-jobs/2`. A pending format marker excludes old readers before any derived
-entries change. Each bounded library page commits scheduling entries, counters
-and its cursor together. Reopening resumes that cursor; existing jobs, history,
-ownership entries and preserved legacy files are never discarded or rewritten
-by this upgrade. Disk exhaustion leaves the pending marker and recovery data
-for a writable restart after storage is available. Read-only opening refuses
-an unfinished or required upgrade and never repairs it.
-
-After that, the same writable open upgrades `mynou-jobs/2` to `mynou-jobs/3`,
-which adds an index of ready imported upgrade children so a library-tip write
-asks one bounded question about a parent instead of reading every child it ever
-had. The pending marker `mynou-jobs/3-building` excludes older readers; each
-bounded page of derived entries commits with its cursor, reopening resumes it,
-and read-only opening refuses an unfinished upgrade without repairing it.
-
-Then `mynou-jobs/3` becomes `mynou-jobs/4`, which indexes the live owners of
-each transfer (split into direct download or shared-file claims and pack or
-IRC references), cancelled downloads, live acquisition addresses and the
-shared-file owners of each physical video. Transfer ownership, co-ownership,
-claim and cancellation checks and the shared-file binding lookup read at most
-two index entries and verify each against its job record, instead of every
-attempt or pack mapping that ever named the transfer or file; an entry its
-record contradicts is a storage error, never an absent owner. IRC physical-video
-conflict checks likewise read at most two entries per alias. The same format
-indexes pack mappings by file and source URL or download (with the shared flag
-and TMDB identity), the ready, newest and non-upgrade versions of each media
-identity, and pending upgrade children, so pack conflict checks, the media
-state shown for requests and the series calendar, requester media reuse and
-shared replacement reservations each read at most two verified entries. The
-upgrade walks the creation-ordered job table in
-pages of 200 under `mynou-jobs/4-building`, committing each page with its
-cursor; reopening resumes it and read-only opening refuses it.
-
-Before upgrading, make a complete stopped-store backup if downgrade may be
-needed. Earlier binaries reject formats 2 to 4 and the pending markers.
-Downgrade requires restoring that complete pre-upgrade backup, or the matching
-original legacy snapshots as described above; subsequent changes are only in the newer
-index. Never edit the index marker to bypass this rejection. Feed routing uses
-a [durable captured generation](#captured-feed-routing), committing candidates
-with seen state before routing and resuming checkpoints after restart.
+The job index also lists the live owners of each transfer (split into direct
+download or shared-file claims and pack or IRC references), cancelled
+downloads, live acquisition addresses, the shared-file owners of each physical
+video and the ready imported upgrade children of each parent. Transfer
+ownership, co-ownership, claim and cancellation checks and the shared-file
+binding lookup read at most two index entries and verify each against its job
+record, instead of every attempt or pack mapping that ever named the transfer
+or file; an entry its record contradicts is a storage error, never an absent
+owner. IRC physical-video conflict checks likewise read at most two entries per
+alias. Pack mappings are indexed by file and source URL or download (with the
+shared flag and TMDB identity), with the ready, newest and non-upgrade versions
+of each media identity and pending upgrade children, so pack conflict checks,
+the media state shown for requests and the series calendar, requester media
+reuse and shared replacement reservations each read at most two verified
+entries. Feed routing uses a [durable captured generation](#captured-feed-routing),
+committing candidates with seen state before routing and resuming checkpoints
+after restart.
 
 ## Requester storage
 
@@ -763,36 +608,12 @@ commits with progress and survives restarts. The next sweep waits until the
 retirement pass finishes. Failed, partial or
 shifted reads never authorize removing an unseen origin. Origin rows of
 generations that are neither published nor staged are deleted a bounded window
-at a time. Binaries from before sweep support ignore the sweep record and poll
-as before; after upgrading again, a sweep older than their last poll is
-discarded. Binaries with the original fixed-size sweep format refuse an
-unfinished extended sweep record; keep a complete stopped-store backup before
-upgrading if downgrade may be needed.
+at a time.
 
-### Requester migration and downgrade
-
-Before publication, startup validates legacy `MYNOUR01`/`MYNOUR02` bytes and both
-directions of requester/job and requester/IRC provenance. Validated originals
-are preserved exactly as private `requesters.legacy-DIGEST.bin` copies.
-`requesters.idx.staging` binds its source and resumes bounded demand batches;
-a staging directory that cannot be safely reused is preserved under a unique
-`requesters.idx.abandoned-*` name. Every primary, secondary key and count is
-verified before promotion. An already promoted index must match the exact
-legacy image before marker publication; a restored older snapshot cannot rewrite
-acknowledged index changes. `requesters.bin` then becomes the `MYNOUR04` marker,
-bound to the verified index identity, which earlier binaries refuse.
-
-Read-only opens never migrate or repair. Legacy listings remain readable before
-migration; interrupted indexed writes require a writable restart. Uncertain
-writes block further reads and changes and retain recovery artifacts.
-
-To downgrade, stop Mynou, back up the complete current store, move
-`requesters.idx` and any staging directory aside, and restore the matching
-preserved original to `requesters.bin`. For an originally absent snapshot,
-remove the marker only after moving the index aside. Restore matching job/IRC
-state as well: incompatible provenance is refused. This restores pre-migration
-state only; later demands, policy changes and operator interests remain solely
-in the preserved index. Never mix backup generations or downgrade live storage.
+`requesters.idx` is created through `requesters.idx.creating` on the first
+writable start. Read-only opens create and repair nothing; interrupted indexed
+writes require a writable restart. Uncertain writes block further reads and
+changes and retain recovery artifacts.
 
 ## Feed storage
 
@@ -810,31 +631,13 @@ null. `total` and `sequence` are decimal strings. These are live key scans:
 concurrent inserts before the cursor need a new listing. Pages hold at most
 200 records and 4 MiB of hydrated bytes. Summaries never expose bindings,
 retained identities, feed entry URLs or titles. Ordinary feed health also
-reports `retained_sources` and `needs_migration`.
+reports `retained_sources`.
 
-The first writable start validates the bounded legacy `MYNOUF01` snapshot and
-configured source bindings before publication. Exact private bytes are preserved
-as `feeds.legacy-DIGEST.bin`. `feeds.idx.migrating` binds its source digest and
-commits bounded batches with a migration cursor. A clean matching stage resumes;
-a foreign, unreadable or interrupted stage is preserved intact under
-`feeds.idx.abandoned-*` before rebuilding. Unexpected contents and pending redo
-records are never recursively
-deleted. Every record, active reference and count is verified before promotion.
-`feeds.bin` then becomes an identity-bound `MYNOUF02` marker. Promotion interrupted
-before marker publication is verified against the unchanged original on reopen.
-An unmarked index with an unfinished transaction is refused without repair.
-
-Read-only opens create and change nothing. Legacy summaries remain available
-with `needs_migration`; pending indexed changes are replayed in memory only.
-Uncertain writes block subsequent reads and changes until restart. Disk errors
-leave originals and recovery artifacts in place rather than evicting records.
-
-Earlier binaries reject `MYNOUF02`. To downgrade, stop Mynou, keep a complete
-stopped-store backup, move the index and staging aside, and restore the matching
-preserved original as `feeds.bin`. If no original existed, move the index aside
-before removing the marker. Later observations exist only in the index and are
-lost by restoring the old snapshot; keep it separately for recovery. Never mix
-backup generations or edit markers to bypass rejection.
+The first writable start creates `feeds.idx` (format `mynou-feeds/3`) through
+`feeds.idx.creating`. Read-only opens create and change nothing; pending
+indexed changes are replayed in memory only. Uncertain writes block subsequent
+reads and changes until restart. Disk errors leave recovery artifacts in place
+rather than evicting records.
 
 [Captured routing generations](#captured-feed-routing) persist transient
 announcements and routing progress across every inventory page and restart.
@@ -919,13 +722,6 @@ the source revision and so cancels work captured under the previous one; the sou
 baselines again. Pause and removal cancel pending work while clearing the baseline. A failed cancellation after a
 persisted pause reports an error; startup settles it under the disabled policy.
 
-The format-1 upgrade atomically changes the header and adds empty routing/schedule
-metadata without enumerating retained records. Earlier binaries reject format 2.
-Until that first writable start, read-only opens refuse the format-1 index.
-Before upgrading, keep a complete stopped-store backup if format-1 downgrade is
-needed; restoring it loses subsequent observations and captured work. Restoring
-legacy snapshots has the older limitations described above.
-
 ## Source policy storage
 
 Retained indexer policies live in private `indexers.idx/`, keyed by source ID,
@@ -938,25 +734,12 @@ the target policy and action. Any durable policy mutation invalidates earlier
 previews, including controls on other sources, without scanning retained rows.
 Cookies, credentials and their environment values are never persisted.
 
-On the first writable startup, the old bounded `indexers.bin` is validated and
-preserved exactly as private `indexers.legacy-<digest>.bin`. Migration commits
-at most 100 rows and their continuation cursor together into
-`indexers.idx.migrating/`. Restart resumes valid staging; unexpected or
-interrupted derived staging is preserved as `indexers.idx.abandoned-<digest>/`
-before rebuilding. Every legacy row and the complete count are checked before
-promotion. The new `indexers.bin` is a checksummed marker bound to the index
-identity; old readers reject it. A crash after promotion but before marker
-publication verifies the promoted index against the unchanged legacy bytes
-before completing publication. Read-only inspection never migrates or repairs.
+The first writable start creates `indexers.idx` through
+`indexers.idx.creating`. Read-only inspection never creates or repairs.
 
 A storage failure is an error, not an absent or default-enabled policy. After
 an uncertain control, runtime source access is blocked until a writable restart
 recovers durable state; a failed response may mean the change committed.
-To downgrade, stop Mynou, preserve a complete copy of the store including the
-index and recovery artifacts, then restore the exact legacy backup as
-`indexers.bin` and move the new index aside. This restores pre-migration policy;
-later controls cannot be represented by that backup. Do not downgrade using
-only the new marker or remove rollback artifacts while the service runs.
 
 
 ## IRC announcement storage
@@ -971,43 +754,19 @@ startup cross-checks reservations and requester/job provenance in bounded pages
 before downloads start. An announcement alone never creates demand.
 
 `GET /api/irc/announcements?limit=200` returns newest-first pages with `total`,
-`announcements` and `next_cursor`. Pass that cursor as `after=CURSOR` until it
+`announcements` and `next`. Pass that cursor as `after=CURSOR` until it
 is null. Pages hold at most 200 rows and 4 MiB of stored
 record data. These are live scans: new arrivals ahead of the cursor require a
-new listing. The older `offset` parameter remains available up to
-1,000 rows; use a cursor for the complete history. A decision or receipt never
+new listing. A decision or receipt never
 requires a whole-history clone. Transient retry state stays bounded and is not
 part of retained duplicate suppression.
 
-The first writable start validates the old `MYNOUI01`/`02`/`03` snapshot and
-configured bindings, keeps an exact private `announcements.legacy-DIGEST.bin`,
-and commits migration batches with their cursor atomically. Staging is derived
-from the validated source digest (`announcements.idx.staging-DIGEST`); a private
-`announcements.migration-DIGEST.bin` binds the digest to the index identity
-before the staging directory is created or any transaction can be recovered.
-An interruption during creation preserves known private empty artifacts and
-recreates them with the bound identity; foreign or populated artifacts are
-refused. Restart validates the committed prefix
-before resuming; every original primary row, secondary entry, metadata value and
-count is verified before promotion. Extra, changed or foreign entries are
-refused. An interrupted promotion is reverified before publishing the marker.
-
-`announcements.bin` becomes a checked `MYNOUI05` marker bound to the index
-identity. Older binaries reject it. Read-only inspection never initializes,
-migrates, recovers redo, changes permissions or writes decisions; it replays a
-pending index transaction in memory only. Corruption, public permissions,
-links or mismatched proofs stop the operation. Incomplete creation artifacts are preserved rather than silently deleted or
-adopted. Failed writes report errors, and an uncertain
-commit blocks decisions until storage is reopened.
-
-For downgrade, stop Mynou and preserve the complete current storage directory.
-Restore `announcements.bin` from its exact legacy backup in a separate copy,
-move the new index, staging and migration proofs aside, and use a binary that
-supports the restored snapshot format. Restoring the old copy loses later IRC
-receipts, decisions and origins; requester and job stores must come from the
-same stopped-store backup so their provenance still agrees. Merely restoring
-legacy bytes alongside an acknowledged index is refused. A full backup made
-before upgrade is the safest recovery point.
+The first writable start with an IRC source creates `announcements.idx`
+through `announcements.idx.creating`, with its bindings. Read-only inspection
+never initializes, recovers redo, changes permissions or writes decisions; it
+replays a pending index transaction in memory only. Corruption, public
+permissions or links stop the operation. Failed writes report errors, and an
+uncertain commit blocks decisions until storage is reopened.
 
 ### Series backlog and pass freshness
 
@@ -1038,20 +797,13 @@ They never load series headers or episode records, scan due rows or write data.
 Unmonitoring/rescheduling removes the old due entry atomically with the scope's
 update, so counts and oldest time follow ordinary writes and survive restart.
 These are index scheduling diagnostics; they do not certify record health or
-network availability. A held store reports `state: busy`. A legacy, unprepared,
+network availability. A held store reports `state: busy`. An unprepared,
 uncertain or unreadable store reports `state: unavailable` with a fixed recovery
 hint rather than a guessed zero, scan, or raw error; other status fields remain
 available. Only `state: ready` readings carry counts and timestamps.
 
-Writable series-store startup now explicitly prepares missing legacy branch
-cardinalities through `prepare_range_counts(64)` batches after the existing
-snapshot migration/identity checks. Each batch is resumable through the ordinary
-redo log; failed preparation prevents writable startup until recovery succeeds.
-Read-only startup and status do not perform this upgrade. See the range-count
-upgrade and **Downgrade** rules above: keep a stopped-store backup before the
-first writable upgrade; binaries predating `MYNOUIN2` must not open it for writes.
-Existing series snapshot migration backups are preserved. Old stores have no
-successful-pass timestamp until a new successful background pass completes.
+A new store has no successful-pass timestamp until its first successful
+background pass completes.
 
 ### Library backlog and pass freshness
 
@@ -1080,29 +832,21 @@ time; manual forced checks and previews never advance it. A successful pass
 writes its completion time through the ordinary durable job-index transaction
 protocol after the window has completed. A write error can have an uncertain
 outcome, as described under [transaction and recovery](#transaction-and-recovery).
-The timestamp survives restart and stays null in older stores until the first
-successful automatic pass. It does not claim that every library entry was checked.
+The timestamp survives restart and stays null until the first successful
+automatic pass. It does not claim that every library entry was checked.
 
 Status uses at most three exact range summaries plus one point lookup for the
 completion time. It never reads job payloads, walks the library or writes data.
 Rescheduling, unmonitoring and replacing tips update the existing scheduling
 indexes in the same transaction as the tip change. Busy storage reports
-`state: busy`; a legacy, unprepared, uncertain or unreadable index reports
+`state: busy`; an unprepared, uncertain or unreadable index reports
 `state: unavailable` with a fixed recovery hint and no counts. Diagnostics contain
 no titles, local paths, source payloads or credentials. The upgrade report's
 `oldest_checked_at` remains a bounded-window reading; the service's
 `inventory.library` reports the complete automatic due backlog.
 
-Writable job-store startup prepares missing branch cardinalities in resumable
-`prepare_range_counts(64)` metadata batches after the existing format/provenance
-checks and scheduling upgrades. Read-only opening and status never prepare them
-or substitute an inventory scan. Failure preserves recovery data and requires a
-writable restart. The [range-count downgrade rules](#exact-range-summaries) apply:
-keep a complete stopped-store backup before upgrading; earlier binaries that
-predate counted branch pages refuse the new format. Existing migration backups
-are preserved. The other #246 integrations are described below; #106 still
-links its measured acceptance through #217 and [the evidence record](inventory-growth.md).
-
+The other #246 integrations are described below; #106 still links its
+measured acceptance through #217 and [the evidence record](inventory-growth.md).
 
 ### Job backlog and claim-scan freshness
 
@@ -1131,7 +875,7 @@ existing durable claim cursor, at most once per `freshness_checkpoint_secs`
 have finished; the field reports the last recorded successful scan. Restart
 records the first successful scan immediately. Failed eligibility/storage reads
 and invalid claims do not advance it; a failed commit may recover its entire
-transaction as described above. Older stores report null until the first
+transaction as described above. A new store reports null until the first
 successful checkpoint. Idle polls within the interval do not add durable writes.
 
 A dedicated wake-ordered secondary index changes atomically with job updates,
@@ -1139,16 +883,6 @@ lease renewal/release, retries and cancellation. Status needs one exact range
 summary plus two metadata point reads, never job/history payloads, queue
 promotion, writes or a scan of due entries. Busy/unavailable states use the same
 fixed recovery hint and omit counts; raw storage errors are not published here.
-
-The first writable open upgrades `mynou-jobs/4` to `mynou-jobs/5`, adding the
-secondary entries in resumable pages of at most 200 jobs. Each page and its
-continuation commit together. Primary records, history and existing legacy
-backups are preserved. Read-only commands refuse an unprepared format; they
-never migrate. Interrupted or full-disk upgrades resume after storage recovery.
-Earlier binaries reject format 5: keep a complete stopped-store backup before
-upgrading, and restore that consistent backup to downgrade, losing subsequent
-changes. Missing legacy branch counts use the existing explicit resumable
-writable preparation; status never substitutes an inventory scan.
 
 The remaining #246 integrations are described below. Increasing-size evidence
 and the final acceptance table are linked from [the evidence record](inventory-growth.md).
@@ -1184,11 +918,9 @@ range summaries and one last-pass point per queue, without hydrating a record,
 scanning the inventory or writing. A work item that remains in the queue keeps
 its age; leaving and re-entering begins a new wait. Queue members are due
 immediately: clock rollback keeps the count and clamps a future observation's
-reported due time to now, with zero lateness. IRC can recover wait times from
-immutable `first_seen` timestamps. Older requester/transfer records have no
-original queue-entry timestamp: they are counted exactly, `unknown_due_times`
-counts them, and both oldest fields remain null while any such record remains.
-No historical time is fabricated. New entries have known wall-clock wait times.
+reported due time to now, with zero lateness. Every queue entry records the
+wall-clock time it entered the queue; IRC uses the immutable `first_seen`
+timestamp.
 
 Feed status performs at most 64 point lookups into the bounded configured-source
 runtime map plus one durable freshness lookup. It never reads retained feed
@@ -1214,19 +946,9 @@ Busy stores/runtime maps report `busy`; unprepared, uncertain or unreadable
 indexes report `unavailable` with a fixed recovery hint and no counts. Status
 publishes no account names, media titles, paths, source payloads or credentials.
 
-The first writable startup adds requester/IRC/transfer membership in resumable
-pages of at most 200 primary rows, with the page and continuation committed
-together. Legacy migrations first prove their exact original contents, then
-prepare derived backlog indexes. Legacy range cardinalities are explicitly
-prepared in batches of 64. Read-only status never performs either upgrade.
-Existing backups and primary records are preserved. The requester and IRC
-markers advance to `MYNOUR04` and `MYNOUI05`; the transfer header advances to
-`mynou-transfers/2` before derived preparation, fencing older writers even when
-preparation is interrupted. Feed format `mynou-feeds/3` adds optional durable
-pass metadata without enumerating retained observations. Earlier binaries
-refuse these new formats. Keep a complete stopped-store backup before upgrading;
-downgrade requires restoring that consistent backup and loses subsequent changes.
+Each store creates its backlog index together with its own index, so the
+backlog always covers every record. A store whose records predate its backlog
+index is refused rather than counted partially.
 
-Migration-exhaustion regression fixtures remain for all seven stores. These
-readings complete #246; measured growth evidence and parent acceptance are
+These readings complete #246; measured growth evidence and parent acceptance are
 recorded in [the capacity evidence](inventory-growth.md), #217 and #106.

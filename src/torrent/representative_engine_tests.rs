@@ -227,7 +227,7 @@ impl Fixture {
         config.monitoring.interval_secs = 60;
         config.catalog.enabled = true;
         config.catalog.url = format!("http://127.0.0.1:{}/3", catalog.port);
-        config.catalog.token_env = "PATH".into(); // Existing fixture convention, never logged.
+        config.catalog.token_env = "MYNOU_TEST_SECRET_A".into(); // Existing fixture convention, never logged.
         let gateway = crate::tunnel_http::tests::NatPmp::start(&pair.server, 53186);
         let operator = crate::vpn::tests::load_operator(&config, pair.client.clone());
         let source_file = root.join("synthetic.mp4");

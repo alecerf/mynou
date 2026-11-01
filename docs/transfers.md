@@ -219,10 +219,8 @@ its canonical path must remain bound to the configured root.
 A private atomic `.seed` record binds metadata/source/mapping independently
 of ordinary queue files. Restart always rehashes before seeding. Damaged seed
 state, missing source state or seed controls, or conflicting ordinary entries
-are refused when migration, scheduling or point lookup reads that identity;
-they never convert into a download. The indexed transfer format rejects
-older binaries; follow the migration and downgrade procedure below. Keep the
-source media and native state while seeding.
+are refused when scheduling or point lookup reads that identity; they never
+convert into a download. Keep the source media and native state while seeding.
 
 ## Automatic cross-seed discovery
 
@@ -358,16 +356,13 @@ yet limited, including idle time. Counters and seeding time survive a clean
 restart; transfers created before accounting existed start at zero. Reaching a
 limit stops seeding only: files, imports and Plex availability stay.
 
-## Storage migration and downgrade
+## Storage
 
-The first writable startup indexes the existing native state. This one-time
-migration reads the legacy directory, preserves its transfer files privately in
-`.transfers-legacy`, and records each migrated identity durably. An interrupted
-migration resumes on the next start; errors leave the backup and recovery state
-in place. Later starts use the index rather than enumerating legacy files.
+The first writable start creates `transfers.idx` (format `mynou-transfers/2`)
+through `transfers.idx.creating`. A store from an earlier format is refused.
 Indexed identities and their canonical lowercase filenames are authoritative;
-manually adding files after migration does not register new transfers. Use the
-service's submission or cross-seed controls instead.
+files added by hand to the state directory do not register new transfers. Use
+the service's submission or cross-seed controls instead.
 Corrupt inactive metadata is therefore reported when that transfer is read or
 scheduled, rather than by scanning every retained file at startup. Such errors
 never authorize a transfer. Every restart still requires rehashing before
@@ -378,19 +373,11 @@ the index references a newly written snapshot can leave an unreferenced private
 file; it does not become an accepted transfer or restore availability.
 
 Keep the complete native state directory together: `transfers.idx`,
-`transfer-snapshots`, the individual metadata/source/control/seed files and the
-format marker are one store. The marker occupies a reserved all-zero torrent
-identity and deliberately makes older binaries refuse the directory. Do not
-delete it to force an old binary to open indexed state.
-
-Before upgrading, stop Mynou and back up its configuration, application state,
-native transfer state and payload directories together. To downgrade, stop
-Mynou and restore that complete matching backup. The migration's
-`.transfers-legacy` copies preserve only the native state at migration time;
-they do not include later controls, new transfers or the application request
-journal. Never combine a journal from one date with transfer state from another.
-Restoring an earlier backup loses later changes. Payloads are not deleted by
-migration, pause, cancellation or downgrade preparation.
+`transfer-snapshots` and the individual metadata/source/control/seed files are
+one store. A backup is a stopped copy of the configuration, application state,
+native transfer state and payload directories together; never combine a job
+store from one date with transfer state from another. Payloads are not deleted
+by pause or cancellation.
 
 ### Paged request references
 

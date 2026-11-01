@@ -483,7 +483,7 @@ fn protected_irc_tls_sasl_reconnect_restart_and_dedup_use_only_virtual_services(
     });
     assert_eq!(
         engine
-            .irc_announcements(0, 10)
+            .irc_announcements(None, 10)
             .unwrap()
             .get("announcements")
             .unwrap()

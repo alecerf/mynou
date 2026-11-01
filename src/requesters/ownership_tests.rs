@@ -354,3 +354,33 @@ fn serving_start_runs_workers_only_after_startup() {
     assert_eq!(engine.startup_state().unwrap(), "ready");
     drop(workers);
 }
+
+#[test]
+fn a_retry_interrupted_before_its_job_was_requeued_resumes_at_admission() {
+    let directory = Directory::new();
+    let config = config(&directory);
+    let engine = Engine::open_for_management(config.clone()).unwrap();
+    let mut record = admitted(&engine, &config, 1).remove(0);
+    let mut ledger = lock(&engine.requester_store).unwrap();
+    let mut jobs = lock(&engine.store).unwrap();
+    let job_id = record.job_id.clone().unwrap();
+    let mut job = jobs.get(&job_id).unwrap().unwrap();
+    job.state = "failed".into();
+    jobs.update(job).unwrap();
+    // The retry's first write: the demand is reserved again, still linked to
+    // its failed job, and the service stops before requeuing that job.
+    let mut patch = ledger.state.clone();
+    patch.accounts.get_mut("source").unwrap().policy.enabled = true;
+    record.state = "reserved".into();
+    record.outcome = "reserved".into();
+    patch.demands.insert(record.id.clone(), record.clone());
+    ledger.save_patch(patch).unwrap();
+    engine
+        .admit_requester_demand(&mut ledger, &mut jobs)
+        .unwrap();
+    assert_eq!(jobs.get(&job_id).unwrap().unwrap().state, "queued");
+    let resumed = ledger.demand(&record.id).unwrap().unwrap();
+    assert_eq!(resumed.state, "active");
+    assert_eq!(resumed.job_id.as_deref(), Some(job_id.as_str()));
+    assert_eq!(jobs.list().unwrap().len(), 1);
+}

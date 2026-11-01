@@ -179,52 +179,6 @@ fn every_owner_stages_before_one_atomic_promotion_and_restart_keeps_old_bytes() 
 }
 
 #[test]
-fn partial_legacy_groups_are_refused_by_migration_without_writing() {
-    let directory = Directory::new();
-    let fixture = Fixture::new(&directory, 3);
-    let engine = Engine::open_for_management(fixture.cfg.clone()).unwrap();
-    let parents = fixture.parents(&engine);
-    baseline(&engine, &parents[0].id);
-    let children = ids(&apply(
-        &engine,
-        &parents[0].id,
-        &fixture.replacement_query(),
-    ));
-    {
-        let mut store = lock(&engine.store).unwrap();
-        confirm(&mut store, &children[0], &fixture.replacement.files[0].1);
-    }
-    let all = lock(&engine.store).unwrap().list().unwrap();
-    drop(engine);
-    let store_dir = &fixture.cfg.store_dir;
-    let mut cases = Vec::new();
-    // A replacement group missing its last owner.
-    let mut missing = all.clone();
-    missing.retain(|job| job.id != children[2]);
-    cases.push((missing, "Incomplete shared ownership"));
-    // One owner promoted while the others are still staged or queued.
-    let mut partial = all;
-    partial
-        .iter_mut()
-        .find(|job| job.id == children[0])
-        .unwrap()
-        .state = "ready".into();
-    cases.push((partial, "shared replacement"));
-    for (jobs, expected) in cases {
-        jobs_state::downgrade(store_dir, &jobs);
-        let before = snapshot(store_dir);
-        let error = Store::open(store_dir).err().unwrap();
-        assert!(
-            error.to_lowercase().contains(&expected.to_lowercase()),
-            "{error}"
-        );
-        assert!(Store::open_read_only(store_dir).unwrap().list().is_err());
-        assert_eq!(snapshot(store_dir), before);
-        assert!(!store_dir.join("jobs.idx").exists());
-    }
-}
-
-#[test]
 fn lineage_mutation_and_single_baselines_fail_closed() {
     let directory = Directory::new();
     let fixture = Fixture::new(&directory, 2);

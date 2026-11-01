@@ -126,14 +126,8 @@ ones.
 ## Storage and upgrading
 
 Series, episodes and numbering are stored in `series.idx` inside the store
-directory. The first start with write access after upgrading from 0.23 or
-earlier migrates `series.json`: it is validated, copied unchanged to
-`series.legacy-<digest>.json`, rebuilt into the new store, verified and then
-replaced by a marker that older versions refuse. An interrupted migration resumes
-on the next start. To go back to an older version,
-restore the preserved copy as described in
-[the storage notes](inventory-storage.md#downgrade-and-recovery); changes made
-after the migration are not in it.
+directory, created on the first save (see
+[the storage notes](inventory-storage.md#series-storage)).
 
 ## Episode numbering
 

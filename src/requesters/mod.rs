@@ -7,8 +7,8 @@ mod index_tests;
 mod ownership_tests;
 mod persistence;
 
-/// Authoritative fallible reads shared by validated legacy migration and the
-/// live disk index. A bounded patch is never used as a complete read view.
+/// Authoritative fallible reads of the requester index. A bounded patch is
+/// never used as a complete read view.
 pub(crate) trait LedgerRead {
     fn accounts(&self) -> &BTreeMap<String, Record>;
     fn demand(&self, id: &str) -> Result<Option<Demand>>;
@@ -23,32 +23,6 @@ pub(crate) trait LedgerRead {
         limit: usize,
     ) -> Result<(Vec<Demand>, Option<crate::inventory::Key>)>;
     fn operator_interest(&self, id: &str) -> Result<bool>;
-}
-
-impl LedgerRead for State {
-    fn accounts(&self) -> &BTreeMap<String, Record> {
-        &self.accounts
-    }
-    fn demand(&self, id: &str) -> Result<Option<Demand>> {
-        Ok(self.demands.get(id).cloned())
-    }
-    fn demands_page(
-        &self,
-        after: Option<crate::inventory::Key>,
-        limit: usize,
-    ) -> Result<(Vec<Demand>, Option<crate::inventory::Key>)> {
-        index::legacy_page(self, after, limit, false)
-    }
-    fn irc_demands_page(
-        &self,
-        after: Option<crate::inventory::Key>,
-        limit: usize,
-    ) -> Result<(Vec<Demand>, Option<crate::inventory::Key>)> {
-        index::legacy_page(self, after, limit, true)
-    }
-    fn operator_interest(&self, id: &str) -> Result<bool> {
-        Ok(self.operator_jobs.contains(id))
-    }
 }
 
 use crate::{
@@ -66,9 +40,8 @@ use std::{
 };
 
 pub const MAX_ACCOUNTS: usize = 32;
-const LEGACY_MAX_DEMANDS: usize = 10_000;
-/// Compatibility offset work bound; continuation cursors have no total cap.
-pub const MAX_OFFSET: usize = 10_000;
+/// Demands or operator interests one validated patch may carry.
+const MAX_PATCH_ITEMS: usize = 10_000;
 /// Demands or origins of one committed batch, and origins of one demand. A
 /// watchlist sweep commits as many batches as its listing needs.
 pub const MAX_BATCH_ITEMS: usize = 512;
@@ -107,7 +80,7 @@ pub fn cursor_page(query: &str) -> Result<(Option<String>, usize)> {
                 decode_cursor(value)?;
                 after = Some(value.to_owned());
             }
-            "limit" => {
+            "limit" if !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit()) => {
                 limit = value.parse().map_err(|_| "Requester: invalid page size")?;
             }
             _ => return Err("Requester: unknown cursor page field".into()),
@@ -117,38 +90,6 @@ pub fn cursor_page(query: &str) -> Result<(Option<String>, usize)> {
         return Err("Requester: page size exceeded".into());
     }
     Ok((after, limit))
-}
-
-pub fn page(query: &str) -> Result<(usize, usize)> {
-    let mut offset = 0;
-    let mut limit = 100;
-    let mut seen = BTreeSet::new();
-    if !query.is_empty() {
-        for pair in query.split('&') {
-            let (key, value) = pair
-                .split_once('=')
-                .ok_or("Requester: invalid page query")?;
-            if !["offset", "limit"].contains(&key)
-                || !seen.insert(key)
-                || value.is_empty()
-                || !value.bytes().all(|b| b.is_ascii_digit())
-            {
-                return Err("Requester: unknown or duplicate page field".into());
-            }
-            let value = value
-                .parse::<usize>()
-                .map_err(|_| "Requester: invalid page bound")?;
-            if key == "offset" {
-                offset = value
-            } else {
-                limit = value
-            }
-        }
-    }
-    if offset > MAX_OFFSET || limit == 0 || limit > 200 {
-        return Err("Requester: page bounds exceeded".into());
-    }
-    Ok((offset, limit))
 }
 
 pub(crate) fn digest(bytes: &[u8]) -> String {
@@ -816,7 +757,7 @@ impl State {
                 return Err("Requester: duplicate or orphaned demand".into());
             }
         }
-        if s.demands.len() > LEGACY_MAX_DEMANDS {
+        if s.demands.len() > MAX_PATCH_ITEMS {
             return Err("Requester: demand capacity reached".into());
         }
         for v in list("operator_jobs")? {
@@ -828,7 +769,7 @@ impl State {
                 return Err("Requester: invalid operator interest".into());
             }
         }
-        if s.operator_jobs.len() > LEGACY_MAX_DEMANDS {
+        if s.operator_jobs.len() > MAX_PATCH_ITEMS {
             return Err("Requester: operator interest capacity reached".into());
         }
         Ok(s)

@@ -175,7 +175,8 @@ fn admitted_jobs_wait_for_irc_and_metadata_precedes_selective_payload_and_exact_
         fs::read(&ready.imports[0]).unwrap(),
         include_bytes!("fixtures/demo.mp4")
     );
-    let before = irc_support::bytes(&cfg.store_dir);
+    // The running scheduler may checkpoint its freshness key meanwhile.
+    let before = state_except_irc_freshness(&cfg.store_dir);
     assert!(
         receive(&engine, &torrent.id, 7)
             .get("duplicate")
@@ -184,11 +185,7 @@ fn admitted_jobs_wait_for_irc_and_metadata_precedes_selective_payload_and_exact_
             .unwrap()
     );
     assert_eq!(outcome(&engine.irc_route_pending().unwrap()), "idle");
-    assert_eq!(irc_support::bytes(&cfg.store_dir), before);
-    assert_eq!(
-        &fs::read(cfg.store_dir.join("announcements.bin")).unwrap()[..8],
-        b"MYNOUI05"
-    );
+    assert_eq!(state_except_irc_freshness(&cfg.store_dir), before);
     drop(engine);
     let engine = Engine::open(cfg).unwrap();
     assert_eq!(job(&engine, &admitted.id), ready);
@@ -567,117 +564,6 @@ fn live_irc_receivers_and_background_routing_complete_an_existing_request() {
 }
 
 #[test]
-fn interrupted_reservations_recover_without_replaying_an_uncommitted_grab() {
-    for committed in [true, false] {
-        let dir = Directory::new();
-        let torrent = movie(&dir, "Fixture.Movie.2024.1080p.mp4");
-        let seed = Seeder::open(&dir.0.join("seed"), &[&torrent]);
-        let cfg = configuration(&dir.0.join("engine"), seed.client.listen_port());
-        let engine = Engine::open(cfg.clone()).unwrap();
-        let admitted = engine.submit(request(7)).unwrap().remove(0);
-        let row = receive(&engine, &torrent.id, 7);
-        assert!(routing(&engine.irc_route_pending().unwrap()));
-        let mut jobs = lock(&engine.store).unwrap().list().unwrap();
-        drop(engine);
-        let history_path = cfg.store_dir.join("announcements.bin");
-        let mut history = read_checked(&history_path);
-        row_mut(&mut history, row_id(&row))
-            .get_mut("route")
-            .unwrap()
-            .insert("phase", "reserved");
-        write_checked(&history_path, b"MYNOUI02", &history);
-        if !committed {
-            // The reservation was durable but the origin never reached the job.
-            for job in &mut jobs {
-                job.irc_origin = None;
-                job.acquisition_url = None;
-                job.release = None;
-            }
-            jobs_state::downgrade(&cfg.store_dir, &jobs);
-            // Only a writable start migrates; a preview cannot read the old files.
-            drop(mynou::store::Store::open(&cfg.store_dir).unwrap());
-        }
-        let before = irc_support::bytes(&cfg.store_dir);
-        let preview = Engine::open_for_preview(cfg.clone()).unwrap();
-        assert_eq!(
-            route_phase(&preview.irc_announcement(row_id(&row)).unwrap()),
-            Some("reserved")
-        );
-        assert!(preview.irc_route_pending().is_err());
-        assert_eq!(before, irc_support::bytes(&cfg.store_dir));
-        drop(preview);
-        let engine = Engine::open(cfg).unwrap();
-        assert_eq!(
-            route_phase(&engine.irc_announcement(row_id(&row)).unwrap()),
-            Some(if committed { "routed" } else { "aborted" })
-        );
-        assert_eq!(job(&engine, &admitted.id).irc_origin.is_some(), committed);
-        assert_eq!(outcome(&engine.irc_route_pending().unwrap()), "idle");
-        assert!(engine.transfers().unwrap().as_array().unwrap().is_empty());
-    }
-}
-
-#[test]
-fn forged_origin_changes_and_silent_format_downgrades_fail_before_downloads_start() {
-    for corruption in [
-        "hash",
-        "revision",
-        "missing_route",
-        "mismatched_job",
-        "downgrade_job",
-        "downgrade_history",
-    ] {
-        let dir = Directory::new();
-        let torrent = movie(&dir, "Fixture.Movie.2024.1080p.mp4");
-        let seed = Seeder::open(&dir.0.join("seed"), &[&torrent]);
-        let cfg = configuration(&dir.0.join("engine"), seed.client.listen_port());
-        let engine = Engine::open(cfg.clone()).unwrap();
-        let admitted = engine.submit(request(7)).unwrap().remove(0);
-        let row = receive(&engine, &torrent.id, 7);
-        assert!(routing(&engine.irc_route_pending().unwrap()));
-        let mut changed = job(&engine, &admitted.id);
-        changed.irc_origin.as_mut().unwrap().file = "Other.Movie.mp4".into();
-        assert!(lock(&engine.store).unwrap().update(changed).is_err());
-        let jobs = lock(&engine.store).unwrap().list().unwrap();
-        drop(engine);
-        let p = cfg.store_dir.join("announcements.bin");
-        let mut history = read_checked(&p);
-        match corruption {
-            "revision" => row_mut(&mut history, row_id(&row)).insert("revision", "1"),
-            "hash" => row_mut(&mut history, row_id(&row))
-                .get_mut("route")
-                .unwrap()
-                .get_mut("origin")
-                .unwrap()
-                .insert("torrent_id", "1".repeat(40)),
-            "missing_route" => row_mut(&mut history, row_id(&row)).insert("route", Value::Null),
-            "mismatched_job" => row_mut(&mut history, row_id(&row))
-                .get_mut("route")
-                .unwrap()
-                .get_mut("origin")
-                .unwrap()
-                .insert("job_id", "0".repeat(32)),
-            _ => {}
-        }
-        write_checked(
-            &p,
-            if corruption == "downgrade_history" {
-                b"MYNOUI01"
-            } else {
-                b"MYNOUI02"
-            },
-            &history,
-        );
-        if corruption == "downgrade_job" {
-            // The origin sits in a snapshot of a format that predates it.
-            jobs_state::downgrade_as(&cfg.store_dir, &jobs, Some(b"MYNOUS01"));
-        }
-        assert!(Engine::open(cfg.clone()).is_err());
-        assert!(!cfg.downloads.data_dir.join(&torrent.id).exists());
-    }
-}
-
-#[test]
 fn admitted_requester_routes_keep_their_capture_through_import_and_restart() {
     let dir = Directory::new();
     let torrent = movie(&dir, "Fixture.Movie.2024.1080p.mp4");
@@ -844,7 +730,7 @@ fn existing_plex_media_fulfills_waiting_jobs_before_or_during_irc_selection() {
         cfg.downloads_enabled = true;
         cfg.plex.enabled = true;
         cfg.plex.url = accounts.url.clone();
-        cfg.plex.token_env = "PATH".into();
+        cfg.plex.token_env = "MYNOU_TEST_SECRET_A".into();
         cfg.plex.path_mappings = vec![mynou::config::PathMapping {
             mynou_prefix: cfg.requesters.destinations[0]
                 .movies_root
@@ -898,7 +784,7 @@ fn negative_plex_checks_wait_without_selecting_a_source_and_routing_wakes_the_jo
     let mut cfg = configuration(&dir.0.join("engine"), seed.client.listen_port());
     cfg.plex.enabled = true;
     cfg.plex.url = accounts.url.clone();
-    cfg.plex.token_env = "PATH".into();
+    cfg.plex.token_env = "MYNOU_TEST_SECRET_A".into();
     accounts.response(
         "/library/sections/1/all",
         200,
@@ -973,34 +859,6 @@ fn a_full_retry_table_still_routes_an_eligible_announcement() {
             .is_some_and(|o| o.announcement_id == row_id(&row))
     );
     assert!(retry_entries(&engine) <= 200);
-}
-
-#[test]
-fn an_origin_cannot_create_its_own_admission_in_journal_replay() {
-    let dir = Directory::new();
-    let torrent = movie(&dir, "Fixture.Movie.2024.1080p.mp4");
-    let seed = Seeder::open(&dir.0.join("seed"), &[&torrent]);
-    let cfg = configuration(&dir.0.join("engine"), seed.client.listen_port());
-    let engine = Engine::open(cfg.clone()).unwrap();
-    engine.submit(request(7)).unwrap();
-    receive(&engine, &torrent.id, 7);
-    assert!(routing(&engine.irc_route_pending().unwrap()));
-    let jobs = lock(&engine.store).unwrap().list().unwrap();
-    drop(engine);
-    // A legacy journal whose first and only transaction already carries the
-    // origin: the job was never admitted before it was routed.
-    jobs_state::reset(&cfg.store_dir);
-    let event = mynou::store::Event {
-        id: 1,
-        job_id: jobs[0].id.clone(),
-        state: jobs[0].state.clone(),
-        message: "forged".into(),
-        at: jobs[0].updated_at,
-    };
-    let (journal, _) = jobs_state::frame(&jobs, &event, 1, &[0; 32], b"MYNOUJ05", None);
-    jobs_state::write_private(&cfg.store_dir.join("journal.bin"), &journal);
-    assert!(Engine::open(cfg.clone()).is_err());
-    assert!(!cfg.downloads.data_dir.join(&torrent.id).exists());
 }
 
 #[test]

@@ -135,8 +135,8 @@ impl Provider {
                     assert_eq!(fields["content-type"], "application/x-www-form-urlencoded");
                     let expected = format!(
                         "username={}&password={}",
-                        encoded(&std::env::var("PWD").unwrap()),
-                        encoded(&std::env::var("PATH").unwrap())
+                        encoded(&std::env::var("MYNOU_TEST_SECRET_B").unwrap()),
+                        encoded(&std::env::var("MYNOU_TEST_SECRET_A").unwrap())
                     );
                     assert!(
                         body == expected.as_bytes(),
@@ -160,13 +160,16 @@ impl Provider {
                                 decode64(v)
                                     == format!(
                                         "{}:{}",
-                                        std::env::var("PWD").unwrap(),
-                                        std::env::var("PATH").unwrap()
+                                        std::env::var("MYNOU_TEST_SECRET_B").unwrap(),
+                                        std::env::var("MYNOU_TEST_SECRET_A").unwrap()
                                     )
                                     .as_bytes()
                             }),
                         "bearer" => fields.get("authorization").is_some_and(|v| {
-                            v == &format!("Bearer {}", std::env::var("PWD").unwrap())
+                            v == &format!(
+                                "Bearer {}",
+                                std::env::var("MYNOU_TEST_SECRET_B").unwrap()
+                            )
                         }),
                         "form" => fields
                             .get("cookie")
@@ -245,14 +248,14 @@ fn auth(provider: &Provider, mode: &str) -> Value {
     a.insert("method", mode);
     match mode {
         "basic" => {
-            a.insert("username_env", "PWD");
-            a.insert("password_env", "PATH");
+            a.insert("username_env", "MYNOU_TEST_SECRET_B");
+            a.insert("password_env", "MYNOU_TEST_SECRET_A");
         }
-        "bearer" => a.insert("token_env", "PWD"),
+        "bearer" => a.insert("token_env", "MYNOU_TEST_SECRET_B"),
         "form" => {
             a.insert("login_url", format!("{}/login", provider.url));
-            a.insert("username_env", "PWD");
-            a.insert("password_env", "PATH");
+            a.insert("username_env", "MYNOU_TEST_SECRET_B");
+            a.insert("password_env", "MYNOU_TEST_SECRET_A");
             a.insert("username_field", "username");
             a.insert("password_field", "password");
             a.insert("cookie_name", "sid");
@@ -475,7 +478,10 @@ fn redirects_and_missing_or_invalid_credentials_never_reach_another_origin() {
     assert!(integrations::search(&c, &movie()).is_err());
     assert_eq!(other.searches.load(Ordering::Acquire), 0);
     redacted(&health(&c));
-    for env in ["MYNOU_ABSENT_NATIVE_AUTH_FIXTURE_7853", "PATH"] {
+    for env in [
+        "MYNOU_ABSENT_NATIVE_AUTH_FIXTURE_7853",
+        "MYNOU_TEST_INVALID_TOKEN",
+    ] {
         let mut v = value(&p, "bearer");
         source_mut(&mut v)
             .get_mut("authentication")
@@ -578,10 +584,10 @@ fn guarded_pause_enable_persists_and_previews_do_not_search_or_write() {
     let c = cfg(&d, &p, "none");
     let engine = mynou::engine::Engine::open_for_management(c.clone()).unwrap();
     let id = policy_id(&engine);
-    let path = c.store_dir.join("indexers.bin");
-    let before = fs::read(&path).unwrap();
+    let path = c.store_dir.join("indexers.idx");
+    let before = index_bytes(&path);
     let pause = reviewed(&engine, &id, "pause");
-    assert_eq!(fs::read(&path).unwrap(), before);
+    assert_eq!(index_bytes(&path), before);
     assert_eq!(p.searches.load(Ordering::Acquire), 0);
     engine.indexer_control(&id, &pause).unwrap();
     assert!(integrations::search(&c, &movie()).is_err());
@@ -665,8 +671,8 @@ fn reset_discards_ephemeral_sessions_and_keeps_index_secret_free() {
                 for secret in [
                     b"test-password".as_slice(),
                     b"private-session-fixture",
-                    b"PWD",
-                    b"PATH",
+                    b"mynou-test-secret-a",
+                    b"mynou-test-secret-b",
                 ] {
                     assert!(!bytes.windows(secret.len()).any(|window| window == secret));
                 }
@@ -748,16 +754,13 @@ fn stable_source_bindings_cannot_change_and_removed_sources_keep_policy() {
     let pause = reviewed(&engine, "primary", "pause");
     engine.indexer_control("primary", &pause).unwrap();
     drop(engine);
-    let original = fs::read(c.store_dir.join("indexers.bin")).unwrap();
+    let original = index_bytes(&c.store_dir.join("indexers.idx"));
     let mut bad = v.clone();
     source_mut(&mut bad).insert("min_interval_ms", 100_u32);
     assert!(
         mynou::engine::Engine::open_for_management(config::from_json(&bad, &d.0).unwrap()).is_err()
     );
-    assert_eq!(
-        fs::read(c.store_dir.join("indexers.bin")).unwrap(),
-        original
-    );
+    assert_eq!(index_bytes(&c.store_dir.join("indexers.idx")), original);
     let mut removed = v.clone();
     removed.insert("indexers", Value::Array(Vec::new()));
     let engine =
@@ -792,7 +795,9 @@ fn duplicate_ids_and_corrupt_source_snapshots_fail_closed_before_mutation() {
     let c = config::from_json(&v, &d.0).unwrap();
     let engine = mynou::engine::Engine::open_for_management(c.clone()).unwrap();
     drop(engine);
-    let path = c.store_dir.join("indexers.bin");
+    let index = c.store_dir.join("indexers.idx");
+    let unchanged = index_bytes(&index);
+    let path = index.join("tree.bin");
     let original = fs::read(&path).unwrap();
     let row = source_mut(&mut v).clone();
     let Value::Array(a) = v.get_mut("indexers").unwrap() else {
@@ -802,8 +807,8 @@ fn duplicate_ids_and_corrupt_source_snapshots_fail_closed_before_mutation() {
     assert!(
         mynou::engine::Engine::open_for_management(config::from_json(&v, &d.0).unwrap()).is_err()
     );
-    assert_eq!(fs::read(&path).unwrap(), original);
-    for index in [0, 8, 25, original.len() - 1] {
+    assert_eq!(index_bytes(&index), unchanged);
+    for index in [0, 8, 25, 120] {
         let mut bad = original.clone();
         bad[index] ^= 1;
         fs::write(&path, &bad).unwrap();
@@ -819,7 +824,7 @@ fn source_snapshot_symlinks_hardlinks_and_public_permissions_are_rejected() {
     let p = Provider::open();
     let c = cfg(&d, &p, "none");
     drop(mynou::engine::Engine::open_for_management(c.clone()).unwrap());
-    let path = c.store_dir.join("indexers.bin");
+    let path = c.store_dir.join("indexers.idx").join("tree.bin");
     let original = fs::read(&path).unwrap();
     assert_eq!(fs::metadata(&path).unwrap().permissions().mode() & 0o077, 0);
     let target = d.0.join("outside");
@@ -842,9 +847,8 @@ fn offline_source_previews_never_create_missing_snapshot_or_apply_control() {
     let p = Provider::open();
     let c = cfg(&d, &p, "none");
     drop(mynou::engine::Engine::open_for_management(c.clone()).unwrap());
-    let path = c.store_dir.join("indexers.bin");
-    fs::remove_file(&path).unwrap();
-    fs::remove_dir_all(c.store_dir.join("indexers.idx")).unwrap();
+    let path = c.store_dir.join("indexers.idx");
+    fs::remove_dir_all(&path).unwrap();
     let preview = mynou::engine::Engine::open_for_preview(c).unwrap();
     let id = policy_id(&preview);
     let q = reviewed(&preview, &id, "pause");
@@ -902,30 +906,19 @@ fn protected_source_controls_bind_bearer_and_one_use_reviews() {
     assert_eq!(p.searches.load(Ordering::Acquire), 0);
 }
 
-#[test]
-fn failed_policy_persistence_fences_runtime_sources_until_restart() {
-    let d = Directory::new();
-    let p = Provider::open();
-    let c = cfg(&d, &p, "none");
-    let engine = mynou::engine::Engine::open_for_management(c.clone()).unwrap();
-    let id = policy_id(&engine);
-    let pause = reviewed(&engine, &id, "pause");
-    let path = c.store_dir.join("indexers.bin");
-    let original = fs::read(&path).unwrap();
-    let mut corrupt = original.clone();
-    corrupt[0] ^= 1;
-    fs::write(&path, corrupt).unwrap();
-    assert!(engine.indexer_control(&id, &pause).is_err());
-    assert!(engine.indexers().is_err());
-    assert!(engine.indexer_control(&id, &control("pause")).is_err());
-    assert!(integrations::search(&c, &movie()).is_err());
-    assert_eq!(p.searches.load(Ordering::Acquire), 0);
-    drop(engine);
-    fs::write(&path, original).unwrap();
-    let fresh = cfg(&d, &p, "none");
-    let engine = mynou::engine::Engine::open_for_management(fresh.clone()).unwrap();
-    assert_eq!(health(&fresh).get("enabled"), Some(&Value::Bool(true)));
-    assert!(engine.indexers().is_ok());
-    assert!(integrations::search(&fresh, &movie()).is_ok());
-    assert_eq!(p.searches.load(Ordering::Acquire), 1);
+/// Every file of a store index, by path, so a test can prove nothing changed.
+fn index_bytes(index: &std::path::Path) -> std::collections::BTreeMap<std::path::PathBuf, Vec<u8>> {
+    let mut files = std::collections::BTreeMap::new();
+    let mut pending = vec![index.to_path_buf()];
+    while let Some(directory) = pending.pop() {
+        for entry in fs::read_dir(&directory).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                pending.push(path);
+            } else if path.file_name().is_some_and(|name| name != ".lock") {
+                files.insert(path.clone(), fs::read(&path).unwrap());
+            }
+        }
+    }
+    files
 }

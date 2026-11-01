@@ -42,6 +42,27 @@ Add each source in the **Indexers** part of the **Settings** view, or to the
   `MYNOU_INDEXER_API_KEY`); it is used only when the variable is set.
 - `enabled` defaults to `true`. `min_interval_ms` (0 to 60,000, default 0)
   spaces out requests to this source.
+- `priority` is an integer from 1 to 50 (default 25); lower is preferred after
+  profile preferences and freeleech, before seed count.
+- `minimum_seeders` defaults to `null`, which uses the global `minimum_seeders`.
+  An integer from 0 to 1,000,000 overrides it for this indexer's search and feed
+  releases, including season packs.
+- `prefer_freeleech` is a boolean (default `false`). When enabled, an explicitly
+  freeleech release gets a ranking preference after the profile's score and
+  quality preferences. An unknown factor earns no preference. Torznab/Newznab
+  `downloadvolumefactor` of zero means freeleech, a positive factor means false.
+  Invalid or negative factors and invalid, zero or negative sizes are unknown;
+  they never fail an otherwise usable response. Size comes from `size`, an
+  enclosure's `length`, or a Torznab/Newznab size attribute.
+- `seed_ratio_milli` and `seed_time_secs` default to `null` (inherit the
+  corresponding downloads policy). A ratio accepts 1 to 1,000,000 thousandths;
+  time accepts 1 to 315,360,000 seconds. Specified values initialize the native
+  transfer's persisted policy before acquisition starts, while retaining the
+  downloads rate limits and any inherited seeding limit. Existing transfers
+  keep their policy, including user edits or a user clearing the override.
+  This also applies to watched feeds, automatic packs and IRC announcements
+  resolved through `lookup_indexer`. IRC sources using only a magnet template
+  have no associated indexer and inherit the downloads policy.
 - `id` is an optional stable identifier of 1 to 64 lowercase letters, digits,
   underscores or hyphens. It binds the name, kind, URL, API key variable,
   interval and authentication: changing any of them needs a new ID.
@@ -100,6 +121,8 @@ A `mapping` is a section of a `json` source. Every key is optional:
     "title": "meta.name",
     "url": ["links.magnet", "links.download"],
     "seeders": "stats.seeders",
+    "size": "stats.bytes",
+    "download_volume_factor": "stats.download_factor",
     "params": { "query": "search", "kind": "category", "year": "", "api_key": "key" },
     "kind_values": { "movie": "2000", "episode": "5000" },
     "fixed_params": { "limit": "100" }
@@ -107,7 +130,7 @@ A `mapping` is a section of a `json` source. Every key is optional:
 }
 ```
 
-- `results`, `title`, `url`, `seeders`, `size`, `details`, `tmdb_id` and
+- `results`, `title`, `url`, `seeders`, `size`, `download_volume_factor`, `details`, `tmdb_id` and
   `info_hash` are dot-separated paths of up to eight
   parts through objects; a numeric part picks an array element (`links.0`).
   `url` accepts up to four paths and uses the first that holds a text value.
@@ -120,6 +143,11 @@ A `mapping` is a section of a `json` source. Every key is optional:
   [IRC announcement lookup](#bracketed-announcements-resolved-by-lookup);
   `size` and `info_hash` by
   [cross-seed discovery](transfers.md#automatic-cross-seed-discovery).
+  `size` is also used by selection profiles, in positive integer bytes.
+  `download_volume_factor` is a nonnegative number, zero for freeleech and
+  positive for non-freeleech. Both fields accept numeric text; when their paths
+  are omitted, they default to the top-level `size` and
+  `download_volume_factor` fields. Missing or invalid values are unknown.
 - `params` renames what Mynou sends: `query`, `kind`, `year`, `season`,
   `episode`, `absolute` and `api_key` map to your parameter name, and an empty
   name leaves that parameter out. `tmdb_id` is sent only when you name it: a
@@ -501,9 +529,8 @@ and waits for a matching announcement to download.
 
 ### Review announcements
 
-History is stored on disk without a total identity limit. Pass `next_cursor`
-as `after` for later pages. Each page holds at most 200 rows; `offset` remains
-available up to 1,000 rows. See [migration and downgrade](inventory-storage.md#irc-announcement-storage).
+History is stored on disk without a total identity limit. Pass `next`
+as `after` for later pages. Each page holds at most 200 rows. See [IRC announcement storage](inventory-storage.md#irc-announcement-storage).
 
 Actions are `acknowledge`, `dismiss` and `request`. Each is previewed first; the
 apply step needs the returned `plan_id`, and a changed

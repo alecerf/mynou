@@ -391,7 +391,12 @@ pub struct Tunnel<E: Entropy + Clone, C: Clock> {
     route_lost: Option<ErrorKind>,
 }
 
-fn transmit(socket: &UdpSocket, remote: SocketAddr, datagrams: Vec<Vec<u8>>, stats: &mut Stats) {
+fn transmit(
+    socket: &UdpSocket,
+    remote: SocketAddr,
+    datagrams: impl IntoIterator<Item = Vec<u8>>,
+    stats: &mut Stats,
+) {
     for datagram in datagrams {
         match socket.send_to(&datagram, remote) {
             Ok(_) => stats.sent += 1,
@@ -619,6 +624,16 @@ impl<E: Entropy + Clone, C: Clock> Tunnel<E, C> {
     /// fresh session and cannot be replayed, while an initiation can be once a
     /// new generation has forgotten its timestamp fence.
     fn deliver(&mut self, output: PeerOutput, now: Duration, roam: bool) -> bool {
+        self.deliver_to(output, now, roam, None)
+    }
+
+    fn deliver_to(
+        &mut self,
+        output: PeerOutput,
+        now: Duration,
+        roam: bool,
+        reply_to: Option<SocketAddr>,
+    ) -> bool {
         let Some(live) = self.live.as_ref() else {
             return false;
         };
@@ -645,7 +660,16 @@ impl<E: Entropy + Clone, C: Clock> Tunnel<E, C> {
         } else {
             datagrams
         };
-        transmit(&self.socket, live.remote, datagrams, &mut self.stats);
+        for datagram in datagrams {
+            // Handshake responses and cookie challenges answer the source of
+            // this request, independently of persistent endpoint roaming.
+            let destination = if matches!(datagram.first(), Some(2 | 3)) {
+                reply_to.unwrap_or(live.remote)
+            } else {
+                live.remote
+            };
+            transmit(&self.socket, destination, [datagram], &mut self.stats);
+        }
         for payload in output.inner_payloads {
             dispatch(live, &self.config, payload, now, &mut self.stats);
         }
@@ -732,7 +756,7 @@ impl<E: Entropy + Clone, C: Clock> Tunnel<E, C> {
         };
         match live.peer.receive(packet, source, load, clock) {
             Ok(output) => {
-                self.deliver(output, now, matches!(packet[0], 2 | 4));
+                self.deliver_to(output, now, matches!(packet[0], 2 | 4), Some(source));
             }
             Err(_) => self.stats.rejected += 1,
         }

@@ -4,12 +4,38 @@ use crate::{
     crypto::{sha1, sha256},
 };
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     path::{Component, Path, PathBuf},
 };
 
 pub const BLOCK: usize = 16 * 1024;
 pub const MAX_META: usize = 8 * 1024 * 1024;
+const MAX_PATH: usize = 4096;
+const MAX_PATH_BYTES: usize = 16 * 1024 * 1024;
+
+#[derive(Default)]
+struct PathBudget {
+    bytes: usize,
+    prefix: usize,
+}
+
+impl PathBudget {
+    fn check(&self, path: &Path) -> Result<usize> {
+        let length = self.prefix + path.as_os_str().len();
+        if length > MAX_PATH {
+            return Err("Torrent complete path exceeds limits".into());
+        }
+        Ok(length)
+    }
+
+    fn add(&mut self, path: &Path) -> Result<()> {
+        self.bytes += self.check(path)?;
+        if self.bytes > MAX_PATH_BYTES {
+            return Err("Torrent expanded paths exceed limits".into());
+        }
+        Ok(())
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct MediaFile {
@@ -140,6 +166,7 @@ impl Meta {
             })
             .transpose()?;
         let mut files = Vec::new();
+        let mut paths = PathBudget::default();
         let mut v1_hashes = Vec::new();
         let mut total = 0u64;
         let v1 = if let Some(p) = d.get(b"pieces".as_slice()) {
@@ -171,7 +198,9 @@ impl Meta {
                     let mut path = PathBuf::from(&name);
                     for part in parts {
                         path.push(component(bytes(part)?)?);
+                        paths.check(&path)?;
                     }
+                    paths.add(&path)?;
                     let padding = e
                         .get(b"attr".as_slice())
                         .map(bytes)
@@ -190,6 +219,7 @@ impl Meta {
                 }
             } else {
                 total = positive(required(d, b"length")?)?;
+                paths.add(Path::new(&name))?;
                 files.push(MediaFile {
                     path: PathBuf::from(&name),
                     offset: 0,
@@ -214,12 +244,17 @@ impl Meta {
                 offset: &mut u64,
                 piece: usize,
                 depth: usize,
+                paths: &mut PathBudget,
             ) -> Result<()> {
-                if depth > 64 || out.len() > 100_000 {
+                if depth > 64 {
                     return Err("V2 file tree exceeds limits".into());
                 }
+                paths.check(path)?;
                 let d = dict(node)?;
                 if let Some(leaf) = d.get(b"".as_slice()) {
+                    if out.len() >= 100_000 {
+                        return Err("V2 file tree exceeds limits".into());
+                    }
                     if d.len() != 1 {
                         return Err("Ambiguous v2 file tree".into());
                     }
@@ -241,6 +276,7 @@ impl Meta {
                         .map(bytes)
                         .transpose()?
                         .is_some_and(|v| v.contains(&b'p'));
+                    paths.add(path)?;
                     out.push(MediaFile {
                         path: path.to_path_buf(),
                         offset: *offset,
@@ -260,12 +296,15 @@ impl Meta {
                             offset,
                             piece,
                             depth + 1,
+                            paths,
                         )?;
                     }
                 }
                 Ok(())
             }
             let mut offset = 0;
+            // Reserve the root name before any expanded leaf path is copied.
+            paths.prefix = name.len() + 1;
             walk(
                 required(d, b"file tree")?,
                 Path::new(""),
@@ -273,6 +312,7 @@ impl Meta {
                 &mut offset,
                 piece_length,
                 0,
+                &mut paths,
             )?;
             let single = v2_files.len() == 1 && v2_files[0].path == Path::new(&name);
             if !single {
@@ -284,20 +324,14 @@ impl Meta {
                 files = v2_files.clone();
                 total = files.iter().map(|f| f.offset + f.length).max().unwrap_or(0);
             } else {
-                let real: Vec<_> = files.iter().filter(|f| !f.padding).collect();
-                if real.len() != v2_files.len() {
+                if files.iter().filter(|f| !f.padding).count() != v2_files.len() {
                     return Err("Incompatible hybrid file lists".into());
                 }
-                for (a, b) in real.into_iter().zip(&v2_files) {
+                for (a, b) in files.iter_mut().filter(|f| !f.padding).zip(&v2_files) {
                     if a.path != b.path || a.length != b.length || a.offset != b.offset {
                         return Err("Incompatible hybrid file position".into());
                     }
-                }
-                for f in &mut files {
-                    f.root = v2_files
-                        .iter()
-                        .find(|v| v.path == f.path)
-                        .and_then(|v| v.root);
+                    a.root = b.root;
                 }
             }
         }
@@ -348,26 +382,32 @@ impl Meta {
             v1_hashes.resize(count, None);
         }
         let mut trackers = Vec::new();
+        let mut seen = BTreeSet::new();
+        let mut add_tracker = |tracker: &str| -> Result<()> {
+            if !seen.contains(tracker) {
+                if trackers.len() == 256 {
+                    return Err("Too many torrent trackers".into());
+                }
+                seen.insert(tracker.to_owned());
+                trackers.push(tracker.to_owned());
+            }
+            Ok(())
+        };
         if let Some(t) = top.get(b"announce".as_slice())
             && let Ok(t) = std::str::from_utf8(bytes(t)?)
         {
-            trackers.push(t.to_owned());
+            add_tracker(t)?;
         }
         if let Some(Value::List(tiers)) = top.get(b"announce-list".as_slice()) {
             for tier in tiers {
                 if let Value::List(urls) = tier {
                     for u in urls {
-                        if let Ok(u) = std::str::from_utf8(bytes(u)?)
-                            && !trackers.iter().any(|v| v == u)
-                        {
-                            trackers.push(u.to_owned());
+                        if let Ok(u) = std::str::from_utf8(bytes(u)?) {
+                            add_tracker(u)?;
                         }
                     }
                 }
             }
-        }
-        if trackers.len() > 256 {
-            return Err("Too many torrent trackers".into());
         }
         Ok(Self {
             info,
@@ -491,4 +531,139 @@ pub fn merkle_data(data: &[u8], blocks: usize) -> [u8; 32] {
     let mut h: Vec<_> = data.chunks(BLOCK).map(sha256).collect();
     h.resize(blocks.max(1), [0; 32]);
     merkle_hashes(&h, [0; 32])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn v2_tree(depth: usize, count: usize) -> Vec<u8> {
+        let leaf = Value::Dict(BTreeMap::from([(
+            Vec::new(),
+            Value::Dict(BTreeMap::from([(b"length".to_vec(), Value::Int(0))])),
+        )]));
+        let mut tree = Value::Dict(
+            (0..count)
+                .map(|index| (format!("file-{index:06}").into_bytes(), leaf.clone()))
+                .collect(),
+        );
+        for _ in 0..depth {
+            tree = Value::Dict(BTreeMap::from([(vec![b'd'; 255], tree)]));
+        }
+        crate::bencode::encode(&Value::Dict(BTreeMap::from([(
+            b"info".to_vec(),
+            Value::Dict(BTreeMap::from([
+                (b"name".to_vec(), Value::Bytes(b"root".to_vec())),
+                (b"meta version".to_vec(), Value::Int(2)),
+                (b"piece length".to_vec(), Value::Int(BLOCK as i64)),
+                (b"file tree".to_vec(), tree),
+            ])),
+        )])))
+    }
+
+    #[test]
+    fn v2_expanded_paths_have_a_total_budget() {
+        let encoded = v2_tree(3, 22_000);
+        assert!(encoded.len() < MAX_META);
+        assert_eq!(
+            Meta::parse(&encoded).err().as_deref(),
+            Some("Torrent expanded paths exceed limits")
+        );
+    }
+
+    #[test]
+    fn v2_complete_path_length_is_bounded() {
+        assert!(Meta::parse(&v2_tree(2, 2)).is_ok());
+        assert_eq!(
+            Meta::parse(&v2_tree(17, 1)).err().as_deref(),
+            Some("Torrent complete path exceeds limits")
+        );
+    }
+
+    #[test]
+    fn tracker_limit_is_checked_before_reading_more_entries() {
+        let info = Value::Dict(BTreeMap::from([
+            (b"name".to_vec(), Value::Bytes(b"empty".to_vec())),
+            (b"length".to_vec(), Value::Int(0)),
+            (b"pieces".to_vec(), Value::Bytes(Vec::new())),
+            (b"piece length".to_vec(), Value::Int(BLOCK as i64)),
+        ]));
+        let encode = |urls| {
+            crate::bencode::encode(&Value::Dict(BTreeMap::from([
+                (b"info".to_vec(), info.clone()),
+                (b"announce".to_vec(), Value::Bytes(b"tracker-0".to_vec())),
+                (
+                    b"announce-list".to_vec(),
+                    Value::List(vec![Value::List(urls)]),
+                ),
+            ])))
+        };
+        let mut urls: Vec<_> = (0..256)
+            .map(|index| Value::Bytes(format!("tracker-{index}").into_bytes()))
+            .collect();
+        let meta = Meta::parse(&encode(urls.clone())).unwrap();
+        assert_eq!(meta.trackers.len(), 256);
+        assert_eq!(meta.trackers[0], "tracker-0");
+        urls.push(Value::Bytes(b"tracker-256".to_vec()));
+        urls.push(Value::Int(1));
+        assert_eq!(
+            Meta::parse(&encode(urls)).unwrap_err(),
+            "Too many torrent trackers"
+        );
+    }
+
+    #[test]
+    fn hybrid_roots_follow_matched_payload_files_and_skip_v1_padding() {
+        let file = |name: &[u8], length, padding| {
+            let mut fields = BTreeMap::from([
+                (
+                    b"path".to_vec(),
+                    Value::List(vec![Value::Bytes(name.to_vec())]),
+                ),
+                (b"length".to_vec(), Value::Int(length)),
+            ]);
+            if padding {
+                fields.insert(b"attr".to_vec(), Value::Bytes(b"p".to_vec()));
+            }
+            Value::Dict(fields)
+        };
+        let leaf = |root: [u8; 32]| {
+            Value::Dict(BTreeMap::from([(
+                Vec::new(),
+                Value::Dict(BTreeMap::from([
+                    (b"length".to_vec(), Value::Int(1)),
+                    (b"pieces root".to_vec(), Value::Bytes(root.to_vec())),
+                ])),
+            )]))
+        };
+        let roots = [sha256(b"a"), sha256(b"b")];
+        let info = Value::Dict(BTreeMap::from([
+            (b"name".to_vec(), Value::Bytes(b"root".to_vec())),
+            (b"meta version".to_vec(), Value::Int(2)),
+            (b"piece length".to_vec(), Value::Int(BLOCK as i64)),
+            (b"pieces".to_vec(), Value::Bytes(vec![0; 40])),
+            (
+                b"files".to_vec(),
+                Value::List(vec![
+                    file(b"a", 1, false),
+                    file(b"pad", BLOCK as i64 - 1, true),
+                    file(b"b", 1, false),
+                ]),
+            ),
+            (
+                b"file tree".to_vec(),
+                Value::Dict(BTreeMap::from([
+                    (b"a".to_vec(), leaf(roots[0])),
+                    (b"b".to_vec(), leaf(roots[1])),
+                ])),
+            ),
+        ]));
+        let encoded =
+            crate::bencode::encode(&Value::Dict(BTreeMap::from([(b"info".to_vec(), info)])));
+        let meta = Meta::parse(&encoded).unwrap();
+        assert_eq!(
+            meta.files.iter().map(|file| file.root).collect::<Vec<_>>(),
+            [Some(roots[0]), None, Some(roots[1])]
+        );
+    }
 }

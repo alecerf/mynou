@@ -428,7 +428,11 @@ impl Client {
         let source = jobs
             .get(source_id)
             .ok_or("Unknown cross-seed source transfer")?;
-        if !source.status.ready || source.failed || source.cross_seed.is_some() {
+        if !source.status.ready
+            || source.failed
+            || source.removing.is_some()
+            || source.cross_seed.is_some()
+        {
             return Err("Cross-seed source must be a fully verified ordinary transfer".into());
         }
         let reuse = CrossSeed::bind(
@@ -469,8 +473,7 @@ impl Client {
 }
 
 pub(super) fn load(config: &DownloadConfig, id: &str) -> Result<Job> {
-    // Seed records require the same physical root binding as registration;
-    // ordinary legacy queue entries retain their existing startup behavior.
+    // Seed records require the same physical root binding as registration.
     state_directory(config)?;
     let identity = decode_hex::<20>(id).map_err(|_| "Invalid persisted cross-seed identity")?;
     if id != id.to_ascii_lowercase()
@@ -690,8 +693,21 @@ pub(super) fn reused_by(config: &DownloadConfig, id: &str) -> Result<bool> {
             continue;
         }
         let mut encoded = Vec::new();
-        let read = File::open(&path)
-            .and_then(|file| file.take((MAX_RECORD + 1) as u64).read_to_end(&mut encoded));
+        let read = (|| -> Result<()> {
+            let inspected =
+                fs::symlink_metadata(&path).map_err(|_| "Could not inspect cross-seed state")?;
+            if !inspected.is_file() || inspected.len() > MAX_RECORD as u64 {
+                return Err("Unsafe cross-seed state".into());
+            }
+            crate::store::open_inspected(&path, &inspected)?
+                .take((MAX_RECORD + 1) as u64)
+                .read_to_end(&mut encoded)
+                .map_err(|_| "Could not read cross-seed state")?;
+            if encoded.len() > MAX_RECORD {
+                return Err("Cross-seed state exceeds limits".into());
+            }
+            Ok(())
+        })();
         let source = read
             .ok()
             .and_then(|_| crate::bencode::parse(&encoded).ok())

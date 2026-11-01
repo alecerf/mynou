@@ -28,11 +28,13 @@ const ITERATIONS: u32 = 600_000;
 const MAX_ITERATIONS: u32 = 10_000_000;
 const MIN_PASSWORD_CHARS: usize = 10;
 const MAX_PASSWORD_BYTES: usize = 1024;
-/// Failed sign-ins allowed per address, and in all, in each window.
+/// Failed sign-ins allowed per address in each window. There is no limit in
+/// all, so that another machine cannot lock the owner out; an IPv6 /64 counts
+/// as one address, so that a machine cannot rotate around the limit.
 const WINDOW: Duration = Duration::from_secs(15 * 60);
 const FAILURES_PER_PEER: u32 = 5;
-const FAILURES_IN_ALL: u32 = 30;
-const MAX_PEERS: usize = 256;
+/// Addresses remembered at once; beyond them, new addresses wait.
+const MAX_PEERS: usize = 1024;
 pub const MAX_ALLOWED_HOSTS: usize = 32;
 
 fn hex(bytes: &[u8]) -> String {
@@ -90,6 +92,14 @@ impl Credentials {
             salt,
             hash: pbkdf2_sha256(password.as_bytes(), &salt, iterations),
             key: random_bytes()?,
+        })
+    }
+
+    /// The same password with a new session key, which ends every session.
+    pub fn renewed(&self) -> Result<Self> {
+        Ok(Self {
+            key: random_bytes()?,
+            ..self.clone()
         })
     }
 
@@ -222,29 +232,39 @@ pub enum SignIn {
 #[derive(Default)]
 struct Failures {
     by_peer: BTreeMap<IpAddr, (Instant, u32)>,
-    all: Option<(Instant, u32)>,
+}
+
+/// The address failures count against: an IPv6 address by its /64.
+fn counted(peer: IpAddr) -> IpAddr {
+    match peer.to_canonical() {
+        IpAddr::V6(v6) => IpAddr::V6((u128::from(v6) & !u128::from(u64::MAX)).into()),
+        v4 => v4,
+    }
 }
 
 impl Failures {
     fn retry_after(&mut self, peer: IpAddr, now: Instant) -> Option<Duration> {
         self.by_peer.retain(|_, (start, _)| now - *start < WINDOW);
-        if self.all.is_some_and(|(start, _)| now - start >= WINDOW) {
-            self.all = None;
+        let peer = counted(peer);
+        match self.by_peer.get(&peer) {
+            Some((start, n)) if *n >= FAILURES_PER_PEER => {
+                Some(WINDOW.saturating_sub(now - *start))
+            }
+            None if self.by_peer.len() >= MAX_PEERS => self
+                .by_peer
+                .values()
+                .map(|(start, _)| WINDOW.saturating_sub(now - *start))
+                .min(),
+            _ => None,
         }
-        [self.by_peer.get(&peer).copied(), self.all]
-            .into_iter()
-            .zip([FAILURES_PER_PEER, FAILURES_IN_ALL])
-            .filter_map(|(window, limit)| window.filter(|(_, n)| *n >= limit))
-            .map(|(start, _)| WINDOW.saturating_sub(now - start))
-            .max()
     }
 
     fn fail(&mut self, peer: IpAddr, now: Instant) {
-        let all = self.all.get_or_insert((now, 0));
-        all.1 += 1;
-        if self.by_peer.len() < MAX_PEERS || self.by_peer.contains_key(&peer) {
-            self.by_peer.entry(peer).or_insert((now, 0)).1 += 1;
-        }
+        self.by_peer.entry(counted(peer)).or_insert((now, 0)).1 += 1;
+    }
+
+    fn forget(&mut self, peer: IpAddr) {
+        self.by_peer.remove(&counted(peer));
     }
 }
 
@@ -271,6 +291,13 @@ impl Access {
             .is_some()
     }
 
+    pub fn current(&self) -> Option<Credentials> {
+        self.credentials
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
+
     pub fn replace(&self, credentials: Option<Credentials>) {
         *self.credentials.write().unwrap_or_else(|e| e.into_inner()) = credentials;
     }
@@ -292,7 +319,7 @@ impl Access {
         };
         // Attempts are checked one at a time, which also bounds their cost.
         if credentials.verify(password) {
-            failures.by_peer.remove(&peer);
+            failures.forget(peer);
             return credentials.session(now()).map(SignIn::Session);
         }
         failures.fail(peer, Instant::now());
@@ -483,7 +510,10 @@ mod tests {
         assert!(access.signed_in(Some(&format!("theme=dark; {COOKIE}={cookie}"))));
         assert!(!access.signed_in(Some(&format!("x{COOKIE}={cookie}"))));
         assert!(!access.signed_in(None));
-        access.replace(Some(self::credentials()));
+        // Signing out everywhere keeps the password and ends the session.
+        let renewed = access.current().unwrap().renewed().unwrap();
+        assert!(renewed.verify("correct horse battery"));
+        access.replace(Some(renewed));
         assert!(!access.signed_in(Some(&format!("{COOKIE}={cookie}"))));
         access.replace(None);
         assert!(matches!(
@@ -493,7 +523,7 @@ mod tests {
     }
 
     #[test]
-    fn failed_sign_ins_are_limited_per_address_and_in_all() {
+    fn failed_sign_ins_are_limited_per_address_only() {
         let access = Access::new(Some(credentials()));
         let peer = IpAddr::from([192, 0, 2, 10]);
         for _ in 0..FAILURES_PER_PEER {
@@ -514,15 +544,30 @@ mod tests {
         ));
         let mut failures = Failures::default();
         let now = Instant::now();
-        for n in 0..FAILURES_IN_ALL {
-            failures.fail(IpAddr::from([198, 51, 100, n as u8]), now);
+        // Many failing addresses do not lock out another one.
+        for n in 0..=250 {
+            for _ in 0..FAILURES_PER_PEER {
+                failures.fail(IpAddr::from([198, 51, 100, n]), now);
+            }
         }
-        assert!(
-            failures
-                .retry_after(IpAddr::from([203, 0, 113, 1]), now)
-                .is_some()
-        );
-        assert!(failures.retry_after(peer, now + WINDOW).is_none());
+        let owner = IpAddr::from([203, 0, 113, 1]);
+        assert!(failures.retry_after(owner, now).is_none());
+        // An IPv6 machine cannot rotate addresses within its /64.
+        for n in 0..FAILURES_PER_PEER {
+            let address = std::net::Ipv6Addr::new(0xfd00, 0, 0, 7, 0, 0, 0, n as u16 + 1);
+            assert!(failures.retry_after(address.into(), now).is_none());
+            failures.fail(address.into(), now);
+        }
+        let rotated = std::net::Ipv6Addr::new(0xfd00, 0, 0, 7, 0xa, 0xb, 0xc, 0xd);
+        assert!(failures.retry_after(rotated.into(), now).is_some());
+        let neighbour = std::net::Ipv6Addr::new(0xfd00, 0, 0, 8, 0, 0, 0, 1);
+        assert!(failures.retry_after(neighbour.into(), now).is_none());
+        // Once the table is full, only remembered addresses sign in.
+        for n in 0..MAX_PEERS as u32 {
+            failures.fail(IpAddr::from((10 << 24 | n).to_be_bytes()), now);
+        }
+        assert!(failures.retry_after(owner, now).is_some());
+        assert!(failures.retry_after(owner, now + WINDOW).is_none());
     }
 
     #[test]

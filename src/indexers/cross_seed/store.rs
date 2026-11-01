@@ -4,6 +4,7 @@
 use crate::{
     Result,
     crypto::{random_bytes, sha256},
+    integrations::Offer,
     inventory::{Change, Index, Key, MAX_PAGE_ROWS, Query},
     json::{self, Value},
     store::{reject_symlinks, sync_directory},
@@ -23,6 +24,8 @@ const RECENT: Key = single(2);
 const T_SEEN: u8 = 0x10;
 const T_SEARCHED: u8 = 0x11;
 const T_ADDED: u8 = 0x12;
+const T_PENDING: u8 = 0x13;
+const T_OFFER: u8 = 0x14;
 /// Feed entry identities remembered per source; feeds list at most 500.
 pub(super) const MAX_SEEN: usize = 2_048;
 pub(super) const MAX_RECENT: usize = 100;
@@ -149,6 +152,7 @@ impl Outcome {
 pub struct Batch {
     pub seen: BTreeMap<String, Vec<String>>,
     pub searched: Vec<(String, String, u64)>,
+    pub pending: Vec<(String, String, Vec<Offer>)>,
     pub added: Vec<Provenance>,
     pub outcomes: Vec<Outcome>,
 }
@@ -156,8 +160,17 @@ impl Batch {
     pub fn is_empty(&self) -> bool {
         self.seen.is_empty()
             && self.searched.is_empty()
+            && self.pending.is_empty()
             && self.added.is_empty()
             && self.outcomes.is_empty()
+    }
+
+    /// Replace the unfinished search and mark completion only when it is empty.
+    pub fn finish_search(&mut self, indexer: &str, transfer: &str, offers: Vec<Offer>, at: u64) {
+        if offers.is_empty() {
+            self.searched.push((indexer.into(), transfer.into(), at));
+        }
+        self.pending.push((indexer.into(), transfer.into(), offers));
     }
 }
 
@@ -213,6 +226,64 @@ impl DiscoveryStore {
             .transpose()
     }
 
+    fn pending_count(&mut self, indexer: &str, transfer: &str) -> Result<usize> {
+        self.get(&key(T_PENDING, &[indexer, transfer]))?
+            .map(|bytes| {
+                let count = u32::from_le_bytes(
+                    bytes
+                        .try_into()
+                        .map_err(|_| "Cross-seed discovery storage: invalid pending count")?,
+                ) as usize;
+                if count > 500 {
+                    return Err("Cross-seed discovery storage: too many pending offers".into());
+                }
+                Ok(count)
+            })
+            .transpose()
+            .map(|count| count.unwrap_or(0))
+    }
+
+    /// Unsettled offers retain their URLs in the private index, never in reports.
+    pub fn pending(&mut self, indexer: &str, transfer: &str) -> Result<Option<Vec<Offer>>> {
+        let count = self.pending_count(indexer, transfer)?;
+        if count == 0 {
+            return Ok(None);
+        }
+        let mut offers = Vec::with_capacity(count);
+        for position in 0..count {
+            let bytes = self
+                .get(&key(T_OFFER, &[indexer, transfer, &position.to_string()]))?
+                .ok_or("Cross-seed discovery storage: missing pending offer")?;
+            let value = text(&bytes)?;
+            let field = |name| {
+                value
+                    .get(name)
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
+                    .ok_or_else(|| "Cross-seed discovery storage: invalid pending offer".to_owned())
+            };
+            offers.push(Offer {
+                id: field("id")?,
+                title: field("title")?,
+                url: field("url")?,
+                size: match value.get("size") {
+                    Some(Value::Null) => None,
+                    Some(Value::String(size)) => Some(
+                        size.parse()
+                            .map_err(|_| "Cross-seed discovery storage: invalid offer size")?,
+                    ),
+                    _ => return Err("Cross-seed discovery storage: invalid offer size".into()),
+                },
+                info_hash: match value.get("info_hash") {
+                    Some(Value::Null) => None,
+                    Some(Value::String(hash)) => Some(hash.clone()),
+                    _ => return Err("Cross-seed discovery storage: invalid offer hash".into()),
+                },
+            });
+        }
+        Ok(Some(offers))
+    }
+
     /// Registered cross-seeds, newest pages first by identity digest.
     pub fn added_page(&mut self, limit: usize) -> Result<(Vec<Provenance>, u64)> {
         let Some(index) = &mut self.index else {
@@ -259,6 +330,44 @@ impl DiscoveryStore {
             return Ok(());
         }
         let mut changes = Vec::new();
+        for (indexer, transfer, offers) in &batch.pending {
+            if offers.len() > 500 {
+                return Err("Cross-seed discovery storage: too many pending offers".into());
+            }
+            let previous = self.pending_count(indexer, transfer)?;
+            for position in offers.len()..previous {
+                changes.push(Change::Delete(key(
+                    T_OFFER,
+                    &[indexer, transfer, &position.to_string()],
+                )));
+            }
+            let header = key(T_PENDING, &[indexer, transfer]);
+            changes.push(if offers.is_empty() {
+                Change::Delete(header)
+            } else {
+                Change::Put(header, (offers.len() as u32).to_le_bytes().to_vec())
+            });
+            for (position, offer) in offers.iter().enumerate() {
+                let mut value = Value::object();
+                value.insert("id", offer.id.clone());
+                value.insert("title", offer.title.clone());
+                value.insert("url", offer.url.clone());
+                value.insert(
+                    "size",
+                    offer
+                        .size
+                        .map_or(Value::Null, |n| Value::String(n.to_string())),
+                );
+                value.insert(
+                    "info_hash",
+                    offer.info_hash.clone().map_or(Value::Null, Value::String),
+                );
+                changes.push(Change::Put(
+                    key(T_OFFER, &[indexer, transfer, &position.to_string()]),
+                    json::stringify(&value).into_bytes(),
+                ));
+            }
+        }
         for (indexer, ids) in &batch.seen {
             let mut seen = self.seen(indexer)?;
             for id in ids {
@@ -341,11 +450,10 @@ impl DiscoveryStore {
             return Err("Cross-seed discovery storage: index appeared before promotion".into());
         }
         fs::rename(&staging, self.directory.join(INDEX)).map_err(|error| {
-            crate::store::migration_io("Cross-seed discovery storage", "write", &error)
+            crate::store::storage_io("Cross-seed discovery storage", "write", &error)
         })?;
-        sync_directory(&self.directory).map_err(|error| {
-            crate::store::migration_sync("Cross-seed discovery storage", &error)
-        })?;
+        sync_directory(&self.directory)
+            .map_err(|error| crate::store::storage_sync("Cross-seed discovery storage", &error))?;
         Index::open(&self.directory.join(INDEX), false)
     }
 }

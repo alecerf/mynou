@@ -1,8 +1,5 @@
-//! Disk-resident ordered records for the inventory migration tracked in #106.
-//!
-//! This API owns a separate, newly created private directory. It never opens or
-//! migrates the legacy request journal. See docs/inventory-storage.md for the
-//! commit/recovery protocol and the remaining integration work.
+//! Disk-resident ordered records in a private directory per store. See
+//! docs/inventory-storage.md for the commit and recovery protocol.
 
 pub(crate) mod backlog;
 mod checksum;
@@ -10,8 +7,6 @@ mod persistence;
 mod tree;
 #[cfg(test)]
 pub(crate) use persistence::{Fault, damage_record};
-#[cfg(test)]
-pub(crate) use tests::legacy_range_index;
 
 use crate::Result;
 use std::{collections::BTreeSet, fs::File, path::PathBuf};
@@ -89,9 +84,6 @@ pub struct Index {
     /// Present whenever the index is writable.
     redo: Option<Box<persistence::Redo>>,
     read_only: bool,
-    /// A read-only open found records a writable open has yet to apply:
-    /// the last writer stopped without closing the index.
-    interrupted: bool,
     poisoned: bool,
     #[cfg(test)]
     fault: Option<persistence::Fault>,
@@ -101,9 +93,6 @@ pub struct Index {
     requests: u64,
     #[cfg(test)]
     last_staged_nodes: usize,
-    /// Writes puts as record files, as releases before the value log did.
-    #[cfg(test)]
-    legacy_records: bool,
 }
 
 impl Index {
@@ -111,42 +100,8 @@ impl Index {
         persistence::create(directory)
     }
 
-    /// Create a new index with an identity already bound by the caller's durable migration proof.
-    pub(crate) fn create_bound(directory: &std::path::Path, identity: [u8; 32]) -> Result<Self> {
-        persistence::create_bound(directory, identity)
-    }
-    pub(crate) fn valid_creation_prefix(identity: [u8; 32], bytes: &[u8]) -> bool {
-        tree::Header::empty(identity).encode().starts_with(bytes)
-    }
-    /// Size of the redo log a new store starts with.
-    pub(crate) const CREATION_REDO_BYTES: usize = persistence::CREATION_REDO_BYTES;
-    /// Whether `bytes` can be a redo log that creation of `identity` wrote,
-    /// or began to write, before the tree.
-    pub(crate) fn valid_creation_redo(identity: [u8; 32], bytes: &[u8]) -> bool {
-        persistence::creation_redo(identity).starts_with(bytes)
-    }
-    #[cfg(test)]
-    pub(crate) fn inject_creation(stage: Option<u8>) {
-        persistence::CREATE_STOP.with(|s| s.set(stage));
-    }
-
     pub fn open(directory: &std::path::Path, read_only: bool) -> Result<Self> {
-        persistence::open(directory, read_only, None)
-    }
-
-    /// Bind a published marker before any writable transaction recovery.
-    pub(crate) fn open_bound(
-        directory: &std::path::Path,
-        read_only: bool,
-        identity: [u8; 32],
-    ) -> Result<Self> {
-        persistence::open(directory, read_only, Some(identity))
-    }
-
-    /// Whether a read-only open found writes the last writer never closed.
-    /// Migrations resume only a staging index that was closed cleanly.
-    pub(crate) fn interrupted(&self) -> bool {
-        self.interrupted
+        persistence::open(directory, read_only)
     }
 
     /// The random identity chosen when the store was created.
@@ -253,50 +208,6 @@ impl Index {
             self.last_page_reads = tree.reads;
         }
         result
-    }
-
-    /// Explicit resumable upgrade of legacy branch counts. Returns true when
-    /// complete. Each call visits at most (budget + height) * 32 children and
-    /// commits at most budget + height pages through the ordinary WAL, with
-    /// no record changes. Open/read-only paths never call this automatically.
-    /// Keep a stopped-store backup for downgrade before starting the upgrade.
-    pub fn prepare_range_counts(&mut self, budget: usize) -> Result<bool> {
-        self.available()?;
-        if self.read_only {
-            return Err(format!(
-                "{} is open read-only; range counts were not upgraded",
-                self.name
-            ));
-        }
-        if !(1..=256).contains(&budget) {
-            return Err("Inventory range-count upgrade budget must be 1..=256".into());
-        }
-        let mut tree = Tree::new(&mut self.tree, self.header, &mut self.cache);
-        let complete = tree.prepare_counts(budget)?;
-        #[cfg(test)]
-        {
-            self.last_page_reads = tree.reads;
-            self.last_staged_nodes = tree.dirty.len();
-        }
-        if tree.dirty.is_empty() {
-            return Ok(complete);
-        }
-        tree.header.sequence = self
-            .header
-            .sequence
-            .checked_add(1)
-            .ok_or("Inventory sequence overflow")?;
-        let transaction = persistence::Transaction {
-            before: self.header,
-            after: tree.header,
-            pages: tree.dirty,
-            actions: Vec::new(),
-        };
-        let bytes = transaction.encode()?;
-        persistence::commit(self, &transaction, &bytes)
-            .map_err(|failure| failure.explain(self.name))?;
-        self.applied(transaction);
-        Ok(complete)
     }
 
     pub fn page(&mut self, query: &Query) -> Result<Page> {
@@ -458,22 +369,12 @@ impl Index {
             };
             let old = Tree::new(&mut self.tree, before, &mut self.cache).find(&key)?;
             let existed = old.is_some();
-            let mut replaces_file = false;
             if let Some(old) = old {
                 persistence::read_value(&self.directory, &before, &mut self.segments, &key, old)?;
                 log.release(old)?;
-                // Only a record written before the value log has a file.
-                replaces_file = !old.inline && !old.segment;
-                if replaces_file {
-                    persistence::check_value_path(&self.directory, &key)?;
-                }
             }
-            #[cfg(test)]
-            let legacy = self.legacy_records;
-            #[cfg(not(test))]
-            let legacy = false;
             let segment = match &data {
-                Some(data) if !inline && !legacy => Some(log.append(data)?),
+                Some(data) if !inline => Some(log.append(data)?),
                 _ => None,
             };
             actions.push(persistence::Action {
@@ -482,8 +383,6 @@ impl Index {
                 inline,
                 existed,
                 segment,
-                replaces_file,
-                fast: true,
             });
         }
         let mut staged = Tree::new(&mut self.tree, before, &mut self.cache);
@@ -636,7 +535,7 @@ impl Log {
 
     /// Accounts for a value this commit replaces or deletes.
     fn release(&mut self, old: tree::ValueRef) -> Result<()> {
-        if old.segment {
+        if !old.inline {
             self.live_bytes = self
                 .live_bytes
                 .checked_sub(Self::envelope_bytes(old.length as usize))
@@ -726,8 +625,6 @@ impl Log {
                         inline: false,
                         existed: true,
                         segment: Some(location),
-                        replaces_file: false,
-                        fast: true,
                     };
                     staged.change(&key, action.reference()?, true)?;
                     wal_bytes = wal_bytes.and_then(|bytes| bytes.checked_add(82 + size));

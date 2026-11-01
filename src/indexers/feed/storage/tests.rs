@@ -2,8 +2,8 @@
 use super::*;
 use crate::inventory::Fault;
 use std::{
-    collections::BTreeSet,
-    os::unix::fs::{PermissionsExt, symlink},
+    collections::{BTreeMap, BTreeSet},
+    os::unix::fs::PermissionsExt,
 };
 
 struct Directory(PathBuf);
@@ -11,7 +11,7 @@ impl Directory {
     fn new() -> Self {
         let path = std::env::temp_dir().join(format!(
             "mynou-feed-index-{}",
-            super::super::digest(&random_bytes::<16>().unwrap())
+            crate::requesters::digest(&crate::crypto::random_bytes::<16>().unwrap())
         ));
         fs::create_dir(&path).unwrap();
         fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
@@ -31,18 +31,6 @@ fn record(n: u64) -> Record {
     record.successes = u64::MAX;
     record.new_entries = u64::MAX;
     record
-}
-fn private(path: &Path, bytes: &[u8]) {
-    fs::write(path, bytes).unwrap();
-    fs::set_permissions(path, fs::Permissions::from_mode(0o600)).unwrap();
-}
-fn snapshot(records: &[Record]) -> Vec<u8> {
-    let mut value = json::Value::object();
-    value.insert(
-        "records",
-        json::Value::Array(records.iter().map(Record::to_json).collect()),
-    );
-    frame(MAGIC, json::stringify(&value).as_bytes())
 }
 fn contents(path: &Path) -> BTreeMap<PathBuf, (Vec<u8>, u32)> {
     fn walk(path: &Path, rows: &mut BTreeMap<PathBuf, (Vec<u8>, u32)>) {
@@ -67,8 +55,8 @@ fn contents(path: &Path) -> BTreeMap<PathBuf, (Vec<u8>, u32)> {
 }
 fn index(storage: &mut Storage) -> &mut Index {
     match &mut storage.backend {
-        Backend::Ready(index) | Backend::Unpublished(index, _) => index,
-        _ => panic!("indexed fixture"),
+        Backend::Ready(index) => index,
+        Backend::Absent => panic!("indexed fixture"),
     }
 }
 
@@ -94,15 +82,12 @@ fn retained_growth_exceeds_old_count_and_bytes_with_bounded_pages_and_startup() 
             .iter()
             .map(|row| json::stringify(&row.to_json()).len())
             .sum::<usize>();
-        put(index(&mut storage), &batch, None).unwrap();
+        put_with(index(&mut storage), &batch, Vec::new()).unwrap();
     }
-    assert!(
-        encoded_bytes > MAX_BYTES,
-        "{encoded_bytes} bytes must exceed the former snapshot limit"
-    );
+    assert!(encoded_bytes > 4 * 1024 * 1024);
     for start in (1..=2_000_u64).step_by(200) {
         let batch: Vec<_> = (start..(start + 200).min(2_001)).map(record).collect();
-        put(index(&mut storage), &batch, None).unwrap();
+        put_with(index(&mut storage), &batch, Vec::new()).unwrap();
     }
     assert_eq!(counters(index(&mut storage)).unwrap(), (10_001, 0));
     let before = index(&mut storage).requests();
@@ -157,46 +142,6 @@ fn retained_growth_exceeds_old_count_and_bytes_with_bounded_pages_and_startup() 
         "startup inspected {requests} requests with 10001 inactive sources"
     );
     assert_eq!(feeds.total().unwrap(), 10_001);
-}
-
-#[test]
-fn legacy_migration_resumes_a_proven_prefix_and_preserves_original_bytes() {
-    let directory = Directory::new();
-    let mut records: Vec<_> = (1..=201).map(record).collect();
-    records[0].baselined = true;
-    records[0].seen = vec![format!("{:032x}", 1)];
-    records[0].cursor = records[0].seen[0].clone();
-    let bytes = snapshot(&records);
-    private(&directory.0.join("feeds.bin"), &bytes);
-    let mut staging = create(&directory.0.join("feeds.idx.migrating"), sha256(&bytes)).unwrap();
-    put(&mut staging, &records[..100], Some(&records[99].id)).unwrap();
-    drop(staging);
-    let before = contents(&directory.0);
-    let mut preview = Storage::open(&directory.0, true).unwrap();
-    preview.initialize().unwrap();
-    assert!(preview.needs_migration());
-    assert_eq!(preview.total().unwrap(), 201);
-    drop(preview);
-    assert_eq!(contents(&directory.0), before);
-    let mut storage = Storage::open(&directory.0, false).unwrap();
-    storage.initialize().unwrap();
-    assert!(!storage.needs_migration());
-    assert_eq!(counters(index(&mut storage)).unwrap(), (201, 1));
-    assert!(index(&mut storage).get(&CURSOR).unwrap().is_none());
-    verify(index(&mut storage), Some(&legacy(bytes.clone()).unwrap())).unwrap();
-    for row in &records {
-        assert_eq!(storage.row(&row.id).unwrap().as_ref(), Some(row));
-    }
-    assert_eq!(
-        fs::read(
-            directory
-                .0
-                .join(format!("feeds.legacy-{}.bin", super::super::digest(&bytes)))
-        )
-        .unwrap(),
-        bytes
-    );
-    assert_eq!(&read(&directory.0.join("feeds.bin")).unwrap()[..8], MARKER);
 }
 
 #[test]
@@ -257,126 +202,7 @@ fn cursor_and_active_count_commit_atomically_at_every_crash_boundary() {
 }
 
 #[test]
-fn snapshot_links_and_public_files_fail_without_changes() {
-    for kind in 0..3 {
-        let directory = Directory::new();
-        let original = directory.0.join("original.bin");
-        private(&original, &snapshot(&[record(1)]));
-        let path = directory.0.join("feeds.bin");
-        match kind {
-            0 => symlink(&original, &path).unwrap(),
-            1 => fs::hard_link(&original, &path).unwrap(),
-            _ => {
-                fs::rename(&original, &path).unwrap();
-                fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
-            }
-        }
-        let before = contents(&directory.0);
-        assert!(Storage::open(&directory.0, false).is_err());
-        assert_eq!(contents(&directory.0), before);
-    }
-}
-
-#[test]
-fn foreign_or_interrupted_staging_is_preserved_intact_before_rebuilding() {
-    for interrupted in [false, true] {
-        let directory = Directory::new();
-        let bytes = snapshot(&[record(1)]);
-        private(&directory.0.join("feeds.bin"), &bytes);
-        let staging = directory.0.join("feeds.idx.migrating");
-        let mut index = create(&staging, sha256(b"foreign original")).unwrap();
-        if interrupted {
-            index.inject(Some(Fault::Published));
-        }
-        let result = put(&mut index, &[record(2)], Some(&record(2).id));
-        assert_eq!(result.is_err(), interrupted);
-        drop(index);
-        private(
-            &staging.join("unexpected-private-evidence"),
-            b"synthetic preservation evidence",
-        );
-        let before: BTreeMap<_, _> = contents(&staging)
-            .into_iter()
-            .map(|(path, bytes)| (path.strip_prefix(&staging).unwrap().to_owned(), bytes))
-            .collect();
-        let mut storage = Storage::open(&directory.0, false).unwrap();
-        storage.initialize().unwrap();
-        assert_eq!(storage.row(&record(1).id).unwrap(), Some(record(1)));
-        assert!(storage.row(&record(2).id).unwrap().is_none());
-        let abandoned = fs::read_dir(&directory.0)
-            .unwrap()
-            .map(|entry| entry.unwrap().path())
-            .find(|path| {
-                path.file_name()
-                    .unwrap()
-                    .to_string_lossy()
-                    .starts_with("feeds.idx.abandoned-")
-            })
-            .unwrap();
-        let preserved: BTreeMap<_, _> = contents(&abandoned)
-            .into_iter()
-            .map(|(path, bytes)| (path.strip_prefix(&abandoned).unwrap().to_owned(), bytes))
-            .collect();
-        assert_eq!(preserved, before);
-    }
-}
-
-#[test]
-fn promoted_index_resumes_publication_but_foreign_pending_indexes_are_untouched() {
-    let directory = Directory::new();
-    let bytes = snapshot(&[record(1)]);
-    private(&directory.0.join("feeds.bin"), &bytes);
-    let mut index = create(&directory.0.join("feeds.idx"), sha256(&bytes)).unwrap();
-    put(&mut index, &[record(1)], None).unwrap();
-    drop(index);
-    let mut storage = Storage::open(&directory.0, false).unwrap();
-    assert!(storage.needs_migration());
-    storage.initialize().unwrap();
-    assert!(!storage.needs_migration());
-    let marker = read(&directory.0.join("feeds.bin")).unwrap();
-    assert_eq!(
-        read(
-            &directory
-                .0
-                .join(format!("feeds.legacy-{}.bin", super::super::digest(&bytes)))
-        )
-        .unwrap(),
-        bytes
-    );
-    drop(storage);
-    for marked in [false, true] {
-        let other = Directory::new();
-        private(
-            &other.0.join("feeds.bin"),
-            if marked { &marker } else { &bytes },
-        );
-        let mut index = create(&other.0.join("feeds.idx"), sha256(b"foreign original")).unwrap();
-        index.inject(Some(Fault::Published));
-        assert!(put(&mut index, &[record(2)], None).is_err());
-        drop(index);
-        let before = contents(&other.0);
-        assert!(Storage::open(&other.0, false).is_err());
-        assert!(Storage::open(&other.0, true).is_err());
-        assert_eq!(contents(&other.0), before);
-    }
-}
-
-#[test]
-fn conflicting_backup_and_corrupt_active_proof_are_never_overwritten() {
-    let directory = Directory::new();
-    let bytes = snapshot(&[record(1)]);
-    private(&directory.0.join("feeds.bin"), &bytes);
-    private(
-        &directory
-            .0
-            .join(format!("feeds.legacy-{}.bin", super::super::digest(&bytes))),
-        &snapshot(&[record(2)]),
-    );
-    let before = contents(&directory.0);
-    let mut storage = Storage::open(&directory.0, false).unwrap();
-    assert!(storage.initialize().is_err());
-    drop(storage);
-    assert_eq!(contents(&directory.0), before);
+fn a_corrupt_active_proof_is_never_overwritten() {
     let other = Directory::new();
     let mut storage = Storage::open(&other.0, false).unwrap();
     storage.initialize().unwrap();
@@ -420,7 +246,7 @@ fn active_full_windows_resume_after_hydrated_bytes_and_deleted_prior_pages() {
             row
         })
         .collect();
-    put(index(&mut storage), &batch, None).unwrap();
+    put_with(index(&mut storage), &batch, Vec::new()).unwrap();
     let mut seen = BTreeSet::new();
     let mut after = None;
     let mut pages = 0;
@@ -473,43 +299,6 @@ fn retained_queries_reject_ambiguous_or_unbounded_fields() {
 }
 
 #[test]
-fn changed_configuration_fails_before_migration_publication() {
-    let directory = Directory::new();
-    let mut value = crate::config::default_json();
-    value.insert("indexers", json::Value::Array(Vec::new()));
-    let mut config = crate::config::from_json(&value, &directory.0).unwrap();
-    let mut options = crate::indexers::Options {
-        id: Some("configured".into()),
-        ..Default::default()
-    };
-    options.watch.enabled = true;
-    let source = crate::config::Source {
-        options,
-        name: "Synthetic".into(),
-        kind: "rss".into(),
-        url: "http://127.0.0.1:9/feed".into(),
-        api_key_env: "MYNOU_ABSENT_FEED_FIXTURE_KEY_110".into(),
-    };
-    let row = Record::new("configured".into(), source.options.binding(&source));
-    let bytes = snapshot(std::slice::from_ref(&row));
-    private(&directory.0.join("feeds.bin"), &bytes);
-    let mut staging = create(&directory.0.join("feeds.idx.migrating"), sha256(&bytes)).unwrap();
-    put(&mut staging, std::slice::from_ref(&row), Some(&row.id)).unwrap();
-    drop(staging);
-    config.sources = vec![source];
-    config.sources[0].url = "http://127.0.0.1:9/changed-feed".into();
-    let before = contents(&directory.0);
-    assert!(
-        super::super::FeedStore::open(&directory.0, &config, false)
-            .err()
-            .unwrap()
-            .contains("source binding changed")
-    );
-    assert_eq!(contents(&directory.0), before);
-    assert!(!directory.0.join("feeds.idx").exists());
-}
-
-#[test]
 fn observation_and_capture_commit_atomically_at_every_crash_boundary() {
     use crate::indexers::feed::generation::Generation;
     use crate::integrations::{FeedEntry, Release};
@@ -540,6 +329,8 @@ fn observation_and_capture_commit_atomically_at_every_crash_boundary() {
                     title: "Synthetic.Movie.2024.1080p.WEB-DL".into(),
                     url: format!("magnet:?xt=urn:btih:{}", "a".repeat(40)),
                     seeders: 5,
+                    size: None,
+                    freeleech: None,
                 },
             }],
             100,
@@ -577,46 +368,6 @@ fn observation_and_capture_commit_atomically_at_every_crash_boundary() {
 }
 
 #[test]
-fn routing_format_upgrade_is_atomic_and_never_rewrites_primary_records() {
-    for fault in [
-        Fault::Staged,
-        Fault::Published,
-        Fault::FirstRecord,
-        Fault::FirstPage,
-        Fault::Applied,
-        Fault::Unlinked,
-    ] {
-        let directory = Directory::new();
-        let mut storage = Storage::open(&directory.0, false).unwrap();
-        storage.initialize().unwrap();
-        storage.commit(record(1)).unwrap();
-        index(&mut storage)
-            .commit(vec![
-                Change::PutInline(HEADER, OLD_FORMAT.to_vec()),
-                Change::Delete(ROUTING),
-                Change::Delete(SCHEDULE),
-            ])
-            .unwrap();
-        drop(storage);
-        let before = contents(&directory.0);
-        assert!(Storage::open(&directory.0, true).is_err());
-        assert_eq!(contents(&directory.0), before);
-        let mut storage = Storage::open(&directory.0, false).unwrap();
-        let requests = index(&mut storage).requests();
-        index(&mut storage).inject(Some(fault));
-        assert!(storage.initialize().is_err());
-        // Four format and counter reads, then one verified read per changed key.
-        assert!(index(&mut storage).requests() - requests <= 7);
-        drop(storage);
-        let mut storage = Storage::open(&directory.0, false).unwrap();
-        storage.initialize().unwrap();
-        assert_eq!(storage.row(&record(1).id).unwrap(), Some(record(1)));
-        assert_eq!(storage.routing_counts().unwrap(), (0, 0));
-        assert!(!storage.needs_migration());
-    }
-}
-
-#[test]
 fn checkpoints_keep_or_advance_the_settled_position_at_every_crash_boundary() {
     use crate::indexers::feed::generation::Generation;
     use crate::integrations::{FeedEntry, Release};
@@ -645,6 +396,8 @@ fn checkpoints_keep_or_advance_the_settled_position_at_every_crash_boundary() {
                     title: "Synthetic.Movie.2024.1080p.WEB-DL".into(),
                     url: format!("magnet:?xt=urn:btih:{}", "a".repeat(40)),
                     seeders: 5,
+                    size: None,
+                    freeleech: None,
                 },
             }],
             100,
@@ -678,55 +431,6 @@ fn checkpoints_keep_or_advance_the_settled_position_at_every_crash_boundary() {
         assert!(recovered.pending("capture").unwrap().is_none());
         assert_eq!(recovered.routing_counts().unwrap(), (0, 0));
     }
-}
-
-#[test]
-fn full_disk_at_every_migration_flush_preserves_legacy_and_restarts() {
-    for boundary in 0..1000 {
-        let directory = Directory::new();
-        let records: Vec<_> = (1..=3).map(record).collect();
-        let original = snapshot(&records);
-        private(&directory.0.join("feeds.bin"), &original);
-        let result = crate::store::with_full_disk_after(boundary, || {
-            Storage::open(&directory.0, false).and_then(|mut s| s.initialize())
-        });
-        let error = match result {
-            Ok(()) => {
-                assert!(boundary > 10);
-                return;
-            }
-            Err(error) => error,
-        };
-        assert!(
-            error.starts_with("Feed storage: "),
-            "boundary {boundary}: {error}"
-        );
-        assert!(
-            error.contains("disk") || error.contains(crate::store::STORAGE_FULL),
-            "boundary {boundary}: {error}"
-        );
-        assert!(!error.contains(directory.0.to_str().unwrap()), "{error}");
-        let live = fs::read(directory.0.join("feeds.bin")).unwrap();
-        if live != original {
-            assert!(
-                fs::read_dir(&directory.0).unwrap().any(|entry| {
-                    let path = entry.unwrap().path();
-                    path.file_name()
-                        .unwrap()
-                        .to_string_lossy()
-                        .contains(".legacy-")
-                        && fs::read(path).is_ok_and(|bytes| bytes == original)
-                }),
-                "boundary {boundary}: original snapshot lost"
-            );
-        }
-        let mut storage = Storage::open(&directory.0, false).unwrap();
-        storage.initialize().unwrap();
-        for r in &records {
-            assert_eq!(storage.row(&r.id).unwrap().as_ref(), Some(r));
-        }
-    }
-    panic!("migration fixture exceeded its durability boundary budget");
 }
 
 #[test]
@@ -781,7 +485,7 @@ fn inventory_growth_report() {
                         row
                     })
                     .collect();
-                put(index(&mut storage), &rows, None).unwrap();
+                put_with(index(&mut storage), &rows, Vec::new()).unwrap();
             }
         });
     } else {

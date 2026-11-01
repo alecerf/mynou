@@ -1,11 +1,11 @@
 //! Independently authored synthetic requester inventory fixtures; CI only.
 use super::{
-    Account, Capture, Demand, LedgerRead, Policy, RequesterStore, State,
+    Account, Capture, Demand, LedgerRead, Policy, RequesterStore,
     index::{self, Progress, Stage, Sweep},
 };
 use crate::{
     config::{self, Config},
-    crypto::{random_bytes, sha256},
+    crypto::random_bytes,
     inventory::{Change, Fault, Index, MAX_PAGE_ROWS},
     json,
     store::Request,
@@ -72,27 +72,6 @@ fn demand(config: &Config, number: u64, origin_bytes: usize) -> Demand {
     }
 }
 
-fn legacy_bytes(state: &State) -> Vec<u8> {
-    let payload = json::stringify(&state.to_json()).into_bytes();
-    let mut bytes = b"MYNOUR01".to_vec();
-    bytes.extend_from_slice(&(payload.len() as u64).to_le_bytes());
-    bytes.extend_from_slice(&payload);
-    bytes.extend_from_slice(&sha256(&bytes));
-    bytes
-}
-
-fn write_private(path: &Path, bytes: &[u8]) {
-    use std::{io::Write, os::unix::fs::OpenOptionsExt};
-    let mut file = fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
-        .open(path)
-        .unwrap();
-    file.write_all(bytes).unwrap();
-    file.sync_all().unwrap();
-}
-
 fn all_ids(store: &RequesterStore) -> BTreeSet<String> {
     let mut ids = BTreeSet::new();
     let mut after = None;
@@ -111,7 +90,7 @@ fn all_ids(store: &RequesterStore) -> BTreeSet<String> {
 }
 
 #[test]
-fn retained_inventory_outgrows_both_legacy_limits_and_continues_after_restart() {
+fn retained_inventory_outgrows_the_old_snapshot_limits_and_continues_after_restart() {
     let directory = Directory::new();
     let config = config(&directory.0);
     let mut store = RequesterStore::open(&directory.0, &config, false).unwrap();
@@ -229,128 +208,6 @@ fn chunked_demands_keep_account_pages_within_the_hydrated_byte_budget() {
 }
 
 #[test]
-fn same_source_interrupted_migration_resumes_and_preserves_exact_private_original() {
-    let directory = Directory::new();
-    let config = config(&directory.0);
-    let store = RequesterStore::open(&directory.0, &config, true).unwrap();
-    let mut legacy = store.state.clone();
-    drop(store);
-    for number in 0..203 {
-        let record = demand(&config, number, 10);
-        legacy.demands.insert(record.id.clone(), record);
-    }
-    let bytes = legacy_bytes(&legacy);
-    write_private(&directory.0.join("requesters.bin"), &bytes);
-    let source = sha256(&bytes);
-    let mut staging = Index::create(&directory.0.join("requesters.idx.staging")).unwrap();
-    staging
-        .commit(vec![Change::PutInline(index::SOURCE, source.to_vec())])
-        .unwrap();
-    let batch: Vec<_> = legacy
-        .demands
-        .values()
-        .take(MAX_PAGE_ROWS)
-        .cloned()
-        .collect();
-    let mut metadata = legacy.clone();
-    metadata.demands.clear();
-    index::commit(&mut staging, &metadata, &batch, &[]).unwrap();
-    // Simulate a crash after a durable batch, before its continuation write.
-    let identity = staging.identity();
-    drop(staging);
-    let read_only = RequesterStore::open(&directory.0, &config, true).unwrap();
-    assert_eq!(all_ids(&read_only).len(), 203);
-    drop(read_only);
-    assert_eq!(fs::read(directory.0.join("requesters.bin")).unwrap(), bytes);
-    let mut store = RequesterStore::open(&directory.0, &config, false).unwrap();
-    store.initialize().unwrap();
-    assert_eq!(all_ids(&store).len(), 203);
-    assert_eq!(store.count("fixture", None).unwrap(), 203);
-    drop(store);
-    let backup = directory
-        .0
-        .join(format!("requesters.legacy-{}.bin", super::digest(&source)));
-    assert_eq!(fs::read(&backup).unwrap(), bytes);
-    assert_eq!(
-        fs::metadata(backup).unwrap().permissions().mode() & 0o077,
-        0
-    );
-    let mut published = Index::open(&directory.0.join("requesters.idx"), true).unwrap();
-    assert_eq!(published.identity(), identity);
-    assert!(published.get(&index::CURSOR).unwrap().is_none());
-}
-
-#[test]
-fn interrupted_staging_from_another_source_is_preserved_without_importing_its_rows() {
-    let directory = Directory::new();
-    let config = config(&directory.0);
-    let mut staging = Index::create(&directory.0.join("requesters.idx.staging")).unwrap();
-    staging
-        .commit(vec![Change::PutInline(index::SOURCE, [42; 32].to_vec())])
-        .unwrap();
-    let identity = staging.identity();
-    drop(staging);
-    let mut store = RequesterStore::open(&directory.0, &config, false).unwrap();
-    store.initialize().unwrap();
-    assert!(all_ids(&store).is_empty());
-    drop(store);
-    let abandoned: Vec<_> = fs::read_dir(&directory.0)
-        .unwrap()
-        .map(|entry| entry.unwrap().path())
-        .filter(|path| {
-            path.file_name()
-                .unwrap()
-                .to_string_lossy()
-                .starts_with("requesters.idx.abandoned-")
-        })
-        .collect();
-    assert_eq!(abandoned.len(), 1);
-    let mut preserved = Index::open(&abandoned[0], true).unwrap();
-    assert_eq!(preserved.identity(), identity);
-    assert_eq!(
-        preserved.get(&index::SOURCE).unwrap(),
-        Some([42; 32].to_vec())
-    );
-}
-
-#[test]
-fn restoring_a_matching_legacy_source_cannot_rewind_acknowledged_indexed_changes() {
-    let directory = Directory::new();
-    let config = config(&directory.0);
-    let store = RequesterStore::open(&directory.0, &config, true).unwrap();
-    let mut legacy = store.state.clone();
-    drop(store);
-    let original = demand(&config, 65, 10);
-    legacy.demands.insert(original.id.clone(), original.clone());
-    let bytes = legacy_bytes(&legacy);
-    write_private(&directory.0.join("requesters.bin"), &bytes);
-    let mut store = RequesterStore::open(&directory.0, &config, false).unwrap();
-    store.initialize().unwrap();
-    let mut changed = original.clone();
-    changed.outcome = "failed".into();
-    let mut patch = store.state.clone();
-    patch.demands.insert(changed.id.clone(), changed.clone());
-    patch.operator_jobs.insert(format!("{:032x}", 73));
-    store.save_patch(patch).unwrap();
-    drop(store);
-    let mut index = Index::open(&directory.0.join("requesters.idx"), true).unwrap();
-    let sequence = index.sequence().unwrap();
-    let header = index.get(&index::HEADER).unwrap();
-    drop(index);
-    // Restore the exact private source whose digest the published index carries.
-    fs::write(directory.0.join("requesters.bin"), &bytes).unwrap();
-    let mut store = RequesterStore::open(&directory.0, &config, false).unwrap();
-    assert!(store.initialize().is_err());
-    drop(store);
-    assert_eq!(fs::read(directory.0.join("requesters.bin")).unwrap(), bytes);
-    let mut index = Index::open(&directory.0.join("requesters.idx"), true).unwrap();
-    assert_eq!(index.sequence().unwrap(), sequence);
-    assert_eq!(index.get(&index::HEADER).unwrap(), header);
-    assert_eq!(index::get(&mut index, &changed.id).unwrap(), Some(changed));
-    assert!(index::has_operator(&mut index, &format!("{:032x}", 73)).unwrap());
-}
-
-#[test]
 fn uncertain_reservation_commit_requires_reopen_and_recovers_frozen_capture() {
     for fault in [
         Fault::Published,
@@ -368,6 +225,7 @@ fn uncertain_reservation_commit_requires_reopen_and_recovers_frozen_capture() {
         record.outcome = "reserved".into();
         record.admitted_at = Some(1234);
         let mut index = Index::create(&directory.0.join("inventory")).unwrap();
+        index::prepare_backlog(&mut index).unwrap();
         index::commit(&mut index, &metadata, &[], &[]).unwrap();
         index.inject(Some(fault));
         assert!(index::commit(&mut index, &metadata, std::slice::from_ref(&record), &[]).is_err());
@@ -592,63 +450,6 @@ fn sweep_generations_only_advance_and_stale_origin_rows_are_collected() {
 }
 
 #[test]
-fn full_disk_at_every_migration_flush_preserves_legacy_and_restarts() {
-    for boundary in 0..1000 {
-        let directory = Directory::new();
-        let config = config(&directory.0);
-        let mut initial = RequesterStore::open(&directory.0, &config, true)
-            .unwrap()
-            .state
-            .clone();
-        for n in 0..3 {
-            let row = demand(&config, n, 10);
-            initial.demands.insert(row.id.clone(), row);
-        }
-        let original = legacy_bytes(&initial);
-        write_private(&directory.0.join("requesters.bin"), &original);
-        let result = crate::store::with_full_disk_after(boundary, || {
-            RequesterStore::open(&directory.0, &config, false).and_then(|mut s| s.initialize())
-        });
-        let error = match result {
-            Ok(()) => {
-                assert!(boundary > 10);
-                return;
-            }
-            Err(error) => error,
-        };
-        assert!(
-            error.starts_with("Requester storage: "),
-            "boundary {boundary}: {error}"
-        );
-        assert!(
-            error.contains("disk") || error.contains(crate::store::STORAGE_FULL),
-            "boundary {boundary}: {error}"
-        );
-        assert!(!error.contains(directory.0.to_str().unwrap()), "{error}");
-        // The original remains at its live name until marker publication;
-        // afterwards the exact private backup must already exist.
-        let live = fs::read(directory.0.join("requesters.bin")).unwrap();
-        if live != original {
-            assert!(
-                fs::read_dir(&directory.0).unwrap().any(|entry| {
-                    let path = entry.unwrap().path();
-                    path.file_name()
-                        .unwrap()
-                        .to_string_lossy()
-                        .contains(".legacy-")
-                        && fs::read(path).is_ok_and(|bytes| bytes == original)
-                }),
-                "boundary {boundary}: original snapshot lost"
-            );
-        }
-        let mut store = RequesterStore::open(&directory.0, &config, false).unwrap();
-        store.initialize().unwrap();
-        assert_eq!(all_ids(&store).len(), 3);
-    }
-    panic!("migration fixture exceeded its durability boundary budget");
-}
-
-#[test]
 fn requester_backlog_tracks_admission_states_and_survives_restart() {
     let directory = Directory::new();
     let config = config(&directory.0);
@@ -696,38 +497,6 @@ fn requester_backlog_tracks_admission_states_and_survives_restart() {
         value.get("last_completed_pass_at"),
         Some(&json::Value::from("80"))
     );
-}
-
-#[test]
-fn requester_backlog_migration_keeps_unknown_wait_times_and_exact_legacy_backup() {
-    let directory = Directory::new();
-    let config = config(&directory.0);
-    let store = RequesterStore::open(&directory.0, &config, false).unwrap();
-    let mut state = store.state.clone();
-    for n in 0..3 {
-        let row = demand(&config, n, 1);
-        state.demands.insert(row.id.clone(), row);
-    }
-    drop(store);
-    let bytes = legacy_bytes(&state);
-    write_private(&directory.0.join("requesters.bin"), &bytes);
-    let store = RequesterStore::open(&directory.0, &config, true).unwrap();
-    assert!(store.backlog(100).is_err());
-    drop(store);
-    let mut store = RequesterStore::open(&directory.0, &config, false).unwrap();
-    store.initialize().unwrap();
-    let value = store.backlog(100).unwrap();
-    assert_eq!(value.get("due"), Some(&json::Value::from("3")));
-    assert_eq!(
-        value.get("unknown_due_times"),
-        Some(&json::Value::from("3"))
-    );
-    assert_eq!(value.get("oldest_due_at"), Some(&json::Value::Null));
-    let backup = directory.0.join(format!(
-        "requesters.legacy-{}.bin",
-        super::digest(&sha256(&bytes))
-    ));
-    assert_eq!(fs::read(backup).unwrap(), bytes);
 }
 
 #[test]

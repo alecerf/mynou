@@ -46,12 +46,17 @@ pub fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
 
 /// Obtain cryptographic random bytes from the operating system, never from a PRNG.
 pub fn random_bytes<const N: usize>() -> Result<[u8; N]> {
-    use std::io::Read;
     let mut out = [0u8; N];
-    std::fs::File::open("/dev/urandom")
-        .and_then(|mut file| file.read_exact(&mut out))
-        .map_err(|error| format!("System random source is unavailable: {error}"))?;
+    fill_random(&mut out)?;
     Ok(out)
+}
+
+/// Fill a caller's buffer from the same operating-system source.
+pub(crate) fn fill_random(out: &mut [u8]) -> Result<()> {
+    use std::io::Read;
+    std::fs::File::open("/dev/urandom")
+        .and_then(|mut file| file.read_exact(out))
+        .map_err(|error| format!("System random source is unavailable: {error}"))
 }
 
 pub fn hmac_sha256(key: &[u8], message: &[u8]) -> [u8; 32] {

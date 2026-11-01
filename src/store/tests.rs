@@ -1,11 +1,7 @@
 //! Job store behavior: ownership and deduplication on the index, the claim
-//! queue, history, a large store, atomic group commits at
-//! every crash point, and recoverable migration of every legacy format.
-use super::{
-    legacy::{self, fixture},
-    migration::{self, Stage},
-    *,
-};
+//! queue, history, a large store and atomic group commits at every crash
+//! point.
+use super::*;
 use crate::inventory::Fault;
 use std::{
     collections::BTreeSet,
@@ -138,80 +134,6 @@ fn private(path: &Path, bytes: &[u8]) {
     fs::set_permissions(path, fs::Permissions::from_mode(0o600)).expect("private fixture");
 }
 
-/// Writes the files an earlier version left: a snapshot of `snapshot` jobs and
-/// then one journal transaction per job of `tail`.
-fn write_legacy(directory: &Path, snapshot: &[Job], tail: &[Job], format: usize) {
-    let snapshot_magics = [
-        legacy::SNAPSHOT_MAGIC,
-        legacy::SHARED_SNAPSHOT_MAGIC,
-        legacy::GROUP_SNAPSHOT_MAGIC,
-        legacy::REQUESTER_SNAPSHOT_MAGIC,
-        legacy::IRC_SNAPSHOT_MAGIC,
-    ];
-    let journal_magics = [
-        legacy::JOURNAL_MAGIC,
-        legacy::SHARED_JOURNAL_MAGIC,
-        legacy::GROUP_JOURNAL_MAGIC,
-        legacy::REQUESTER_JOURNAL_MAGIC,
-        legacy::IRC_JOURNAL_MAGIC,
-    ];
-    fs::create_dir_all(directory).expect("directory");
-    let events: Vec<Event> = snapshot
-        .iter()
-        .enumerate()
-        .map(|(index, job)| Event {
-            id: index as u64 + 1,
-            job_id: job.id.clone(),
-            state: job.state.clone(),
-            message: "legacy snapshot".into(),
-            at: job.updated_at,
-        })
-        .collect();
-    let retained = events.len().saturating_sub(MAX_EVENTS);
-    let mut sequence = events.len() as u64;
-    let mut chain = if snapshot.is_empty() {
-        [0; 32]
-    } else {
-        sha256(b"chain")
-    };
-    if !snapshot.is_empty() || tail.is_empty() {
-        private(
-            &directory.join(legacy::SNAPSHOT),
-            &fixture::snapshot(
-                snapshot,
-                &events[retained..],
-                sequence,
-                chain,
-                snapshot_magics[format],
-            ),
-        );
-    }
-    let mut journal = Vec::new();
-    for job in tail {
-        sequence += 1;
-        let event = Event {
-            id: sequence,
-            job_id: job.id.clone(),
-            state: job.state.clone(),
-            message: "legacy journal".into(),
-            at: job.updated_at,
-        };
-        let (frame, digest) = fixture::frame(
-            std::slice::from_ref(job),
-            &event,
-            sequence,
-            &chain,
-            journal_magics[format],
-            None,
-        );
-        journal.extend_from_slice(&frame);
-        chain = digest;
-    }
-    if !journal.is_empty() {
-        private(&directory.join(legacy::JOURNAL), &journal);
-    }
-}
-
 fn contents(directory: &Path) -> BTreeMap<PathBuf, (Vec<u8>, u32)> {
     fn walk(path: &Path, found: &mut BTreeMap<PathBuf, (Vec<u8>, u32)>) {
         for entry in fs::read_dir(path).expect("directory") {
@@ -287,6 +209,42 @@ fn leases_survive_restart_expire_and_reject_stale_completion() {
         store.update(active).is_err(),
         "a cancelled lease must no longer modify the job"
     );
+}
+
+#[test]
+fn an_acquisition_file_is_needed_until_its_job_is_cancelled_or_imported() {
+    let directory = Directory::new();
+    let mut store = Store::open(&directory.0).unwrap();
+    let url = "/private/store/irc-metainfo/0123456789abcdef0123456789abcdef01234567.torrent";
+    assert!(!store.acquisition_needed(url).unwrap());
+    let mut job = store.submit(request("Routed")).unwrap();
+    job.acquisition_url = Some(url.to_owned());
+    store.update(job.clone()).unwrap();
+    assert!(store.acquisition_needed(url).unwrap());
+    assert!(
+        !store
+            .acquisition_needed(&url.replace("0123", "4567"))
+            .unwrap()
+    );
+    for state in ["ready", "cancelled"] {
+        let mut other = store.submit(request(state)).unwrap();
+        other.acquisition_url = Some(format!("{url}.{state}"));
+        other.state = state.into();
+        if state == "ready" {
+            other.imports = vec!["/library/routed.mkv".into()];
+            other.files = vec!["/downloads/routed.mkv".into()];
+            other.download_id = Some("0123456789abcdef0123456789abcdef01234567".into());
+            other.progress = 1.0;
+        }
+        store.update(other).unwrap();
+        assert!(!store.acquisition_needed(&format!("{url}.{state}")).unwrap());
+    }
+    // A cancelled IRC job keeps its acquisition URL when retried.
+    let mut routed = irc_fixture_job(7);
+    routed.state = "cancelled".into();
+    let magnet = routed.acquisition_url.clone().unwrap();
+    bulk(&mut store, vec![routed]);
+    assert!(store.acquisition_needed(&magnet).unwrap());
 }
 
 #[test]
@@ -513,7 +471,7 @@ fn an_oversized_record_is_refused_and_leaves_the_store_unchanged() {
     let mut store = Store::open(&directory.0).unwrap();
     let mut job = store.submit(request("Oversized")).unwrap();
     let before = store.get(&job.id).unwrap().unwrap();
-    job.files = vec!["x".repeat(legacy::MAX_RECORD)];
+    job.files = vec!["x".repeat(layout::MAX_RECORD)];
     let error = store.update(job.clone()).unwrap_err();
     assert!(error.contains("16 MiB"), "{error}");
     assert_eq!(store.get(&job.id).unwrap().unwrap(), before);
@@ -576,6 +534,8 @@ fn upgrade_lineage_tips_and_pending_upgrades_follow_the_entries() {
     parent.progress = 1.0;
     parent.imports = vec!["/library/lineage.mkv".into()];
     parent.release = Some(RecordedRelease {
+        source_id: None,
+        size_bytes: None,
         title: "Lineage.720p".into(),
         profile: "hd".into(),
     });
@@ -590,6 +550,8 @@ fn upgrade_lineage_tips_and_pending_upgrades_follow_the_entries() {
                 ..request("Lineage")
             },
             RecordedRelease {
+                source_id: None,
+                size_bytes: None,
                 title: "Lineage.1080p".into(),
                 profile: "hd".into(),
             },
@@ -696,6 +658,8 @@ fn the_claim_applies_group_leases_and_current_parents() {
     parent.progress = 1.0;
     parent.imports = vec!["/library/parent.mkv".into()];
     parent.release = Some(RecordedRelease {
+        source_id: None,
+        size_bytes: None,
         title: "Claim.parent.720p".into(),
         profile: "hd".into(),
     });
@@ -708,6 +672,8 @@ fn the_claim_applies_group_leases_and_current_parents() {
                 ..request("Claim parent")
             },
             RecordedRelease {
+                source_id: None,
+                size_bytes: None,
                 title: "Claim.parent.1080p".into(),
                 profile: "hd".into(),
             },
@@ -726,8 +692,8 @@ fn the_claim_applies_group_leases_and_current_parents() {
 // ---------------------------------------------------------------------------
 // A large store
 
-/// Writes jobs through the index in transactions of up to 100, as migration
-/// does, so tests can build stores far above the old limits quickly.
+/// Writes jobs through the index in transactions of up to 100, so tests can
+/// build stores far above the old limits quickly.
 fn bulk(store: &mut Store, jobs: Vec<Job>) {
     for chunk in jobs.chunks(100) {
         store
@@ -750,6 +716,8 @@ fn monitored_fixture(n: u64, checked: u64) -> Job {
         job.key = job.request.canonical_key();
     }
     job.release = Some(RecordedRelease {
+        source_id: None,
+        size_bytes: None,
         title: format!("Synthetic {n} 2026 720p"),
         profile: "hd".into(),
     });
@@ -880,139 +848,6 @@ fn same_second_checks_rotate_but_unrelated_tip_writes_do_not() {
     assert_eq!(store.monitoring_counts().unwrap(), [201, 0, 0, 0, 0]);
 }
 
-fn pending_monitoring_fixture(store: &mut Store) {
-    let prefix = store.library_page(None, 100).unwrap().jobs;
-    let index = match &mut store.backend {
-        Backend::Ready(index) => index,
-        _ => unreachable!(),
-    };
-    let mut changes = Vec::new();
-    for table in [
-        layout::T_MONITOR_REF,
-        layout::T_MONITOR_DUE,
-        layout::T_MONITOR_SHARED,
-        layout::T_MONITOR_UNCHECKED,
-    ] {
-        let mut after = None;
-        loop {
-            let page = ops::Db(index).scan(&[table], after, 200).unwrap();
-            changes.extend(page.entries.into_iter().map(|(key, _)| Change::Delete(key)));
-            after = page.next;
-            if after.is_none() {
-                break;
-            }
-        }
-    }
-    index.commit(changes).unwrap();
-    let mut changes = Vec::new();
-    for job in &prefix {
-        let id = layout::id_bytes(&job.id).unwrap();
-        let at = job.monitor_checked_at.to_be_bytes();
-        let round = 0_u64.to_be_bytes();
-        let mut reference = vec![0];
-        reference.extend_from_slice(&at);
-        reference.extend_from_slice(&round);
-        changes.push(Change::PutInline(
-            layout::key(&[&[layout::T_MONITOR_REF], &id]),
-            reference,
-        ));
-        changes.push(Change::PutInline(
-            layout::key(&[
-                &[layout::T_MONITOR_UNCHECKED],
-                &job.created_at.to_be_bytes(),
-                &round,
-                &id,
-            ]),
-            Vec::new(),
-        ));
-    }
-    let last = prefix.last().unwrap();
-    changes.push(Change::PutInline(
-        layout::FORMAT_KEY,
-        monitoring::PENDING.to_vec(),
-    ));
-    changes.push(Change::Put(
-        layout::MONITOR_COUNTS_KEY,
-        monitoring::encode([100, 0, 0, 0, 0]),
-    ));
-    changes.push(Change::Put(
-        layout::MONITOR_CURSOR_KEY,
-        layout::library_key(last.created_at, &layout::id_bytes(&last.id).unwrap()).to_vec(),
-    ));
-    index.commit(changes).unwrap();
-}
-
-#[test]
-fn pending_monitoring_upgrade_is_read_only_safe_and_recovers_each_crash_boundary() {
-    for fault in [
-        Fault::Staged,
-        Fault::Published,
-        Fault::FirstRecord,
-        Fault::FirstPage,
-        Fault::Applied,
-        Fault::Unlinked,
-    ] {
-        let directory = Directory::new();
-        let mut store = Store::open(&directory.0).unwrap();
-        let jobs: Vec<Job> = (1..=201).map(|n| monitored_fixture(n, 0)).collect();
-        bulk(&mut store, jobs.clone());
-        pending_monitoring_fixture(&mut store);
-        drop(store);
-        let before = contents(&directory.0);
-        let error = Store::open_read_only(&directory.0).err().unwrap();
-        assert!(error.contains("writable restart"), "{error}");
-        assert_eq!(contents(&directory.0), before);
-        let mut index = Index::open(&directory.0.join("jobs.idx"), false).unwrap();
-        index.inject(Some(fault));
-        assert!(monitoring::upgrade(&mut index, false, Path::new("/nonexistent")).is_err());
-        assert!(!index.is_usable());
-        drop(index);
-        let mut reopened = Store::open(&directory.0).unwrap();
-        assert_eq!(
-            reopened.monitoring_counts().unwrap(),
-            [201, 0, 0, 0, 0],
-            "{fault:?}"
-        );
-        assert_eq!(
-            reopened
-                .monitoring_due(now(), 60, false, 257)
-                .unwrap()
-                .jobs
-                .len(),
-            201
-        );
-        assert_eq!(reopened.counts().unwrap().library, 201);
-        for job in &jobs {
-            assert_eq!(reopened.get(&job.id).unwrap().unwrap(), *job);
-        }
-        let index = match &mut reopened.backend {
-            Backend::Ready(index) => index,
-            _ => unreachable!(),
-        };
-        assert_eq!(
-            index.get(&layout::FORMAT_KEY).unwrap().unwrap(),
-            backlog::FORMAT
-        );
-        assert!(index.get(&layout::MONITOR_CURSOR_KEY).unwrap().is_none());
-        for table in [layout::T_MONITOR_REF, layout::T_MONITOR_UNCHECKED] {
-            let mut count = 0;
-            let mut after = None;
-            loop {
-                let page = ops::Db(index).scan(&[table], after, 200).unwrap();
-                count += page.entries.len();
-                after = page.next;
-                if after.is_none() {
-                    break;
-                }
-            }
-            assert_eq!(count, 201, "derived table {table} after {fault:?}");
-        }
-        drop(reopened);
-        let mut read_only = Store::open_read_only(&directory.0).unwrap();
-        assert_eq!(read_only.monitoring_counts().unwrap(), [201, 0, 0, 0, 0]);
-    }
-}
-
 #[test]
 fn monitoring_counters_follow_baselines_flags_shared_owners_and_current_tips() {
     let directory = Directory::new();
@@ -1061,6 +896,8 @@ fn monitoring_counters_follow_baselines_flags_shared_owners_and_current_tips() {
             &baseline.id,
             request,
             RecordedRelease {
+                source_id: None,
+                size_bytes: None,
                 title: "Synthetic 3 2026 1080p".into(),
                 profile: "hd".into(),
             },
@@ -1220,98 +1057,6 @@ fn rollback_correction_keeps_past_monotonicity_and_worker_metadata_guards() {
         at
     );
     assert_eq!(store.monitoring_counts().unwrap(), [2, 0, 0, 0, 0]);
-}
-
-#[test]
-fn old_job_format_builds_monitoring_without_changing_primary_records() {
-    let directory = Directory::new();
-    let mut store = Store::open(&directory.0).unwrap();
-    let jobs: Vec<Job> = (1..=201)
-        .map(|n| {
-            let mut job = monitored_fixture(n, 0);
-            match n % 4 {
-                0 => (),
-                1 => job.monitored = false,
-                2 => job.release = None,
-                _ => {
-                    job.request.kind = "file".into();
-                    job.request.season = 0;
-                    job.request.episode = 0;
-                    job.key = job.request.canonical_key();
-                }
-            }
-            job
-        })
-        .collect();
-    bulk(&mut store, jobs);
-    let file = shared_file();
-    let owners = store
-        .submit_shared_file(file.clone(), shared_requests(&file))
-        .unwrap();
-    for mut owner in owners {
-        owner.state = "ready".into();
-        owner.progress = 1.0;
-        owner.imports = vec![file.import_path.clone()];
-        store.update(owner).unwrap();
-    }
-    let primary = store.list().unwrap();
-    let events = store.events("").unwrap();
-    let expected = [50, 51, 50, 50, 3];
-    assert_eq!(store.monitoring_counts().unwrap(), expected);
-    let index = match &mut store.backend {
-        Backend::Ready(index) => index,
-        _ => unreachable!(),
-    };
-    let mut changes = Vec::new();
-    for table in [
-        layout::T_MONITOR_REF,
-        layout::T_MONITOR_DUE,
-        layout::T_MONITOR_SHARED,
-        layout::T_MONITOR_UNCHECKED,
-    ] {
-        let mut after = None;
-        loop {
-            let page = ops::Db(index).scan(&[table], after, 200).unwrap();
-            changes.extend(page.entries.into_iter().map(|(key, _)| Change::Delete(key)));
-            after = page.next;
-            if after.is_none() {
-                break;
-            }
-        }
-    }
-    changes.push(Change::Delete(layout::MONITOR_COUNTS_KEY));
-    changes.push(Change::Delete(layout::MONITOR_CURSOR_KEY));
-    changes.push(Change::PutInline(
-        layout::FORMAT_KEY,
-        layout::FORMAT.to_vec(),
-    ));
-    index.commit(changes).unwrap();
-    drop(store);
-    let before = contents(&directory.0);
-    assert!(
-        Store::open_read_only(&directory.0)
-            .err()
-            .unwrap()
-            .contains("writable restart")
-    );
-    assert_eq!(contents(&directory.0), before);
-    let mut reopened = Store::open(&directory.0).unwrap();
-    assert_eq!(reopened.list().unwrap(), primary);
-    assert_eq!(reopened.events("").unwrap(), events);
-    assert_eq!(reopened.monitoring_counts().unwrap(), expected);
-    assert_eq!(
-        reopened
-            .monitoring_due(now(), 60, false, 257)
-            .unwrap()
-            .jobs
-            .len(),
-        50
-    );
-    assert_eq!(reopened.monitored_shared(200).unwrap().len(), 3);
-    assert_eq!(reopened.counts().unwrap().library, 204);
-    drop(reopened);
-    let mut read_only = Store::open_read_only(&directory.0).unwrap();
-    assert_eq!(read_only.monitoring_counts().unwrap(), expected);
 }
 
 #[test]
@@ -1552,6 +1297,8 @@ fn shared_ownership_rejects_conflicts_through_the_entries() {
                     ..shared_requests(&file).remove(0)
                 },
                 RecordedRelease {
+                    source_id: None,
+                    size_bytes: None,
                     title: "Pack.1080p".into(),
                     profile: "hd".into()
                 }
@@ -1584,577 +1331,7 @@ fn shared_ownership_rejects_conflicts_through_the_entries() {
 }
 
 // ---------------------------------------------------------------------------
-// Migration
-
-/// The final state of a legacy store, as the migration is expected to write it.
-fn expect_migrated(directory: &Path, expected: &[Job]) {
-    let mut store = Store::open(directory).unwrap();
-    assert_eq!(store.counts().unwrap().jobs, expected.len() as u64);
-    let mut all = store.list().unwrap();
-    all.sort_by(|a, b| a.id.cmp(&b.id));
-    let mut wanted = expected.to_vec();
-    wanted.sort_by(|a, b| a.id.cmp(&b.id));
-    assert_eq!(all, wanted);
-    for job in expected {
-        assert_eq!(&store.get(&job.id).unwrap().unwrap(), job);
-        assert_eq!(&store.by_key(&job.key).unwrap().unwrap(), job);
-    }
-    let library: BTreeSet<String> = expected
-        .iter()
-        .filter(|job| layout::imported(job))
-        .map(|job| job.id.clone())
-        .collect();
-    let tips: BTreeSet<String> = store
-        .library_jobs()
-        .unwrap()
-        .into_iter()
-        .map(|job| job.id)
-        .collect();
-    assert_eq!(tips, library);
-}
-
-#[test]
-fn every_legacy_format_migrates_as_snapshot_journal_or_both() {
-    for format in 0..5 {
-        for (snapshot, tail) in [(40, 0), (0, 5), (40, 5)] {
-            let directory = Directory::new();
-            let mut jobs: Vec<Job> = (0..snapshot + tail)
-                .map(|n| {
-                    if n % 7 == 0 {
-                        ready_job(n as u64, 100 + n as u64)
-                    } else {
-                        raw_job(n as u64, 100 + n as u64)
-                    }
-                })
-                .collect();
-            for job in &mut jobs {
-                job.updated_at = job.created_at;
-            }
-            write_legacy(&directory.0, &jobs[..snapshot], &jobs[snapshot..], format);
-            let original = contents(&directory.0);
-            let mut store = Store::open(&directory.0).unwrap();
-            let report = store.migration.clone().unwrap();
-            assert_eq!(report.jobs, jobs.len() as u64, "format {format}");
-            assert!(!report.resumed);
-            assert!(store.list().unwrap().len() == jobs.len());
-            drop(store);
-            expect_migrated(&directory.0, &jobs);
-            // The exact legacy bytes are preserved, private and named by digest.
-            let after = contents(&directory.0);
-            for (path, (bytes, _)) in &original {
-                let name = path.file_name().unwrap().to_str().unwrap();
-                let preserved = after
-                    .iter()
-                    .find(|(found, _)| {
-                        found.file_name().and_then(|n| n.to_str()).is_some_and(|n| {
-                            n.contains("legacy-")
-                                && n.starts_with(&name[..name.find('.').unwrap_or(name.len())])
-                        })
-                    })
-                    .unwrap_or_else(|| panic!("{name} was not preserved"));
-                assert_eq!(&preserved.1.0, bytes, "format {format}");
-                assert_eq!(preserved.1.1 & 0o077, 0);
-            }
-            // Older versions find an unknown snapshot format and an empty journal.
-            let marker = fs::read(directory.0.join("snapshot.bin")).unwrap();
-            assert_eq!(&marker[..8], legacy::MARKER_MAGIC);
-            assert!(
-                legacy::parse(Some(&marker), &[])
-                    .unwrap_err()
-                    .contains("format")
-            );
-            assert_eq!(
-                fs::metadata(directory.0.join("journal.bin")).map_or(0, |m| m.len()),
-                0
-            );
-            // Reopening is idempotent and a read-only open writes nothing.
-            let before = contents(&directory.0);
-            let mut read_only = Store::open_read_only(&directory.0).unwrap();
-            assert_eq!(read_only.counts().unwrap().jobs, jobs.len() as u64);
-            drop(read_only);
-            assert_eq!(contents(&directory.0), before);
-            let reopened = Store::open(&directory.0).unwrap();
-            assert!(reopened.migration.is_none());
-        }
-    }
-}
-
-#[test]
-fn legacy_events_become_per_job_history_and_numbering_continues() {
-    let directory = Directory::new();
-    let jobs: Vec<Job> = (0..3).map(|n| raw_job(n, 100 + n)).collect();
-    let mut tail = jobs[0].clone();
-    tail.progress = 0.5;
-    tail.updated_at = 500;
-    write_legacy(&directory.0, &jobs, &[tail.clone()], 0);
-    let mut store = Store::open(&directory.0).unwrap();
-    let history = store.events(&jobs[0].id).unwrap();
-    assert_eq!(history.iter().map(|e| e.id).collect::<Vec<_>>(), vec![1, 4]);
-    assert_eq!(store.get(&jobs[0].id).unwrap().unwrap().progress, 0.5);
-    assert_eq!(store.events("").unwrap().len(), 4);
-    let created = store.submit(request("After migration")).unwrap();
-    assert_eq!(store.events(&created.id).unwrap()[0].id, 5);
-}
-
-#[test]
-fn invalid_legacy_state_is_refused_without_writing_anything() {
-    let good: Vec<Job> = (0..4).map(|n| raw_job(n, 100 + n)).collect();
-    type Damage = Box<dyn Fn(&Path)>;
-    let cases: Vec<(&str, Damage)> = vec![
-        (
-            "checksum",
-            Box::new(|dir: &Path| {
-                let mut bytes = fs::read(dir.join("snapshot.bin")).unwrap();
-                bytes[30] ^= 1;
-                private(&dir.join("snapshot.bin"), &bytes);
-            }),
-        ),
-        (
-            "journal frame",
-            Box::new(|dir: &Path| {
-                let mut bytes = fs::read(dir.join("journal.bin")).unwrap();
-                bytes[100] ^= 1;
-                private(&dir.join("journal.bin"), &bytes);
-            }),
-        ),
-        (
-            "journal header",
-            Box::new(|dir: &Path| {
-                let mut bytes = fs::read(dir.join("journal.bin")).unwrap();
-                bytes[18] ^= 0x08;
-                private(&dir.join("journal.bin"), &bytes);
-            }),
-        ),
-        (
-            "snapshot length",
-            Box::new(|dir: &Path| {
-                let mut bytes = fs::read(dir.join("snapshot.bin")).unwrap();
-                bytes[8..16].copy_from_slice(&u64::MAX.to_le_bytes());
-                private(&dir.join("snapshot.bin"), &bytes);
-            }),
-        ),
-        (
-            "public permissions on the journal",
-            Box::new(|dir: &Path| {
-                // A legacy file must be private: this one is repaired on a
-                // writable open only when it is otherwise valid, never read
-                // from a link.
-                let target = dir.join("elsewhere.bin");
-                fs::copy(dir.join("journal.bin"), &target).unwrap();
-                fs::remove_file(dir.join("journal.bin")).unwrap();
-                std::os::unix::fs::symlink(&target, dir.join("journal.bin")).unwrap();
-            }),
-        ),
-    ];
-    for (name, damage) in cases {
-        let directory = Directory::new();
-        write_legacy(&directory.0, &good[..2], &good[2..], 0);
-        damage(&directory.0);
-        let before = contents(&directory.0);
-        let error = Store::open(&directory.0)
-            .err()
-            .unwrap_or_else(|| panic!("{name} opened"));
-        assert!(!error.contains(directory.0.to_str().unwrap()), "{error}");
-        let after = contents(&directory.0);
-        let extra: Vec<_> = after
-            .keys()
-            .filter(|key| !before.contains_key(*key))
-            .collect();
-        assert!(
-            extra
-                .iter()
-                .all(|path| path.file_name().is_some_and(|n| n == ".lock")),
-            "{name} wrote {extra:?}"
-        );
-        assert!(!directory.0.join("jobs.idx").exists(), "{name}");
-        assert!(!directory.0.join("jobs.idx.migrating").exists(), "{name}");
-    }
-    // State rules the old store enforced on every transaction.
-    let mut duplicate = good.clone();
-    duplicate[1].key = duplicate[0].key.clone();
-    let mut uppercase = good.clone();
-    uppercase[0].id = uppercase[0].id.to_uppercase();
-    uppercase[0].id.replace_range(..1, "A");
-    let mut oversized = good.clone();
-    oversized[0].files = vec!["x".repeat(legacy::MAX_RECORD)];
-    let mut orphan = good.clone();
-    orphan[1].upgrade_parent = Some("f".repeat(32));
-    orphan[1].release = Some(RecordedRelease {
-        title: "x".into(),
-        profile: "hd".into(),
-    });
-    for (name, jobs) in [
-        ("duplicate key", duplicate),
-        ("uppercase identifier", uppercase),
-        ("oversized record", oversized),
-        ("orphan upgrade", orphan),
-    ] {
-        let directory = Directory::new();
-        write_legacy(&directory.0, &jobs, &[], 0);
-        let before = contents(&directory.0);
-        let error = Store::open(&directory.0)
-            .err()
-            .unwrap_or_else(|| panic!("{name} opened"));
-        assert!(!error.is_empty());
-        let after = contents(&directory.0);
-        assert!(
-            after
-                .keys()
-                .filter(|key| !before.contains_key(*key))
-                .all(|path| path.file_name().is_some_and(|n| n == ".lock")),
-            "{name}"
-        );
-        assert!(!directory.0.join("jobs.idx").exists(), "{name}");
-    }
-    // Formats too old for what they hold are refused instead of reinterpreted.
-    let directory = Directory::new();
-    let mut job = raw_job(1, 100);
-    job.shared_file = Some(shared_file());
-    write_legacy(&directory.0, std::slice::from_ref(&job), &[], 0);
-    assert!(Store::open(&directory.0).is_err());
-}
-
-#[test]
-fn read_only_open_never_migrates_or_writes() {
-    let directory = Directory::new();
-    let jobs: Vec<Job> = (0..6).map(|n| raw_job(n, 100 + n)).collect();
-    write_legacy(&directory.0, &jobs, &[], 1);
-    private(&directory.0.join(".lock"), b"");
-    let before = contents(&directory.0);
-    let modified = fs::metadata(directory.0.join("snapshot.bin"))
-        .unwrap()
-        .modified()
-        .unwrap();
-    let mut store = Store::open_read_only(&directory.0).unwrap();
-    assert!(store.migration.is_none());
-    for error in [
-        store.get(&jobs[0].id).unwrap_err(),
-        store.page(None, 10).map(|_| ()).unwrap_err(),
-        store.counts().map(|_| ()).unwrap_err(),
-        store.submit(request("Forbidden")).map(|_| ()).unwrap_err(),
-    ] {
-        assert!(
-            error.contains("migrated") || error.contains("read-only"),
-            "{error}"
-        );
-        assert!(!error.contains(directory.0.to_str().unwrap()));
-    }
-    assert_eq!(
-        store.describe().get("state").and_then(Value::as_str),
-        Some("needs_migration")
-    );
-    drop(store);
-    assert_eq!(contents(&directory.0), before);
-    assert_eq!(
-        fs::metadata(directory.0.join("snapshot.bin"))
-            .unwrap()
-            .modified()
-            .unwrap(),
-        modified
-    );
-    // An empty directory reads as an empty store, and creates nothing.
-    let empty = Directory::new();
-    private(&empty.0.join(".lock"), b"");
-    let mut store = Store::open_read_only(&empty.0).unwrap();
-    assert_eq!(store.counts().unwrap().jobs, 0);
-    assert!(store.page(None, 10).unwrap().jobs.is_empty());
-    drop(store);
-    assert_eq!(fs::read_dir(&empty.0).unwrap().count(), 1);
-}
-
-/// Opens with a hook that interrupts at one migration stage.
-fn interrupted(directory: &Path, mut stop: impl FnMut(Stage) -> bool) -> Result<Store> {
-    let lock = secure_file(&directory.join(".lock"))?;
-    try_lock_file(&lock).map_err(|error| error.to_string())?;
-    migration::open_with(directory, lock, false, &mut |stage| {
-        if stop(stage) {
-            Err(format!("interrupted at {stage:?}"))
-        } else {
-            Ok(())
-        }
-    })
-}
-
-#[test]
-fn migration_resumes_after_an_interruption_at_every_stage() {
-    // 150 jobs are three chunks; the legacy files hold a snapshot and a tail.
-    let jobs: Vec<Job> = (0..150)
-        .map(|n| {
-            if n % 5 == 0 {
-                ready_job(n, 100 + n)
-            } else {
-                raw_job(n, 100 + n)
-            }
-        })
-        .collect();
-    let stages = [
-        Stage::BackupWritten,
-        Stage::StagingCreated,
-        Stage::Chunk(1),
-        Stage::Chunk(2),
-        Stage::Chunk(3),
-        Stage::Verified,
-        Stage::Promoted,
-        Stage::MarkerWritten,
-        Stage::JournalCleared,
-    ];
-    for stop in stages {
-        let directory = Directory::new();
-        write_legacy(&directory.0, &jobs[..140], &jobs[140..], 0);
-        let original = fs::read(directory.0.join("snapshot.bin")).unwrap();
-        let error = interrupted(&directory.0, |stage| stage == stop)
-            .err()
-            .unwrap_or_else(|| panic!("{stop:?} did not interrupt"));
-        assert!(error.contains("interrupted"), "{error}");
-        // Until the marker replaces it, the legacy snapshot is untouched, so an
-        // older version could still read it.
-        if !matches!(stop, Stage::MarkerWritten | Stage::JournalCleared) {
-            assert_eq!(
-                fs::read(directory.0.join("snapshot.bin")).unwrap(),
-                original
-            );
-        }
-        let resumed = Store::open(&directory.0).unwrap();
-        let report = resumed.migration.clone();
-        drop(resumed);
-        match stop {
-            Stage::StagingCreated | Stage::Chunk(_) | Stage::Verified => {
-                assert!(report.as_ref().unwrap().resumed, "{stop:?}");
-            }
-            Stage::BackupWritten => assert!(!report.unwrap().resumed),
-            _ => {}
-        }
-        expect_migrated(&directory.0, &jobs);
-        let mut store = Store::open(&directory.0).unwrap();
-        assert!(store.migration.is_none());
-        assert_eq!(
-            fs::metadata(directory.0.join("journal.bin")).map_or(0, |m| m.len()),
-            0
-        );
-        assert!(store.submit(request("After the migration")).is_ok());
-    }
-}
-
-#[test]
-fn a_staging_index_from_other_bytes_is_rebuilt_and_foreign_copies_are_never_replaced() {
-    let jobs: Vec<Job> = (0..70).map(|n| raw_job(n, 100 + n)).collect();
-    let directory = Directory::new();
-    write_legacy(&directory.0, &jobs, &[], 0);
-    interrupted(&directory.0, |stage| stage == Stage::Chunk(1))
-        .err()
-        .unwrap();
-    // The legacy files change before the next start: the staging index came
-    // from other bytes and is derived data, so it is rebuilt.
-    let mut changed = jobs.clone();
-    changed[3].progress = 0.25;
-    fs::remove_file(directory.0.join("snapshot.bin")).unwrap();
-    write_legacy(&directory.0, &changed, &[], 0);
-    expect_migrated(&directory.0, &changed);
-    // A preserved copy with other content is never overwritten.
-    let other = Directory::new();
-    write_legacy(&other.0, &jobs, &[], 0);
-    let digest = match legacy::inspect(&other.0, false).unwrap() {
-        legacy::Inspection::Legacy(files) => files.digest,
-        _ => unreachable!(),
-    };
-    let name = format!("snapshot.legacy-{}.bin", hex(&digest[..8]));
-    private(&other.0.join(&name), b"someone else's data");
-    let before = contents(&other.0);
-    let error = Store::open(&other.0).err().unwrap();
-    assert!(error.contains("refusing to overwrite"), "{error}");
-    assert_eq!(
-        fs::read(other.0.join(&name)).unwrap(),
-        b"someone else's data"
-    );
-    assert!(!other.0.join("jobs.idx").exists());
-    assert!(
-        contents(&other.0)
-            .keys()
-            .all(|key| before.contains_key(key) || key.file_name().is_some_and(|n| n == ".lock"))
-    );
-}
-
-#[test]
-fn restored_legacy_files_are_accepted_only_when_they_match_the_index() {
-    let directory = Directory::new();
-    let jobs: Vec<Job> = (0..8).map(|n| raw_job(n, 100 + n)).collect();
-    write_legacy(&directory.0, &jobs, &[], 0);
-    let original = fs::read(directory.0.join("snapshot.bin")).unwrap();
-    let mut store = Store::open(&directory.0).unwrap();
-    store.submit(request("Added after migration")).unwrap();
-    drop(store);
-    // Restoring the identical snapshot over the marker (a crash or a copy)
-    // is accepted: the index is its product, and later changes remain.
-    private(&directory.0.join("snapshot.bin"), &original);
-    let mut store = Store::open(&directory.0).unwrap();
-    assert_eq!(store.counts().unwrap().jobs, 9);
-    assert_eq!(
-        &fs::read(directory.0.join("snapshot.bin")).unwrap()[..8],
-        legacy::MARKER_MAGIC
-    );
-    drop(store);
-    // Different legacy files beside the index are refused, never merged.
-    let mut changed = jobs.clone();
-    changed[0].progress = 0.75;
-    fs::remove_file(directory.0.join("snapshot.bin")).unwrap();
-    write_legacy(&directory.0, &changed, &[], 0);
-    let error = Store::open(&directory.0).err().unwrap();
-    assert!(
-        error.contains("differ from the files that produced"),
-        "{error}"
-    );
-    // A marker bound to a different index is refused too.
-    let elsewhere = Directory::new();
-    let other = Store::open(&elsewhere.0).unwrap();
-    drop(other);
-    fs::copy(
-        elsewhere.0.join("snapshot.bin"),
-        directory.0.join("snapshot.bin"),
-    )
-    .unwrap();
-    let error = Store::open(&directory.0).err().unwrap();
-    assert!(error.contains("different job index"), "{error}");
-}
-
-#[test]
-fn downgrade_restores_the_preserved_files_without_later_changes() {
-    let directory = Directory::new();
-    let jobs: Vec<Job> = (0..5).map(|n| raw_job(n, 100 + n)).collect();
-    write_legacy(&directory.0, &jobs[..3], &jobs[3..], 0);
-    let mut store = Store::open(&directory.0).unwrap();
-    let later = store.submit(request("Only in the index")).unwrap();
-    let backup = store.migration.clone().unwrap().backup;
-    drop(store);
-    let snapshot = fs::read(directory.0.join(format!("snapshot.{backup}.bin"))).unwrap();
-    let journal = fs::read(directory.0.join(format!("journal.{backup}.bin"))).unwrap();
-    let state = legacy::parse(Some(&snapshot), &journal).unwrap();
-    legacy::validate(&state).unwrap();
-    assert_eq!(state.jobs.len(), 5);
-    assert!(!state.jobs.contains_key(&later.id));
-    assert_eq!(state.jobs.values().cloned().collect::<Vec<_>>(), jobs);
-}
-
-#[test]
-fn a_journal_left_after_the_marker_is_emptied_only_when_it_matches_the_preserved_copy() {
-    let jobs: Vec<Job> = (0..3).map(|n| raw_job(n, 100 + n)).collect();
-    let directory = Directory::new();
-    write_legacy(&directory.0, &[], &jobs, 0);
-    interrupted(&directory.0, |stage| stage == Stage::MarkerWritten)
-        .err()
-        .unwrap();
-    assert!(fs::metadata(directory.0.join("journal.bin")).unwrap().len() > 0);
-    // This interruption precedes the scheduling upgrade: read-only opening
-    // refuses the required upgrade and writes nothing; writable opening first
-    // settles the matching journal and then finishes the derived index.
-    let before = contents(&directory.0);
-    let error = Store::open_read_only(&directory.0).err().unwrap();
-    assert!(error.contains("writable restart"), "{error}");
-    assert_eq!(contents(&directory.0), before);
-    drop(Store::open(&directory.0).unwrap());
-    let before = contents(&directory.0);
-    drop(Store::open_read_only(&directory.0).unwrap());
-    assert_eq!(contents(&directory.0), before);
-    assert_eq!(
-        fs::metadata(directory.0.join("journal.bin")).unwrap().len(),
-        0
-    );
-    // Content that is not the preserved copy is refused and kept.
-    private(&directory.0.join("journal.bin"), b"unexpected content");
-    let error = Store::open(&directory.0).err().unwrap();
-    assert!(error.contains("not in the preserved copy"), "{error}");
-    assert_eq!(
-        fs::read(directory.0.join("journal.bin")).unwrap(),
-        b"unexpected content"
-    );
-}
-
-/// A leftover journal swapped after its inspection is refused before it is
-/// emptied, so no other file is ever truncated.
-#[test]
-fn a_journal_swapped_before_it_is_emptied_is_refused_and_kept() {
-    use super::open_tests::{Swap, swapped};
-    for swap in [Swap::Symlink, Swap::Fifo, Swap::Replaced] {
-        let jobs: Vec<Job> = (0..3).map(|n| raw_job(n, 100 + n)).collect();
-        let directory = Directory::new();
-        write_legacy(&directory.0, &[], &jobs, 0);
-        interrupted(&directory.0, |stage| stage == Stage::MarkerWritten)
-            .err()
-            .unwrap();
-        let journal = directory.0.join("journal.bin");
-        let bytes = fs::read(&journal).unwrap();
-        assert!(!bytes.is_empty());
-        let path = directory.0.clone();
-        let error = swapped("journal.bin", 0, swap, move || Store::open(&path).map(drop));
-        let expected = match swap {
-            Swap::Symlink => "Cannot open the legacy journal",
-            Swap::Fifo => "The legacy journal must be a regular file",
-            Swap::Replaced => "The legacy journal changed while opening",
-        };
-        assert!(error.contains(expected), "{swap:?}: {error}");
-        assert_eq!(
-            fs::read(directory.0.join("journal.bin.moved")).unwrap(),
-            bytes
-        );
-        if matches!(swap, Swap::Replaced) {
-            assert_eq!(fs::read(&journal).unwrap(), bytes);
-        }
-    }
-}
-
-/// Interrupts a migration after its marker, then reopens the store with
-/// `change` applied to the leftover journal between its inspection and its
-/// open for emptying. Returns the directory, the journal's bytes before
-/// `change` and the open error.
-fn settle_changed(change: fn(&Path)) -> (Directory, Vec<u8>, String) {
-    let jobs: Vec<Job> = (0..3).map(|n| raw_job(n, 100 + n)).collect();
-    let directory = Directory::new();
-    write_legacy(&directory.0, &[], &jobs, 0);
-    interrupted(&directory.0, |stage| stage == Stage::MarkerWritten)
-        .err()
-        .unwrap();
-    let bytes = fs::read(directory.0.join("journal.bin")).unwrap();
-    assert!(!bytes.is_empty());
-    let mut pending = true;
-    BEFORE_PRIVATE_OPEN.with(|hook| {
-        *hook.borrow_mut() = Some(Box::new(move |path: &Path| {
-            if pending && path.file_name().and_then(|name| name.to_str()) == Some("journal.bin") {
-                pending = false;
-                change(path);
-            }
-        }));
-    });
-    let opened = Store::open(&directory.0);
-    BEFORE_PRIVATE_OPEN.with(|hook| *hook.borrow_mut() = None);
-    let error = opened.err().expect("a changed journal was settled");
-    (directory, bytes, error)
-}
-
-/// A second link to the leftover journal is never emptied through it, even
-/// when it appears after the journal was read and inspected.
-#[test]
-fn a_journal_linked_before_it_is_emptied_is_refused_and_kept() {
-    let (directory, bytes, error) = settle_changed(|path| {
-        fs::hard_link(path, path.with_file_name("journal.link")).unwrap();
-    });
-    assert_eq!(error, "The legacy journal changed while opening");
-    for name in ["journal.bin", "journal.link"] {
-        assert_eq!(fs::read(directory.0.join(name)).unwrap(), bytes, "{name}");
-    }
-}
-
-/// The emptied bytes are read again through the truncating descriptor, so
-/// content written in place after the first read is refused and kept.
-#[test]
-fn a_journal_rewritten_before_it_is_emptied_is_refused_and_kept() {
-    let (directory, bytes, error) = settle_changed(|path| {
-        let mut file = OpenOptions::new().write(true).open(path).unwrap();
-        std::io::Write::write_all(&mut file, b"rewritten").unwrap();
-    });
-    assert_eq!(error, "The legacy journal changed while it was settled");
-    let mut expected = b"rewritten".to_vec();
-    expected.extend_from_slice(&bytes[expected.len()..]);
-    assert_eq!(fs::read(directory.0.join("journal.bin")).unwrap(), expected);
-}
+// Creation and errors
 
 #[test]
 fn a_store_that_never_held_jobs_is_created_atomically() {
@@ -2162,115 +1339,36 @@ fn a_store_that_never_held_jobs_is_created_atomically() {
     let path = directory.0.join("fresh");
     let mut store = Store::open(&path).unwrap();
     assert_eq!(store.counts().unwrap().jobs, 0);
-    assert_eq!(
-        store.describe().get("state").and_then(Value::as_str),
-        Some("index")
-    );
     assert!(path.join("jobs.idx").is_dir());
-    assert_eq!(
-        &fs::read(path.join("snapshot.bin")).unwrap()[..8],
-        legacy::MARKER_MAGIC
-    );
-    assert!(!path.join("jobs.idx.migrating").exists());
+    assert!(!path.join("jobs.idx.creating").exists());
     drop(store);
-    // A foreign public staging directory is refused and never removed.
-    fs::create_dir(path.join("jobs.idx.migrating")).unwrap();
-    fs::write(path.join("jobs.idx.migrating").join("junk"), b"x").unwrap();
+    // An interrupted creation leaves only staging, which held no job.
     fs::remove_dir_all(path.join("jobs.idx")).unwrap();
-    fs::remove_file(path.join("snapshot.bin")).unwrap();
-    assert!(Store::open(&path).is_err());
-    assert_eq!(
-        fs::read(path.join("jobs.idx.migrating/junk")).unwrap(),
-        b"x"
-    );
-    fs::rename(
-        path.join("jobs.idx.migrating"),
-        path.join("foreign-staging-kept"),
-    )
-    .unwrap();
-    assert!(Store::open(&path).is_ok());
+    drop(crate::inventory::Index::create(&path.join("jobs.idx.creating")).unwrap());
+    let mut store = Store::open(&path).unwrap();
+    assert!(!path.join("jobs.idx.creating").exists());
+    store
+        .submit(request("After an interrupted creation"))
+        .unwrap();
+    assert_eq!(store.counts().unwrap().jobs, 1);
 }
 
 #[test]
 fn no_error_text_contains_a_store_path_or_a_secret() {
     let directory = Directory::new();
-    let jobs: Vec<Job> = (0..3).map(|n| raw_job(n, 100 + n)).collect();
-    write_legacy(&directory.0, &jobs, &[], 0);
-    let mut bytes = fs::read(directory.0.join("snapshot.bin")).unwrap();
-    bytes.truncate(bytes.len() - 5);
-    private(&directory.0.join("snapshot.bin"), &bytes);
+    let mut store = Store::open(&directory.0).unwrap();
+    store.submit(request("Damaged later")).unwrap();
+    drop(store);
+    let tree = directory.0.join("jobs.idx").join("tree.bin");
+    let mut bytes = fs::read(&tree).unwrap();
+    bytes[0] ^= 0x55;
+    private(&tree, &bytes);
     let path = directory.0.to_str().unwrap().to_owned();
     for error in [
         Store::open(&directory.0).err().unwrap(),
-        Store::open_read_only(&directory.0)
-            .err()
-            .unwrap_or_default(),
+        Store::open_read_only(&directory.0).err().unwrap(),
     ] {
         assert!(!error.contains(&path), "{error}");
-    }
-}
-
-#[test]
-fn migration_preserves_a_thousand_maximum_messages_and_large_legacy_jobs() {
-    let directory = Directory::new();
-    let mut job = raw_job(1, 100);
-    job.files = vec!["x".repeat(1_100_000)];
-    let events: Vec<Event> = (1..=1_000)
-        .map(|id| Event {
-            id,
-            job_id: job.id.clone(),
-            state: job.state.clone(),
-            message: "x".repeat(MAX_EVENT_MESSAGE),
-            at: job.updated_at,
-        })
-        .collect();
-    private(
-        &directory.0.join("snapshot.bin"),
-        &fixture::snapshot(
-            std::slice::from_ref(&job),
-            &events,
-            1_000,
-            [0; 32],
-            legacy::SNAPSHOT_MAGIC,
-        ),
-    );
-    let mut store = Store::open(&directory.0).unwrap();
-    assert_eq!(store.get(&job.id).unwrap().unwrap(), job);
-    assert_eq!(store.events(&job.id).unwrap(), events);
-    assert_eq!(store.migration.as_ref().unwrap().events, 1_000);
-    job.progress = 0.5;
-    store.update(job.clone()).unwrap();
-    let history = store.events(&job.id).unwrap();
-    assert_eq!(history.len(), 1_000);
-    assert_eq!(history.first().unwrap().id, 2);
-    assert_eq!(history.last().unwrap().id, 1_001);
-    job = store.get(&job.id).unwrap().unwrap();
-    drop(store);
-    let mut reopened = Store::open_read_only(&directory.0).unwrap();
-    assert_eq!(reopened.get(&job.id).unwrap().unwrap(), job);
-    assert_eq!(reopened.events(&job.id).unwrap(), history);
-}
-
-#[test]
-fn complete_checksummed_illegal_legacy_transitions_are_refused() {
-    for ready in [false, true] {
-        let directory = Directory::new();
-        let job = if ready {
-            ready_job(1, 100)
-        } else {
-            raw_job(1, 100)
-        };
-        let mut changed = job.clone();
-        if ready {
-            changed.state = "failed".into();
-        } else {
-            changed.created_at += 1;
-        }
-        write_legacy(&directory.0, std::slice::from_ref(&job), &[changed], 0);
-        private(&directory.0.join(".lock"), b"");
-        let before = contents(&directory.0);
-        assert!(Store::open(&directory.0).is_err());
-        assert_eq!(contents(&directory.0), before);
     }
 }
 
@@ -2345,6 +1443,8 @@ fn captured_feed_routes_reach_jobs_and_library_beyond_the_former_prefix() {
         if library {
             target.imports = vec![imported.to_str().unwrap().into()];
             target.release = Some(RecordedRelease {
+                source_id: None,
+                size_bytes: None,
                 title: "Synthetic.Movie.1.2026.720p.WEB-DL.EN".into(),
                 profile: "hd".into(),
             });
@@ -2408,6 +1508,8 @@ fn captured_feed_routes_reach_jobs_and_library_beyond_the_former_prefix() {
                         title: "Synthetic.Movie.1.2026.1080p.BluRay.EN".into(),
                         url: url.clone(),
                         seeders: 5,
+                        size: None,
+                        freeleech: None,
                     },
                 }],
                 now(),
@@ -2455,61 +1557,6 @@ fn captured_feed_routes_reach_jobs_and_library_beyond_the_former_prefix() {
 }
 
 #[test]
-fn interrupted_staging_commits_are_preserved_and_rebuilt_without_foreign_data_loss() {
-    for fault in [
-        Fault::Staged,
-        Fault::Published,
-        Fault::FirstRecord,
-        Fault::FirstPage,
-        Fault::Applied,
-    ] {
-        let directory = Directory::new();
-        let jobs = vec![raw_job(1, 100)];
-        write_legacy(&directory.0, &jobs, &[], 0);
-        interrupted(&directory.0, |stage| stage == Stage::StagingCreated)
-            .err()
-            .unwrap();
-        let path = directory.0.join("jobs.idx.migrating");
-        let mut index = Index::open(&path, false).unwrap();
-        index.inject(Some(fault));
-        assert!(
-            index
-                .commit(vec![Change::Put(
-                    layout::job_key(&[9; 16]),
-                    b"partial fixture".to_vec()
-                )])
-                .is_err()
-        );
-        drop(index);
-        private(&path.join("foreign.txt"), b"retain this unrelated file");
-        expect_migrated(&directory.0, &jobs);
-        if fault == Fault::Staged {
-            // Nothing reached the disk: the cleanly closed stage resumes.
-            assert_eq!(
-                fs::read(directory.0.join("jobs.idx/foreign.txt")).unwrap(),
-                b"retain this unrelated file"
-            );
-            continue;
-        }
-        let preserved = fs::read_dir(&directory.0)
-            .unwrap()
-            .filter_map(|entry| {
-                let path = entry.unwrap().path();
-                path.file_name()
-                    .and_then(|name| name.to_str())
-                    .is_some_and(|name| name.starts_with("jobs.idx.abandoned-"))
-                    .then_some(path)
-            })
-            .next()
-            .unwrap();
-        assert_eq!(
-            fs::read(preserved.join("foreign.txt")).unwrap(),
-            b"retain this unrelated file"
-        );
-    }
-}
-
-#[test]
 fn hydrated_page_byte_limits_continue_without_skipping_large_jobs() {
     let directory = Directory::new();
     let jobs: Vec<Job> = (0..3)
@@ -2533,28 +1580,6 @@ fn hydrated_page_byte_limits_continue_without_skipping_large_jobs() {
         }
     }
     assert_eq!(seen, jobs.iter().map(|job| job.id.clone()).collect());
-}
-
-#[test]
-fn extra_secondary_keys_in_a_clean_staging_index_prevent_promotion() {
-    let directory = Directory::new();
-    let jobs = vec![raw_job(1, 100)];
-    write_legacy(&directory.0, &jobs, &[], 0);
-    interrupted(&directory.0, |stage| stage == Stage::Verified)
-        .err()
-        .unwrap();
-    let mut index = Index::open(&directory.0.join("jobs.idx.migrating"), false).unwrap();
-    index
-        .commit(vec![Change::PutInline(
-            layout::key(&[&[layout::T_TRANSFER], &[7; 16], &[8; 16]]),
-            Vec::new(),
-        )])
-        .unwrap();
-    drop(index);
-    let error = Store::open(&directory.0).err().unwrap();
-    assert!(error.contains("an index holds entries"), "{error}");
-    assert!(!directory.0.join("jobs.idx").exists());
-    assert!(directory.0.join("snapshot.bin").exists());
 }
 
 #[test]
@@ -2613,6 +1638,8 @@ fn irc_fixture_job(n: u64) -> Job {
     let mut job = raw_job(n, 100 + n);
     let torrent = format!("{n:040x}");
     let release = RecordedRelease {
+        source_id: None,
+        size_bytes: None,
         title: format!("Synthetic movie {n} 2026 1080p"),
         profile: "hd".into(),
     };
@@ -2636,138 +1663,6 @@ fn irc_fixture_job(n: u64) -> Job {
     origin.validate_job(&job).unwrap();
     job.irc_origin = Some(origin);
     job
-}
-
-#[test]
-fn management_preflight_rejects_missing_irc_reservations_before_migration_writes() {
-    let directory = Directory::new();
-    let job = irc_fixture_job(1);
-    write_legacy(&directory.0, &[job], &[], 4);
-    private(&directory.0.join(".lock"), b"");
-    let mut value = crate::config::default_json();
-    value.get_mut("downloads").unwrap().insert("enabled", false);
-    let mut config = crate::config::from_json(&value, &directory.0).unwrap();
-    config.store_dir = directory.0.clone();
-    let before = contents(&directory.0);
-    let error = Store::prepare(&directory.0, &config).err().unwrap();
-    assert!(
-        error.contains("durable announcement reservation"),
-        "{error}"
-    );
-    assert_eq!(contents(&directory.0), before);
-    assert!(!directory.0.join("jobs.idx").exists());
-    assert!(!directory.0.join("jobs.idx.migrating").exists());
-}
-
-fn remove_historical_library_fields(mut bytes: Vec<u8>, snapshot: bool) -> Vec<u8> {
-    let at = if snapshot { 16 } else { 84 };
-    let mut value =
-        crate::json::parse(std::str::from_utf8(&bytes[at..bytes.len() - 32]).unwrap()).unwrap();
-    let remove = |job: &mut Value| {
-        let Value::Object(fields) = job else {
-            panic!("Expected fixture job");
-        };
-        for field in [
-            "release",
-            "upgrade_parent",
-            "monitored",
-            "monitor_checked_at",
-        ] {
-            fields.remove(field);
-        }
-    };
-    if snapshot {
-        let Value::Array(jobs) = value.get_mut("jobs").unwrap() else {
-            panic!("Expected fixture jobs");
-        };
-        for job in jobs {
-            remove(job);
-        }
-    } else {
-        remove(value.get_mut("job").unwrap());
-    }
-    let payload = crate::json::stringify(&value).into_bytes();
-    if snapshot {
-        bytes.truncate(8);
-        bytes.extend_from_slice(&(payload.len() as u64).to_le_bytes());
-    } else {
-        bytes.truncate(52);
-        bytes[16..20].copy_from_slice(&(payload.len() as u32).to_le_bytes());
-        bytes.extend_from_slice(&crate::crypto::sha256(&bytes));
-    }
-    bytes.extend_from_slice(&payload);
-    bytes.extend_from_slice(&crate::crypto::sha256(&bytes));
-    bytes
-}
-
-#[test]
-fn historical_missing_fields_and_ready_cancellation_replay_without_weakening_new_records() {
-    for historical in [true, false] {
-        let directory = Directory::new();
-        let original = ready_job(1, 100);
-        let mut cancelled = original.clone();
-        cancelled.state = "cancelled".into();
-        cancelled.updated_at = 101;
-        let first = Event {
-            id: 1,
-            job_id: original.id.clone(),
-            state: "ready".into(),
-            message: "old import".into(),
-            at: 100,
-        };
-        let second = Event {
-            id: 2,
-            job_id: original.id.clone(),
-            state: "cancelled".into(),
-            message: "old cancel".into(),
-            at: 101,
-        };
-        let snapshot = fixture::snapshot(
-            std::slice::from_ref(&original),
-            &[first],
-            1,
-            [0; 32],
-            legacy::SNAPSHOT_MAGIC,
-        );
-        let (frame, _) = fixture::frame(
-            std::slice::from_ref(&cancelled),
-            &second,
-            2,
-            &[0; 32],
-            legacy::JOURNAL_MAGIC,
-            None,
-        );
-        private(
-            &directory.0.join("snapshot.bin"),
-            &if historical {
-                remove_historical_library_fields(snapshot, true)
-            } else {
-                snapshot
-            },
-        );
-        private(
-            &directory.0.join("journal.bin"),
-            &if historical {
-                remove_historical_library_fields(frame, false)
-            } else {
-                frame
-            },
-        );
-        private(&directory.0.join(".lock"), b"");
-        let before = contents(&directory.0);
-        if historical {
-            let mut store = Store::open(&directory.0).unwrap();
-            assert_eq!(store.get(&original.id).unwrap().unwrap(), cancelled);
-            assert_eq!(store.events(&original.id).unwrap().len(), 2);
-        } else {
-            let error = Store::open(&directory.0).err().unwrap();
-            assert!(
-                error.contains("ready import cannot change state"),
-                "{error}"
-            );
-            assert_eq!(contents(&directory.0), before);
-        }
-    }
 }
 
 #[test]
@@ -2839,135 +1734,6 @@ fn imported_child_lookup_ignores_the_parents_other_children() {
             Ok(())
         })
         .unwrap();
-}
-
-#[test]
-fn imported_child_index_upgrade_rebuilds_after_interruption_and_refuses_read_only() {
-    let directory = Directory::new();
-    let mut store = Store::open(&directory.0).unwrap();
-    let parent = monitored_fixture(1, 0);
-    bulk(&mut store, vec![parent.clone()]);
-    let mut jobs = Vec::new();
-    jobs.extend((10..230).map(|n| child_fixture(n, &parent, n % 2 == 0)));
-    bulk(&mut store, jobs);
-    drop(store);
-    let count = |index: &mut Index| {
-        let mut count = 0;
-        let mut after = None;
-        loop {
-            let page = ops::Db(index)
-                .scan(&[layout::T_IMPORTED_CHILD], after, 200)
-                .unwrap();
-            count += page.entries.len();
-            after = page.next;
-            if after.is_none() {
-                return count;
-            }
-        }
-    };
-    let mut index = Index::open(&directory.0.join("jobs.idx"), false).unwrap();
-    assert_eq!(count(&mut index), 110);
-    // Return to the previous format: drop every derived entry.
-    let mut changes = vec![Change::PutInline(
-        layout::FORMAT_KEY,
-        monitoring::FORMAT.to_vec(),
-    )];
-    let mut after = None;
-    loop {
-        let page = ops::Db(&mut index)
-            .scan(&[layout::T_IMPORTED_CHILD], after, 200)
-            .unwrap();
-        changes.extend(page.entries.iter().map(|(key, _)| Change::Delete(*key)));
-        after = page.next;
-        if after.is_none() {
-            break;
-        }
-    }
-    index.commit(changes).unwrap();
-    assert_eq!(count(&mut index), 0);
-    drop(index);
-    let before = contents(&directory.0);
-    let error = Store::open_read_only(&directory.0).err().unwrap();
-    assert!(error.contains("writable restart"), "{error}");
-    assert_eq!(contents(&directory.0), before);
-    let mut index = Index::open(&directory.0.join("jobs.idx"), false).unwrap();
-    index.inject(Some(Fault::Applied));
-    assert!(children::upgrade(&mut index, false, Path::new("/nonexistent")).is_err());
-    assert!(!index.is_usable());
-    drop(index);
-    let reopened = Store::open(&directory.0).unwrap();
-    drop(reopened);
-    let mut index = Index::open(&directory.0.join("jobs.idx"), false).unwrap();
-    assert_eq!(
-        index.get(&layout::FORMAT_KEY).unwrap().unwrap(),
-        backlog::FORMAT
-    );
-    assert!(index.get(&layout::CHILD_CURSOR_KEY).unwrap().is_none());
-    assert_eq!(count(&mut index), 110);
-    drop(index);
-    assert!(Store::open_read_only(&directory.0).is_ok());
-}
-
-#[test]
-fn imported_child_upgrade_resumes_from_a_mid_upgrade_cursor() {
-    let directory = Directory::new();
-    let mut store = Store::open(&directory.0).unwrap();
-    let parent = monitored_fixture(1, 0);
-    bulk(&mut store, vec![parent.clone()]);
-    let jobs: Vec<Job> = (10..610).map(|n| child_fixture(n, &parent, true)).collect();
-    bulk(&mut store, jobs);
-    drop(store);
-    let mut index = Index::open(&directory.0.join("jobs.idx"), false).unwrap();
-    let mut keys = Vec::new();
-    let mut after = None;
-    loop {
-        let page = ops::Db(&mut index)
-            .scan(&[layout::T_IMPORTED_CHILD], after, 200)
-            .unwrap();
-        keys.extend(page.entries.iter().map(|(key, _)| *key));
-        after = page.next;
-        if after.is_none() {
-            break;
-        }
-    }
-    assert_eq!(keys.len(), 600);
-    // A crash after the second page: its entries exist, the rest do not.
-    let mut changes: Vec<Change> = keys[400..].iter().map(|key| Change::Delete(*key)).collect();
-    let mut cursor = layout::key(&[&[layout::T_CHILD]]);
-    cursor[1..17].copy_from_slice(&keys[399][1..17]);
-    cursor[17..33].copy_from_slice(&keys[399][17..33]);
-    changes.push(Change::PutInline(
-        layout::FORMAT_KEY,
-        children::PENDING.to_vec(),
-    ));
-    changes.push(Change::Put(layout::CHILD_CURSOR_KEY, cursor.to_vec()));
-    index.commit(changes).unwrap();
-    drop(index);
-    assert!(Store::open_read_only(&directory.0).is_err());
-    drop(Store::open(&directory.0).unwrap());
-    let mut index = Index::open(&directory.0.join("jobs.idx"), false).unwrap();
-    let mut count = 0;
-    let mut after = None;
-    loop {
-        let page = ops::Db(&mut index)
-            .scan(&[layout::T_IMPORTED_CHILD], after, 200)
-            .unwrap();
-        count += page.entries.len();
-        after = page.next;
-        if after.is_none() {
-            break;
-        }
-    }
-    assert_eq!(count, 600);
-    assert!(index.get(&layout::CHILD_CURSOR_KEY).unwrap().is_none());
-    // A cursor outside the child table is refused, not skipped over.
-    index
-        .commit(vec![
-            Change::PutInline(layout::FORMAT_KEY, children::PENDING.to_vec()),
-            Change::Put(layout::CHILD_CURSOR_KEY, layout::key(&[&[0xff]]).to_vec()),
-        ])
-        .unwrap();
-    assert!(children::upgrade(&mut index, false, Path::new("/nonexistent")).is_err());
 }
 
 #[test]
@@ -3286,33 +2052,6 @@ fn index_requests(store: &Store) -> u64 {
     }
 }
 
-/// Entries of every derived `mynou-jobs/4` lookup table.
-fn ownership_entries(index: &mut Index) -> BTreeSet<Key> {
-    let mut found = BTreeSet::new();
-    for table in [
-        layout::T_TRANSFER_LIVE,
-        layout::T_TRANSFER_CANCELLED,
-        layout::T_ACQUISITION_LIVE,
-        layout::T_SHARED_PHYSICAL,
-        layout::T_PACK_MAPPING,
-        layout::T_MEDIA_READY,
-        layout::T_MEDIA_RECENT,
-        layout::T_MEDIA_BASE,
-        layout::T_PENDING_CHILD,
-    ] {
-        let mut after = None;
-        loop {
-            let page = ops::Db(index).scan(&[table], after, 200).unwrap();
-            found.extend(page.entries.iter().map(|(key, _)| *key));
-            after = page.next;
-            if after.is_none() {
-                break;
-            }
-        }
-    }
-    found
-}
-
 #[test]
 fn transfer_ownership_reads_a_fixed_window_beyond_former_limits() {
     let directory = Directory::new();
@@ -3406,121 +2145,6 @@ fn an_ownership_entry_without_a_matching_record_is_an_error() {
         .unwrap();
     let error = store.transfer_has_owner(&"c".repeat(40)).unwrap_err();
     assert!(error.contains("disagrees"), "{error}");
-}
-
-#[test]
-fn transfer_ownership_upgrade_resumes_and_refuses_read_only() {
-    let directory = Directory::new();
-    let mut store = Store::open(&directory.0).unwrap();
-    let jobs: Vec<Job> = (1..=450)
-        .map(|n| {
-            // IRC origins stay exactly as verified; they reference transfers.
-            if n % 5 == 0 {
-                return irc_fixture_job(n);
-            }
-            let mut job = raw_job(n, 100 + n);
-            job.download_id = Some(format!("{:040x}", n % 7));
-            job.acquisition_url = Some(format!("magnet:?xt=urn:btih:{n}"));
-            if n % 3 == 0 {
-                job.state = "cancelled".into();
-            }
-            job
-        })
-        .collect();
-    bulk(&mut store, jobs.clone());
-    drop(store);
-    let mut index = Index::open(&directory.0.join("jobs.idx"), false).unwrap();
-    let expected = ownership_entries(&mut index);
-    let derived: BTreeSet<Key> = jobs
-        .iter()
-        .flat_map(|job| layout::ownership(job).unwrap())
-        .collect();
-    assert_eq!(expected, derived);
-    // Return to the previous format: drop every derived entry.
-    let mut changes: Vec<Change> = expected.iter().map(|key| Change::Delete(*key)).collect();
-    changes.push(Change::PutInline(
-        layout::FORMAT_KEY,
-        children::FORMAT.to_vec(),
-    ));
-    index.commit(changes).unwrap();
-    drop(index);
-    let before = contents(&directory.0);
-    let error = Store::open_read_only(&directory.0).err().unwrap();
-    assert!(error.contains("writable restart"), "{error}");
-    assert_eq!(contents(&directory.0), before);
-    // A crash while publishing the first page leaves the pending marker.
-    let mut index = Index::open(&directory.0.join("jobs.idx"), false).unwrap();
-    index.inject(Some(Fault::Applied));
-    assert!(ownership::upgrade(&mut index, false).is_err());
-    assert!(!index.is_usable());
-    drop(index);
-    drop(Store::open(&directory.0).unwrap());
-    let mut index = Index::open(&directory.0.join("jobs.idx"), false).unwrap();
-    assert_eq!(
-        index.get(&layout::FORMAT_KEY).unwrap().unwrap(),
-        backlog::FORMAT
-    );
-    assert!(index.get(&layout::OWNERSHIP_CURSOR_KEY).unwrap().is_none());
-    assert_eq!(ownership_entries(&mut index), expected);
-    // A crash after the second page: only the remaining jobs lack entries.
-    let mut keys = Vec::new();
-    let mut after = None;
-    loop {
-        let page = ops::Db(&mut index)
-            .scan(&[layout::T_ALL], after, 200)
-            .unwrap();
-        keys.extend(page.entries.iter().map(|(key, _)| *key));
-        after = page.next;
-        if after.is_none() {
-            break;
-        }
-    }
-    assert_eq!(keys.len(), 450);
-    let mut changes = Vec::new();
-    for key in &keys[400..] {
-        let job = ops::Db(&mut index)
-            .require(&ops::key_part(key, 9).unwrap())
-            .unwrap();
-        changes.extend(
-            layout::ownership(&job)
-                .unwrap()
-                .into_iter()
-                .map(Change::Delete),
-        );
-    }
-    assert!(!changes.is_empty());
-    changes.push(Change::PutInline(
-        layout::FORMAT_KEY,
-        ownership::PENDING.to_vec(),
-    ));
-    changes.push(Change::Put(
-        layout::OWNERSHIP_CURSOR_KEY,
-        keys[399].to_vec(),
-    ));
-    index.commit(changes).unwrap();
-    drop(index);
-    assert!(Store::open_read_only(&directory.0).is_err());
-    let mut store = Store::open(&directory.0).unwrap();
-    for job in &jobs {
-        assert_eq!(store.get(&job.id).unwrap().unwrap(), *job);
-    }
-    drop(store);
-    let mut index = Index::open(&directory.0.join("jobs.idx"), false).unwrap();
-    assert_eq!(ownership_entries(&mut index), expected);
-    assert!(index.get(&layout::OWNERSHIP_CURSOR_KEY).unwrap().is_none());
-    // A cursor outside the job table is refused, not skipped over.
-    index
-        .commit(vec![
-            Change::PutInline(layout::FORMAT_KEY, ownership::PENDING.to_vec()),
-            Change::Put(
-                layout::OWNERSHIP_CURSOR_KEY,
-                layout::key(&[&[0xff]]).to_vec(),
-            ),
-        ])
-        .unwrap();
-    assert!(ownership::upgrade(&mut index, false).is_err());
-    drop(index);
-    assert!(Store::open_read_only(&directory.0).is_err());
 }
 
 #[test]
@@ -4008,132 +2632,6 @@ fn job_queries_parse_filters_strictly() {
     }
 }
 
-#[test]
-fn a_staged_migration_reports_resumable_progress_while_it_runs() {
-    use crate::progress::{Migration, migrations};
-    let jobs: Vec<Job> = (0..150).map(|n| raw_job(n, 100 + n)).collect();
-    let directory = Directory::new();
-    write_legacy(&directory.0, &jobs, &[], 0);
-    // The second of three chunks is durable when the hook observes it.
-    let mut during = Vec::new();
-    let error = interrupted(&directory.0, |stage| {
-        if stage == Stage::Chunk(2) {
-            during = migrations(&[&directory.0]);
-        }
-        stage == Stage::Chunk(2)
-    })
-    .err()
-    .unwrap();
-    assert!(error.contains("interrupted"), "{error}");
-    let copying = Migration {
-        store: "jobs",
-        stage: "copying",
-        done: 128,
-        total: Some(150),
-        resumed: false,
-    };
-    assert_eq!(during, vec![copying.clone()]);
-    // The interrupted attempt stays visible at the count it reached.
-    let failed = Migration {
-        stage: "failed",
-        ..copying
-    };
-    assert_eq!(migrations(&[&directory.0]), vec![failed.clone()]);
-    // The next writable start resumes after the durable chunks.
-    let mut resumed_during = Vec::new();
-    let store = migration::open_with(
-        &directory.0,
-        {
-            let lock = secure_file(&directory.0.join(".lock")).unwrap();
-            lock.try_lock().unwrap();
-            lock
-        },
-        false,
-        &mut |stage| {
-            if stage == Stage::Chunk(3) {
-                resumed_during = migrations(&[&directory.0]);
-            }
-            Ok(())
-        },
-    )
-    .unwrap();
-    drop(store);
-    assert_eq!(
-        resumed_during.last(),
-        Some(&Migration {
-            store: "jobs",
-            stage: "copying",
-            done: 150,
-            total: Some(150),
-            resumed: true,
-        })
-    );
-    assert_eq!(
-        migrations(&[&directory.0]),
-        vec![
-            failed,
-            Migration {
-                store: "jobs",
-                stage: "complete",
-                done: 150,
-                total: Some(150),
-                resumed: true,
-            }
-        ]
-    );
-    let report = crate::json::stringify(&crate::progress::report(&[&directory.0]));
-    assert!(!report.contains(directory.0.to_str().unwrap()));
-    assert!(!report.contains("Synthetic"));
-}
-
-#[test]
-fn full_disk_at_every_migration_flush_preserves_legacy_and_restarts() {
-    for boundary in 0..1000 {
-        let directory = Directory::new();
-        let jobs: Vec<_> = (0..70).map(|n| raw_job(n, 100 + n)).collect();
-        write_legacy(&directory.0, &jobs[..65], &jobs[65..], 0);
-        let original = fs::read(directory.0.join("snapshot.bin")).unwrap();
-        let result = crate::store::with_full_disk_after(boundary, || Store::open(&directory.0));
-        let error = match result {
-            Ok(value) => {
-                drop(value);
-                assert!(boundary > 10);
-                return;
-            }
-            Err(error) => error,
-        };
-        assert!(
-            error.starts_with("Job storage: "),
-            "boundary {boundary}: {error}"
-        );
-        assert!(
-            error.contains("disk") || error.contains(crate::store::STORAGE_FULL),
-            "boundary {boundary}: {error}"
-        );
-        assert!(!error.contains(directory.0.to_str().unwrap()), "{error}");
-        // The original remains at its live name until marker publication;
-        // afterwards the exact private backup must already exist.
-        let live = fs::read(directory.0.join("snapshot.bin")).unwrap();
-        if live != original {
-            assert!(
-                fs::read_dir(&directory.0).unwrap().any(|entry| {
-                    let path = entry.unwrap().path();
-                    path.file_name()
-                        .unwrap()
-                        .to_string_lossy()
-                        .contains(".legacy-")
-                        && fs::read(path).is_ok_and(|bytes| bytes == original)
-                }),
-                "boundary {boundary}: original snapshot lost"
-            );
-        }
-        let store = Store::open(&directory.0).unwrap();
-        drop(store);
-        expect_migrated(&directory.0, &jobs);
-    }
-    panic!("migration fixture exceeded its durability boundary budget");
-}
-
 fn assert_library_backlog(
     store: &mut Store,
     at: u64,
@@ -4240,45 +2738,6 @@ fn library_backlog_matches_interval_edges_and_clock_rollback_scheduling() {
             value.get("due"),
             Some(&Value::from(window.jobs.len().to_string()))
         );
-    }
-}
-
-#[test]
-fn library_backlog_prepares_legacy_counts_only_on_writable_startup() {
-    let directory = Directory::new();
-    let jobs: Vec<_> = (1..=401).map(|n| monitored_fixture(n, 100)).collect();
-    write_legacy(&directory.0, &jobs, &[], 0);
-    drop(secure_file(&directory.0.join(".lock")).unwrap());
-    let mut preview = Store::open_read_only(&directory.0).unwrap();
-    assert!(preview.library_backlog(160, 60, true).is_err());
-    drop(preview);
-    let mut store = Store::open(&directory.0).unwrap();
-    assert_library_backlog(&mut store, 160, 60, 401, Some(160));
-    if let Backend::Ready(index) = &mut store.backend {
-        crate::inventory::legacy_range_index(index);
-    }
-    drop(store);
-    let snapshot = contents(&directory.0);
-    let mut preview = Store::open_read_only(&directory.0).unwrap();
-    let before = preview.sequence().unwrap();
-    assert!(
-        preview
-            .library_backlog(160, 60, true)
-            .unwrap_err()
-            .contains("explicit writable upgrade")
-    );
-    assert_eq!(preview.sequence().unwrap(), before);
-    drop(preview);
-    assert_eq!(contents(&directory.0), snapshot);
-    // Target the count-upgrade commit, rather than the store's opening flush.
-    {
-        let mut index = Index::open(&directory.0.join("jobs.idx"), false).unwrap();
-        assert!(with_full_disk_after(0, || index.prepare_range_counts(1)).is_err());
-    }
-    let mut store = Store::open(&directory.0).unwrap();
-    assert_library_backlog(&mut store, 160, 60, 401, Some(160));
-    for row in jobs {
-        assert_eq!(store.get(&row.id).unwrap().unwrap(), row);
     }
 }
 
@@ -4583,115 +3042,6 @@ fn job_claim_freshness_checkpoints_success_without_idle_write_amplification() {
     assert!(store.get(&claimed.id).unwrap().is_some());
 }
 
-fn old_job_backlog_fixture(store: &mut Store) {
-    store
-        .mutate(|db| {
-            let mut changes = Vec::new();
-            let mut after = None;
-            loop {
-                let page = db.scan(&[layout::T_JOB_DUE], after, MAX_PAGE_ROWS)?;
-                changes.extend(page.entries.iter().map(|(key, _)| Change::Delete(*key)));
-                after = page.next;
-                if after.is_none() {
-                    break;
-                }
-            }
-            changes.push(Change::PutInline(
-                layout::FORMAT_KEY,
-                ownership::FORMAT.to_vec(),
-            ));
-            db.0.commit(changes)?;
-            Ok(())
-        })
-        .unwrap();
-}
-
-#[test]
-fn job_backlog_upgrade_is_read_only_safe_and_resumes_each_commit_boundary() {
-    for fault in [
-        Fault::Staged,
-        Fault::Published,
-        Fault::FirstRecord,
-        Fault::FirstPage,
-        Fault::Applied,
-        Fault::Unlinked,
-    ] {
-        let directory = Directory::new();
-        let mut store = Store::open(&directory.0).unwrap();
-        let jobs: Vec<_> = (1..=401).map(|n| raw_job(n, n)).collect();
-        bulk(&mut store, jobs.clone());
-        old_job_backlog_fixture(&mut store);
-        drop(store);
-        let before = contents(&directory.0);
-        let error = Store::open_read_only(&directory.0).err().unwrap();
-        assert!(error.contains("writable restart"), "{error}");
-        assert_eq!(contents(&directory.0), before);
-        let mut index = Index::open(&directory.0.join("jobs.idx"), false).unwrap();
-        // Interrupt a page while an explicit upgrade is in progress.
-        index
-            .commit(vec![Change::PutInline(
-                layout::FORMAT_KEY,
-                backlog::PENDING.to_vec(),
-            )])
-            .unwrap();
-        index.inject(Some(fault));
-        assert!(backlog::upgrade(&mut index, false).is_err());
-        drop(index);
-        let mut store = Store::open(&directory.0).unwrap();
-        assert_job_backlog(&mut store, 1, 401, Some(0));
-        for job in &jobs {
-            assert_eq!(store.get(&job.id).unwrap().as_ref(), Some(job));
-        }
-        if let Backend::Ready(index) = &mut store.backend {
-            assert!(
-                index
-                    .get(&layout::JOB_BACKLOG_CURSOR_KEY)
-                    .unwrap()
-                    .is_none()
-            );
-        }
-    }
-}
-
-#[test]
-fn job_backlog_upgrade_survives_full_disk_and_prepares_legacy_range_counts() {
-    let directory = Directory::new();
-    let jobs: Vec<_> = (1..=401).map(|n| raw_job(n, n)).collect();
-    write_legacy(&directory.0, &jobs, &[], 0);
-    let mut store = Store::open(&directory.0).unwrap();
-    assert_job_backlog(&mut store, 1, 401, Some(0));
-    old_job_backlog_fixture(&mut store);
-    drop(store);
-    let before = contents(&directory.0);
-    let mut index = Index::open(&directory.0.join("jobs.idx"), false).unwrap();
-    assert!(with_full_disk_after(0, || backlog::upgrade(&mut index, false)).is_err());
-    drop(index);
-    let mut store = Store::open(&directory.0).unwrap();
-    assert_job_backlog(&mut store, 1, 401, Some(0));
-    for (path, bytes) in before
-        .iter()
-        .filter(|(path, _)| path.to_string_lossy().contains(".legacy-"))
-    {
-        assert_eq!(contents(&directory.0).get(path), Some(bytes));
-    }
-    if let Backend::Ready(index) = &mut store.backend {
-        crate::inventory::legacy_range_index(index);
-    }
-    drop(store);
-    let before = contents(&directory.0);
-    let mut store = Store::open_read_only(&directory.0).unwrap();
-    assert!(
-        store
-            .job_backlog(1)
-            .unwrap_err()
-            .contains("explicit writable upgrade")
-    );
-    drop(store);
-    assert_eq!(contents(&directory.0), before);
-    let mut store = Store::open(&directory.0).unwrap();
-    assert_job_backlog(&mut store, 1, 401, Some(0));
-}
-
 #[test]
 fn job_claim_freshness_recovers_atomically_with_the_claim_cursor() {
     for fault in [
@@ -4892,6 +3242,8 @@ fn a_chosen_release_creates_or_replaces_a_request_but_never_an_active_or_importe
     let directory = Directory::new();
     let mut store = Store::open(&directory.0).unwrap();
     let chosen = |title: &str| RecordedRelease {
+        source_id: None,
+        size_bytes: None,
         title: title.into(),
         profile: "hd".into(),
     };

@@ -1,13 +1,11 @@
-//! Original storage, migration, recovery and scale scenarios. CI only; all
+//! Original storage, recovery and scale scenarios. CI only; all
 //! catalogs here are synthetic and no network is used.
 use super::{
     CalendarQuery, Episode, NumberingChoice, Plan, Record,
-    legacy::MAX_LEGACY_SNAPSHOT,
-    migration::{self, Stage},
-    storage::{Backend, SeriesStore, forge_counts, insert_many, verify_record},
+    storage::{Backend, SeriesStore, insert_many},
 };
 use crate::{
-    crypto::{random_bytes, sha256},
+    crypto::random_bytes,
     date,
     inventory::{Fault, Index},
     json::{self, Value},
@@ -17,7 +15,7 @@ use crate::{
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
-    os::unix::fs::{DirBuilderExt, PermissionsExt},
+    os::unix::fs::DirBuilderExt,
     path::{Path, PathBuf},
     time::Instant,
 };
@@ -114,40 +112,6 @@ fn record(n: u64, seasons: u32, per_season: u32, title_length: usize) -> Record 
     }
 }
 
-fn legacy_bytes(records: &[Record], schema: u32) -> Vec<u8> {
-    let payload = Value::Array(
-        records
-            .iter()
-            .map(|record| {
-                let mut value = record.to_json();
-                if schema == 1
-                    && let Value::Object(fields) = &mut value
-                {
-                    fields.remove("anchors");
-                    fields.remove("numbering");
-                }
-                value
-            })
-            .collect(),
-    );
-    let mut envelope = Value::object();
-    envelope.insert("schema_version", schema);
-    envelope.insert(
-        "digest",
-        super::hex(&sha256(json::stringify(&payload).as_bytes())),
-    );
-    envelope.insert("records", payload);
-    json::stringify(&envelope).into_bytes()
-}
-
-fn write_legacy(directory: &Path, records: &[Record], schema: u32) -> Vec<u8> {
-    let bytes = legacy_bytes(records, schema);
-    let path = directory.join("series.json");
-    fs::write(&path, &bytes).unwrap();
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
-    bytes
-}
-
 fn ready(store: &mut SeriesStore) -> &mut Index {
     match &mut store.backend {
         Backend::Ready(index) => index,
@@ -182,350 +146,12 @@ fn assert_consistent(store: &mut SeriesStore, expected: &[Record]) {
         expected.iter().filter(|record| record.monitored).count() as u64
     );
     for record in &expected {
-        verify_record(ready(store), record).unwrap();
-    }
-}
-
-fn fail_at(stage: Stage) -> impl FnMut(Stage) -> crate::Result<()> {
-    move |reached| {
-        if reached == stage {
-            Err(format!("Injected interruption at {reached:?}"))
-        } else {
-            Ok(())
-        }
-    }
-}
-
-fn marker_schema(directory: &Path) -> Option<u64> {
-    let text = fs::read_to_string(directory.join("series.json")).ok()?;
-    json::parse(&text)
-        .ok()?
-        .get("schema_version")
-        .and_then(Value::as_u64)
-}
-
-fn sample() -> Vec<Record> {
-    let mut records = vec![
-        record(1, 2, 5, 30),
-        record(2, 1, 70, 20),
-        record(3, 3, 3, 40),
-    ];
-    // An overlapping season scope of series 1 sharing its retained identities.
-    let mut scope = record(1, 0, 0, 0);
-    scope.id = identifier(40);
-    scope.plan.request = request(1, 2, 0);
-    scope.plan.episodes = records[0]
-        .plan
-        .episodes
-        .iter()
-        .filter(|episode| episode.season == 2)
-        .cloned()
-        .collect();
-    scope.anchors = super::numbering::initial_anchors(&scope.plan);
-    scope.monitored = false;
-    let choice = NumberingChoice {
-        catalog_id: records[2].plan.episodes[1].catalog_id.unwrap(),
-        catalog: EpisodeNumber {
-            season: 1,
-            episode: 2,
-        },
-        source: SourceNumber::Absolute(2),
-    };
-    records[2].numbering.insert(choice.catalog_id, choice);
-    records[1].excluded.insert((1, 4));
-    records[1].start_date = Some("2024-03-01".into());
-    records[1].last_error = Some("Catalog unavailable".into());
-    records.push(scope);
-    records
-}
-
-#[test]
-fn schema_one_and_two_snapshots_migrate_exactly_and_the_original_is_preserved() {
-    for schema in [1, 2] {
-        let directory = Directory::new();
-        let mut records = sample();
-        let original = write_legacy(&directory.0, &records, schema);
-        if schema == 1 {
-            // Schema 1 predates numbering history: identities are inferred.
-            for record in &mut records {
-                record.numbering.clear();
-                record.anchors = super::numbering::initial_anchors(&record.plan);
-            }
-        }
-        // Read-only opening neither migrates nor creates anything.
-        let before = contents(&directory.0);
-        let mut preview = SeriesStore::open(&directory.0, true).unwrap();
-        assert!(
-            preview
-                .get(&records[0].id)
-                .unwrap_err()
-                .contains("not been migrated")
-        );
-        assert!(preview.page(None, 10).is_err());
-        assert!(preview.save(records[0].clone()).is_err());
-        assert_eq!(
-            preview.describe().get("state"),
-            Some(&Value::from("needs_migration"))
-        );
-        drop(preview);
-        assert_eq!(contents(&directory.0), before);
-
-        let mut store = SeriesStore::open(&directory.0, false).unwrap();
-        let report = store.migration.clone().unwrap();
-        assert_eq!(
-            (report.records, report.resumed),
-            (records.len() as u64, false)
-        );
-        // Schema 1 carries no anchors: they are inferred, then stored.
-        assert_consistent(&mut store, &records);
-        assert_eq!(
-            fs::read(directory.0.join(&report.backup)).unwrap(),
-            original
-        );
-        assert_eq!(marker_schema(&directory.0), Some(3));
-        assert!(!directory.0.join("series.idx.migrating").exists());
-        let described = store.describe();
-        assert_eq!(
-            described.get("migration").and_then(|m| m.get("records")),
-            Some(&Value::Number(records.len() as f64))
-        );
-        drop(store);
-
-        // Reopening neither migrates again nor changes any byte.
-        let before = contents(&directory.0);
-        let mut again = SeriesStore::open(&directory.0, true).unwrap();
-        assert!(again.migration.is_none());
-        assert_consistent(&mut again, &records);
-        drop(again);
-        assert_eq!(contents(&directory.0), before);
+        assert_eq!(store.get(&record.id).unwrap().as_ref(), Some(record));
     }
 }
 
 #[test]
-fn migration_resumes_after_an_interruption_at_every_stage() {
-    let records = sample();
-    let stages = [
-        Stage::BackupWritten,
-        Stage::StagingCreated,
-        Stage::Record(1),
-        Stage::Record(2),
-        Stage::Record(records.len() as u64),
-        Stage::Verified,
-        Stage::Promoted,
-        Stage::MarkerWritten,
-    ];
-    for stage in stages {
-        let directory = Directory::new();
-        let original = write_legacy(&directory.0, &records, 2);
-        let error = migration::open_with(&directory.0, false, &mut fail_at(stage))
-            .err()
-            .unwrap();
-        assert!(error.contains("Injected"), "{stage:?}: {error}");
-        // Until the marker, older binaries still find the exact legacy file.
-        if stage != Stage::MarkerWritten {
-            assert_eq!(fs::read(directory.0.join("series.json")).unwrap(), original);
-        } else {
-            assert_eq!(marker_schema(&directory.0), Some(3));
-        }
-        // A read-only look at any interrupted state changes nothing.
-        let before = contents(&directory.0);
-        if let Ok(mut preview) = SeriesStore::open(&directory.0, true) {
-            let _ = preview.page(None, 10);
-        }
-        assert_eq!(contents(&directory.0), before, "{stage:?}");
-
-        let mut store = SeriesStore::open(&directory.0, false).unwrap();
-        assert_consistent(&mut store, &records);
-        assert_eq!(marker_schema(&directory.0), Some(3));
-        let backup = format!("series.legacy-{}.json", super::hex(&sha256(&original)[..8]));
-        assert_eq!(
-            fs::read(directory.0.join(backup)).unwrap(),
-            original,
-            "{stage:?}"
-        );
-        if matches!(stage, Stage::Record(_) | Stage::Verified) {
-            assert!(store.migration.as_ref().unwrap().resumed, "{stage:?}");
-        }
-        drop(store);
-        // Idempotent: another open changes nothing.
-        let before = contents(&directory.0);
-        drop(SeriesStore::open(&directory.0, false).unwrap());
-        assert_eq!(contents(&directory.0), before);
-    }
-}
-
-/// Applies an edit to a legacy snapshot and seals it with a matching checksum.
-fn resealed(bytes: &[u8], edit: impl FnOnce(&mut Value)) -> Vec<u8> {
-    let mut envelope = json::parse(std::str::from_utf8(bytes).unwrap()).unwrap();
-    edit(&mut envelope);
-    let digest = super::hex(&sha256(
-        json::stringify(envelope.get("records").unwrap()).as_bytes(),
-    ));
-    envelope.insert("digest", digest);
-    json::stringify(&envelope).into_bytes()
-}
-
-#[test]
-fn invalid_legacy_snapshots_are_refused_without_any_write() {
-    let valid = sample();
-    let good = legacy_bytes(&valid, 2);
-    // (name, bytes, the file is already refused when only inspected read-only)
-    let mut cases: Vec<(&str, Vec<u8>, bool)> = Vec::new();
-    cases.push((
-        "checksum",
-        String::from_utf8(good.clone())
-            .unwrap()
-            .replace("Synthetic Series 2", "Altered Series 2")
-            .into_bytes(),
-        true,
-    ));
-    cases.push((
-        "schema",
-        resealed(&good, |envelope| envelope.insert("schema_version", 9_u32)),
-        true,
-    ));
-    let mut disagreeing = valid.clone();
-    let id = *disagreeing[3].anchors.keys().next().unwrap();
-    disagreeing[3].plan.episodes.clear();
-    disagreeing[3].anchors = BTreeMap::from([(
-        id,
-        EpisodeNumber {
-            season: 9,
-            episode: 9,
-        },
-    )]);
-    cases.push(("identity", legacy_bytes(&disagreeing, 2), false));
-    let mut duplicate = valid.clone();
-    duplicate[3].plan.request = duplicate[0].plan.request.clone();
-    duplicate[3].plan.episodes.clear();
-    duplicate[3].anchors.clear();
-    cases.push(("duplicate scope", legacy_bytes(&duplicate, 2), false));
-    for mode in [
-        "missing",
-        "unknown field",
-        "duplicate anchor",
-        "orphan choice",
-    ] {
-        cases.push((
-            mode,
-            resealed(&good, |envelope| {
-                let Some(Value::Array(records)) = envelope.get_mut("records") else {
-                    panic!("records");
-                };
-                match mode {
-                    "missing" => {
-                        if let Value::Object(fields) = &mut records[0] {
-                            fields.remove("anchors");
-                        }
-                    }
-                    "unknown field" => records[0].insert("surprise", true),
-                    "duplicate anchor" => {
-                        let anchor =
-                            records[0].get("anchors").unwrap().as_array().unwrap()[0].clone();
-                        records[0].insert("anchors", Value::Array(vec![anchor.clone(), anchor]));
-                    }
-                    _ => records[0].insert(
-                        "numbering",
-                        Value::Array(vec![
-                            NumberingChoice {
-                                catalog_id: 999,
-                                catalog: EpisodeNumber {
-                                    season: 1,
-                                    episode: 1,
-                                },
-                                source: SourceNumber::Absolute(13),
-                            }
-                            .to_json(),
-                        ]),
-                    ),
-                }
-            }),
-            false,
-        ));
-    }
-    for (name, bytes, refused_read_only) in cases {
-        let directory = Directory::new();
-        let path = directory.0.join("series.json");
-        fs::write(&path, &bytes).unwrap();
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
-        let before = contents(&directory.0);
-        assert!(SeriesStore::open(&directory.0, false).is_err(), "{name}");
-        assert_eq!(
-            SeriesStore::open(&directory.0, true).is_err(),
-            refused_read_only,
-            "{name}"
-        );
-        assert_eq!(contents(&directory.0), before, "{name}");
-    }
-}
-
-#[test]
-fn conflicting_or_missing_state_is_refused_never_overwritten() {
-    let records = sample();
-    // A restored legacy snapshot that is not the one the index came from.
-    let directory = Directory::new();
-    write_legacy(&directory.0, &records, 2);
-    drop(SeriesStore::open(&directory.0, false).unwrap());
-    let other = write_legacy(&directory.0, &records[..2], 2);
-    let before = contents(&directory.0);
-    let error = SeriesStore::open(&directory.0, false).err().unwrap();
-    assert!(error.contains("differs"), "{error}");
-    assert_eq!(contents(&directory.0), before);
-    assert_eq!(fs::read(directory.0.join("series.json")).unwrap(), other);
-
-    // The marker without its index.
-    let directory = Directory::new();
-    write_legacy(&directory.0, &records, 2);
-    drop(SeriesStore::open(&directory.0, false).unwrap());
-    fs::remove_dir_all(directory.0.join("series.idx")).unwrap();
-    let error = SeriesStore::open(&directory.0, false).err().unwrap();
-    assert!(error.contains("index is missing"), "{error}");
-    assert!(SeriesStore::open(&directory.0, true).is_err());
-
-    // A marker bound to a different index.
-    let first = Directory::new();
-    let second = Directory::new();
-    write_legacy(&first.0, &records, 2);
-    write_legacy(&second.0, &records[..1], 2);
-    drop(SeriesStore::open(&first.0, false).unwrap());
-    drop(SeriesStore::open(&second.0, false).unwrap());
-    fs::copy(first.0.join("series.json"), second.0.join("series.json")).unwrap();
-    assert!(
-        SeriesStore::open(&second.0, false)
-            .err()
-            .unwrap()
-            .contains("different series index")
-    );
-
-    // A preserved snapshot name that holds other bytes is never replaced.
-    let directory = Directory::new();
-    let original = write_legacy(&directory.0, &records, 2);
-    let name = format!("series.legacy-{}.json", super::hex(&sha256(&original)[..8]));
-    fs::write(directory.0.join(&name), b"someone else's data").unwrap();
-    fs::set_permissions(directory.0.join(&name), fs::Permissions::from_mode(0o600)).unwrap();
-    let before = contents(&directory.0);
-    assert!(
-        SeriesStore::open(&directory.0, false)
-            .err()
-            .unwrap()
-            .contains("refusing to overwrite")
-    );
-    assert_eq!(contents(&directory.0), before);
-
-    // Staging built from other bytes is derived data and is rebuilt.
-    let directory = Directory::new();
-    write_legacy(&directory.0, &records[..2], 2);
-    migration::open_with(&directory.0, false, &mut fail_at(Stage::Record(1)))
-        .err()
-        .unwrap();
-    write_legacy(&directory.0, &records, 2);
-    let mut store = SeriesStore::open(&directory.0, false).unwrap();
-    assert!(!store.migration.as_ref().unwrap().resumed);
-    assert_consistent(&mut store, &records);
-}
-
-#[test]
-fn empty_stores_create_nothing_and_the_first_write_publishes_index_and_marker() {
+fn empty_stores_create_nothing_and_the_first_write_publishes_the_index() {
     let directory = Directory::new();
     for read_only in [true, false] {
         let mut store = SeriesStore::open(&directory.0, read_only).unwrap();
@@ -549,24 +175,19 @@ fn empty_stores_create_nothing_and_the_first_write_publishes_index_and_marker() 
 
     let mut store = SeriesStore::open(&directory.0, false).unwrap();
     store.save(record(1, 1, 2, 10)).unwrap();
-    assert_eq!(marker_schema(&directory.0), Some(3));
+    assert!(directory.0.join("series.idx").is_dir());
     drop(store);
     let mut store = SeriesStore::open(&directory.0, true).unwrap();
     assert_eq!(store.counts().unwrap().series, 1);
     drop(store);
 
-    // An interrupted first creation leaves only derived staging, replaced later.
+    // An interrupted first creation leaves only staging, replaced later.
     let directory = Directory::new();
-    drop(Index::create(&directory.0.join("series.idx.migrating")).unwrap());
+    drop(Index::create(&directory.0.join("series.idx.creating")).unwrap());
     let mut store = SeriesStore::open(&directory.0, false).unwrap();
     store.save(record(2, 1, 2, 10)).unwrap();
-    assert!(!directory.0.join("series.idx.migrating").exists());
-    // A published index whose marker was never written is completed on open.
-    drop(store);
-    fs::remove_file(directory.0.join("series.json")).unwrap();
-    let store = SeriesStore::open(&directory.0, false).unwrap();
-    assert_eq!(marker_schema(&directory.0), Some(3));
-    drop(store);
+    assert!(!directory.0.join("series.idx.creating").exists());
+    assert_eq!(store.counts().unwrap().series, 1);
 }
 
 #[test]
@@ -575,11 +196,9 @@ fn inventories_above_every_former_limit_page_completely_and_survive_restart() {
     let scopes = 129;
     let records: Vec<Record> = (1..=scopes).map(|n| record(n, 2, 78, 300)).collect();
     let episodes: usize = records.iter().map(|r| r.plan.episodes.len()).sum();
-    let snapshot = legacy_bytes(&records, 2).len();
-    // More scopes, retained episodes and bytes than the old snapshot allowed.
+    // More scopes and retained episodes than the old snapshot allowed.
     assert!(records.len() > 128);
     assert!(episodes > 20_000, "{episodes}");
-    assert!(snapshot > MAX_LEGACY_SNAPSHOT, "{snapshot}");
 
     let started = Instant::now();
     let mut store = SeriesStore::open(&directory.0, false).unwrap();
@@ -587,7 +206,7 @@ fn inventories_above_every_former_limit_page_completely_and_survive_restart() {
     insert_many(ready(&mut store), &records[1..]).unwrap();
     assert_eq!(store.counts().unwrap().series, scopes);
     eprintln!(
-        "series-above-limits scopes={scopes} episodes={episodes} snapshot_bytes={snapshot} load_ms={}",
+        "series-above-limits scopes={scopes} episodes={episodes} load_ms={}",
         started.elapsed().as_millis()
     );
     drop(store);
@@ -597,7 +216,7 @@ fn inventories_above_every_former_limit_page_completely_and_survive_restart() {
     expected.sort_by(|a, b| a.id.cmp(&b.id));
     assert_eq!(load_all(&mut store), expected);
     for record in [&expected[0], &expected[64], &expected[128]] {
-        verify_record(ready(&mut store), record).unwrap();
+        assert_eq!(store.get(&record.id).unwrap().as_ref(), Some(record));
     }
     // Every summary is reachable page by page, in order, exactly once.
     let mut seen = Vec::new();
@@ -1183,126 +802,6 @@ fn resident_kib() -> u64 {
 }
 
 #[test]
-fn empty_and_old_limit_snapshots_migrate_and_counters_never_underflow() {
-    // An empty snapshot is a valid snapshot.
-    let directory = Directory::new();
-    let original = write_legacy(&directory.0, &[], 2);
-    let mut store = SeriesStore::open(&directory.0, false).unwrap();
-    let report = store.migration.clone().unwrap();
-    assert_eq!((report.records, report.episodes), (0, 0));
-    assert_eq!(store.counts().unwrap().series, 0);
-    assert_eq!(
-        fs::read(directory.0.join(&report.backup)).unwrap(),
-        original
-    );
-    assert_eq!(marker_schema(&directory.0), Some(3));
-    store.save(record(1, 1, 2, 10)).unwrap();
-    drop(store);
-
-    // A snapshot at the old limits: 128 scopes, just under 20,000 episodes and
-    // just under 8 MiB, the largest file the old store could have written.
-    let directory = Directory::new();
-    let records: Vec<Record> = (1..=128).map(|n| record(n, 2, 78, 300)).collect();
-    let bytes = write_legacy(&directory.0, &records, 2);
-    let episodes: usize = records.iter().map(|r| r.plan.episodes.len()).sum();
-    assert_eq!(episodes, 19_968);
-    assert!(bytes.len() > 7 * 1024 * 1024 && bytes.len() <= MAX_LEGACY_SNAPSHOT);
-    let started = Instant::now();
-    let mut store = SeriesStore::open(&directory.0, false).unwrap();
-    eprintln!(
-        "series-migration-at-old-limits scopes=128 episodes={episodes} snapshot_bytes={} elapsed_ms={}",
-        bytes.len(),
-        started.elapsed().as_millis()
-    );
-    let mut expected = records.clone();
-    expected.sort_by(|a, b| a.id.cmp(&b.id));
-    assert_eq!(load_all(&mut store), expected);
-    assert_eq!(store.counts().unwrap().series, 128);
-    verify_record(ready(&mut store), &expected[127]).unwrap();
-    drop(store);
-
-    // Counters that disagree with the records are an error, not a panic or wrap.
-    let directory = Directory::new();
-    let mut store = SeriesStore::open(&directory.0, false).unwrap();
-    store.save(record(1, 1, 2, 10)).unwrap();
-    forge_counts(ready(&mut store), 1, 0).unwrap();
-    let mut changed = record(1, 1, 2, 10);
-    changed.monitored = false;
-    changed.revision = 2;
-    assert!(
-        store
-            .save(changed)
-            .unwrap_err()
-            .contains("counters disagree")
-    );
-    assert_eq!(store.counts().unwrap().monitored, 0);
-}
-
-#[test]
-fn a_preserved_copy_must_be_a_private_regular_file_of_the_exact_size() {
-    use std::os::unix::fs::symlink;
-    let records = sample();
-    let original = legacy_bytes(&records, 2);
-    let name = format!("series.legacy-{}.json", super::hex(&sha256(&original)[..8]));
-    for case in ["public", "hard link", "symlink", "oversized", "directory"] {
-        let directory = Directory::new();
-        write_legacy(&directory.0, &records, 2);
-        let backup = directory.0.join(&name);
-        match case {
-            "public" => {
-                fs::write(&backup, &original).unwrap();
-                fs::set_permissions(&backup, fs::Permissions::from_mode(0o644)).unwrap();
-            }
-            "hard link" => {
-                fs::write(&backup, &original).unwrap();
-                fs::set_permissions(&backup, fs::Permissions::from_mode(0o600)).unwrap();
-                fs::hard_link(&backup, directory.0.join("alias")).unwrap();
-            }
-            "symlink" => {
-                fs::write(directory.0.join("target"), &original).unwrap();
-                symlink(directory.0.join("target"), &backup).unwrap();
-            }
-            "oversized" => {
-                fs::write(&backup, vec![b'x'; original.len() + 1]).unwrap();
-                fs::set_permissions(&backup, fs::Permissions::from_mode(0o600)).unwrap();
-            }
-            _ => fs::create_dir(&backup).unwrap(),
-        }
-        let before = contents(&directory.0);
-        assert!(SeriesStore::open(&directory.0, false).is_err(), "{case}");
-        assert_eq!(contents(&directory.0), before, "{case}");
-    }
-    // The same bytes in a private file are accepted and reused.
-    let directory = Directory::new();
-    write_legacy(&directory.0, &records, 2);
-    let backup = directory.0.join(&name);
-    fs::write(&backup, &original).unwrap();
-    fs::set_permissions(&backup, fs::Permissions::from_mode(0o600)).unwrap();
-    let mut store = SeriesStore::open(&directory.0, false).unwrap();
-    assert_consistent(&mut store, &records);
-}
-
-/// The legacy snapshot, swapped after inspection, is refused at open time
-/// without blocking, including for another regular file with the same bytes.
-#[test]
-fn a_swapped_legacy_snapshot_is_refused_at_open_without_blocking() {
-    use crate::store::open_tests::{Swap, swapped};
-    for swap in [Swap::Symlink, Swap::Fifo, Swap::Replaced] {
-        let dir = Directory::new();
-        write_legacy(&dir.0, &sample(), 2);
-        let path = dir.0.join("series.json");
-        let error = swapped("series.json", 0, swap, move || {
-            super::legacy::inspect(&path, false).map(drop)
-        });
-        match swap {
-            Swap::Symlink => assert!(error.starts_with("Cannot open series snapshot"), "{error}"),
-            Swap::Fifo => assert_eq!(error, "Invalid or oversized series snapshot"),
-            Swap::Replaced => assert_eq!(error, "Series snapshot changed while opening"),
-        }
-    }
-}
-
-#[test]
 fn series_due_pass_bounds_corrupt_prefix_and_resumes_after_restart() {
     use crate::engine::{Engine, lock};
     let directory = Directory::new();
@@ -1394,53 +893,6 @@ fn series_due_pass_bounds_corrupt_prefix_and_resumes_after_restart() {
     );
 }
 
-#[test]
-fn full_disk_at_every_migration_flush_preserves_legacy_and_restarts() {
-    for boundary in 0..1000 {
-        let directory = Directory::new();
-        let records = sample();
-        let original = write_legacy(&directory.0, &records, 2);
-        let result =
-            crate::store::with_full_disk_after(boundary, || SeriesStore::open(&directory.0, false));
-        let error = match result {
-            Ok(value) => {
-                drop(value);
-                assert!(boundary > 10);
-                return;
-            }
-            Err(error) => error,
-        };
-        assert!(
-            error.starts_with("Series storage: "),
-            "boundary {boundary}: {error}"
-        );
-        assert!(
-            error.contains("disk") || error.contains(crate::store::STORAGE_FULL),
-            "boundary {boundary}: {error}"
-        );
-        assert!(!error.contains(directory.0.to_str().unwrap()), "{error}");
-        // The original remains at its live name until marker publication;
-        // afterwards the exact private backup must already exist.
-        let live = fs::read(directory.0.join("series.json")).unwrap();
-        if live != original {
-            assert!(
-                fs::read_dir(&directory.0).unwrap().any(|entry| {
-                    let path = entry.unwrap().path();
-                    path.file_name()
-                        .unwrap()
-                        .to_string_lossy()
-                        .contains(".legacy-")
-                        && fs::read(path).is_ok_and(|bytes| bytes == original)
-                }),
-                "boundary {boundary}: original snapshot lost"
-            );
-        }
-        let mut store = SeriesStore::open(&directory.0, false).unwrap();
-        assert_consistent(&mut store, &records);
-    }
-    panic!("migration fixture exceeded its durability boundary budget");
-}
-
 fn assert_backlog(store: &mut SeriesStore, now: u64, count: u64, oldest: Option<u64>) {
     let sequence = store.sequence().unwrap();
     let before = match &store.backend {
@@ -1507,62 +959,6 @@ fn series_backlog_is_bounded_after_growth_removal_restart_and_clock_boundaries()
     );
     drop(store);
     assert_eq!(contents(&directory.0), before);
-}
-
-#[test]
-fn series_backlog_survives_snapshot_and_legacy_branch_upgrades() {
-    for schema in [1, 2] {
-        let directory = Directory::new();
-        let records = sample();
-        let original = write_legacy(&directory.0, &records, schema);
-        let before = contents(&directory.0);
-        let mut preview = SeriesStore::open(&directory.0, true).unwrap();
-        assert!(preview.backlog(u64::MAX).is_err());
-        drop(preview);
-        assert_eq!(contents(&directory.0), before);
-        let mut store = SeriesStore::open(&directory.0, false).unwrap();
-        let monitored: Vec<_> = records.iter().filter(|r| r.monitored).collect();
-        assert_backlog(
-            &mut store,
-            u64::MAX,
-            monitored.len() as u64,
-            monitored.iter().map(|r| r.next_check_at).min(),
-        );
-        assert_eq!(
-            store.backlog(10000).unwrap().get("last_completed_pass_at"),
-            Some(&Value::Null)
-        );
-        assert_eq!(
-            fs::read(directory.0.join(&store.migration.as_ref().unwrap().backup)).unwrap(),
-            original
-        );
-    }
-    let directory = Directory::new();
-    let mut store = SeriesStore::open(&directory.0, false).unwrap();
-    let records: Vec<_> = (1..400).map(|n| record(n, 1, 1, 4)).collect();
-    store.save(records[0].clone()).unwrap();
-    insert_many(ready(&mut store), &records[1..]).unwrap();
-    crate::inventory::legacy_range_index(ready(&mut store));
-    drop(store);
-    let before = contents(&directory.0);
-    let mut preview = SeriesStore::open(&directory.0, true).unwrap();
-    assert!(
-        preview
-            .backlog(u64::MAX)
-            .unwrap_err()
-            .contains("explicit writable upgrade")
-    );
-    drop(preview);
-    assert_eq!(contents(&directory.0), before);
-    // Fail the first upgrade flush, then resume via normal writable startup.
-    assert!(
-        crate::store::with_full_disk_after(0, || SeriesStore::open(&directory.0, false)).is_err()
-    );
-    let mut store = SeriesStore::open(&directory.0, false).unwrap();
-    assert_backlog(&mut store, u64::MAX, 399, Some(1001));
-    for row in &records {
-        assert_eq!(store.get(&row.id).unwrap().unwrap(), *row);
-    }
 }
 
 #[test]

@@ -113,9 +113,9 @@ impl Accounts {
                 let target = header.split(' ').nth(1).unwrap();
                 let path = target.split('?').next().unwrap();
                 let expected = if path.starts_with("/bob/") {
-                    std::env::var("PWD").unwrap()
+                    std::env::var("MYNOU_TEST_SECRET_B").unwrap()
                 } else {
-                    std::env::var("PATH").unwrap()
+                    std::env::var("MYNOU_TEST_SECRET_A").unwrap()
                 };
                 assert!(
                     header
@@ -211,14 +211,14 @@ impl Accounts {
             Account {
                 id: "alice".into(),
                 expected_user_id: "101".into(),
-                token_env: "PATH".into(),
+                token_env: "MYNOU_TEST_SECRET_A".into(),
                 identity_url: format!("{}/alice/identity", self.url),
                 watchlist_url: format!("{}/alice/watchlist", self.url),
             },
             Account {
                 id: "bob".into(),
                 expected_user_id: "202".into(),
-                token_env: "PWD".into(),
+                token_env: "MYNOU_TEST_SECRET_B".into(),
                 identity_url: format!("{}/bob/identity", self.url),
                 watchlist_url: format!("{}/bob/watchlist", self.url),
             },
@@ -267,7 +267,14 @@ pub fn show() -> Value {
     v
 }
 pub fn policy(engine: &Engine, id: &str) -> Policy {
-    Policy::from_json(engine.requester(id, 0, 100).unwrap().get("policy").unwrap()).unwrap()
+    Policy::from_json(
+        engine
+            .requester(id, None, 100)
+            .unwrap()
+            .get("policy")
+            .unwrap(),
+    )
+    .unwrap()
 }
 pub fn policy_query(policy: Policy) -> ControlRequest {
     ControlRequest {
@@ -300,7 +307,7 @@ pub fn enable(engine: &Engine, id: &str) {
 }
 pub fn demands(engine: &Engine, id: &str) -> Vec<Value> {
     engine
-        .requester(id, 0, 200)
+        .requester(id, None, 200)
         .unwrap()
         .get("demands")
         .unwrap()
@@ -339,12 +346,8 @@ pub fn ready(engine: &Engine, id: &str) -> Job {
     lock(&engine.store).unwrap().update(job.clone()).unwrap();
     job
 }
-// Synthetic fixtures may materialize the complete ledger to exercise legacy recovery.
+/// The complete stored ledger of a closed store, read from its index.
 pub fn read_snapshot(directory: &Path) -> Value {
-    let bytes = fs::read(directory.join("requesters.bin")).unwrap();
-    if !bytes.starts_with(b"MYNOUR04") {
-        return json::parse(std::str::from_utf8(&bytes[16..bytes.len() - 32]).unwrap()).unwrap();
-    }
     use mynou::inventory::{Index, MAX_VALUE_BYTES, Query};
     let mut index = Index::open(&directory.join("requesters.idx"), true).unwrap();
     let mut value =
@@ -396,25 +399,9 @@ pub fn read_snapshot(directory: &Path) -> Value {
     value.insert("operator_jobs", Value::Array(operators));
     value
 }
-pub fn write_snapshot(directory: &Path, value: &Value) {
-    write_snapshot_format(directory, b"MYNOUR01", value);
-}
-pub fn write_snapshot_format(directory: &Path, magic: &[u8; 8], value: &Value) {
-    // Deliberately restore legacy synthetic data; preserve the published index.
-    let index = directory.join("requesters.idx");
-    if index.exists() {
-        fs::rename(&index, directory.join("requesters.idx.fixture-original")).unwrap();
-    }
-    let payload = json::stringify(value).into_bytes();
-    let mut bytes = magic.to_vec();
-    bytes.extend_from_slice(&(payload.len() as u64).to_le_bytes());
-    bytes.extend_from_slice(&payload);
-    bytes.extend_from_slice(&sha256(&bytes));
-    fs::write(directory.join("requesters.bin"), bytes).unwrap();
-}
 pub fn no_credentials(v: &Value) {
     let s = json::stringify(v);
-    for name in ["PATH", "PWD"] {
+    for name in ["MYNOU_TEST_SECRET_A", "MYNOU_TEST_SECRET_B"] {
         assert!(!s.contains(&std::env::var(name).unwrap()));
     }
     assert!(!s.contains("X-Plex-Token"));

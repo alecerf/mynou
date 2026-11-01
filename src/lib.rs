@@ -22,7 +22,6 @@ pub mod pack;
 pub mod pki;
 pub mod plex;
 pub mod profiles;
-pub mod progress;
 pub mod requesters;
 pub mod selection;
 pub mod series;

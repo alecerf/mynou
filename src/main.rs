@@ -220,7 +220,6 @@ fn execute(args: Args) -> Result<()> {
     let supervised = args.command == "service-run";
     if supervised {
         mynou::service::log(&path, "starting")?;
-        mynou::service::report_progress(&path);
     }
     let (config, online) = if args.command == "serve" || supervised {
         (config::load(&path)?, false)
@@ -270,7 +269,7 @@ fn execute(args: Args) -> Result<()> {
         mynou::service::preflight(&path, &config)?;
     }
     ensure_data_dir(&path)?;
-    // The listener answers health and migration progress while storage opens.
+    // The listener answers health checks while storage opens.
     let access = mynou::access::stored(&config.store_dir)?;
     let startup = mynou::server::Startup::bind(
         &config,
@@ -313,7 +312,6 @@ fn execute(args: Args) -> Result<()> {
 }
 
 fn main() {
-    mynou::progress::set_reporter(|migration| eprintln!("mynou: {}", migration.describe()));
     let args = Args::parse();
     let service_path = args
         .as_ref()

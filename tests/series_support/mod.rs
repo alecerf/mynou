@@ -141,7 +141,7 @@ impl Catalog {
         config.catalog.enabled = true;
         config.catalog.url = format!("{}/3", self.url);
         // Existing nonsecret PATH supplies a fixture-only Bearer value, without mutating process environment.
-        config.catalog.token_env = "PATH".into();
+        config.catalog.token_env = "MYNOU_TEST_SECRET_A".into();
         config
     }
     pub fn wait_for_calls(&self, previous: usize) {
@@ -212,62 +212,16 @@ fn collect(path: &Path, prefix: &str, files: &mut Vec<(String, Vec<u8>)>) {
     }
 }
 
-/// Every byte of series storage: the marker or snapshot and the whole index.
+/// Every byte of series storage: the whole index.
 pub fn series_state(store_dir: &Path) -> Vec<(String, Vec<u8>)> {
     let mut files = Vec::new();
-    for name in ["series.json", "series.idx", "series.idx.migrating"] {
+    for name in ["series.idx", "series.idx.creating"] {
         collect(&store_dir.join(name), name, &mut files);
     }
     files
 }
 
-/// A pre-index `series.json` (schema 1 omits numbering history) rebuilt from
-/// the public records of a series.
-pub fn legacy_snapshot(records: &[Value], schema: u32) -> Vec<u8> {
-    let payload = Value::Array(
-        records
-            .iter()
-            .map(|record| {
-                let mut record = record.clone();
-                if let Some(Value::Array(episodes)) = record.get_mut("episodes") {
-                    for episode in episodes {
-                        if let Value::Object(fields) = episode {
-                            fields.remove("monitored");
-                            fields.remove("excluded");
-                        }
-                    }
-                }
-                if schema == 1
-                    && let Value::Object(fields) = &mut record
-                {
-                    fields.remove("anchors");
-                    fields.remove("numbering");
-                }
-                record
-            })
-            .collect(),
-    );
-    let digest: String = mynou::crypto::sha256(json::stringify(&payload).as_bytes())
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect();
-    let mut envelope = Value::object();
-    envelope.insert("schema_version", schema);
-    envelope.insert("digest", digest);
-    envelope.insert("records", payload);
-    json::stringify(&envelope).into_bytes()
-}
-
-/// Turns a store directory back into what 0.23 and earlier left behind.
-pub fn restore_legacy(store_dir: &Path, bytes: &[u8]) {
-    use std::os::unix::fs::PermissionsExt;
-    let _ = std::fs::remove_dir_all(store_dir.join("series.idx"));
-    let path = store_dir.join("series.json");
-    std::fs::write(&path, bytes).unwrap();
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
-}
-
-/// A minimal valid legacy series record: one future episode, no choices.
+/// A minimal valid series record: one future episode, no choices.
 pub fn synthetic_record(
     id: &str,
     tmdb_id: u64,
@@ -276,11 +230,50 @@ pub fn synthetic_record(
     catalog_id: u64,
     next_check_at: u64,
     monitored: bool,
-) -> Value {
-    json::parse(&format!(
-        r#"{{"id":"{id}","request":{{"kind":"series","title":"{title}","year":{year},"season":0,"episode":0,"source_path":null,"source_url":null,"tmdb_id":{tmdb_id}}},"episodes":[{{"catalog_id":{catalog_id},"season":1,"episode":1,"title":"Future","air_date":"2200-01-01"}}],"anchors":[{{"catalog_id":{catalog_id},"season":1,"episode":1}}],"numbering":[],"monitored":{monitored},"include_specials":false,"start_date":null,"excluded":[],"revision":"1","created_at":"1","updated_at":"1","checked_at":"1","next_check_at":"{next_check_at}","last_error":null}}"#
-    ))
-    .unwrap()
+) -> mynou::series::Record {
+    use mynou::numbering::EpisodeNumber;
+    mynou::series::Record {
+        id: id.into(),
+        plan: mynou::series::Plan {
+            request: mynou::store::Request {
+                kind: "series".into(),
+                title: title.into(),
+                year,
+                season: 0,
+                episode: 0,
+                tmdb_id: Some(tmdb_id),
+                source_numbering: None,
+                source_path: None,
+                source_url: None,
+            },
+            episodes: vec![mynou::series::Episode {
+                catalog_id: Some(catalog_id),
+                season: 1,
+                episode: 1,
+                title: "Future".into(),
+                air_date: Some("2200-01-01".into()),
+            }],
+        },
+        monitored,
+        include_specials: false,
+        start_date: None,
+        excluded: Default::default(),
+        revision: 1,
+        created_at: 1,
+        updated_at: 1,
+        checked_at: 1,
+        next_check_at,
+        last_error: None,
+        anchors: [(
+            catalog_id,
+            EpisodeNumber {
+                season: 1,
+                episode: 1,
+            },
+        )]
+        .into(),
+        numbering: Default::default(),
+    }
 }
 
 /// A 32-character record identifier derived from a number.

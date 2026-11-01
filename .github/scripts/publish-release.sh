@@ -39,9 +39,9 @@ cat >> "$notes" <<EOF
 <!-- mynou-ci-release -->
 Mynou $version uses Rust 1.99.1 and the standard library only: no Cargo dependencies, FFI, or external programs at runtime, and no unsafe code outside the SHA instructions.
 
-This release was built and published by [GitHub Actions]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID) after dependency, formatting, Clippy, test and native start checks passed on macOS.
+This release was built by [GitHub Actions]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID) after dependency, formatting, Clippy, test and native start checks passed on macOS, then signed and published with the release key, which never reaches GitHub.
 
-Release assets contain only the native macOS Apple Silicon executable and one \`SHA256SUMS\` manifest. Verify the manifest entry before installation; the [verification guide]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$tag/docs/validation.md#verify-release-assets) explains how. GitHub's native source downloads remain available.
+Release assets contain only the native macOS Apple Silicon executable, one \`SHA256SUMS\` manifest and its \`SHA256SUMS.sig\` signature by the release key, made outside GitHub. Verify the signature and the manifest entry before installation; the [verification guide]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$tag/docs/validation.md#verify-release-assets) explains how. GitHub's native source downloads remain available.
 
 Follow the [macOS guide]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$tag/docs/macos.md). No Apple Developer signature or notarization is supplied. Configure Plex and media sources before synchronization. [Protocol and format limits]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$tag/docs/limits.md) remain explicit.
 
@@ -56,4 +56,6 @@ gh release upload "$tag" ./* --repo "$GITHUB_REPOSITORY"
 expected_files=$(find . -maxdepth 1 -type f | wc -l)
 uploaded_files=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets|length')
 [[ "$uploaded_files" -eq "$expected_files" ]]
-gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+# The draft is published by .github/scripts/sign-release.sh on the
+# maintainer's Mac, once the release key signed SHA256SUMS.
+printf 'Draft %s is ready to sign.\n' "$tag"

@@ -291,7 +291,7 @@ fn engine(
 fn received(engine: &Engine, count: usize) -> Vec<Value> {
     wait(|| {
         engine
-            .irc_announcements(0, 200)
+            .irc_announcements(None, 200)
             .unwrap()
             .get("announcements")
             .unwrap()
@@ -301,7 +301,7 @@ fn received(engine: &Engine, count: usize) -> Vec<Value> {
             == count
     });
     engine
-        .irc_announcements(0, 200)
+        .irc_announcements(None, 200)
         .unwrap()
         .get("announcements")
         .unwrap()

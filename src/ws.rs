@@ -267,8 +267,15 @@ struct Watch {
     last: Option<String>,
 }
 
-/// Serves an upgraded socket until it closes, errors or the engine stops.
-pub fn serve(stream: &mut TcpStream, engine: &Arc<Engine>, route: Route) -> Result<()> {
+/// Serves an upgraded socket until it closes, errors, the engine stops or
+/// the client is no longer `admitted`: a session that expired, or that a new
+/// password ended, closes the socket too.
+pub fn serve(
+    stream: &mut TcpStream,
+    engine: &Arc<Engine>,
+    route: Route,
+    admitted: &dyn Fn() -> bool,
+) -> Result<()> {
     stream
         .set_read_timeout(Some(TICK))
         .map_err(|e| e.to_string())?;
@@ -280,6 +287,10 @@ pub fn serve(stream: &mut TcpStream, engine: &Arc<Engine>, route: Route) -> Resu
     loop {
         if engine.stopped.load(Ordering::Acquire) {
             return send(stream, 8, &1001u16.to_be_bytes());
+        }
+        if !admitted() {
+            // 1008: policy violation. The page asks for the password again.
+            return send(stream, 8, &1008u16.to_be_bytes());
         }
         match stream.read(&mut chunk) {
             Ok(0) => return Ok(()),

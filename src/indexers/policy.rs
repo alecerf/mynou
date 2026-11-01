@@ -14,8 +14,6 @@ use std::{
     time::{Duration, Instant},
 };
 mod storage;
-const MAGIC: &[u8; 8] = b"MYNOUS01";
-const MAX_BYTES: usize = 2 * 1024 * 1024;
 fn text(v: &Value, k: &str) -> Result<String> {
     v.get(k)
         .and_then(Value::as_str)

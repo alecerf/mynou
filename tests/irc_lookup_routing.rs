@@ -158,7 +158,7 @@ fn configuration_with(root: &Path, http: &str, json_source: bool) -> Config {
     let catalog = v.get_mut("catalog").unwrap();
     catalog.insert("enabled", true);
     catalog.insert("url", format!("{http}/3"));
-    catalog.insert("token_env", "PATH");
+    catalog.insert("token_env", "MYNOU_TEST_SECRET_A");
     config::from_json(&v, root).unwrap()
 }
 fn request() -> Request {
@@ -375,7 +375,7 @@ fn private_release_downloads(s: Setup) {
             .all(|p| p == metainfo.to_str().unwrap() || p.starts_with(&state)),
         "{found:?}"
     );
-    let row = s.engine.irc_announcements(0, 10).unwrap();
+    let row = s.engine.irc_announcements(None, 10).unwrap();
     for v in [
         public_job(&ready),
         s.engine.irc_sources().unwrap(),

@@ -27,7 +27,7 @@ fn source(v: &mut Value) -> &mut Value {
     &mut s[0]
 }
 fn nickserv() -> Value {
-    json::parse(r#"{"account":"fixture","password_env":"PWD","service":"NickServ","sender":"NickServ!service@fixture","success_notice":"Identified as {account}","failure_notices":["Invalid password","Account unavailable"]}"#).unwrap()
+    json::parse(r#"{"account":"fixture","password_env":"MYNOU_TEST_SECRET_B","service":"NickServ","sender":"NickServ!service@fixture","success_notice":"Identified as {account}","failure_notices":["Invalid password","Account unavailable"]}"#).unwrap()
 }
 fn configured(url: &str) -> Value {
     let mut v = value(url);
@@ -74,7 +74,7 @@ fn identify(stream: &mut TcpStream) {
         line(stream)
             == format!(
                 "PRIVMSG NickServ :IDENTIFY fixture {}",
-                std::env::var("PWD").unwrap()
+                std::env::var("MYNOU_TEST_SECRET_B").unwrap()
             )
     );
 }
@@ -137,7 +137,7 @@ fn service_configuration_is_strict_and_legacy_source_bindings_are_unchanged() {
     let mut both = configured("irc://127.0.0.1:1");
     source(&mut both).insert(
         "sasl",
-        json::parse(r#"{"mechanism":"PLAIN","username_env":"PWD","password_env":"PWD"}"#).unwrap(),
+        json::parse(r#"{"mechanism":"PLAIN","username_env":"MYNOU_TEST_SECRET_B","password_env":"MYNOU_TEST_SECRET_B"}"#).unwrap(),
     );
     assert!(config::from_json(&both, &dir.0).is_err());
     let e = Engine::open(cfg.clone()).unwrap();
@@ -271,10 +271,9 @@ fn live_reconnect_and_restart_repeat_identification_and_retain_first_receipts() 
     );
     assert_eq!(rows(&e).len(), 1);
     // Idle job claim scans now persist independent scheduler freshness.
-    // Duplicate receipt handling must still leave the entire IRC index and
-    // its identity marker byte-for-byte unchanged, without creating jobs.
+    // Duplicate receipt handling must still leave the entire IRC index
+    // byte-for-byte unchanged, without creating jobs.
     let receipts = cfg.store_dir.join("announcements.idx");
-    let marker = fs::read(cfg.store_dir.join("announcements.bin")).unwrap();
     private(&e.irc_sources().unwrap());
     no_jobs(&e);
     drop(workers);
@@ -290,10 +289,6 @@ fn live_reconnect_and_restart_repeat_identification_and_retain_first_receipts() 
     wait(|| health(&e).get("received").unwrap().as_str() == Some("1"));
     assert_eq!(health(&e).get("duplicates").unwrap().as_str(), Some("1"));
     assert_eq!(bytes(&receipts), before);
-    assert_eq!(
-        fs::read(cfg.store_dir.join("announcements.bin")).unwrap(),
-        marker
-    );
     no_jobs(&e);
     drop(workers);
     peer.join().unwrap();

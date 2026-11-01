@@ -102,6 +102,11 @@ pub struct Options {
     reset_pending: Arc<AtomicBool>,
     pub enabled: bool,
     pub min_interval_ms: u64,
+    pub priority: u32,
+    pub minimum_seeders: Option<u64>,
+    pub prefer_freeleech: bool,
+    pub seed_ratio_milli: Option<u32>,
+    pub seed_time_secs: Option<u64>,
     pub authentication: Authentication,
     pub watch: Watch,
     pub cross_seed: CrossSeedDiscovery,
@@ -129,6 +134,11 @@ impl Default for Options {
             reset_pending: Arc::new(AtomicBool::new(false)),
             enabled: true,
             min_interval_ms: 0,
+            priority: 25,
+            minimum_seeders: None,
+            prefer_freeleech: false,
+            seed_ratio_milli: None,
+            seed_time_secs: None,
             authentication: Authentication::None,
             watch: Watch::default(),
             cross_seed: CrossSeedDiscovery::default(),
@@ -245,6 +255,19 @@ fn cross_seed(v: &Value) -> Result<CrossSeedDiscovery> {
     Ok(discovery)
 }
 impl Options {
+    pub(crate) fn seed_policy(
+        &self,
+        defaults: &crate::torrent::TransferPolicy,
+    ) -> Option<crate::torrent::TransferPolicy> {
+        if self.seed_ratio_milli.is_none() && self.seed_time_secs.is_none() {
+            return None;
+        }
+        let mut policy = defaults.clone();
+        policy.seed_ratio_milli = self.seed_ratio_milli.or(policy.seed_ratio_milli);
+        policy.seed_time_secs = self.seed_time_secs.or(policy.seed_time_secs);
+        Some(policy)
+    }
+
     /// A watched source is opted in and not paused.
     pub(crate) fn watched(&self) -> bool {
         self.watch.enabled && self.effective_enabled()
@@ -260,7 +283,34 @@ impl Options {
             Some(Value::String(s)) if crate::requesters::valid_id(s) => Some(s.clone()),
             _ => return Err("Indexer: invalid stable source ID".into()),
         };
+        let nullable = |field: &str, max| -> Result<Option<u64>> {
+            match v.get(field) {
+                None | Some(Value::Null) => Ok(None),
+                Some(_) => integer(v, field, 0, max).map(Some),
+            }
+        };
+        // Share downloads' validation, including the positive seeding bounds.
+        let seed_policy = crate::torrent::TransferPolicy {
+            seed_ratio_milli: nullable("seed_ratio_milli", 1_000_000)?.map(|n| n as u32),
+            seed_time_secs: nullable("seed_time_secs", 315_360_000)?,
+            ..Default::default()
+        };
+        seed_policy.validate()?;
+        let priority = integer(v, "priority", 25, 50)? as u32;
+        if priority == 0 {
+            return Err("Indexer: priority must be between 1 and 50".into());
+        }
         let mut options = Self {
+            priority,
+            minimum_seeders: nullable("minimum_seeders", 1_000_000)?,
+            prefer_freeleech: match v.get("prefer_freeleech") {
+                None => false,
+                Some(v) => v
+                    .as_bool()
+                    .ok_or("Indexer: invalid prefer_freeleech flag")?,
+            },
+            seed_ratio_milli: seed_policy.seed_ratio_milli,
+            seed_time_secs: seed_policy.seed_time_secs,
             id,
             protection: crate::source_network::Protection::from_json(v)?,
             enabled,
@@ -537,14 +587,16 @@ fn fetch_before(
                         source_client(source)?,
                     )?);
                 }
-                headers.push((
-                    "Cookie".into(),
-                    state
-                        .session
-                        .as_ref()
-                        .ok_or("Indexer: missing session")?
-                        .header(&source.url)?,
-                ));
+                // The cookie goes only where its path allows: a link outside
+                // it, such as a download with its own key, is asked without.
+                if let Ok(cookie) = state
+                    .session
+                    .as_ref()
+                    .ok_or("Indexer: missing session")?
+                    .header(url)
+                {
+                    headers.push(("Cookie".into(), cookie));
+                }
             }
         }
         let response = source_client(source)?
@@ -577,6 +629,11 @@ fn fetch_before(
             state.blocked_until = Some(Instant::now() + Duration::from_secs(seconds));
             state.last_error = Some("rate_limited");
             return Err("Indexer: source rate limit reached".into());
+        }
+        // A timeout or server error passes: the same request may work later.
+        if response.status == 408 || (500..600).contains(&response.status) {
+            state.last_error = Some("source_unavailable");
+            return Err("Indexer: source unavailable".into());
         }
         if !(200..300).contains(&response.status) {
             state.last_error = Some("response_rejected");

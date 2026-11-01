@@ -93,11 +93,24 @@ struct Source {
     peers: Vec<String>,
     meta: Option<Meta>,
 }
-#[derive(Default)]
 pub(crate) struct TransferCounters {
     pub downloaded: AtomicU64,
     pub uploaded: AtomicU64,
     pub verified: AtomicU64,
+    /// Selected payload bytes still to verify in the current run, or
+    /// `UNKNOWN_LEFT` until a run has counted them.
+    pub selected_left: AtomicU64,
+}
+pub(crate) const UNKNOWN_LEFT: u64 = u64::MAX;
+impl Default for TransferCounters {
+    fn default() -> Self {
+        Self {
+            downloaded: AtomicU64::new(0),
+            uploaded: AtomicU64::new(0),
+            verified: AtomicU64::new(0),
+            selected_left: AtomicU64::new(UNKNOWN_LEFT),
+        }
+    }
 }
 /// One connection of a running download, as the transfer details show it.
 struct PeerView {
@@ -358,7 +371,13 @@ impl Source {
             }
             r.body
         } else {
-            let file = File::open(source).map_err(|_| "Torrent file not found")?;
+            let path = Path::new(source);
+            let inspected = fs::symlink_metadata(path).map_err(|_| "Torrent file not found")?;
+            if !inspected.is_file() {
+                return Err("Torrent source must be a regular file".into());
+            }
+            let file = crate::store::open_inspected(path, &inspected)
+                .map_err(|_| "Could not open torrent file")?;
             let mut data = Vec::new();
             file.take((MAX_META + 1) as u64)
                 .read_to_end(&mut data)
@@ -571,14 +590,14 @@ fn atomic_write(path: &Path, data: &[u8]) -> Result<()> {
             .write(true)
             .create_new(true)
             .open(&temporary)
-            .map_err(|error| crate::store::migration_io("Transfer storage", "write", &error))?;
+            .map_err(|error| crate::store::storage_io("Transfer storage", "write", &error))?;
         file.write_all(data)
             .and_then(|()| crate::store::sync_file(&file))
-            .map_err(|error| crate::store::migration_io("Transfer storage", "write", &error))?;
+            .map_err(|error| crate::store::storage_io("Transfer storage", "write", &error))?;
         fs::rename(&temporary, path)
-            .map_err(|error| crate::store::migration_io("Transfer storage", "write", &error))?;
+            .map_err(|error| crate::store::storage_io("Transfer storage", "write", &error))?;
         crate::store::sync_directory(parent)
-            .map_err(|error| crate::store::migration_sync("Transfer storage", &error))?;
+            .map_err(|error| crate::store::storage_sync("Transfer storage", &error))?;
         Ok(())
     })();
     if result.is_err() {
@@ -1115,6 +1134,49 @@ fn transfer_details(job: &Job, config: &DownloadConfig, value: &mut crate::json:
     );
 }
 
+/// Whether the files chosen for `job` include `path`.
+fn file_selected(job: &Job, path: &Path) -> bool {
+    match &job.control.file_selection {
+        FileSelection::All => true,
+        FileSelection::Paths(paths) => paths.contains(path.to_string_lossy().as_ref()),
+    }
+}
+
+/// What is still coming in across the resident transfers, not only one page:
+/// how many are queued or downloading, and how many selected bytes they still
+/// lack. A cross-seed only checks files already here, so it counts in neither.
+/// Every running transfer is resident; a queued one leaves memory only when the
+/// working set is full, and then is missing here until it is loaded again.
+fn incoming(jobs: &BTreeMap<String, Job>) -> (usize, u64) {
+    let mut active = 0;
+    let mut left = 0u64;
+    for job in jobs.values() {
+        if job.cross_seed.is_some() || job.failed || job.status.ready {
+            continue;
+        }
+        if matches!(transfer_state(job), "queued" | "downloading") {
+            active += 1;
+        }
+        // A running transfer counts exactly; before its first run, verified
+        // bytes of unselected files may make this an underestimate.
+        let missing = match job.counters.selected_left.load(Ordering::Relaxed) {
+            UNKNOWN_LEFT => {
+                let selected: u64 = job.meta.as_ref().map_or(0, |meta| {
+                    meta.files
+                        .iter()
+                        .filter(|file| !file.padding && file_selected(job, &file.path))
+                        .map(|file| file.length)
+                        .sum()
+                });
+                selected.saturating_sub(job.counters.verified.load(Ordering::Relaxed))
+            }
+            known => known,
+        };
+        left = left.saturating_add(missing);
+    }
+    (active, left)
+}
+
 fn transfer_value(
     job: &Job,
     queue_position: usize,
@@ -1198,15 +1260,7 @@ fn transfer_value(
                     value.insert("index", Json::Number(index as f64));
                     value.insert("path", file.path.to_string_lossy().into_owned());
                     value.insert("size_bytes", file.length.to_string());
-                    value.insert(
-                        "selected",
-                        match &job.control.file_selection {
-                            FileSelection::All => true,
-                            FileSelection::Paths(paths) => {
-                                paths.contains(&file.path.to_string_lossy().into_owned())
-                            }
-                        },
-                    );
+                    value.insert("selected", file_selected(job, &file.path));
                     value.insert(
                         "verified",
                         job.status.ready
@@ -1232,6 +1286,19 @@ fn transfer_value(
 
 // A single authenticated transfer and, for cross-seeds, its original metadata.
 // This deliberately never enumerates the state directory.
+/// Test support: records transfer `id`, whose state files were written by
+/// hand, in a stopped client's index as if it had been added. Mynou never
+/// calls it; the index alone decides which transfers exist.
+#[doc(hidden)]
+pub fn index_handmade_transfer(config: &DownloadConfig, id: &str) -> Result<()> {
+    let mut job = load_job(config, id)?;
+    let mut index = index::TransferIndex::open(&mut config.clone())?;
+    if job.control.queue_order == 0 {
+        job.control.queue_order = index.next_order()?;
+    }
+    index.save(&job)
+}
+
 fn load_job(config: &DownloadConfig, id: &str) -> Result<Job> {
     if ![40, 64].contains(&id.len())
         || !id.bytes().all(|b| b.is_ascii_hexdigit())
@@ -1695,12 +1762,12 @@ impl Client {
         })
     }
     pub fn ensure(&self, source: &str) -> Result<DownloadStatus> {
-        self.ensure_selection(source, FileSelection::All, None)
+        self.ensure_selection(source, FileSelection::All, None, None)
     }
 
     /// Record exact paths before metadata discovery can schedule any payload.
     pub fn ensure_files(&self, source: &str, paths: &[String]) -> Result<DownloadStatus> {
-        self.ensure_selection(source, FileSelection::paths(paths)?, None)
+        self.ensure_selection(source, FileSelection::paths(paths)?, None, None)
     }
 
     /// Reject a changed metadata URL before publishing a queue-visible transfer.
@@ -1710,7 +1777,24 @@ impl Client {
         paths: &[String],
         expected: &str,
     ) -> Result<DownloadStatus> {
-        self.ensure_selection(source, FileSelection::paths(paths)?, Some(expected))
+        self.ensure_selection(source, FileSelection::paths(paths)?, Some(expected), None)
+    }
+
+    /// Seed overrides use the same persisted control policy as API edits. Only
+    /// initialize a new transfer; an existing transfer retains its user's policy.
+    pub(crate) fn ensure_acquisition(
+        &self,
+        source: &str,
+        paths: Option<&[String]>,
+        expected: Option<&str>,
+        policy: Option<TransferPolicy>,
+    ) -> Result<DownloadStatus> {
+        self.ensure_selection(
+            source,
+            paths.map_or(Ok(FileSelection::All), FileSelection::paths)?,
+            expected,
+            policy,
+        )
     }
 
     pub fn require_bound_files(
@@ -1738,7 +1822,11 @@ impl Client {
         source: &str,
         selection: FileSelection,
         expected: Option<&str>,
+        initial_policy: Option<TransferPolicy>,
     ) -> Result<DownloadStatus> {
+        if let Some(policy) = &initial_policy {
+            policy.validate()?;
+        }
         self.policy.network.publication()?;
         let mut source = Source::parse(&*self.policy.network, source)?;
         let _publication = self.policy.network.publication()?;
@@ -1749,11 +1837,6 @@ impl Client {
             selection.validate_metadata(meta)?;
         }
         let id = source.id();
-        if id == "0000000000000000000000000000000000000000" {
-            return Err(
-                "Torrent identity is reserved for the native transfer format marker".into(),
-            );
-        }
         let mut jobs = self
             .jobs
             .lock()
@@ -1856,6 +1939,7 @@ impl Client {
             .next_order()?;
         let mut control = TorrentControl::new(id.clone(), order)?;
         control.file_selection = selection;
+        control.policy = initial_policy;
         // A queue-visible source/metadata file must never survive a crash
         // without the selection that prevents unintended full acquisition.
         atomic_write(
@@ -2047,9 +2131,6 @@ impl Client {
     /// announces and workers have drained, with its files when asked; until
     /// then it stays paused, also across a restart.
     pub fn remove(&self, id: &str, delete_files: bool) -> Result<()> {
-        if cross_seed::reused_by(&self.config, id)? {
-            return Err("A cross-seed transfer seeds from these files; remove it first".into());
-        }
         let gate = cross_seed::gate(self, id)?;
         let _admission = gate
             .as_ref()
@@ -2063,6 +2144,10 @@ impl Client {
             .lock()
             .map_err(|_| "BitTorrent state lock is poisoned")?;
         self.load(&mut jobs, id)?;
+        // Registration publishes seed records under this same job lock.
+        if cross_seed::reused_by(&self.config, id)? {
+            return Err("A cross-seed transfer seeds from these files; remove it first".into());
+        }
         let job = jobs.get_mut(id).ok_or("Unknown download")?;
         // Paused as `cancel` does, so an interrupted removal leaves a paused transfer.
         atomic_write(
@@ -2380,10 +2465,13 @@ impl Client {
                 }
             }
         }
+        let (active, left) = incoming(&jobs);
         let mut page = Json::object();
         page.insert("transfers", Json::Array(values));
         page.insert("next", next.map(Json::String).unwrap_or(Json::Null));
         page.insert("total", Json::Number(total as f64));
+        page.insert("active", Json::Number(active as f64));
+        page.insert("left_bytes", left.to_string());
         page.insert("sequence", sequence.to_string());
         page.insert(
             "revision",
@@ -3460,6 +3548,9 @@ fn download_sequential(
                         .sum(),
                     Ordering::Relaxed,
                 );
+                counters
+                    .selected_left
+                    .store(UNKNOWN_LEFT, Ordering::Relaxed);
                 scanned = true;
             }
             let done = have.iter().filter(|v| **v).count();
@@ -3581,6 +3672,9 @@ fn download_sequential(
                                 .sum(),
                             Ordering::Relaxed,
                         );
+                        counters
+                            .selected_left
+                            .store(UNKNOWN_LEFT, Ordering::Relaxed);
                         peer.pex_allowed = config.pex && !m.private;
                         update(
                             (jobs, stop),
@@ -3706,6 +3800,8 @@ fn prepare_selected_files(
     selected: Option<&[bool]>,
 ) -> Result<Vec<bool>> {
     let mut fresh = vec![false; meta.files.len()];
+    let mut opened = Vec::new();
+    let mut identities = BTreeSet::new();
     for (index, f) in meta.files.iter().enumerate() {
         if stop.load(Ordering::Acquire) {
             return Err("Download interrupted".into());
@@ -3733,7 +3829,7 @@ fn prepare_selected_files(
                 }
             }
         }
-        let mut options = OpenOptions::new();
+        let mut options = crate::store::private_options();
         options.read(true).write(true).create(true).truncate(false);
         #[cfg(unix)]
         {
@@ -3743,22 +3839,37 @@ fn prepare_selected_files(
         let file = options
             .open(&path)
             .map_err(|_| "Could not open media file")?;
-        if !file
-            .metadata()
-            .map_err(|_| "Media file is inaccessible")?
-            .is_file()
-        {
+        let metadata = file.metadata().map_err(|_| "Media file is inaccessible")?;
+        if !metadata.is_file() {
             return Err("Special media files are not allowed".into());
         }
-        let length = file
-            .metadata()
-            .map_err(|_| "Media file is inaccessible")?
-            .len();
-        fresh[index] = length == 0;
-        if length != f.length {
-            file.set_len(f.length)
-                .map_err(|_| "Could not resize media file")?;
+        use std::os::unix::fs::MetadataExt;
+        if !identities.insert((metadata.dev(), metadata.ino())) {
+            return Err("Torrent payload paths alias the same file".into());
         }
+        let length = metadata.len();
+        fresh[index] = length == 0;
+        // Closed again at once: a torrent may list more files than this
+        // process may hold open. Each one is reopened to be resized.
+        if length != f.length {
+            opened.push((path, metadata, f.length));
+        }
+    }
+    // No payload is resized until every opened path has a distinct identity.
+    for (path, inspected, expected) in opened {
+        if stop.load(Ordering::Acquire) {
+            return Err("Download interrupted".into());
+        }
+        let file = crate::store::private_options()
+            .write(true)
+            .open(&path)
+            .map_err(|_| "Could not open media file")?;
+        let reopened = file.metadata().map_err(|_| "Media file is inaccessible")?;
+        if !crate::store::same_inode(&inspected, &reopened) {
+            return Err("Media file changed while it was prepared".into());
+        }
+        file.set_len(expected)
+            .map_err(|_| "Could not resize media file")?;
     }
     Ok(fresh)
 }
@@ -4191,9 +4302,6 @@ fn serve_peer(
             .map_err(|_| "Native transfer index lock is poisoned")?
             .wire_alias(hash)?;
         if let Some(id) = owner {
-            if !policy.seed_queue.allowed(&id) {
-                return Err("Torrent is waiting in the seed queue".into());
-            }
             let mut map = jobs
                 .lock()
                 .map_err(|_| "BitTorrent state lock is poisoned")?;
@@ -4203,6 +4311,11 @@ fn serve_peer(
                     return Err("Native transfer working set is busy".into());
                 }
                 let mut job = indexed_job(config, index, &id, &policy.policy)?;
+                // A complete transfer waiting in the seed queue is refused
+                // before it takes a place in the working set; a download is not.
+                if policy.seed_queue.waiting(true, &job) {
+                    return Err("Torrent is waiting in the seed queue".into());
+                }
                 job.admitted = admission.is_none_or(|gate| gate(&id).unwrap_or(false));
                 if job.needs_rehash {
                     job.status.ready = false;
@@ -4225,7 +4338,7 @@ fn serve_peer(
                     || !job.admitted
                     || job.persistence_failed.load(Ordering::Acquire)
                     || job.retiring
-                    || job.seed_queued
+                    || (config.seed && policy.seed_queue.waiting(true, job))
                     || job.needs_rehash
                     || (job.cross_seed.is_some() && (!job.status.ready || !config.seed))
                     || job.control.user_paused
@@ -4717,6 +4830,33 @@ mod control_runtime_tests {
     }
 
     #[test]
+    fn payload_aliases_are_rejected_before_any_resize() {
+        let root = std::env::temp_dir().join(format!(
+            "mynou-payload-alias-{}",
+            hex(&crate::crypto::random_bytes::<8>().unwrap())
+        ));
+        fs::create_dir(&root).unwrap();
+        // Two names a case-insensitive volume (APFS by default) gives one file.
+        let mut meta = geometry(&[(BLOCK as u64, false), (2 * BLOCK as u64, false)]);
+        meta.files[0].path = PathBuf::from("Film.mkv");
+        meta.files[1].path = PathBuf::from("film.mkv");
+        fs::write(root.join("Film.mkv"), b"original").unwrap();
+        if !root.join("film.mkv").exists() {
+            // A case-sensitive volume keeps them apart: nothing to alias.
+            fs::remove_dir_all(root).unwrap();
+            return;
+        }
+        let result = prepare_files(&meta, &root, &AtomicBool::new(false));
+        let contents = fs::read(root.join("Film.mkv")).unwrap();
+        fs::remove_dir_all(root).unwrap();
+        assert_eq!(
+            result.unwrap_err(),
+            "Torrent payload paths alias the same file"
+        );
+        assert_eq!(contents, b"original");
+    }
+
+    #[test]
     fn mixed_file_piece_uses_highest_priority_and_keeps_every_piece() {
         let meta = geometry(&[
             (BLOCK as u64, false),
@@ -5010,6 +5150,15 @@ mod control_runtime_tests {
             )
             .unwrap();
         }
+        {
+            // Retained transfers as an earlier run of this client left them.
+            let mut index = index::TransferIndex::open(&mut config.clone()).unwrap();
+            for n in 1..=RETAINED {
+                index
+                    .save(&load_job(&config, &format!("{n:040x}")).unwrap())
+                    .unwrap();
+            }
+        }
         let mut client = Client::open(config.clone()).unwrap();
         assert_eq!(
             client.jobs.lock().unwrap().len(),
@@ -5042,10 +5191,10 @@ mod control_runtime_tests {
             manager.join().unwrap();
         }
         drop(client);
-        // Routine open must ignore unrelated legacy-looking files after publication.
+        // Routine open ignores state files the index does not name.
         atomic_write(
             &state.join("ffffffffffffffffffffffffffffffffffffffff.source"),
-            b"invalid ignored stale legacy file",
+            b"invalid ignored unindexed file",
         )
         .unwrap();
         let client = Client::open(config).unwrap();

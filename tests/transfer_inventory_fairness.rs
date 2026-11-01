@@ -55,6 +55,7 @@ impl Fixture {
                     .write_all(&bytes)
                     .unwrap();
             }
+            mynou::torrent::index_handmade_transfer(&self.config, &id).unwrap();
         }
         format!("{count:040x}")
     }
@@ -106,7 +107,7 @@ fn damaged_cold_heads_are_quarantined_without_starving_a_healthy_tail() {
     )
     .unwrap();
     drop(client);
-    // Damage only the mutable legacy point files after catalog publication.
+    // Damage only the mutable point files after catalog publication.
     // The authoritative descriptors remain valid and therefore can record
     // failed hydration while keeping the following queue entries reachable.
     for n in 1..=80 {

@@ -256,14 +256,22 @@ fn cancelled_and_failed_upgrades_leave_the_existing_file_current() {
         .into_iter()
         .find(|job| job.state == "queued")
         .unwrap();
+    // With downloads off the upgrade waits instead of failing.
     engine.tick().unwrap();
-    let failed = lock(&engine.store)
+    let mut failed = lock(&engine.store)
         .unwrap()
         .get(&failed.id)
         .unwrap()
         .unwrap();
-    assert_eq!(failed.state, "failed");
-    assert_eq!(failed.next_attempt_at, 0);
+    assert_eq!((failed.state.as_str(), failed.attempts), ("queued", 0));
+    // A download that fails for good ends the upgrade the same way.
+    failed.state = "failed".into();
+    failed.attempts = 99;
+    failed.last_error = Some("Synthetic download failure".into());
+    failed.next_attempt_at = 0;
+    failed.lease_id = None;
+    lock(&engine.store).unwrap().update(failed.clone()).unwrap();
+    assert!(!engine.tick().unwrap());
     assert_eq!(library_ids(&engine), [original.id]);
     assert_eq!(fs::read(&original.imports[0]).unwrap(), original_bytes);
     assert!(failed.imports.is_empty());
@@ -392,16 +400,15 @@ fn unmonitoring_a_parent_prevents_its_queued_child_from_being_claimed() {
         std::slice::from_ref(&original.id)
     );
     engine.set_monitored(&original.id, true).unwrap();
+    // Claimed again; with downloads off it then waits without failing.
     assert!(engine.tick().unwrap());
-    assert_eq!(
-        lock(&engine.store)
-            .unwrap()
-            .get(&child.id)
-            .unwrap()
-            .unwrap()
-            .state,
-        "failed"
-    );
+    let claimed = lock(&engine.store)
+        .unwrap()
+        .get(&child.id)
+        .unwrap()
+        .unwrap();
+    assert_eq!((claimed.state.as_str(), claimed.attempts), ("queued", 0));
+    assert!(claimed.next_attempt_at > 0);
     assert_eq!(library_ids(&engine), [original.id]);
 }
 

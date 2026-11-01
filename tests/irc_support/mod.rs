@@ -2,7 +2,6 @@
 #![allow(dead_code)]
 use mynou::{
     config::{self, Config},
-    crypto::sha256,
     engine::{Engine, lock},
     irc::ControlRequest,
     json::{self, Value},
@@ -87,7 +86,7 @@ pub fn record_id(v: &Value) -> &str {
 }
 pub fn rows(engine: &Engine) -> Vec<Value> {
     engine
-        .irc_announcements(0, 200)
+        .irc_announcements(None, 200)
         .unwrap()
         .get("announcements")
         .unwrap()
@@ -163,9 +162,9 @@ pub fn bytes(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
     walk(&root, &root, &mut files).unwrap();
     files
 }
+/// The stored announcement metadata with every record, read from the index.
 pub fn snapshot(root: &Path) -> Value {
-    let b = fs::read(root.join("announcements.bin")).unwrap();
-    if b.starts_with(b"MYNOUI05") {
+    {
         let mut index =
             mynou::inventory::Index::open(&root.join("announcements.idx"), true).unwrap();
         let mut v =
@@ -199,39 +198,11 @@ pub fn snapshot(root: &Path) -> Value {
         }
         v.insert("records", Value::Array(rows));
         v
-    } else {
-        json::parse(std::str::from_utf8(&b[16..b.len() - 32]).unwrap()).unwrap()
     }
-}
-/// Deliberately replace the synthetic fixture with an earlier format for migration tests.
-pub fn remove_index(root: &Path) {
-    for e in fs::read_dir(root).unwrap() {
-        let path = e.unwrap().path();
-        let name = path.file_name().unwrap().to_str().unwrap();
-        if name == "announcements.idx" || name.starts_with("announcements.idx.staging") {
-            fs::remove_dir_all(path).unwrap();
-        } else if name.starts_with("announcements.migration-")
-            || name.starts_with("announcements.legacy-")
-        {
-            fs::remove_file(path).unwrap();
-        }
-    }
-}
-pub fn write_snapshot(root: &Path, v: &Value) {
-    write_snapshot_format(root, b"MYNOUI01", v);
-}
-pub fn write_snapshot_format(root: &Path, magic: &[u8; 8], v: &Value) {
-    remove_index(root);
-    let p = json::stringify(v).into_bytes();
-    let mut b = magic.to_vec();
-    b.extend_from_slice(&(p.len() as u64).to_le_bytes());
-    b.extend_from_slice(&p);
-    b.extend_from_slice(&sha256(&b));
-    fs::write(root.join("announcements.bin"), b).unwrap();
 }
 pub fn no_credentials(v: &Value) {
     let text = json::stringify(v);
-    assert!(!text.contains(&std::env::var("PWD").unwrap()));
+    assert!(!text.contains(&std::env::var("MYNOU_TEST_SECRET_B").unwrap()));
     for s in [
         "password_env",
         "join_key_env",
@@ -300,13 +271,19 @@ pub fn send(stream: &mut TcpStream, s: &str) {
 }
 pub fn registration(stream: &mut TcpStream, secret: bool) {
     if secret {
-        assert!(line(stream) == format!("PASS {}", std::env::var("PWD").unwrap()));
+        assert!(line(stream) == format!("PASS {}", std::env::var("MYNOU_TEST_SECRET_B").unwrap()));
     }
     assert_eq!(line(stream), "NICK mynou");
     assert_eq!(line(stream), "USER mynou 0 * :Mynou");
     send(stream, ":server 001 mynou :Welcome");
     if secret {
-        assert!(line(stream) == format!("JOIN #announces {}", std::env::var("PWD").unwrap()));
+        assert!(
+            line(stream)
+                == format!(
+                    "JOIN #announces {}",
+                    std::env::var("MYNOU_TEST_SECRET_B").unwrap()
+                )
+        );
     } else {
         assert_eq!(line(stream), "JOIN #announces");
     }

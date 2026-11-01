@@ -51,7 +51,8 @@ on `trunk`, and it raised the version over its parent. A failed decision publish
    name, compares the copy byte for byte and writes `SHA256SUMS`. It only copies
    and checksums, so it runs on a Linux runner.
 4. **release** runs only for a pushed version tag that passed the decision, after
-   build and package succeeded on the tagged commit.
+   build and package succeeded on the tagged commit. It leaves the release as
+   a draft: the maintainer signs and publishes it (see below).
 
 Pull requests run only the selected checks and cannot publish. A newer pull
 request head cancels the older run; tag runs are never cancelled, so a later
@@ -194,6 +195,7 @@ token.
 | --- | --- |
 | `mynou-vVERSION-macos-arm64` | Native Apple Silicon executable |
 | `SHA256SUMS` | One manifest covering the executable |
+| `SHA256SUMS.sig` | The manifest's signature by the release key |
 
 GitHub's own source downloads contain sources only and need a build. Earlier
 releases also provided a Linux x86_64 executable, an Intel macOS executable and a
@@ -218,9 +220,17 @@ awk '$2 == "mynou-v0.22.19-macos-arm64"' SHA256SUMS | shasum -a 256 -c -
 A missing or incorrect selected entry fails verification; do not install or
 execute after failure.
 
-Checksums establish integrity relative to the same release's manifest, not Apple
-signing or publisher identity. Review the exact source and successful Actions
-run.
+Then check that the release key signed the manifest, with
+[`docs/release-key.pub.pem`](release-key.pub.pem) from the repository:
+
+```sh
+openssl dgst -sha256 -verify release-key.pub.pem -signature SHA256SUMS.sig SHA256SUMS
+```
+
+The release key's private half stays on the maintainer's Mac and never
+reaches GitHub, so a compromised account or workflow cannot produce a valid
+signature. Self-update performs both checks and refuses an unsigned release.
+This is not Apple signing or notarization.
 
 ## Local validation
 
@@ -279,6 +289,15 @@ python3 .github/scripts/releases.py tag <merged-pr-number>
 
 The command requires `GH_TOKEN` or `GITHUB_TOKEN`; keep it outside the repository
 and test output. Review the reported commit and tag, then repeat with
-`--create` to create the validated tag. Confirm Actions publishes the executable
-and `SHA256SUMS`. Never move published tags or replace published assets; fix a
+`--create` to create the validated tag. Actions leaves a draft with the
+executable and `SHA256SUMS`. On the Mac that holds the release key
+(`~/.mynou-release/release-key.pem`), sign and publish it:
+
+```sh
+.github/scripts/sign-release.sh VERSION
+```
+
+The script checks the draft's manifest and executable, signs `SHA256SUMS`,
+uploads `SHA256SUMS.sig` and publishes the release. Mynou installations update
+only to signed releases. Never move published tags or replace published assets; fix a
 failed published version with a new patch release.

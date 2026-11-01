@@ -8,7 +8,7 @@ mod series_support;
 #[allow(dead_code)]
 mod transfer_support;
 use api_support::{Server, TOKEN};
-use irc_routing_support::{job, no_private, read_checked, row_mut, write_checked};
+use irc_routing_support::{job, no_private};
 use library_support::{Directory, run_until};
 use mynou::{
     config,
@@ -55,27 +55,30 @@ fn value(catalog: &Catalog, accounts: &Accounts, peer: u16) -> Value {
     let c = v.get_mut("catalog").unwrap();
     c.insert("enabled", true);
     c.insert("url", format!("{}/3", catalog.url));
-    c.insert("token_env", "PATH");
+    c.insert("token_env", "MYNOU_TEST_SECRET_A");
     c.insert("api_key_env", "MYNOU_IRC_ADMISSION_ABSENT_KEY_94214");
     let mut r = Value::object();
     r.insert(
         "accounts",
         Value::Array(
-            [("alice", "101", "PATH"), ("bob", "202", "PWD")]
-                .into_iter()
-                .map(|(name, id, env)| {
-                    let mut a = Value::object();
-                    a.insert("id", name);
-                    a.insert("expected_user_id", id);
-                    a.insert("token_env", env);
-                    a.insert("identity_url", format!("{}/{name}/identity", accounts.url));
-                    a.insert(
-                        "watchlist_url",
-                        format!("{}/{name}/watchlist", accounts.url),
-                    );
-                    a
-                })
-                .collect(),
+            [
+                ("alice", "101", "MYNOU_TEST_SECRET_A"),
+                ("bob", "202", "MYNOU_TEST_SECRET_B"),
+            ]
+            .into_iter()
+            .map(|(name, id, env)| {
+                let mut a = Value::object();
+                a.insert("id", name);
+                a.insert("expected_user_id", id);
+                a.insert("token_env", env);
+                a.insert("identity_url", format!("{}/{name}/identity", accounts.url));
+                a.insert(
+                    "watchlist_url",
+                    format!("{}/{name}/watchlist", accounts.url),
+                );
+                a
+            })
+            .collect(),
         ),
     );
     v.insert("requesters", r);
@@ -104,16 +107,6 @@ fn phase(engine: &Engine, row: &Value) -> String {
         .unwrap()
         .into()
 }
-fn pending(snapshot: &mut Value, id: &str) {
-    let r = row_mut(snapshot, id);
-    let a = r.get_mut("admission").unwrap();
-    a.insert("phase", "prepared");
-    a.insert("committed_at", Value::Null);
-    r.insert("decision", "pending");
-    r.insert("decided_at", Value::Null);
-    r.insert("revision", "2");
-}
-
 #[test]
 fn request_rules_require_explicit_known_accounts_and_pinned_sources() {
     let dir = Directory::new();
@@ -574,104 +567,6 @@ fn retained_source_numbering_is_captured_without_rewriting_the_series_plan() {
         job(&e, &id).request.source_numbering,
         Some(mynou::numbering::SourceNumber::Absolute(13))
     );
-}
-
-#[test]
-fn committed_and_uncommitted_crash_intents_recover_without_replay_or_admission() {
-    for durable in [true, false] {
-        let dir = Directory::new();
-        let c = catalog();
-        let a = Accounts::open();
-        let cfg = configured(&dir, &c, &a);
-        let e = Engine::open(cfg.clone()).unwrap();
-        let row = irc_support::receive(&e, 7);
-        request(&e, &row);
-        let id = irc_support::record_id(&row);
-        drop(e);
-        let path = cfg.store_dir.join("announcements.bin");
-        let mut history = read_checked(&path);
-        pending(&mut history, id);
-        write_checked(&path, b"MYNOUI03", &history);
-        if !durable {
-            let mut ledger = requester_support::read_snapshot(&cfg.store_dir);
-            ledger.insert("demands", Value::Array(Vec::new()));
-            requester_support::write_snapshot_format(&cfg.store_dir, b"MYNOUR02", &ledger);
-        }
-        let before = irc_support::bytes(&cfg.store_dir);
-        let preview = Engine::open_for_preview(cfg.clone()).unwrap();
-        assert_eq!(phase(&preview, &row), "prepared");
-        drop(preview);
-        assert_eq!(irc_support::bytes(&cfg.store_dir), before);
-        let e = Engine::open(cfg.clone()).unwrap();
-        assert_eq!(
-            phase(&e, &row),
-            if durable { "committed" } else { "aborted" }
-        );
-        irc_support::no_jobs(&e);
-        assert_eq!(demands(&e, "alice").len(), usize::from(durable));
-        if durable {
-            assert_eq!(demand(&e, "alice").get("admitted_at"), Some(&Value::Null));
-        }
-        e.sync_requesters().unwrap();
-        irc_support::no_jobs(&e);
-        drop(e);
-        assert!(Engine::open(cfg).is_ok());
-    }
-}
-
-#[test]
-fn missing_cross_store_provenance_and_semantic_format_downgrades_fail_closed() {
-    for corruption in [
-        "irc_magic",
-        "requester_magic",
-        "missing_record",
-        "account_binding",
-        "missing_origin",
-    ] {
-        let dir = Directory::new();
-        let c = catalog();
-        let a = Accounts::open();
-        let cfg = configured(&dir, &c, &a);
-        let e = Engine::open(cfg.clone()).unwrap();
-        let row = irc_support::receive(&e, 7);
-        request(&e, &row);
-        drop(e);
-        let hp = cfg.store_dir.join("announcements.bin");
-        let mut h = read_checked(&hp);
-        let mut r = requester_support::read_snapshot(&cfg.store_dir);
-        match corruption {
-            "irc_magic" => write_checked(&hp, b"MYNOUI02", &h),
-            "requester_magic" => {
-                requester_support::write_snapshot_format(&cfg.store_dir, b"MYNOUR01", &r)
-            }
-            "missing_record" => {
-                h.insert("records", Value::Array(Vec::new()));
-                write_checked(&hp, b"MYNOUI03", &h);
-            }
-            "account_binding" => {
-                row_mut(&mut h, irc_support::record_id(&row))
-                    .get_mut("admission")
-                    .unwrap()
-                    .insert("account_binding", "b".repeat(64));
-                write_checked(&hp, b"MYNOUI03", &h);
-            }
-            "missing_origin" => {
-                let Value::Array(ds) = r.get_mut("demands").unwrap() else {
-                    panic!()
-                };
-                ds[0].insert("origins", Value::Array(vec!["retained-plex-origin".into()]));
-                requester_support::write_snapshot_format(&cfg.store_dir, b"MYNOUR02", &r);
-            }
-            _ => unreachable!(),
-        }
-        let before = irc_support::bytes(&cfg.store_dir);
-        assert!(
-            Engine::open_for_preview(cfg.clone()).is_err(),
-            "{corruption}"
-        );
-        assert!(Engine::open(cfg.clone()).is_err(), "{corruption}");
-        assert_eq!(irc_support::bytes(&cfg.store_dir), before);
-    }
 }
 
 #[test]

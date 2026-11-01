@@ -151,7 +151,7 @@ fn configuration(alias: &str, family: Family, url: &str, dir: &Directory) -> Con
             source.insert("api_key_env", "MYNOU_ABSENT_CONTRACT_FIXTURE_KEY_336");
             let mut auth = Value::object();
             auth.insert("method", "bearer");
-            auth.insert("token_env", "PWD");
+            auth.insert("token_env", "MYNOU_TEST_SECRET_B");
             source.insert("authentication", auth);
             let mut mapping = json::parse(FILTER_API).unwrap();
             if alias == TOKEN_SOURCE {
@@ -162,12 +162,12 @@ fn configuration(alias: &str, family: Family, url: &str, dir: &Directory) -> Con
         }
         Family::Flat => {
             source.insert("kind", "json");
-            source.insert("api_key_env", "PATH");
+            source.insert("api_key_env", "MYNOU_TEST_SECRET_A");
             source.insert("mapping", json::parse(FLAT_API).unwrap());
         }
         Family::Torznab => {
             source.insert("kind", "torznab");
-            source.insert("api_key_env", "PATH");
+            source.insert("api_key_env", "MYNOU_TEST_SECRET_A");
         }
     }
     v.insert("indexers", Value::Array(vec![source]));
@@ -317,7 +317,7 @@ fn expect_request(family: Family, head: &str, expected: &[&str], absent: &[&str]
     for part in absent {
         assert!(!line.contains(part), "{part} unexpected in {line}");
     }
-    let bearer = format!("Bearer {}", std::env::var("PWD").unwrap());
+    let bearer = format!("Bearer {}", std::env::var("MYNOU_TEST_SECRET_B").unwrap());
     match family {
         Family::Filter => {
             assert!(head.contains(&bearer), "missing bearer token");
@@ -332,7 +332,7 @@ fn expect_request(family: Family, head: &str, expected: &[&str], absent: &[&str]
 
 fn no_secrets(v: &Value) {
     let text = json::stringify(v);
-    for name in ["PATH", "PWD"] {
+    for name in ["MYNOU_TEST_SECRET_A", "MYNOU_TEST_SECRET_B"] {
         let value = std::env::var(name).unwrap();
         assert!(!text.contains(&value), "{name} leaked");
     }

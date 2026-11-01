@@ -14,7 +14,6 @@ use std::{
     collections::BTreeMap,
     io::{Read, Write},
     net::{SocketAddr, TcpListener, TcpStream},
-    path::PathBuf,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -49,9 +48,8 @@ fn listen(address: &str) -> Result<TcpListener> {
     Ok(listener)
 }
 
-/// The API listener bound before storage opens. While storage migrations run,
-/// it answers health checks and `GET /api/status` with their progress, and
-/// refuses every other route as unavailable.
+/// The API listener bound before storage opens. Until then it answers health
+/// checks and `GET /api/status`, and refuses every other route as unavailable.
 pub struct Startup {
     listener: TcpListener,
     access: Arc<Access>,
@@ -75,8 +73,7 @@ impl Startup {
                 allowed_hosts: config.allowed_hosts.clone(),
                 local_network_open: config.local_network_open,
             };
-            let directories = vec![config.store_dir.clone(), config.downloads.state_dir.clone()];
-            thread::spawn(move || starting(&listener, &gate, &directories, &ready))
+            thread::spawn(move || starting(&listener, &gate, &ready))
         };
         Ok(Self {
             listener,
@@ -157,16 +154,15 @@ fn local(stream: &TcpStream) -> bool {
     matches!((stream.peer_addr(), stream.local_addr()), (Ok(peer), Ok(local)) if access::local_peer(peer, local))
 }
 
-fn starting(listener: &TcpListener, gate: &Gate, directories: &[PathBuf], ready: &AtomicBool) {
+fn starting(listener: &TcpListener, gate: &Gate, ready: &AtomicBool) {
     let mut threads: Vec<JoinHandle<()>> = Vec::new();
     while !ready.load(Ordering::Acquire) {
         threads.retain(|thread| !thread.is_finished());
         match listener.accept() {
             Ok((mut stream, _)) if threads.len() < 8 => {
-                let directories = directories.to_vec();
                 let gate = gate.clone();
                 threads.push(thread::spawn(move || {
-                    let _ = starting_connection(&mut stream, &gate, &directories);
+                    let _ = starting_connection(&mut stream, &gate);
                 }));
             }
             Ok((mut stream, _)) => {
@@ -189,7 +185,7 @@ fn starting(listener: &TcpListener, gate: &Gate, directories: &[PathBuf], ready:
     }
 }
 
-fn starting_connection(stream: &mut TcpStream, gate: &Gate, directories: &[PathBuf]) -> Result<()> {
+fn starting_connection(stream: &mut TcpStream, gate: &Gate) -> Result<()> {
     let HttpRequest {
         method,
         target: path,
@@ -213,16 +209,12 @@ fn starting_connection(stream: &mut TcpStream, gate: &Gate, directories: &[PathB
         return respond(stream, 401, error(SIGN_IN));
     }
     if method == "GET" && path == "/api/status" {
-        let directories: Vec<_> = directories.iter().map(PathBuf::as_path).collect();
-        status.insert("migrations", crate::progress::report(&directories));
         return respond(stream, 200, status);
     }
     respond(
         stream,
         503,
-        error(
-            "Mynou is starting: storage is being opened or migrated; GET /api/status shows the progress",
-        ),
+        error("Mynou is starting: storage is being opened"),
     )
 }
 
@@ -524,7 +516,7 @@ fn connection(
         return respond(stream, status, value);
     }
     if method == "GET" && path == "/ws" {
-        return upgrade(stream, engine, &headers);
+        return upgrade(stream, engine, &headers, &|| gate.admitted(free, &headers));
     }
     match route(engine, &method, &path, &body) {
         Ok((status, value)) => respond(stream, status, value),
@@ -632,7 +624,8 @@ fn session(
 
 /// Network access as the Settings page shows it (`GET`), and the password,
 /// which only this machine may set or remove (`POST {"password"}`, null to
-/// remove). A new password signs every other client out.
+/// remove). A new password signs every other client out, and so does
+/// `POST {"sign_out_everywhere": true}`, which keeps the password.
 fn network_access(
     engine: &Engine,
     gate: &Gate,
@@ -664,6 +657,25 @@ fn network_access(
                     error("Change the network access password on the Mac running Mynou"),
                 ));
             }
+            if body.len() <= 4096
+                && control_body(body, &["sign_out_everywhere"], false)
+                    .is_ok_and(|v| v.get("sign_out_everywhere") == Some(&Value::Bool(true)))
+            {
+                // Credentials change only under the store lock, so a password
+                // saved meanwhile is never overwritten by an older copy.
+                let mut store = lock(&engine.store)?;
+                let Some(current) = gate.access.current() else {
+                    return Ok((
+                        409,
+                        error("Network access has no password: nobody is signed in"),
+                    ));
+                };
+                let renewed = current.renewed()?;
+                store.save_access(Some(&renewed))?;
+                gate.access.replace(Some(renewed));
+                drop(store);
+                return Ok((200, report()));
+            }
             let credentials = match password(body)? {
                 Some(password) => Some(access::Credentials::new(&password)?),
                 None => {
@@ -689,8 +701,10 @@ fn network_access(
                     None
                 }
             };
-            lock(&engine.store)?.save_access(credentials.as_ref())?;
+            let mut store = lock(&engine.store)?;
+            store.save_access(credentials.as_ref())?;
             gate.access.replace(credentials);
+            drop(store);
             Ok((200, report()))
         }
         _ => Ok((404, error("Not found"))),
@@ -850,15 +864,16 @@ pub(crate) fn route(
         }
         ("GET", path) if path == "/api/catalog" || path.starts_with("/api/catalog?") => {
             let catalog = CatalogQuery::parse(path.split_once('?').map_or("", |(_, query)| query))?;
-            Ok((
-                200,
-                integrations::catalog_search(
+            let found = match catalog.tmdb_id {
+                Some(id) => integrations::catalog_title(&engine.config, &catalog.kind, id)?,
+                None => integrations::catalog_search(
                     &engine.config,
                     &catalog.kind,
                     &catalog.text,
                     catalog.year,
                 )?,
-            ))
+            };
+            Ok((200, found))
         }
         ("POST", "/api/grab") => {
             let value = control_body(body, &["request", "candidate_id"], false)?;
@@ -931,12 +946,8 @@ pub(crate) fn route(
             if let Some(tail) = path.strip_prefix("/api/irc/") {
                 let (tail, query) = tail.split_once('?').unwrap_or((tail, ""));
                 if method == "GET" && tail == "announcements" {
-                    if query.split('&').any(|p| p.starts_with("offset=")) {
-                        let (offset, limit) = crate::irc::page(query)?;
-                        return Ok((200, engine.irc_announcements(offset, limit)?));
-                    }
                     let (after, limit) = crate::irc::cursor_page(query)?;
-                    return Ok((200, engine.irc_announcements_page(after.as_deref(), limit)?));
+                    return Ok((200, engine.irc_announcements(after.as_deref(), limit)?));
                 }
                 if method == "POST" && tail == "preview" && query.is_empty() {
                     if body.len() > 8192 {
@@ -1005,15 +1016,8 @@ pub(crate) fn route(
                     return Ok((404, error("Unknown requester account")));
                 }
                 if method == "GET" && parts.len() == 1 {
-                    if query.split('&').any(|field| field.starts_with("after=")) {
-                        let (after, limit) = crate::requesters::cursor_page(query)?;
-                        return Ok((
-                            200,
-                            engine.requester_page(parts[0], after.as_deref(), limit)?,
-                        ));
-                    }
-                    let (offset, limit) = crate::requesters::page(query)?;
-                    return Ok((200, engine.requester(parts[0], offset, limit)?));
+                    let (after, limit) = crate::requesters::cursor_page(query)?;
+                    return Ok((200, engine.requester(parts[0], after.as_deref(), limit)?));
                 }
                 if method == "POST" && parts.len() == 2 && parts[1] == "control" && query.is_empty()
                 {
@@ -1389,10 +1393,12 @@ pub(crate) fn route(
 }
 
 /// `kind=movie|series&query=TEXT&year=N` of a catalog search.
+/// A catalog search (`query`, optional `year`) or one title (`tmdb_id`).
 struct CatalogQuery {
     kind: String,
     text: String,
     year: u32,
+    tmdb_id: Option<u64>,
 }
 
 impl CatalogQuery {
@@ -1404,6 +1410,7 @@ impl CatalogQuery {
             kind: String::new(),
             text: String::new(),
             year: 0,
+            tmdb_id: None,
         };
         let mut seen = std::collections::BTreeSet::new();
         for pair in text.split('&').filter(|pair| !pair.is_empty()) {
@@ -1424,8 +1431,20 @@ impl CatalogQuery {
                         .filter(|year| (1888..=2100).contains(year))
                         .ok_or("year must be between 1888 and 2100")?;
                 }
+                "tmdb_id" => {
+                    query.tmdb_id = Some(
+                        value
+                            .parse()
+                            .ok()
+                            .filter(|id| (1..=9_007_199_254_740_991).contains(id))
+                            .ok_or("tmdb_id must be a positive TMDB identity")?,
+                    );
+                }
                 _ => return Err("Unknown catalog query field".into()),
             }
+        }
+        if query.tmdb_id.is_some() && (seen.contains("query") || seen.contains("year")) {
+            return Err("Catalog: ask for a tmdb_id or a search, not both".into());
         }
         Ok(query)
     }
@@ -1458,14 +1477,15 @@ fn control_body(body: &[u8], allowed: &[&str], allow_empty: bool) -> Result<Valu
 }
 fn respond_asset(stream: &mut TcpStream, asset: ui::Asset) -> Result<()> {
     let head = format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\nCache-Control: no-cache\r\nX-Content-Type-Options: nosniff\r\nX-Frame-Options: DENY\r\nReferrer-Policy: no-referrer\r\nContent-Security-Policy: {}\r\n\r\n",
+        "HTTP/1.1 200 OK\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\nCache-Control: {}\r\nX-Content-Type-Options: nosniff\r\nX-Frame-Options: DENY\r\nReferrer-Policy: no-referrer\r\nContent-Security-Policy: {}\r\n\r\n",
         asset.content_type,
         asset.body.len(),
+        asset.cache_control,
         ui::CSP
     );
     let deadline = Instant::now() + RESPONSE_DEADLINE;
     write_within(stream, head.as_bytes(), deadline)
-        .and_then(|()| write_within(stream, asset.body.as_bytes(), deadline))
+        .and_then(|()| write_within(stream, asset.body, deadline))
         .map_err(|e| format!("Cannot write the response: {e}"))
 }
 /// Verifies the WebSocket handshake (same origin, subprotocol, slot) and
@@ -1474,6 +1494,7 @@ fn upgrade(
     stream: &mut TcpStream,
     engine: &Arc<Engine>,
     headers: &BTreeMap<String, String>,
+    admitted: &dyn Fn() -> bool,
 ) -> Result<()> {
     let header = |name: &str| headers.get(name).map(String::as_str).unwrap_or("");
     let is_upgrade = header("upgrade").eq_ignore_ascii_case("websocket")
@@ -1500,7 +1521,7 @@ fn upgrade(
         ws::SUBPROTOCOL
     );
     write_within(stream, head.as_bytes(), Instant::now() + RESPONSE_DEADLINE)?;
-    ws::serve(stream, engine, route)
+    ws::serve(stream, engine, route, admitted)
 }
 fn respond(stream: &mut TcpStream, status: u16, value: Value) -> Result<()> {
     respond_within(stream, status, value, RESPONSE_DEADLINE)
@@ -1604,7 +1625,17 @@ mod tests {
             ("series", "La Casa de Papel", 2017)
         );
         assert_eq!(CatalogQuery::parse("kind=movie&query=Up").unwrap().year, 0);
+        assert_eq!(
+            CatalogQuery::parse("kind=movie&tmdb_id=603")
+                .unwrap()
+                .tmdb_id,
+            Some(603)
+        );
         for bad in [
+            "kind=movie&tmdb_id=0",
+            "kind=movie&tmdb_id=9007199254740992",
+            "kind=movie&tmdb_id=603&query=Matrix",
+            "kind=movie&tmdb_id=603&year=1999",
             "kind=movie&kind=series",
             "kind=movie&query=%E2",
             "kind=movie&year=1700",
@@ -1947,7 +1978,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
     #[test]
-    fn the_startup_listener_reports_migration_progress_and_refuses_other_routes() {
+    fn the_startup_listener_answers_health_and_refuses_other_routes() {
         let root = std::env::temp_dir().join(format!("mynou-startup-{}", std::process::id()));
         let mut value = crate::config::default_json();
         value.insert("listen", "127.0.0.1:0");
@@ -1955,8 +1986,6 @@ mod tests {
         config.store_dir = root.join("store");
         let startup = Startup::bind(&config, Arc::new(Access::default())).unwrap();
         let address = startup.address().unwrap();
-        let tracker = crate::progress::Tracker::start(&config.store_dir, "series", Some(10));
-        tracker.stage("copying", 4);
         let get = |path: &str, host: &str| {
             let mut stream = TcpStream::connect(address).unwrap();
             write!(stream, "GET {path} HTTP/1.1\r\nHost: {host}\r\n\r\n").unwrap();
@@ -1974,10 +2003,9 @@ mod tests {
         assert_eq!(get("/readyz", "localhost").0, 503);
         assert_eq!(get("/api/status", "evil.example").0, 403);
         let (status, body) = get("/api/status", "localhost");
-        assert_eq!(status, 200);
         assert_eq!(
-            json::stringify(body.get("migrations").unwrap()),
-            r#"[{"done":4,"resumed":false,"stage":"copying","store":"series","total":10}]"#
+            (status, body.get("status").and_then(Value::as_str)),
+            (200, Some("starting"))
         );
         let (status, body) = get("/api/jobs", "localhost");
         assert_eq!(status, 503);
@@ -1987,7 +2015,6 @@ mod tests {
                 .unwrap()
                 .contains("starting")
         );
-        tracker.finish();
         drop(startup);
         // Once stopped, the startup listener no longer answers.
         assert!(

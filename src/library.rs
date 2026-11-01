@@ -141,6 +141,8 @@ pub fn validate_baseline(
     let (profile, _) = config.selection.profile(&job.request.kind)?;
     // A legacy baseline may describe a quality outside today's allowed profile.
     Ok(RecordedRelease {
+        source_id: None,
+        size_bytes: None,
         title: title.into(),
         profile: profile.into(),
     })
@@ -250,7 +252,12 @@ impl Engine {
             let config = self.configuration_for(&job)?;
             let (_, profile) = config.selection.profile(&job.request.kind)?;
             let recorded = job.release.as_ref().ok_or("Missing release baseline")?;
-            let baseline = profile.assess(&recorded.title, &job.request.title);
+            let baseline = profile.assess_with_size(
+                &recorded.title,
+                &job.request.title,
+                recorded.size_bytes,
+                Some(1),
+            );
             if profile.cutoff_reached(&baseline) {
                 entries.push(entry(&job, "cutoff_reached"));
                 continue;
@@ -294,6 +301,8 @@ impl Engine {
             }
             request.source_url = Some(selected.url);
             let release = RecordedRelease {
+                source_id: selected.source_id,
+                size_bytes: selected.size_bytes,
                 title: selected.title,
                 profile: selected.profile,
             };

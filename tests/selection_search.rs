@@ -485,7 +485,7 @@ fn malformed_cursors_and_page_limits_are_rejected() {
             "{query} must be refused"
         );
     }
-    let valid = "0".repeat(122);
+    let valid = "0".repeat(132);
     assert_eq!(
         integrations::SearchPage::parse(&format!("after={valid}&limit=200"))
             .unwrap()
@@ -493,15 +493,15 @@ fn malformed_cursors_and_page_limits_are_rejected() {
         200
     );
     assert_eq!(
-        integrations::SearchPage::parse(&format!("after={}", "0".repeat(120))).unwrap_err(),
+        integrations::SearchPage::parse(&format!("after={}", "0".repeat(130))).unwrap_err(),
         "Search: invalid candidate cursor"
     );
     assert_eq!(
-        integrations::SearchPage::parse(&format!("after=02{}", "0".repeat(120))).unwrap_err(),
+        integrations::SearchPage::parse(&format!("after=02{}", "0".repeat(130))).unwrap_err(),
         "Search: invalid candidate cursor"
     );
     assert_eq!(
-        integrations::SearchPage::parse(&format!("after={}", "A".repeat(122))).unwrap_err(),
+        integrations::SearchPage::parse(&format!("after={}", "A".repeat(132))).unwrap_err(),
         "Search: invalid candidate cursor"
     );
     assert_eq!(integrations::SearchPage::parse("").unwrap().limit, 100);
@@ -612,4 +612,80 @@ fn manual_file_preview_does_not_search_or_expose_a_private_path() {
     );
     assert!(!json::stringify(&report).contains("secret-file"));
     assert_eq!(indexer.calls.load(Ordering::Relaxed), 0);
+}
+
+#[test]
+fn indexer_priority_freeleech_and_seed_overrides_share_search_and_manual_ranking() {
+    let a = Indexer::releases(
+        r#"[{"title":"Fixture.Movie.2024.1080p","seeders":1000,"size":"18446744073709551615","download_volume_factor":0,"url":"magnet:?xt=urn:btih:a"}]"#,
+    );
+    let b = Indexer::releases(
+        r#"[{"title":"Fixture.Movie.2024.1080p","seeders":2,"size":100000000,"download_volume_factor":1,"url":"magnet:?xt=urn:btih:b"}]"#,
+    );
+    let mut config = configured("{}");
+    let mut first = a.source("first");
+    first.options.priority = 50;
+    first.options.id = Some("first".into());
+    let mut second = b.source("second");
+    second.options.priority = 1;
+    second.options.id = Some("second".into());
+    config.sources = vec![first, second];
+    let request = movie("Fixture Movie");
+    let selected = integrations::select_release(&config, &request).unwrap();
+    assert_eq!(selected.source_id.as_deref(), Some("second"));
+    config.sources[0].options.prefer_freeleech = true;
+    let report = integrations::search_report(&config, &request).unwrap();
+    let accepted = entries(&report, "accepted");
+    assert_eq!(
+        accepted[0].get("priority").and_then(Value::as_u64),
+        Some(50)
+    );
+    assert_eq!(accepted[0].get("freeleech"), Some(&Value::Bool(true)));
+    assert_eq!(
+        accepted[0].get("size_bytes").and_then(Value::as_str),
+        Some("18446744073709551615")
+    );
+    let id = report
+        .get("selected_candidate_id")
+        .unwrap()
+        .as_str()
+        .unwrap();
+    let (picked, accepted) = integrations::pick_release_before(
+        &config,
+        &request,
+        id,
+        std::time::Instant::now() + Duration::from_secs(5),
+    )
+    .unwrap();
+    assert!(accepted);
+    assert_eq!(
+        picked.url,
+        integrations::select_release(&config, &request).unwrap().url
+    );
+    assert_eq!(picked.source_id.as_deref(), Some("first"));
+    // An override can raise or lower the global seed gate, including zero.
+    config.minimum_seeders = 2000;
+    config.sources[1].options.minimum_seeders = Some(0);
+    let report = integrations::search_report(&config, &request).unwrap();
+    assert_eq!(entries(&report, "accepted").len(), 1);
+    assert_eq!(entries(&report, "rejected").len(), 1);
+    assert_eq!(
+        integrations::select_release(&config, &request)
+            .unwrap()
+            .source_id
+            .as_deref(),
+        Some("second")
+    );
+    config.minimum_seeders = 0;
+    config.sources[1].options.minimum_seeders = Some(3);
+    assert_eq!(
+        integrations::search_report(&config, &request)
+            .unwrap()
+            .get("rejected")
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
 }

@@ -14,7 +14,7 @@ use crate::{
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, VecDeque},
     fs::{self, File},
-    io::{Read, Seek, SeekFrom, Write},
+    io::{Read, Write},
     os::unix::fs::{DirBuilderExt, FileExt, MetadataExt, PermissionsExt},
     path::{Path, PathBuf},
 };
@@ -22,9 +22,7 @@ use std::{
 pub(super) const MAX_WAL_BYTES: usize = 128 * 1024 * 1024;
 /// Error of a change whose WAL, with its tree pages, exceeds `MAX_WAL_BYTES`.
 pub(super) const WAL_BUDGET: &str = "Inventory transaction exceeds its WAL byte budget";
-const WAL_MAGIC: &[u8; 8] = b"MYNOUIW1";
-const VALUE_MAGIC: &[u8; 8] = b"MYNOUIV1";
-const FAST_VALUE_MAGIC: &[u8; 8] = b"MYNOUIV2";
+const VALUE_MAGIC: &[u8; 8] = b"MYNOUIV2";
 const ID_MAGIC: &[u8; 8] = b"MYNOUID1";
 const SEGMENT_MAGIC: &[u8; 8] = b"MYNOUIS1";
 /// Magic, store identity, segment number and their SHA-256.
@@ -51,25 +49,14 @@ pub(super) const CHECKPOINT_BYTES: u64 = 64 * 1024 * 1024;
 pub(super) struct Action {
     pub key: Key,
     pub data: Option<Vec<u8>>,
-    /// Inline values live in the tree leaf and have no record file.
+    /// Inline values live in the tree leaf, not in the value log.
     pub inline: bool,
     pub existed: bool,
-    /// Segment number and offset of a put written to the value log. Puts
-    /// without it come only from WALs written before the log existed.
+    /// Segment number and offset of a put written to the value log.
     pub segment: Option<(u64, u32)>,
-    /// The key may have a legacy record file to inspect and remove. Staging
-    /// knows from the replaced reference; a recovered WAL assumes it may.
-    pub replaces_file: bool,
-    /// The envelope carries XXH64. Only WALs from earlier releases have
-    /// SHA-256 envelopes.
-    pub fast: bool,
 }
 
 impl Action {
-    /// Only WALs from before the value log carry record-file puts.
-    fn writes_file(&self) -> bool {
-        self.data.is_some() && !self.inline && self.segment.is_none()
-    }
     pub(super) fn reference(&self) -> Result<Option<ValueRef>> {
         self.data
             .as_ref()
@@ -77,28 +64,20 @@ impl Action {
                 if self.inline {
                     ValueRef::inline(data)
                 } else if let Some((number, offset)) = self.segment {
-                    Ok(if self.fast {
-                        ValueRef::logged(
-                            number,
-                            offset,
-                            data.len() as u32,
-                            fast_envelope_checksum(&self.key, data),
-                        )
-                    } else {
-                        ValueRef::segment(number, offset, data)
-                    })
+                    Ok(ValueRef::logged(
+                        number,
+                        offset,
+                        data.len() as u32,
+                        envelope_checksum(&self.key, data),
+                    ))
                 } else {
-                    Ok(ValueRef::file(data))
+                    Err("Inventory put has no value log location".into())
                 }
             })
             .transpose()
     }
     fn envelope(&self, data: &[u8]) -> Vec<u8> {
-        if self.fast {
-            fast_envelope(&self.key, data)
-        } else {
-            envelope(&self.key, data)
-        }
+        envelope(&self.key, data)
     }
 }
 pub(super) struct Transaction {
@@ -106,14 +85,6 @@ pub(super) struct Transaction {
     pub after: Header,
     pub pages: BTreeMap<u64, Node>,
     pub actions: Vec<Action>,
-}
-
-/// Which writer produced a transaction body: the per-commit WAL of earlier
-/// releases, or a record of the redo log.
-#[derive(Clone, Copy, PartialEq)]
-enum Origin {
-    Wal,
-    Redo,
 }
 
 #[cfg(test)]
@@ -145,7 +116,7 @@ pub(super) fn log_target(header: &Header, sealed: bool) -> Result<(u64, u64)> {
 }
 
 impl Transaction {
-    /// The body shared by WAL files and redo records, without framing.
+    /// The body of a redo record, without framing.
     pub fn encode(&self) -> Result<Vec<u8>> {
         let length = self.actions.iter().try_fold(
             2 * PAGE_SIZE + 8 + self.pages.len() * (PAGE_SIZE + 8),
@@ -179,10 +150,12 @@ impl Transaction {
             bytes.push(match (&action.data, action.inline, action.segment) {
                 (None, _, _) => 0,
                 (Some(_), true, _) => 2,
-                (Some(_), false, None) => 1,
                 (Some(_), false, Some(_)) => 3,
+                (Some(_), false, None) => {
+                    return Err("Inventory put has no value log location".into());
+                }
             });
-            bytes.push(u8::from(action.existed) | u8::from(action.replaces_file) << 1);
+            bytes.push(u8::from(action.existed));
             bytes.extend_from_slice(
                 &(action.data.as_ref().map_or(0, Vec::len) as u32).to_le_bytes(),
             );
@@ -197,21 +170,7 @@ impl Transaction {
         Ok(bytes)
     }
 
-    /// A per-commit WAL written by an earlier release.
-    fn decode_wal(bytes: &[u8], identity: [u8; 32]) -> Result<Self> {
-        if bytes.len() < 48 || bytes.len() > MAX_WAL_BYTES + 48 || &bytes[..8] != WAL_MAGIC {
-            return Err("Invalid published inventory WAL format or length".into());
-        }
-        let length = u64::from_le_bytes(bytes[8..16].try_into().map_err(|_| "Invalid WAL length")?);
-        if length.checked_add(48) != Some(bytes.len() as u64)
-            || sha256(&bytes[..bytes.len() - 32]).as_slice() != &bytes[bytes.len() - 32..]
-        {
-            return Err("Corrupt or truncated published inventory WAL".into());
-        }
-        Self::decode(&bytes[16..bytes.len() - 32], identity, Origin::Wal)
-    }
-
-    fn decode(body: &[u8], identity: [u8; 32], origin: Origin) -> Result<Self> {
+    fn decode(body: &[u8], identity: [u8; 32]) -> Result<Self> {
         let mut reader = Reader {
             bytes: body,
             position: 0,
@@ -238,34 +197,21 @@ impl Transaction {
         for _ in 0..count {
             let id = reader.u64()?;
             let page = reader.take(PAGE_SIZE)?;
-            if id == 0 || id >= after.next || page[16] > 63 {
+            if id == 0 || id >= after.next {
                 return Err("Invalid inventory WAL page reference".into());
             }
-            let node = Node::decode(page, id, page[16], after.next, identity)?;
+            let node = Node::decode_page(page, id, after.next, identity)?;
             if pages.insert(id, node).is_some() {
                 return Err("Duplicate inventory WAL page".into());
             }
         }
         let count = reader.u32()? as usize;
-        if count > MAX_CHANGES {
+        if count == 0 || count > MAX_CHANGES {
             return Err("Invalid inventory WAL action count".into());
         }
-        // Range-count upgrades only replace branch metadata. They leave the
-        // root, allocation, records and value log unchanged, and advance the
-        // sequence once like every other recoverable transaction.
-        if count == 0 {
-            let mut unchanged = after;
-            unchanged.sequence = before.sequence;
-            if unchanged != before || pages.is_empty() || pages.values().any(|node| node.level == 0)
-            {
-                return Err("Invalid inventory metadata-only WAL".into());
-            }
-        }
-        // A WAL wrote each commit's values to a new segment `head`. A redo
-        // record either appends to segment `head` or starts the next one;
+        // A record either appends to segment `head` or starts the next one;
         // its first envelope says which.
-        let mut target: Option<(u64, u64)> =
-            (origin == Origin::Wal).then_some((before.head, SEGMENT_HEADER_BYTES));
+        let mut target: Option<(u64, u64)> = None;
         let fresh = before.head + u64::from(before.head_length > 0);
         let mut actions = Vec::new();
         let mut keys = BTreeSet::new();
@@ -280,7 +226,8 @@ impl Transaction {
             let flags = reader.byte()?;
             let length = reader.u32()? as usize;
             if put > 3
-                || flags > if origin == Origin::Redo { 3 } else { 1 }
+                || put == 1
+                || flags > 1
                 || length
                     > if put == 2 {
                         tree::MAX_INLINE_BYTES
@@ -298,15 +245,10 @@ impl Transaction {
                 if segment_end == 0 {
                     segment_end = first;
                 }
-                let placed = match origin {
-                    Origin::Wal => before.head.checked_add(1) == Some(after.head),
-                    Origin::Redo => {
-                        (number == before.head
-                            && before.head_length > 0
-                            && first == before.head_length)
-                            || (number == fresh && first == SEGMENT_HEADER_BYTES)
-                    }
-                };
+                let placed = (number == before.head
+                    && before.head_length > 0
+                    && first == before.head_length)
+                    || (number == fresh && first == SEGMENT_HEADER_BYTES);
                 if !placed || segment != number || offset != segment_end {
                     return Err("Inventory WAL segment location mismatch".into());
                 }
@@ -339,17 +281,12 @@ impl Transaction {
                 inline: put == 2,
                 existed,
                 segment,
-                replaces_file: origin == Origin::Wal || flags & 2 == 2,
-                fast: origin == Origin::Redo,
             });
         }
-        let log_agrees = match (origin, target) {
-            (Origin::Wal, _) => (segment_end != 0) == (after.head != before.head),
-            (Origin::Redo, Some((number, _))) => {
-                after.head == number && after.head_length == segment_end
-            }
+        let log_agrees = match target {
+            Some((number, _)) => after.head == number && after.head_length == segment_end,
             // Nothing appended: segment `head` is unchanged, or sealed.
-            (Origin::Redo, None) => {
+            None => {
                 (after.head == before.head && after.head_length == before.head_length)
                     || (after.head == fresh && after.head_length == 0 && fresh != before.head)
             }
@@ -383,9 +320,6 @@ impl Transaction {
         let mut cache = tree::Cache::new();
         let mut overlay = Tree::new(file, self.after, &mut cache);
         overlay.dirty = self.pages.clone();
-        if self.actions.is_empty() {
-            overlay.validate_count_upgrade()?;
-        }
         for action in &self.actions {
             if overlay.find(&action.key)? != action.reference()? {
                 return Err("Inventory WAL records disagree with its tree pages".into());
@@ -502,16 +436,6 @@ impl Redo {
     }
 }
 
-pub(super) const CREATION_REDO_BYTES: usize = SLOT_BYTES as usize + 24 + PAGE_SIZE + 8;
-
-/// The redo file a new store starts with: an empty first slot and the
-/// creation checkpoint in the second.
-pub(super) fn creation_redo(identity: [u8; 32]) -> Vec<u8> {
-    let mut bytes = vec![0; SLOT_BYTES as usize];
-    bytes.extend_from_slice(&slot_bytes(1, 0, &Header::empty(identity)));
-    bytes
-}
-
 fn slot_bytes(generation: u64, retired_from: u64, header: &Header) -> Vec<u8> {
     let mut bytes = Vec::from(SLOT_MAGIC.as_slice());
     bytes.extend_from_slice(&generation.to_le_bytes());
@@ -590,7 +514,7 @@ fn read_record(
     if xxh64(&bytes[..end]).to_le_bytes() != bytes[end..] {
         return Ok(None);
     }
-    let transaction = Transaction::decode(&bytes[24..end], identity, Origin::Redo)
+    let transaction = Transaction::decode(&bytes[24..end], identity)
         .map_err(|error| format!("Inventory redo record is invalid: {error}"))?;
     Ok(Some((
         transaction,
@@ -688,26 +612,14 @@ fn present(path: &Path) -> Result<bool> {
     }
 }
 
-#[cfg(test)]
-thread_local! { pub(super) static CREATE_STOP: std::cell::Cell<Option<u8>> = const { std::cell::Cell::new(None) }; }
-fn creation_checkpoint(stage: u8) -> Result<()> {
-    #[cfg(test)]
-    if CREATE_STOP.with(|s| s.get()) == Some(stage) {
-        return Err("Inventory creation interrupted by fixture".into());
-    }
-    let _ = stage;
-    Ok(())
-}
 pub(super) fn create(directory: &Path) -> Result<Index> {
-    create_bound(directory, random_bytes::<32>()?)
+    create_checked(directory).map_err(|error| explain_open(directory, error))
 }
-pub(super) fn create_bound(directory: &Path, identity: [u8; 32]) -> Result<Index> {
-    create_bound_checked(directory, identity).map_err(|error| explain_open(directory, error))
-}
-fn create_bound_checked(directory: &Path, identity: [u8; 32]) -> Result<Index> {
+fn create_checked(directory: &Path) -> Result<Index> {
+    let identity = random_bytes::<32>()?;
     clean_path(directory)?;
     reject_symlinks(directory)?;
-    // create, not create_dir_all or chmod: existing/legacy directories are inert.
+    // create, not create_dir_all or chmod: an existing directory is refused.
     fs::DirBuilder::new()
         .mode(0o700)
         .create(directory)
@@ -717,40 +629,27 @@ fn create_bound_checked(directory: &Path, identity: [u8; 32]) -> Result<Index> {
                 io_text(&error)
             )
         })?;
-    creation_checkpoint(1)?;
     let lock = new_file(&directory.join(".lock"))?;
     try_lock_file(&lock).map_err(|error| format!("Cannot lock inventory: {error}"))?;
-    creation_checkpoint(2)?;
     let mut bytes = Vec::from(ID_MAGIC.as_slice());
     bytes.extend_from_slice(&identity);
     bytes.extend_from_slice(&sha256(&bytes));
     let mut id_file = new_file(&directory.join("identity.bin"))?;
-    creation_checkpoint(6)?;
     id_file
         .write_all(&bytes)
         .and_then(|()| sync_file(&id_file))
         .map_err(|error| io_text(&error))?;
-    creation_checkpoint(3)?;
-    fs::DirBuilder::new()
-        .mode(0o700)
-        .create(directory.join("objects"))
-        .map_err(|error| io_text(&error))?;
-    sync_directory(&directory.join("objects"))?;
-    creation_checkpoint(4)?;
     let header = Header::empty(identity);
     // The redo log precedes the tree: a directory without the tree is an
-    // interrupted creation, never a store from before the redo log.
+    // interrupted creation.
     let redo = new_file(&directory.join(REDO))?;
-    redo.write_all_at(&creation_redo(identity)[SLOT_BYTES as usize..], SLOT_BYTES)
+    redo.write_all_at(&slot_bytes(1, 0, &header), SLOT_BYTES)
         .and_then(|()| sync_file(&redo))
         .map_err(|error| io_text(&error))?;
-    creation_checkpoint(8)?;
     let mut tree = new_file(&directory.join("tree.bin"))?;
-    creation_checkpoint(7)?;
     tree.write_all(&header.encode())
         .and_then(|()| sync_file(&tree))
         .map_err(|error| io_text(&error))?;
-    creation_checkpoint(5)?;
     sync_file(&lock).map_err(|error| io_text(&error))?;
     sync_directory(directory)?;
     sync_directory(
@@ -769,7 +668,6 @@ fn create_bound_checked(directory: &Path, identity: [u8; 32]) -> Result<Index> {
         segments: Segments::default(),
         redo: Some(Box::new(Redo::new(redo, 1, header))),
         read_only: false,
-        interrupted: false,
         poisoned: false,
         #[cfg(test)]
         fault: None,
@@ -779,8 +677,6 @@ fn create_bound_checked(directory: &Path, identity: [u8; 32]) -> Result<Index> {
         requests: 0,
         #[cfg(test)]
         last_staged_nodes: 0,
-        #[cfg(test)]
-        legacy_records: false,
     })
 }
 
@@ -795,23 +691,14 @@ fn clean_path(path: &Path) -> Result<()> {
     Ok(())
 }
 
-pub(super) fn open(
-    directory: &Path,
-    read_only: bool,
-    expected_identity: Option<[u8; 32]>,
-) -> Result<Index> {
-    open_checked(directory, read_only, expected_identity)
-        .map_err(|error| explain_open(directory, error))
+pub(super) fn open(directory: &Path, read_only: bool) -> Result<Index> {
+    open_checked(directory, read_only).map_err(|error| explain_open(directory, error))
 }
 
-fn open_checked(
-    directory: &Path,
-    read_only: bool,
-    expected_identity: Option<[u8; 32]>,
-) -> Result<Index> {
+fn open_checked(directory: &Path, read_only: bool) -> Result<Index> {
     clean_path(directory)?;
     private_directory(directory)?;
-    // No new files, permission edits or legacy-format fallbacks during open.
+    // No new files or permission edits during open.
     let mut id_file = private_file(&directory.join("identity.bin"), false)?;
     let identity = read_bounded(&mut id_file, 72)?;
     if identity.len() != 72
@@ -823,76 +710,18 @@ fn open_checked(
     let identity: [u8; 32] = identity[8..40]
         .try_into()
         .map_err(|_| "Invalid inventory identity")?;
-    if expected_identity.is_some_and(|expected| expected != identity) {
-        return Err("Inventory marker names a different index".into());
-    }
     let lock = private_file(&directory.join(".lock"), false)?;
     try_lock_file(&lock).map_err(|error| {
         format!("Inventory storage is already open or cannot be locked: {error}")
     })?;
-    private_directory(&directory.join("objects"))?;
     let mut tree = private_file(&directory.join("tree.bin"), !read_only)?;
-    let published = directory.join("transaction.bin");
-    let staging = directory.join("transaction.tmp");
     let redo_path = directory.join(REDO);
-    // A WAL is only ever left by a release from before the redo log.
-    let legacy = present(&published)? || Header::is_legacy(&tree::read_page(&mut tree, 0)?);
-    let mut replay = Replay::default();
-    let (header, redo) = if present(&redo_path)? {
-        if present(&published)? || present(&staging)? {
-            return Err("Inventory has both a redo log and an earlier WAL".into());
-        }
-        let file = private_file(&redo_path, !read_only)?;
-        let (redo, state, pending) = recover(directory, &mut tree, file, identity, read_only)?;
-        replay = pending;
-        (state, (!read_only).then(|| Box::new(redo)))
-    } else {
-        if present(&published)? {
-            if read_only {
-                return Err(
-                    "Inventory has a pending transaction; writable recovery is required".into(),
-                );
-            }
-            let mut wal = private_file(&published, false)?;
-            let bytes = read_bounded(&mut wal, MAX_WAL_BYTES + 48)?;
-            let transaction = Transaction::decode_wal(&bytes, identity)?;
-            transaction.validate_overlay(&mut tree)?;
-            preflight(directory, &transaction)?;
-            apply(
-                directory,
-                &mut tree,
-                &transaction,
-                true,
-                #[cfg(test)]
-                None,
-                #[cfg(not(test))]
-                (),
-            )?;
-            fs::remove_file(&published)
-                .map_err(|error| format!("Cannot retire inventory WAL: {}", io_text(&error)))?;
-            sync_directory(directory)?;
-        }
-        if !legacy {
-            return Err("Inventory redo log is missing".into());
-        }
-        let header = Header::decode(&tree::read_page(&mut tree, 0)?)?;
-        if present(&staging)? {
-            if read_only {
-                return Err(
-                    "Inventory has unpublished staging; writable recovery is required".into(),
-                );
-            }
-            private_file(&staging, false)?;
-            fs::remove_file(&staging).map_err(|error| io_text(&error))?;
-            sync_directory(directory)?;
-        }
-        let redo = if read_only {
-            None
-        } else {
-            Some(Box::new(adopt_redo(directory, &mut tree, header)?))
-        };
-        (header, redo)
-    };
+    if !present(&redo_path)? {
+        return Err("Inventory redo log is missing".into());
+    }
+    let file = private_file(&redo_path, !read_only)?;
+    let (redo, header, mut replay) = recover(directory, &mut tree, file, identity, read_only)?;
+    let redo = (!read_only).then(|| Box::new(redo));
     // Pages a read-only open replayed need not have reached the tree file.
     if replay.pages.is_empty() {
         let root = Header::decode(&tree::read_page(&mut tree, 0)?)?;
@@ -928,7 +757,6 @@ fn open_checked(
         },
         redo,
         read_only,
-        interrupted: replay.interrupted,
         poisoned: false,
         #[cfg(test)]
         fault: None,
@@ -938,48 +766,20 @@ fn open_checked(
         requests: 0,
         #[cfg(test)]
         last_staged_nodes: 0,
-        #[cfg(test)]
-        legacy_records: false,
     })
 }
 
-/// Gives a store from before the redo log its first checkpoint. The log is
-/// durable before the root changes format, and the new root format makes
-/// earlier releases refuse the store before any record exists.
-fn adopt_redo(directory: &Path, tree: &mut File, header: Header) -> Result<Redo> {
-    let file = new_file(&directory.join(REDO))?;
-    file.write_all_at(&slot_bytes(1, header.tail, &header), SLOT_BYTES)
-        .and_then(|()| sync_file(&file))
-        .map_err(|error| format!("Cannot create inventory redo log: {}", io_text(&error)))?;
-    sync_directory(directory)?;
-    tree.write_all_at(&header.encode(), 0)
-        .and_then(|()| sync_file(tree))
-        .map_err(|error| format!("Cannot persist inventory root: {}", io_text(&error)))?;
-    Ok(Redo::new(file, 1, header))
-}
-
-/// Replays records after the checkpoint and checkpoints again. Read-only
-/// opens refuse pending records, as they refuse a pending WAL.
-/// What a read-only open takes from records it may not apply: the pages and
-/// segment bytes they wrote, which the files may lack after a crash.
 #[derive(Default)]
 struct Replay {
     pages: HashMap<u64, std::sync::Arc<Node>>,
     /// Per segment, where the pending bytes start and the bytes.
     segments: HashMap<u64, (u64, Vec<u8>)>,
-    /// Any record or interrupted record write follows the checkpoint.
-    interrupted: bool,
 }
 
 impl Replay {
     fn new(records: &[Transaction]) -> Result<Self> {
         let mut replay = Self::default();
         for transaction in records {
-            if transaction.actions.iter().any(Action::writes_file) {
-                return Err(
-                    "Inventory has a pending record file; writable recovery is required".into(),
-                );
-            }
             for (id, node) in &transaction.pages {
                 replay.pages.insert(*id, std::sync::Arc::new(node.clone()));
             }
@@ -1023,9 +823,11 @@ fn recover(
     }
     if read_only {
         let state = records.last().map_or(slot, |record| record.after);
-        let mut replay = Replay::new(&records)?;
-        replay.interrupted = !records.is_empty() || torn;
-        return Ok((Redo::new(file, generation, slot), state, replay));
+        return Ok((
+            Redo::new(file, generation, slot),
+            state,
+            Replay::new(&records)?,
+        ));
     }
     let mut redo = Redo::new(file, generation, slot);
     let mut state = slot;
@@ -1142,25 +944,6 @@ fn read_bounded(file: &mut File, maximum: usize) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 
-pub(super) fn value_path(directory: &Path, key: &Key) -> PathBuf {
-    let name: String = key.iter().map(|byte| format!("{byte:02x}")).collect();
-    directory.join("objects").join(&name[..2]).join(&name[2..])
-}
-
-pub(super) fn check_value_path(directory: &Path, key: &Key) -> Result<()> {
-    let path = value_path(directory, key);
-    private_directory(&directory.join("objects"))?;
-    let parent = path.parent().ok_or("Missing inventory object directory")?;
-    if present(parent)? {
-        private_directory(parent)?;
-    }
-    reject_symlinks(&path)?;
-    if present(&path)? {
-        private_file(&path, false)?;
-    }
-    Ok(())
-}
-
 pub(super) fn read_value(
     directory: &Path,
     header: &Header,
@@ -1171,60 +954,32 @@ pub(super) fn read_value(
     if reference.inline {
         return Ok(reference.inline_data().to_vec());
     }
-    if reference.segment {
-        let (number, offset) = reference.location();
-        if number < header.tail
-            || number > header.head
-            || (number == header.head && header.head_length == 0)
-        {
-            return Err("Inventory record names a segment outside the value log".into());
-        }
-        let bytes = segments.read_envelope(
-            directory,
-            header.identity,
-            number,
-            u64::from(offset),
-            reference.length,
-        )?;
-        let (stored, data, checksum) = open_envelope(&bytes)?;
-        let bound = if reference.fast {
-            checksum == Some(reference.checksum())
-        } else {
-            checksum.is_none() && sha256(data)[..20] == reference.digest[12..]
-        };
-        if stored != *key || data.len() != reference.length as usize || !bound {
-            return Err("Inventory record identity, length or checksum mismatch".into());
-        }
-        return Ok(data.to_vec());
+    let (number, offset) = reference.location();
+    if number < header.tail
+        || number > header.head
+        || (number == header.head && header.head_length == 0)
+    {
+        return Err("Inventory record names a segment outside the value log".into());
     }
-    check_value_path(directory, key)?;
-    let mut file = private_file(&value_path(directory, key), false)?;
-    let bytes = read_bounded(&mut file, reference.length as usize + 108)?;
+    let bytes = segments.read_envelope(
+        directory,
+        header.identity,
+        number,
+        u64::from(offset),
+        reference.length,
+    )?;
     let (stored, data, checksum) = open_envelope(&bytes)?;
-    if stored != *key
-        || data.len() != reference.length as usize
-        || checksum.is_some()
-        || sha256(data) != reference.digest
+    if stored != *key || data.len() != reference.length as usize || checksum != reference.checksum()
     {
         return Err("Inventory record identity, length or checksum mismatch".into());
     }
     Ok(data.to_vec())
 }
 
+/// An envelope whose checksum field holds its XXH64 and then zeros.
 fn envelope(key: &Key, data: &[u8]) -> Vec<u8> {
     let mut bytes = Vec::with_capacity(data.len() + ENVELOPE_BYTES as usize);
     bytes.extend_from_slice(VALUE_MAGIC);
-    bytes.extend_from_slice(key);
-    bytes.extend_from_slice(&(data.len() as u32).to_le_bytes());
-    bytes.extend_from_slice(data);
-    bytes.extend_from_slice(&sha256(&bytes));
-    bytes
-}
-
-/// An envelope whose checksum field holds its XXH64 and then zeros.
-fn fast_envelope(key: &Key, data: &[u8]) -> Vec<u8> {
-    let mut bytes = Vec::with_capacity(data.len() + ENVELOPE_BYTES as usize);
-    bytes.extend_from_slice(FAST_VALUE_MAGIC);
     bytes.extend_from_slice(key);
     bytes.extend_from_slice(&(data.len() as u32).to_le_bytes());
     bytes.extend_from_slice(data);
@@ -1233,15 +988,14 @@ fn fast_envelope(key: &Key, data: &[u8]) -> Vec<u8> {
     bytes
 }
 
-fn fast_envelope_checksum(key: &Key, data: &[u8]) -> u64 {
-    let envelope = fast_envelope(key, data);
+fn envelope_checksum(key: &Key, data: &[u8]) -> u64 {
+    let envelope = envelope(key, data);
     let end = envelope.len() - 32;
     u64::from_le_bytes(envelope[end..end + 8].try_into().unwrap_or_default())
 }
 
-/// Checks a complete envelope and returns its key, value and, for an XXH64
-/// envelope, its checksum.
-fn open_envelope(bytes: &[u8]) -> Result<(Key, &[u8], Option<u64>)> {
+/// Checks a complete envelope and returns its key, value and checksum.
+fn open_envelope(bytes: &[u8]) -> Result<(Key, &[u8], u64)> {
     let invalid = || "Inventory record identity, length or checksum mismatch".to_owned();
     if bytes.len() < ENVELOPE_BYTES as usize
         || u32::from_le_bytes(
@@ -1254,19 +1008,13 @@ fn open_envelope(bytes: &[u8]) -> Result<(Key, &[u8], Option<u64>)> {
         return Err(invalid());
     }
     let end = bytes.len() - 32;
-    let checksum = if &bytes[..8] == FAST_VALUE_MAGIC {
-        let checksum = xxh64(&bytes[..end]);
-        if checksum.to_le_bytes() != bytes[end..end + 8]
-            || bytes[end + 8..].iter().any(|byte| *byte != 0)
-        {
-            return Err(invalid());
-        }
-        Some(checksum)
-    } else if &bytes[..8] == VALUE_MAGIC && sha256(&bytes[..end]).as_slice() == &bytes[end..] {
-        None
-    } else {
+    let checksum = xxh64(&bytes[..end]);
+    if &bytes[..8] != VALUE_MAGIC
+        || checksum.to_le_bytes() != bytes[end..end + 8]
+        || bytes[end + 8..].iter().any(|byte| *byte != 0)
+    {
         return Err(invalid());
-    };
+    }
     let key = bytes[8..72].try_into().map_err(|_| "Invalid record key")?;
     Ok((key, &bytes[76..end], checksum))
 }
@@ -1415,15 +1163,12 @@ impl Segment {
         }
         let bytes = self.read_envelope(offset, length as u32)?;
         let (key, data, checksum) = open_envelope(&bytes)?;
-        let reference = match checksum {
-            Some(checksum) => ValueRef::logged(number, offset as u32, length as u32, checksum),
-            None => ValueRef::segment(number, offset as u32, data),
-        };
+        let reference = ValueRef::logged(number, offset as u32, length as u32, checksum);
         Ok(Some((key, data.to_vec(), reference)))
     }
 }
 
-/// Inspects the segments and record files a redo replay writes or removes.
+/// Inspects the segments a redo replay writes or removes.
 fn preflight_redo(directory: &Path, transaction: &Transaction) -> Result<()> {
     private_directory(directory)?;
     let segments = directory.join("segments");
@@ -1436,42 +1181,7 @@ fn preflight_redo(directory: &Path, transaction: &Transaction) -> Result<()> {
     for number in transaction.before.tail..transaction.after.tail {
         check_segment_path(directory, number)?;
     }
-    preflight_files(directory, transaction)
-}
-
-/// Record-file checks for the keys a transaction writes or may remove.
-fn preflight_files(directory: &Path, transaction: &Transaction) -> Result<()> {
-    for action in &transaction.actions {
-        if action.replaces_file || action.writes_file() {
-            check_value_path(directory, &action.key)?;
-        }
-    }
     Ok(())
-}
-
-fn preflight(directory: &Path, transaction: &Transaction) -> Result<()> {
-    private_directory(directory)?;
-    // Inspect all segment paths before publishing a WAL or applying any redo.
-    // Recovery may replace a torn private file, but never an unsafe entry.
-    let segments = directory.join("segments");
-    if present(&segments)? {
-        private_directory(&segments)?;
-    }
-    if transaction
-        .after
-        .tail
-        .saturating_sub(transaction.before.tail)
-        > super::MAX_RETIRED_SEGMENTS
-    {
-        return Err("Inventory transaction exceeds its segment retirement budget".into());
-    }
-    if transaction.after.head != transaction.before.head {
-        check_segment_path(directory, transaction.before.head)?;
-    }
-    for number in transaction.before.tail..transaction.after.tail {
-        check_segment_path(directory, number)?;
-    }
-    preflight_files(directory, transaction)
 }
 
 fn check_segment_path(directory: &Path, number: u64) -> Result<()> {
@@ -1575,19 +1285,21 @@ pub(super) fn commit(
     if present(&segments).map_err(Failure::before)? {
         private_directory(&segments).map_err(Failure::before)?;
     }
-    preflight_files(&index.directory, transaction).map_err(Failure::before)?;
     let Some(redo) = index.redo.as_mut() else {
         return Err(Failure::before(
             "Inventory is open without its redo log".into(),
         ));
     };
-    let record = record_bytes(redo.generation, body);
-    if redo.pending() && redo.end - RECORDS + record.len() as u64 > CHECKPOINT_BYTES {
+    let length = (RECORD_FRAMING + body.len() as u64).next_multiple_of(RECORD_ALIGN);
+    if redo.pending() && redo.end - RECORDS + length > CHECKPOINT_BYTES {
         // Until the slot is durable the previous checkpoint and records hold.
         index.poisoned = true;
         checkpoint(&index.directory, &index.tree, redo, &index.header).map_err(Failure::before)?;
         index.poisoned = false;
     }
+    // Framed after the checkpoint: recovery reads only records of the
+    // generation in force, and a checkpoint starts a new one.
+    let record = record_bytes(redo.generation, body);
     // From the first record byte onward, storage needs a reopen: recovery
     // replays an intact record and ignores an interrupted one.
     index.poisoned = true;
@@ -1656,8 +1368,8 @@ pub(super) fn close(index: &mut Index) -> Result<()> {
     Ok(())
 }
 
-/// Writes a recorded change to the segments, record files and tree without
-/// flushing; the next checkpoint does. Replaying a record writes the same
+/// Writes a recorded change to the segments and tree without flushing; the
+/// next checkpoint does. Replaying a record writes the same
 /// bytes again, so it is idempotent.
 fn apply_logged(
     directory: &Path,
@@ -1675,7 +1387,7 @@ fn apply_logged(
             .map_err(|error| format!("Cannot persist inventory segment: {}", io_text(&error)))?;
         segments.extend(number, start + bytes.len() as u64);
     }
-    apply_files_and_pages(directory, tree, redo, transaction, fault)
+    apply_pages(tree, transaction, fault)
 }
 
 /// The bytes a record appends to its segment, with the segment and where
@@ -1722,10 +1434,8 @@ fn record_target(transaction: &Transaction) -> Option<(u64, u64)> {
     })
 }
 
-fn apply_files_and_pages(
-    directory: &Path,
+fn apply_pages(
     tree: &mut File,
-    redo: &mut Redo,
     transaction: &Transaction,
     #[cfg(test)] fault: Option<Fault>,
     #[cfg(not(test))] fault: (),
@@ -1733,21 +1443,6 @@ fn apply_files_and_pages(
     #[cfg(test)]
     if fault == Some(Fault::FirstRecord) {
         return Err("Injected interruption during record apply".into());
-    }
-    for action in &transaction.actions {
-        let path = value_path(directory, &action.key);
-        let parent = path.parent().ok_or("Missing inventory object directory")?;
-        if let Some(data) = action.data.as_ref().filter(|_| action.writes_file()) {
-            if write_record_file(directory, &path, &action.key, data, fault)? {
-                redo.directories.insert(directory.join("objects"));
-            }
-            redo.directories.insert(parent.to_owned());
-        } else if action.replaces_file && present(&path)? {
-            private_file(&path, false)?;
-            fs::remove_file(&path)
-                .map_err(|error| format!("Cannot delete inventory record: {}", io_text(&error)))?;
-            redo.directories.insert(parent.to_owned());
-        }
     }
     for (number, (id, node)) in transaction.pages.iter().enumerate() {
         inject(fault, Stage::Tree)
@@ -1778,158 +1473,6 @@ fn apply_files_and_pages(
     Ok(())
 }
 
-/// Writes a legacy record file under a temporary name, flushes it and
-/// publishes it at its key. Returns whether its object directory is new.
-fn write_record_file(
-    directory: &Path,
-    path: &Path,
-    key: &Key,
-    data: &[u8],
-    #[cfg(test)] fault: Option<Fault>,
-    #[cfg(not(test))] fault: (),
-) -> Result<bool> {
-    let parent = path.parent().ok_or("Missing inventory object directory")?;
-    let mut created = false;
-    if !present(parent)? {
-        fs::DirBuilder::new()
-            .mode(0o700)
-            .create(parent)
-            .map_err(|error| {
-                format!(
-                    "Cannot create inventory object directory: {}",
-                    io_text(&error)
-                )
-            })?;
-        created = true;
-    }
-    private_directory(parent)?;
-    let _ = directory;
-    let temporary = parent.join(format!(".record-{}.tmp", hex(&random_bytes::<16>()?)));
-    let mut owns_temporary = false;
-    let result = (|| -> Result<()> {
-        let mut file = new_file(&temporary)?;
-        owns_temporary = true;
-        inject(fault, Stage::Objects)
-            .and_then(|()| file.write_all(&envelope(key, data)))
-            .and_then(|()| sync_file(&file))
-            .map_err(|error| format!("Cannot persist inventory record: {}", io_text(&error)))?;
-        fs::rename(&temporary, path)
-            .map_err(|error| format!("Cannot publish inventory record: {}", io_text(&error)))?;
-        Ok(())
-    })();
-    if result.is_err() && owns_temporary {
-        let _ = fs::remove_file(&temporary);
-    }
-    result.map(|()| created)
-}
-
-/// Applies a WAL left by an earlier release, flushing as that release did.
-fn apply(
-    directory: &Path,
-    tree: &mut File,
-    transaction: &Transaction,
-    recovering: bool,
-    #[cfg(test)] fault: Option<Fault>,
-    #[cfg(not(test))] fault: (),
-) -> Result<()> {
-    let mut affected = BTreeSet::new();
-    // Recovery cannot tell whether an interrupted apply made its new object
-    // directories durable, so it always synchronizes `objects`.
-    let mut created = recovering;
-    write_segment(directory, transaction, fault)?;
-    for action in &transaction.actions {
-        let path = value_path(directory, &action.key);
-        let parent = path.parent().ok_or("Missing inventory object directory")?;
-        if let Some(data) = action.data.as_ref().filter(|_| action.writes_file()) {
-            created |= write_record_file(directory, &path, &action.key, data, fault)?;
-            affected.insert(parent.to_owned());
-        } else if action.replaces_file && present(&path)? {
-            fs::remove_file(&path)
-                .map_err(|error| format!("Cannot delete inventory record: {}", io_text(&error)))?;
-            affected.insert(parent.to_owned());
-        }
-    }
-    for path in affected {
-        sync_directory(&path)?;
-    }
-    if created {
-        sync_directory(&directory.join("objects"))?;
-    }
-    for (id, node) in &transaction.pages {
-        tree.seek(SeekFrom::Start(tree::offset(*id)?))
-            .and_then(|_| inject(fault, Stage::Tree))
-            .and_then(|()| tree.write_all(&node.encode().map_err(std::io::Error::other)?))
-            .map_err(|error| format!("Cannot apply inventory page: {}", io_text(&error)))?;
-    }
-    tree.set_len(tree::offset(transaction.after.next)?)
-        .map_err(|error| io_text(&error))?;
-    tree.seek(SeekFrom::Start(0))
-        .and_then(|_| tree.write_all(&transaction.after.encode()))
-        .and_then(|()| sync_file(tree))
-        .map_err(|error| format!("Cannot persist inventory root: {}", io_text(&error)))?;
-    // The durable root no longer references segments the cleaner emptied.
-    if transaction.after.tail > transaction.before.tail {
-        remove_segments(directory, transaction.before.tail..transaction.after.tail)?;
-        sync_directory(&directory.join("segments"))?;
-    }
-    Ok(())
-}
-
-/// Writes the segment of a WAL left by an earlier release under a temporary
-/// name, flushes it once and publishes it at its number.
-fn write_segment(
-    directory: &Path,
-    transaction: &Transaction,
-    #[cfg(test)] fault: Option<Fault>,
-    #[cfg(not(test))] fault: (),
-) -> Result<()> {
-    let number = transaction.before.head;
-    let mut bytes = Vec::new();
-    for action in &transaction.actions {
-        let (Some((segment, offset)), Some(data)) = (action.segment, action.data.as_ref()) else {
-            continue;
-        };
-        if bytes.is_empty() {
-            bytes = segment_header(transaction.after.identity, number);
-        }
-        if segment != number || offset as usize != bytes.len() {
-            return Err("Inventory segment layout disagrees with its WAL".into());
-        }
-        bytes.extend_from_slice(&action.envelope(data));
-    }
-    if bytes.is_empty() {
-        return Ok(());
-    }
-    let segments = directory.join("segments");
-    if !present(&segments)? {
-        fs::DirBuilder::new()
-            .mode(0o700)
-            .create(&segments)
-            .map_err(|error| format!("Cannot create inventory segments: {}", io_text(&error)))?;
-        sync_directory(directory)?;
-    }
-    private_directory(&segments)?;
-    let temporary = segments.join(format!(".segment-{}.tmp", hex(&random_bytes::<16>()?)));
-    let mut owns_temporary = false;
-    let result = (|| -> Result<()> {
-        let mut file = new_file(&temporary)?;
-        owns_temporary = true;
-        inject(fault, Stage::Objects)
-            .and_then(|()| file.write_all(&bytes))
-            .and_then(|()| sync_file(&file))
-            .map_err(|error| format!("Cannot persist inventory segment: {}", io_text(&error)))?;
-        check_segment_path(directory, number)?;
-        fs::rename(&temporary, segment_path(directory, number))
-            .map_err(|error| format!("Cannot publish inventory segment: {}", io_text(&error)))?;
-        sync_directory(&segments)
-    })();
-    if result.is_err() && owns_temporary {
-        let _ = fs::remove_file(&temporary);
-    }
-    result
-}
-
-/// Test fixture: the body of every redo record after the checkpoint.
 #[cfg(test)]
 pub(crate) fn redo_bodies(directory: &Path) -> Vec<Vec<u8>> {
     let bytes = fs::read(directory.join(REDO)).unwrap();
@@ -1965,18 +1508,11 @@ pub(crate) fn rewrite_redo_body(directory: &Path, index: usize, body: &[u8]) {
     fs::write(&path, bytes).unwrap();
 }
 
-/// Test fixture: flips one byte inside every stored envelope of `key` (in any
-/// segment or legacy record file) and returns how many it damaged.
+/// Test fixture: flips one byte inside every stored envelope of `key` in any
+/// segment and returns how many it damaged.
 #[cfg(test)]
 pub(crate) fn damage_record(directory: &Path, key: &Key) -> usize {
     let mut damaged = 0;
-    let legacy = value_path(directory, key);
-    if let Ok(mut bytes) = fs::read(&legacy) {
-        let middle = bytes.len() / 2;
-        bytes[middle] ^= 0x55;
-        fs::write(&legacy, bytes).unwrap();
-        damaged += 1;
-    }
     let Ok(entries) = fs::read_dir(directory.join("segments")) else {
         return damaged;
     };
@@ -1998,10 +1534,6 @@ pub(crate) fn damage_record(directory: &Path, key: &Key) -> usize {
     damaged
 }
 
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
-}
-
 #[cfg(test)]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum Fault {
@@ -2020,7 +1552,7 @@ pub(crate) enum Fault {
 pub(crate) enum Stage {
     /// Writing the redo record, before it can be durable.
     Wal,
-    /// Writing the value-log segment or a legacy record file.
+    /// Writing the value-log segment.
     Objects,
     /// Rewriting tree pages in place.
     Tree,

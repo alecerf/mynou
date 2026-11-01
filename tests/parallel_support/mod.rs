@@ -199,6 +199,7 @@ impl Torrent {
                 .unwrap(),
         )
         .unwrap();
+        mynou::torrent::index_handmade_transfer(config, &self.id).unwrap();
     }
 
     pub fn assert_files(&self, status: &DownloadStatus) {

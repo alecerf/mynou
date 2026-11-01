@@ -120,8 +120,7 @@ fn valid_name(name: &str) -> bool {
 pub struct Binding {
     pub title: Title,
     pub profile: String,
-    /// `operator` for an explicit change; `migration` remains readable from
-    /// bindings stored by the removed import.
+    /// `operator`: set by an explicit change.
     pub origin: String,
     pub updated_at: u64,
 }
@@ -149,7 +148,7 @@ impl Binding {
             origin: v
                 .get("origin")
                 .and_then(Value::as_str)
-                .filter(|o| matches!(*o, "operator" | "migration"))
+                .filter(|o| *o == "operator")
                 .ok_or("Title profile storage: invalid origin")?
                 .into(),
             updated_at: v
@@ -347,11 +346,10 @@ impl TitleProfiles {
         if exists(&self.directory.join(INDEX))? {
             return Err("Title profile storage: index appeared before promotion".into());
         }
-        fs::rename(&staging, self.directory.join(INDEX)).map_err(|error| {
-            crate::store::migration_io("Title profile storage", "write", &error)
-        })?;
+        fs::rename(&staging, self.directory.join(INDEX))
+            .map_err(|error| crate::store::storage_io("Title profile storage", "write", &error))?;
         sync_directory(&self.directory)
-            .map_err(|error| crate::store::migration_sync("Title profile storage", &error))?;
+            .map_err(|error| crate::store::storage_sync("Title profile storage", &error))?;
         Index::open(&self.directory.join(INDEX), false)
     }
 }

@@ -161,6 +161,29 @@ fn parse(message: &[u8]) -> Result<Reply, ReplyError> {
 }
 
 #[test]
+fn cname_addresses_and_ttl_do_not_depend_on_answer_order() {
+    let target = wire("target.example.net");
+    let middle = wire("middle.example.net");
+    let records = [
+        record(&target, TYPE_A, 60, &[203, 0, 113, 5]),
+        record(&middle, TYPE_CNAME, 20, &target),
+        record(&POINTER, TYPE_CNAME, 30, &middle),
+    ];
+    let expected = Ok(Reply::Addresses {
+        addresses: vec!["203.0.113.5".parse().unwrap()],
+        ttl: 20,
+    });
+    assert_eq!(parse(&reply(3, &records)), expected);
+    let reversed: Vec<_> = records.into_iter().rev().collect();
+    assert_eq!(parse(&reply(3, &reversed)), expected);
+    let cycle = [
+        record(&POINTER, TYPE_CNAME, 30, &target),
+        record(&target, TYPE_CNAME, 30, &wire(NAME)),
+    ];
+    assert_eq!(parse(&reply(2, &cycle)), Err(ReplyError::Records));
+}
+
+#[test]
 fn independent_query_vectors() {
     let rows = vectors().get("dns").unwrap().get("queries").unwrap();
     for row in rows.as_array().unwrap() {
@@ -292,7 +315,7 @@ fn cname_chains_are_followed_but_bounded() {
             ttl: 20
         })
     );
-    // A record for a name outside the chain, or before its CNAME, is not used.
+    // Records for names outside the chain are not used.
     let outside = [
         cname(&POINTER, &first),
         record(&second, TYPE_A, 40, &[198, 51, 100, 1]),

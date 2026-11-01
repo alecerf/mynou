@@ -1,0 +1,6 @@
+# Secrets that tests name; Mynou reads only `MYNOU_` environment variables.
+[env]
+MYNOU_TEST_SECRET_A = "mynou-test-secret-a"
+MYNOU_TEST_SECRET_B = "mynou-test-secret-b"
+# Not a valid bearer token: never sent.
+MYNOU_TEST_INVALID_TOKEN = "invalid token: spaces/and:colons"

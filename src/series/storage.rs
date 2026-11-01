@@ -8,7 +8,6 @@
 //! without enumerating the inventory. A save is one index transaction.
 use super::{
     CalendarQuery, Episode, NumberingChoice, Plan, Record, flag, integer,
-    migration::{self, MigrationReport},
     numbering::{catalog_id, initial_anchors},
     small, text,
 };
@@ -36,7 +35,6 @@ const FORMAT: &[u8] = b"mynou-series/1";
 const COUNT_SCAN_ROWS: u64 = 20_000;
 
 const T_META: u8 = 0x01;
-const T_MIGRATION: u8 = 0x02;
 const T_HEADER: u8 = 0x10;
 const T_BLOCK: u8 = 0x11;
 const T_CALENDAR: u8 = 0x20;
@@ -50,8 +48,6 @@ const T_OWNER: u8 = 0x51;
 pub(super) enum Backend {
     /// Nothing is stored yet; the index is created by the first write.
     Absent,
-    /// A legacy snapshot exists but this open cannot migrate it (read-only).
-    Unmigrated,
     Ready(Box<Index>),
 }
 
@@ -61,7 +57,6 @@ pub struct SeriesStore {
     pub(super) backend: Backend,
     read_only: bool,
     poisoned: bool,
-    pub(crate) migration: Option<MigrationReport>,
     pub(crate) due_pass: [usize; 3],
 }
 
@@ -216,18 +211,6 @@ const LAST_PASS_KEY: Key = {
     key[1] = 3;
     key
 };
-pub(super) const MIGRATION_SOURCE_KEY: [u8; 64] = {
-    let mut key = [0; 64];
-    key[0] = T_MIGRATION;
-    key
-};
-pub(super) const MIGRATION_CURSOR_KEY: [u8; 64] = {
-    let mut key = [0; 64];
-    key[0] = T_MIGRATION;
-    key[1] = 1;
-    key
-};
-
 /// `[start, end)` covering every key that begins with `prefix`.
 fn prefix_range(prefix: &[u8]) -> (Key, Option<Key>) {
     let mut end = prefix.to_vec();
@@ -722,7 +705,7 @@ fn counts_change(counts: Counts) -> Change {
 }
 
 /// Writes the format marker and zero counters into an empty index.
-pub(super) fn initialize(index: &mut Index) -> Result<()> {
+fn initialize(index: &mut Index) -> Result<()> {
     index.commit(vec![
         Change::PutInline(FORMAT_KEY, FORMAT.to_vec()),
         counts_change(Counts {
@@ -733,13 +716,11 @@ pub(super) fn initialize(index: &mut Index) -> Result<()> {
     Ok(())
 }
 
-/// Confirms the format marker of an opened index. An index that was created
-/// but never initialized (interrupted creation) is completed when writable.
-pub(super) fn check_format(index: &mut Index, read_only: bool) -> Result<()> {
+/// Confirms the format marker of an opened index.
+fn check_format(index: &mut Index) -> Result<()> {
     match index.get(&FORMAT_KEY)? {
         Some(value) if value == FORMAT => counts(index).map(|_| ()),
         Some(_) => Err("Unsupported series index format".into()),
-        None if index.is_empty()? && !read_only => initialize(index),
         None => Err("Series index is missing its format marker".into()),
     }
 }
@@ -871,82 +852,61 @@ pub(super) fn save_record(index: &mut Index, record: &Record, extra: Vec<Change>
     Ok(())
 }
 
-/// Confirms every entry a record owns is present with its exact content.
-pub(super) fn verify_record(index: &mut Index, record: &Record) -> Result<()> {
-    for (key, entry) in owned(record)? {
-        let stored = index.get(&key)?.ok_or("Series index entry is missing")?;
-        let (Entry::File(data) | Entry::Inline(data)) = entry;
-        if stored != data {
-            return Err("Series index entry differs from its record".into());
-        }
+const INDEX: &str = "series.idx";
+/// Where a new index is built before it takes its name.
+const STAGING: &str = "series.idx.creating";
+
+/// Creates the index of a store that has never held series, atomically.
+fn create(directory: &Path) -> Result<Index> {
+    let staging = directory.join(STAGING);
+    crate::store::reject_symlinks(&staging)?;
+    if exists(&staging)? {
+        // Only an interrupted creation leaves it, and it held no series.
+        std::fs::remove_dir_all(&staging)
+            .map_err(|error| format!("Cannot remove an unfinished series index: {error}"))?;
     }
-    Ok(())
+    let mut index = Index::create(&staging)?;
+    initialize(&mut index)?;
+    drop(index);
+    let path = directory.join(INDEX);
+    std::fs::rename(&staging, &path)
+        .map_err(|error| format!("Cannot publish the series index: {error}"))?;
+    crate::store::sync_directory(directory)
+        .map_err(|error| crate::store::storage_sync("Series storage", &error))?;
+    Index::open(&path, false)
 }
 
-pub(super) fn counts_of(index: &mut Index) -> Result<Counts> {
-    counts(index)
-}
-
-pub(super) fn cursor_of(index: &mut Index) -> Result<Option<String>> {
-    Ok(index
-        .get(&MIGRATION_CURSOR_KEY)?
-        .map(|bytes| id_text(&bytes)))
-}
-
-pub(super) fn source_of(index: &mut Index) -> Result<Option<Vec<u8>>> {
-    index.get(&MIGRATION_SOURCE_KEY)
-}
-
-pub(super) fn migration_changes(
-    source: Option<&[u8; 32]>,
-    cursor: Option<&str>,
-) -> Result<Vec<Change>> {
-    let mut changes = Vec::new();
-    if let Some(source) = source {
-        changes.push(Change::PutInline(MIGRATION_SOURCE_KEY, source.to_vec()));
+fn exists(path: &Path) -> Result<bool> {
+    match std::fs::symlink_metadata(path) {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(format!("Cannot inspect series storage: {error}")),
     }
-    if let Some(cursor) = cursor {
-        changes.push(Change::PutInline(
-            MIGRATION_CURSOR_KEY,
-            id_bytes(cursor)?.to_vec(),
-        ));
-    }
-    Ok(changes)
-}
-
-/// Retires the resumable cursor once a migration is verified.
-pub(super) fn clear_cursor() -> Change {
-    Change::Delete(MIGRATION_CURSOR_KEY)
 }
 
 // ---------------------------------------------------------------------------
 // The store
 
 impl SeriesStore {
+    /// Opens `series.idx`; a store that never held a series has none until
+    /// its first write.
     pub(crate) fn open(directory: &Path, read_only: bool) -> Result<Self> {
-        let mut store = migration::open(directory, read_only)?;
-        // Metadata-only batches resume after interruption. Status never upgrades
-        // counts or substitutes a scan when opening an old index read-only.
-        if !read_only && let Backend::Ready(index) = &mut store.backend {
-            while !index.prepare_range_counts(64)? {}
-        }
-        Ok(store)
-    }
-
-    pub(super) fn from_parts(
-        directory: &Path,
-        backend: Backend,
-        read_only: bool,
-        migration: Option<MigrationReport>,
-    ) -> Self {
-        Self {
+        let path = directory.join(INDEX);
+        crate::store::reject_symlinks(&path)?;
+        let backend = if exists(&path)? {
+            let mut index = Index::open(&path, read_only)?;
+            check_format(&mut index)?;
+            Backend::Ready(Box::new(index))
+        } else {
+            Backend::Absent
+        };
+        Ok(Self {
             directory: directory.to_owned(),
             backend,
             read_only,
             poisoned: false,
-            migration,
             due_pass: [0; 3],
-        }
+        })
     }
 
     pub(crate) fn check_writable(&self) -> Result<()> {
@@ -965,10 +925,6 @@ impl SeriesStore {
     fn reader(&mut self) -> Result<Option<&mut Index>> {
         match &mut self.backend {
             Backend::Absent => Ok(None),
-            Backend::Unmigrated => Err(
-                "Series storage has not been migrated; start the service or any command with write access once"
-                    .into(),
-            ),
             Backend::Ready(index) => Ok(Some(index)),
         }
     }
@@ -976,12 +932,12 @@ impl SeriesStore {
     fn writer(&mut self) -> Result<&mut Index> {
         self.check_writable()?;
         if matches!(self.backend, Backend::Absent) {
-            let index = migration::create_fresh(&self.directory)?;
+            let index = create(&self.directory)?;
             self.backend = Backend::Ready(Box::new(index));
         }
         match &mut self.backend {
             Backend::Ready(index) => Ok(index),
-            _ => Err("Series storage has not been migrated".into()),
+            Backend::Absent => Err("Series storage could not be created".into()),
         }
     }
 
@@ -1001,20 +957,16 @@ impl SeriesStore {
 
     /// Index size and state for diagnostics, from the durable root only.
     pub(crate) fn storage(&self) -> Value {
-        let mut value = match &self.backend {
+        match &self.backend {
             Backend::Absent => crate::inventory::report("empty", None),
-            Backend::Unmigrated => crate::inventory::report("needs_migration", None),
             Backend::Ready(index) => crate::inventory::report("index", Some(index)),
-        };
-        value.insert("migrated_at_start", self.migration.is_some());
-        value
+        }
     }
 
     /// Storage state for status reports; never fails on an unreadable store.
     pub fn describe(&mut self) -> Value {
         let state = match &self.backend {
             Backend::Absent => "empty",
-            Backend::Unmigrated => "needs_migration",
             Backend::Ready(_) => "index",
         };
         let mut value = Value::object();
@@ -1037,17 +989,6 @@ impl SeriesStore {
                 value.insert("monitored", Value::Null);
             }
         }
-        value.insert(
-            "migration",
-            self.migration.as_ref().map_or(Value::Null, |report| {
-                let mut value = Value::object();
-                value.insert("records", Value::Number(report.records as f64));
-                value.insert("episodes", Value::Number(report.episodes as f64));
-                value.insert("resumed", report.resumed);
-                value.insert("preserved_snapshot", report.backup.clone());
-                value
-            }),
-        );
         value
     }
 
@@ -1443,6 +1384,17 @@ impl SeriesStore {
         Ok(record)
     }
 
+    /// Test support: stores `records` in the closed series store under
+    /// `directory`, as if each had been tracked. Mynou never calls it.
+    #[doc(hidden)]
+    pub fn seed_for_tests(directory: &Path, records: Vec<Record>) -> Result<()> {
+        let mut store = Self::open(directory, false)?;
+        for record in records {
+            store.save(record)?;
+        }
+        Ok(())
+    }
+
     pub(crate) fn save(&mut self, mut record: Record) -> Result<()> {
         self.check_writable()?;
         record.plan.episodes.sort_by_key(|e| (e.season, e.episode));
@@ -1667,13 +1619,6 @@ fn scoped_calendar(index: &mut Index, query: &CalendarQuery, id: &str) -> Result
             })
             .collect(),
     })
-}
-
-/// Test-only: overwrites the counters, as a damaged index could present them.
-#[cfg(test)]
-pub(super) fn forge_counts(index: &mut Index, series: u64, monitored: u64) -> Result<()> {
-    index.commit(vec![counts_change(Counts { series, monitored })])?;
-    Ok(())
 }
 
 /// Test-only bulk loader: commits many brand-new records per transaction.

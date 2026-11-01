@@ -117,7 +117,7 @@ fn settings(http: &str) -> Value {
     let catalog = v.get_mut("catalog").unwrap();
     catalog.insert("enabled", true);
     catalog.insert("url", format!("{http}/3"));
-    catalog.insert("token_env", "PATH");
+    catalog.insert("token_env", "MYNOU_TEST_SECRET_A");
     v
 }
 fn setup() -> (Directory, Fixture, Config, std::sync::Arc<Engine>) {
@@ -143,7 +143,7 @@ fn resolve(engine: &Engine) -> (String, Value) {
     (outcome, report)
 }
 fn history(engine: &Engine) -> Vec<Value> {
-    let page = engine.irc_announcements(0, 50).unwrap();
+    let page = engine.irc_announcements(None, 50).unwrap();
     page.get("announcements")
         .unwrap()
         .as_array()
@@ -214,7 +214,7 @@ fn a_bracketed_candidate_resolves_through_the_exact_details_page_and_catalog() {
             .as_str(),
         Some("matched")
     );
-    let shown = mynou::json::stringify(&engine.irc_announcements(0, 50).unwrap());
+    let shown = mynou::json::stringify(&engine.irc_announcements(None, 50).unwrap());
     let reported = mynou::json::stringify(&report);
     for text in [
         shown,

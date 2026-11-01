@@ -78,7 +78,7 @@ fn configuration(url: &str, mapping: Option<&str>) -> Value {
     source.insert("name", "mapped");
     source.insert("kind", "json");
     source.insert("url", url);
-    source.insert("api_key_env", "PATH");
+    source.insert("api_key_env", "MYNOU_TEST_SECRET_A");
     if let Some(mapping) = mapping {
         source.insert("mapping", json::parse(mapping).unwrap());
     }
@@ -111,7 +111,7 @@ fn mapping_renames_parameters_and_reads_nested_fields_without_leaking_the_key() 
     );
     assert!(!line.contains("year=") && !line.contains("apikey="));
     assert!(report.contains("Fixture.Movie.2024.1080p"));
-    assert!(!report.contains(&std::env::var("PATH").unwrap()));
+    assert!(!report.contains(&std::env::var("MYNOU_TEST_SECRET_A").unwrap()));
     let health = mynou::indexers::report(&c.sources);
     let health = json::stringify(&health);
     assert!(!health.contains("data.torrents") && !health.contains("limit"));
@@ -322,10 +322,4 @@ fn a_mapping_changes_the_source_identity_and_its_absence_does_not() {
     assert_eq!(identity(&plain), identity(&again));
     assert_ne!(identity(&plain), identity(&mapped));
     assert_ne!(identity(&mapped), identity(&other));
-    // Bindings stored before the mapping existed must stay valid: this digest was
-    // computed on trunk before the mapping section was added.
-    assert_eq!(
-        identity(&plain),
-        "edc0f8a8e8a7683f07a62dc47607f537a817bb232e1fc3ccb5c3874c2b84fcda"
-    );
 }

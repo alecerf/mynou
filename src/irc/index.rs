@@ -7,8 +7,6 @@ use crate::{
 };
 
 pub(super) const HEADER: Key = [0; 64];
-pub(super) const SOURCE: Key = constant(1);
-pub(super) const CURSOR: Key = constant(2);
 pub(super) const COUNT: Key = constant(3);
 const fn constant(n: u8) -> Key {
     let mut k = [0; 64];
@@ -99,12 +97,7 @@ pub(super) fn count(index: &mut Index) -> Result<u64> {
         ))
     })
 }
-pub(super) fn commit(
-    index: &mut Index,
-    header: &State,
-    rows: &[Record],
-    cursor: Option<&str>,
-) -> Result<()> {
+pub(super) fn commit(index: &mut Index, header: &State, rows: &[Record]) -> Result<()> {
     let mut changes = vec![Change::Put(
         HEADER,
         json::stringify(&header.to_json()).into_bytes(),
@@ -145,9 +138,6 @@ pub(super) fn commit(
         }
     }
     changes.push(Change::PutInline(COUNT, total.to_le_bytes().to_vec()));
-    if let Some(cursor) = cursor {
-        changes.push(Change::Put(CURSOR, primary(cursor)?.to_vec()));
-    }
     let mut unique = std::collections::BTreeMap::new();
     for change in changes {
         let key = match &change {
@@ -244,8 +234,5 @@ pub(super) fn pending_cursor(r: &Record) -> Result<Key> {
 }
 
 pub(super) fn prepare_backlog(index: &mut Index) -> Result<()> {
-    crate::inventory::backlog::prepare(index, prefix(1), prefix(2), |_, _, bytes| {
-        let record = decode(bytes)?;
-        Ok((pending(&record), Some(record.first_seen)))
-    })
+    crate::inventory::backlog::prepare(index, prefix(1), prefix(2))
 }

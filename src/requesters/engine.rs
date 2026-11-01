@@ -1,7 +1,7 @@
 //! Account I/O precedes admission. Snapshot reservations precede queued jobs.
 use super::{
-    Capture, ControlRequest, Demand, LedgerRead, MAX_BATCH_ITEMS, MAX_OFFSET, Policy, Provenance,
-    Record, digest,
+    Capture, ControlRequest, Demand, LedgerRead, MAX_BATCH_ITEMS, Policy, Provenance, Record,
+    digest,
     index::{Progress, Stage, Sweep},
     valid_id,
 };
@@ -60,7 +60,7 @@ fn compatible(config: &crate::config::Config, demand: &Demand, job: &Job) -> Res
                 r.profile == capture.profile_name
                     && capture
                         .profile
-                        .assess(&r.title, &job.request.title)
+                        .assess_with_size(&r.title, &job.request.title, r.size_bytes, Some(1))
                         .accepted
             },
         ))
@@ -126,7 +126,6 @@ fn requester_value(
     id: &str,
     demands: Vec<Demand>,
     next: Option<crate::inventory::Key>,
-    offset: usize,
     limit: usize,
     config: &crate::config::Config,
 ) -> Result<Value> {
@@ -139,7 +138,6 @@ fn requester_value(
         .ok_or("Requester: unknown account")?;
     let mut value = public_account(ledger, record, config)?;
     value.insert("total", Value::Number(ledger.count(id, None)? as f64));
-    value.insert("offset", Value::Number(offset as f64));
     value.insert("limit", Value::Number(limit as f64));
     value.insert(
         "next",
@@ -205,47 +203,16 @@ impl Engine {
                     .collect(),
             ),
         );
-        v.insert(
-            "legacy_single_account",
-            self.config.requesters.accounts.is_empty(),
-        );
         Ok(v)
     }
-    /// Compatibility offsets are operation-bounded; cursors reach every row.
-    pub fn requester(&self, id: &str, offset: usize, limit: usize) -> Result<Value> {
-        if offset > MAX_OFFSET {
-            return Err(
-                "Requester: use a continuation cursor beyond the legacy offset range".into(),
-            );
-        }
-        let ledger = lock(&self.requester_store)?;
-        let mut remaining = offset;
-        let mut after = None;
-        while remaining > 0 {
-            let (page, next) = ledger.account_page(id, after, remaining.min(200))?;
-            if page.is_empty() {
-                return requester_value(&ledger, id, Vec::new(), None, offset, limit, &self.config);
-            }
-            remaining = remaining.saturating_sub(page.len());
-            after = page
-                .last()
-                .map(|d| ledger.account_cursor(id, &d.id))
-                .transpose()?;
-            if remaining > 0 && next.is_none() {
-                return requester_value(&ledger, id, Vec::new(), None, offset, limit, &self.config);
-            }
-        }
-        let (page, next) = ledger.account_page(id, after, limit)?;
-        requester_value(&ledger, id, page, next, offset, limit, &self.config)
-    }
-    pub fn requester_page(&self, id: &str, after: Option<&str>, limit: usize) -> Result<Value> {
+    pub fn requester(&self, id: &str, after: Option<&str>, limit: usize) -> Result<Value> {
         if !valid_id(id) || limit == 0 || limit > 200 {
             return Err("Requester: invalid account or page bounds".into());
         }
         let ledger = lock(&self.requester_store)?;
         let after = after.map(super::decode_cursor).transpose()?;
         let (page, next) = ledger.account_page(id, after, limit)?;
-        requester_value(&ledger, id, page, next, 0, limit, &self.config)
+        requester_value(&ledger, id, page, next, limit, &self.config)
     }
     pub fn requester_control(&self, id: &str, query: &ControlRequest) -> Result<Value> {
         query.validate()?;
@@ -370,6 +337,8 @@ impl Engine {
             }
             ledger.save_patch(proposed)?;
             if query.action == "retry" {
+                // Admission also requeues a reserved demand's failed job, so a
+                // crash between these two writes does not lose the retry.
                 let demand_id = query
                     .demand_id
                     .as_deref()
@@ -511,7 +480,23 @@ impl Engine {
                 if !compatible(&self.config, &demand, &job)? {
                     return Err("Requester: reservation conflicts with queued acquisition".into());
                 }
-                job
+                // Only a retry reserves a demand already linked to its failed
+                // acquisition. Requeuing it here resumes a retry interrupted
+                // between its two writes. If requeuing fails, the demand stays
+                // reserved so that a later pass tries again.
+                if demand.job_id.as_deref() == Some(job.id.as_str())
+                    && matches!(job.state.as_str(), "failed" | "cancelled")
+                {
+                    match jobs.retry(&job.id) {
+                        Ok(job) => job,
+                        Err(error) => {
+                            eprintln!("mynou: requester retry of {} waits: {error}", job.id);
+                            continue;
+                        }
+                    }
+                } else {
+                    job
+                }
             } else {
                 jobs.submit_requester(
                     demand.request.clone(),
@@ -540,6 +525,7 @@ impl Engine {
         if !linked.demands.is_empty() {
             ledger.save_patch(linked)?;
         }
+
         ledger.save_admission_cursor(state, after)?;
         let (page, next) = ledger.demands_page(ledger.outcome_cursor, 200)?;
         let mut outcomes = ledger.state.clone();
@@ -987,9 +973,13 @@ impl Engine {
             return Err("Requester: ambiguous retained catalog identity".into());
         }
         let previous = matches.into_iter().next();
-        let fetched_identity = previous.as_ref().map_or(&identity, |r| &r.plan.request);
-        let plan =
-            integrations::series_plan_before(&self.config, fetched_identity, false, deadline)?;
+        // A series already monitored is fetched the way its own refresh
+        // fetches it, so its specials and numbering survive; only regular
+        // episodes become demands below.
+        let plan = match &previous {
+            Some(previous) => previous.fetch_catalog(self, false, deadline)?,
+            None => integrations::series_plan_before(&self.config, &identity, false, deadline)?,
+        };
         let record = if let Some(previous) = previous {
             let normalized = previous.normalize_catalog(plan)?;
             let mut checked = previous.clone();
@@ -1023,6 +1013,7 @@ impl Engine {
 /// Watchlist pages read per account in one pass; the account deadline may
 /// stop it earlier.
 const SWEEP_PAGES: usize = 8;
+
 /// Retained-demand pages whose unseen origins one pass may retire.
 const CLEANUP_PAGES: usize = 64;
 
@@ -1069,26 +1060,6 @@ fn sweep_value(sweep: Option<&Sweep>) -> Value {
     v.insert("started_at", sweep.started_at.to_string());
     v
 }
-
-pub(crate) fn validate_storage(
-    ledger: &impl LedgerRead,
-    jobs: &mut impl crate::store::RecoveryJobs,
-) -> Result<()> {
-    for stage in 0..VALIDATION_STAGES {
-        let mut after = None;
-        loop {
-            after = validate_storage_page(ledger, jobs, stage, after)?.1;
-            if after.is_none() {
-                break;
-            }
-        }
-    }
-    Ok(())
-}
-
-/// Stages of requester provenance validation: retained demands against
-/// their acquisitions, then requests against durable admission.
-pub(crate) const VALIDATION_STAGES: u8 = 2;
 
 /// One page of requester provenance validation: the rows read and the
 /// cursor of the next page in this stage.
@@ -1197,4 +1168,163 @@ pub(crate) fn cancel_unwanted_page(
     }
     jobs.finish_requester_sweep(next)?;
     Ok((rows, next.is_none()))
+}
+
+#[cfg(test)]
+pub(crate) mod regression_tests {
+    use super::*;
+    use crate::net::{HttpClient, HttpConnector, NetworkDatagram, NetworkStream};
+    use crate::torrent::transport::{Network, NetworkListener};
+    use std::{
+        io::{self, Cursor, Read, Write},
+        net::SocketAddr,
+        sync::Arc,
+    };
+
+    type Reply = fn(&str) -> (u16, String);
+    pub(crate) struct HttpNetwork(pub(crate) Reply);
+    struct Stream {
+        reply: Reply,
+        request: Vec<u8>,
+        response: Option<Cursor<Vec<u8>>>,
+    }
+    impl Read for Stream {
+        fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+            let response = self.response.get_or_insert_with(|| {
+                let (status, body) = (self.reply)(std::str::from_utf8(&self.request).unwrap());
+                Cursor::new(format!("HTTP/1.1 {status} Fixture\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).into_bytes())
+            });
+            response.read(buffer)
+        }
+    }
+    impl Write for Stream {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            self.request.extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+    impl NetworkStream for Stream {
+        fn set_read_timeout(&self, _: Option<Duration>) -> io::Result<()> {
+            Ok(())
+        }
+        fn set_write_timeout(&self, _: Option<Duration>) -> io::Result<()> {
+            Ok(())
+        }
+    }
+    impl HttpConnector for HttpNetwork {
+        fn connect(&self, _: &str, _: u16, _: Instant) -> Result<Box<dyn NetworkStream>> {
+            Ok(Box::new(Stream {
+                reply: self.0,
+                request: Vec::new(),
+                response: None,
+            }))
+        }
+    }
+    impl Network for HttpNetwork {
+        fn generation(&self) -> Result<Option<String>> {
+            Ok(Some("fixture".into()))
+        }
+        fn connect(&self, _: SocketAddr, _: Duration) -> Result<Box<dyn NetworkStream>> {
+            Err("No peer sockets in fixture".into())
+        }
+        fn resolve(&self, _: &str, _: Instant) -> Result<Vec<SocketAddr>> {
+            Err("No DNS in fixture".into())
+        }
+        fn datagram(&self, _: bool) -> Result<Box<dyn NetworkDatagram>> {
+            Err("No datagrams in fixture".into())
+        }
+        fn http(&self) -> HttpClient {
+            HttpClient::new()
+                .without_proxy()
+                .with_connector(Arc::new(Self(self.0)))
+        }
+        fn listen(&self, _: SocketAddr) -> Result<Box<dyn NetworkListener>> {
+            Err("No listeners in fixture".into())
+        }
+    }
+
+    #[test]
+    fn watchlist_expansion_preserves_monitored_specials() {
+        let network = HttpNetwork(|request| {
+            let body = if request.contains("/season/0") {
+                r#"{"season_number":0,"episodes":[{"id":10,"episode_number":1,"name":"Special","air_date":"2020-01-01"}]}"#
+            } else if request.contains("/season/1") {
+                r#"{"season_number":1,"episodes":[{"id":11,"episode_number":1,"name":"Regular","air_date":"2020-01-01"}]}"#
+            } else {
+                r#"{"id":42,"seasons":[{"season_number":0},{"season_number":1}]}"#
+            };
+            (200, body.into())
+        });
+        let root = std::env::temp_dir().join(format!(
+            "mynou-specials-{}",
+            digest(&crate::crypto::random_bytes::<16>().unwrap())
+        ));
+        let mut config = crate::config::from_json(&crate::config::default_json(), &root).unwrap();
+        config.downloads_enabled = false;
+        config.catalog.enabled = true;
+        config.catalog.url = "http://catalog.fixture".into();
+        config.vpn.tmdb = true;
+        config.catalog.token_env = "MYNOU_TEST_SECRET_A".into();
+        let engine = Engine::open_with_network(config, Arc::new(network), false).unwrap();
+        let request = Request {
+            kind: "series".into(),
+            title: "Synthetic show".into(),
+            year: 2020,
+            season: 0,
+            episode: 0,
+            tmdb_id: Some(42),
+            source_path: None,
+            source_url: None,
+            source_numbering: None,
+        };
+        let episodes = [0, 1]
+            .into_iter()
+            .map(|season| crate::series::Episode {
+                catalog_id: Some(10 + u64::from(season)),
+                season,
+                episode: 1,
+                title: "Episode".into(),
+                air_date: Some("2020-01-01".into()),
+            })
+            .collect();
+        let retained = lock(&engine.series_store)
+            .unwrap()
+            .subscribe(
+                crate::series::Plan {
+                    request: request.clone(),
+                    episodes,
+                },
+                true,
+                false,
+                true,
+                store::now(),
+            )
+            .unwrap();
+        let demands = engine
+            .expand_requester_item(
+                "watchlist:42",
+                &request,
+                Instant::now() + Duration::from_secs(10),
+            )
+            .unwrap();
+        let updated = lock(&engine.series_store)
+            .unwrap()
+            .get(&retained.id)
+            .unwrap()
+            .unwrap();
+        drop(engine);
+        let _ = std::fs::remove_dir_all(root);
+        assert_eq!(demands.len(), 1);
+        assert_eq!(demands[0].1.season, 1);
+        assert!(
+            updated
+                .plan
+                .episodes
+                .iter()
+                .any(|episode| episode.season == 0)
+        );
+    }
 }

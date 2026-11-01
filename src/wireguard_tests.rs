@@ -196,6 +196,29 @@ fn send_and_receive_reject_budgets_framing_and_counter_exhaustion() {
     assert!(receiver.receive(&rejected, 4, Duration::ZERO).is_err());
 }
 
+/// A peer pads only up to its MTU, so a full-sized packet keeps its length.
+#[test]
+fn an_unpadded_transport_packet_is_accepted() {
+    let (sender, mut receiver) = pair();
+    let payload = vec![7; 1420];
+    let ciphertext = sender
+        .keys
+        .as_ref()
+        .unwrap()
+        .0
+        .seal(nonce(0), &[], &payload)
+        .unwrap();
+    let mut packet = vec![4, 0, 0, 0];
+    packet.extend_from_slice(&sender.remote_index.to_le_bytes());
+    packet.extend_from_slice(&0_u64.to_le_bytes());
+    packet.extend_from_slice(&ciphertext);
+    assert_eq!(packet.len(), 1452);
+    assert_eq!(
+        receiver.receive(&packet, 4, Duration::ZERO).unwrap().bytes,
+        payload
+    );
+}
+
 #[test]
 fn monotonic_age_generation_and_revocation_never_reactivate_keys() {
     for mode in 0..3 {

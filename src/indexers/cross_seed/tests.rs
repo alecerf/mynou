@@ -252,3 +252,110 @@ fn storage_is_created_on_first_write_bounded_and_durable() {
     s.commit(batch).unwrap();
     assert_eq!(s.seen("tracker-a").unwrap().len(), store::MAX_SEEN);
 }
+
+#[test]
+fn temporary_metainfo_http_failure_is_retryable() {
+    use crate::requesters::engine::regression_tests::HttpNetwork;
+    use std::{
+        sync::Arc,
+        time::{Duration, Instant},
+    };
+    let url = "http://indexer.fixture/torrent".to_owned();
+    let source = crate::config::Source {
+        name: "Synthetic tracker".into(),
+        kind: "torznab".into(),
+        url: url.clone(),
+        api_key_env: String::new(),
+        options: crate::indexers::Options {
+            protection: crate::source_network::Protection::Protected,
+            network: Some(Arc::new(HttpNetwork(|_| (503, String::new())))),
+            ..Default::default()
+        },
+    };
+    let error = crate::integrations::indexer_metainfo_before(
+        &source,
+        &url,
+        Instant::now() + Duration::from_secs(3),
+    )
+    .unwrap_err();
+    assert_ne!(error, "Indexer: response rejected");
+    assert_ne!(error, "Indexer: invalid download");
+}
+
+fn offers(count: usize) -> Vec<crate::integrations::Offer> {
+    (0..count)
+        .map(|n| crate::integrations::Offer {
+            id: n.to_string(),
+            title: "Synthetic show".into(),
+            url: format!("http://127.0.0.1/torrent/{n}"),
+            size: Some(u64::MAX),
+            info_hash: None,
+        })
+        .collect()
+}
+
+#[test]
+fn completion_search_resumes_after_budget_exhaustion_and_restart() {
+    for already_fetched in [0, super::MAX_FETCHES] {
+        let d = dir(&format!("pending-{already_fetched}"));
+        let mut fetched = already_fetched;
+        let (pending, stopped) = super::unfinished_offers(offers(9), |_| {
+            if fetched == super::MAX_FETCHES {
+                return Some(false);
+            }
+            fetched += 1;
+            Some(true)
+        });
+        assert!(!stopped);
+        assert_eq!(pending.len(), 9 - (super::MAX_FETCHES - already_fetched));
+        let mut batch = store::Batch::default();
+        batch.finish_search("tracker", "transfer", pending, 7);
+        let mut s = store::DiscoveryStore::open(&d.0, false).unwrap();
+        s.commit(batch).unwrap();
+        drop(s);
+        let mut s = store::DiscoveryStore::open(&d.0, false).unwrap();
+        assert_eq!(s.searched("tracker", "transfer").unwrap(), None);
+        let mut processed = Vec::new();
+        for at in 8..=9 {
+            let Some(pending) = s.pending("tracker", "transfer").unwrap() else {
+                break;
+            };
+            fetched = 0;
+            let (pending, stopped) = super::unfinished_offers(pending, |offer| {
+                if fetched == super::MAX_FETCHES {
+                    return Some(false);
+                }
+                fetched += 1;
+                processed.push(offer.id.clone());
+                Some(true)
+            });
+            assert!(!stopped);
+            let mut batch = store::Batch::default();
+            batch.finish_search("tracker", "transfer", pending, at);
+            s.commit(batch).unwrap();
+        }
+        assert!(s.searched("tracker", "transfer").unwrap().is_some());
+        assert!(s.pending("tracker", "transfer").unwrap().is_none());
+        assert_eq!(processed.last().map(String::as_str), Some("8"));
+        assert_eq!(processed.len(), 9 - (super::MAX_FETCHES - already_fetched));
+    }
+}
+
+#[test]
+fn completion_search_retains_the_failed_offer_and_unexamined_tail() {
+    let (pending, stopped) =
+        super::unfinished_offers(
+            offers(4),
+            |offer| {
+                if offer.id == "1" { None } else { Some(true) }
+            },
+        );
+    assert!(stopped);
+    assert_eq!(
+        pending
+            .iter()
+            .map(|offer| offer.id.as_str())
+            .collect::<Vec<_>>(),
+        ["1", "2", "3"]
+    );
+}

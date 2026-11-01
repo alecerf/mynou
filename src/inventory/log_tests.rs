@@ -530,45 +530,6 @@ fn cleaning_commits_recover_at_every_boundary() {
 }
 
 #[test]
-fn record_files_from_before_the_log_are_read_replaced_and_deleted() {
-    let directory = Directory::new();
-    let mut index = Index::create(&directory.0).unwrap();
-    index.legacy_records = true;
-    index
-        .commit(
-            (0..6)
-                .map(|id| Change::Put(key(id), value(id, 0)))
-                .collect(),
-        )
-        .unwrap();
-    index.legacy_records = false;
-    let files = || {
-        fs::read_dir(directory.0.join("objects/00"))
-            .unwrap()
-            .count()
-    };
-    assert_eq!(files(), 6);
-    assert_eq!(index.header.live_bytes, 0);
-    index
-        .commit(vec![
-            Change::Put(key(1), value(1, 1)),
-            Change::Delete(key(2)),
-            Change::PutInline(key(3), b"tiny".to_vec()),
-        ])
-        .unwrap();
-    assert_eq!(files(), 3);
-    let model = BTreeMap::from([(1, value(1, 1))]);
-    assert_accounting(&mut index, &directory.0, &model);
-    drop(index);
-    let mut index = Index::open(&directory.0, true).unwrap();
-    assert_eq!(index.get(&key(0)).unwrap(), Some(value(0, 0)));
-    assert_eq!(index.get(&key(1)).unwrap(), Some(value(1, 1)));
-    assert!(index.get(&key(2)).unwrap().is_none());
-    assert_eq!(index.get(&key(3)).unwrap(), Some(b"tiny".to_vec()));
-    assert_eq!(index.len().unwrap(), 5);
-}
-
-#[test]
 fn inconsistent_value_log_metadata_is_rejected() {
     let identity = [7; 32];
     let valid = Header {

@@ -12,6 +12,17 @@ use mynou::integrations::{self, SweepCursor};
 use mynou::store::Request;
 use std::sync::Mutex;
 
+/// A data directory for this test process, so that nothing lands in the
+/// repository (Plex calls save the installation's identifier there).
+fn base() -> &'static Path {
+    static BASE: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+    BASE.get_or_init(|| {
+        let path = std::env::temp_dir().join(format!("mynou-integrations-{}", std::process::id()));
+        std::fs::create_dir_all(&path).unwrap();
+        path
+    })
+}
+
 struct Fixture {
     url: String,
     stop: Arc<AtomicBool>,
@@ -74,7 +85,7 @@ impl Drop for Fixture {
 }
 
 fn config() -> Config {
-    config::from_json(&config::default_json(), Path::new(".")).unwrap()
+    config::from_json(&config::default_json(), base()).unwrap()
 }
 
 /// Reads a whole watchlist sweep page by page, as the service does in passes.
@@ -227,7 +238,7 @@ fn tmdb_expands_only_aired_episodes_and_rejects_disabled_catalog() {
     config.catalog.url = format!("{}/3", fixture.url);
     // PATH exists in the build environment; fixtures need neither global
     // environment changes nor real credentials.
-    config.catalog.token_env = "PATH".into();
+    config.catalog.token_env = "MYNOU_TEST_SECRET_A".into();
     let episodes = integrations::expand(&config, &series).unwrap();
     assert_eq!(episodes.len(), 1);
     assert_eq!((episodes[0].season, episodes[0].episode), (1, 1));
@@ -360,7 +371,7 @@ fn catalog_ambiguous_titles_require_explicit_identity() {
     let mut config = config();
     config.catalog.enabled = true;
     config.catalog.url = format!("{}/3", fixture.url);
-    config.catalog.token_env = "PATH".into();
+    config.catalog.token_env = "MYNOU_TEST_SECRET_A".into();
     let mut series = movie();
     series.kind = "series".into();
     series.tmdb_id = None;
@@ -399,7 +410,7 @@ fn catalog_http_cache_reuses_seasons_and_invalidates_source_and_credentials() {
     let mut config = config();
     config.catalog.enabled = true;
     config.catalog.url = format!("{}/3", fixture.url);
-    config.catalog.token_env = "PATH".into();
+    config.catalog.token_env = "MYNOU_TEST_SECRET_A".into();
     let mut series = movie();
     series.kind = "series".into();
     series.year = 2020;
@@ -413,10 +424,10 @@ fn catalog_http_cache_reuses_seasons_and_invalidates_source_and_credentials() {
     assert_eq!(details_count.load(Ordering::Relaxed), 2);
     assert_eq!(season_count.load(Ordering::Relaxed), 2);
     assert_ne!(
-        std::env::var("PATH").unwrap(),
-        std::env::var("HOME").unwrap()
+        std::env::var("MYNOU_TEST_SECRET_A").unwrap(),
+        std::env::var("MYNOU_TEST_SECRET_B").unwrap()
     );
-    config.catalog.token_env = "HOME".into();
+    config.catalog.token_env = "MYNOU_TEST_SECRET_B".into();
     integrations::expand(&config, &series).unwrap();
     assert_eq!(details_count.load(Ordering::Relaxed), 3);
     assert_eq!(season_count.load(Ordering::Relaxed), 3);
@@ -441,7 +452,7 @@ fn catalog_http_errors_and_malformed_json_are_never_cached() {
     let mut config = config();
     config.catalog.enabled = true;
     config.catalog.url = format!("{}/3", fixture.url);
-    config.catalog.token_env = "PATH".into();
+    config.catalog.token_env = "MYNOU_TEST_SECRET_A".into();
     let mut series = movie();
     series.kind = "series".into();
     for _ in 0..4 {
@@ -608,7 +619,7 @@ fn catalog_search_lists_titles_years_and_synopses_without_invalid_entries() {
     let mut config = config();
     config.catalog.enabled = true;
     config.catalog.url = format!("{}/3", fixture.url);
-    config.catalog.token_env = "PATH".into();
+    config.catalog.token_env = "MYNOU_TEST_SECRET_A".into();
     let report = integrations::catalog_search(&config, "series", " Fixture Show ", 2024).unwrap();
     let results = report.get("results").unwrap().as_array().unwrap();
     assert_eq!(results.len(), 2);
@@ -640,6 +651,53 @@ fn catalog_search_lists_titles_years_and_synopses_without_invalid_entries() {
     }
     config.catalog.enabled = false;
     assert!(integrations::catalog_search(&config, "movie", "Fixture", 0).is_err());
+}
+
+#[test]
+fn a_catalog_title_is_read_by_its_tmdb_identity() {
+    let fixture = Fixture::open(|path, _| {
+        match path {
+        "/3/movie/603" => (
+            200,
+            r#"{"id":603,"title":"Fixture Film","release_date":"1999-03-30","poster_path":"/film.jpg"}"#
+                .into(),
+        ),
+        "/3/tv/42" => (200, r#"{"id":42,"name":"Fixture Show"}"#.into()),
+        // An answer for another title is never shown as this one.
+        "/3/movie/7" => (200, r#"{"id":8,"title":"Other Film"}"#.into()),
+        _ => panic!("unexpected catalog path {path}"),
+    }
+    });
+    let mut config = config();
+    config.catalog.enabled = true;
+    config.catalog.url = format!("{}/3", fixture.url);
+    config.catalog.token_env = "MYNOU_TEST_SECRET_A".into();
+    let report = integrations::catalog_title(&config, "movie", 603).unwrap();
+    let results = report.get("results").unwrap().as_array().unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].get("tmdb_id").unwrap().as_u64(), Some(603));
+    assert_eq!(results[0].get("year").unwrap().as_u64(), Some(1999));
+    assert_eq!(
+        results[0].get("poster").unwrap().as_str(),
+        Some("/film.jpg")
+    );
+    let report = integrations::catalog_title(&config, "series", 42).unwrap();
+    let results = report.get("results").unwrap().as_array().unwrap();
+    assert_eq!(
+        results[0].get("title").unwrap().as_str(),
+        Some("Fixture Show")
+    );
+    let report = integrations::catalog_title(&config, "movie", 7).unwrap();
+    assert!(
+        report
+            .get("results")
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    assert!(integrations::catalog_title(&config, "episode", 42).is_err());
+    assert!(integrations::catalog_title(&config, "movie", 0).is_err());
 }
 
 #[test]

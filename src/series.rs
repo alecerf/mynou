@@ -3,8 +3,6 @@
 //! Inventory-wide storage lives in the disk-resident index (`storage`); the
 //! per-plan bounds below limit one record, never how many records are kept.
 mod engine;
-mod legacy;
-mod migration;
 mod numbering;
 mod storage;
 use crate::{Result, date, integrations::report_text, json::Value, store::Request};
@@ -280,125 +278,6 @@ impl Record {
             }
         }
         value
-    }
-    fn from_json(value: &Value) -> Result<Self> {
-        fields(
-            value,
-            &[
-                "id",
-                "request",
-                "episodes",
-                "monitored",
-                "include_specials",
-                "start_date",
-                "excluded",
-                "revision",
-                "created_at",
-                "updated_at",
-                "checked_at",
-                "next_check_at",
-                "last_error",
-                "anchors",
-                "numbering",
-            ],
-        )?;
-        let episodes = value
-            .get("episodes")
-            .and_then(Value::as_array)
-            .ok_or("Missing series episodes")?;
-        if episodes.len() > MAX_EPISODES {
-            return Err("Too many series episodes".into());
-        }
-        let exclusions = value
-            .get("excluded")
-            .and_then(Value::as_array)
-            .ok_or("Missing episode exclusions")?;
-        if exclusions.len() > MAX_EPISODES {
-            return Err("Too many episode exclusions".into());
-        }
-        let mut excluded = BTreeSet::new();
-        for entry in exclusions {
-            let numbers = entry.as_array().ok_or("Invalid episode exclusion")?;
-            if numbers.len() != 2 {
-                return Err("Invalid episode exclusion".into());
-            }
-            let season = numbers[0]
-                .as_u64()
-                .and_then(|number| u32::try_from(number).ok())
-                .ok_or("Invalid excluded season")?;
-            let episode = numbers[1]
-                .as_u64()
-                .and_then(|number| u32::try_from(number).ok())
-                .ok_or("Invalid excluded episode")?;
-            if !excluded.insert((season, episode)) {
-                return Err("Duplicate episode exclusion".into());
-            }
-        }
-        let optional = |key| -> Result<Option<String>> {
-            match value.get(key) {
-                Some(Value::Null) => Ok(None),
-                Some(Value::String(text)) => Ok(Some(text.clone())),
-                _ => Err("Invalid optional series field".into()),
-            }
-        };
-        let plan = Plan {
-            request: Request::from_json(value.get("request").ok_or("Missing series identity")?)?,
-            episodes: episodes
-                .iter()
-                .map(Episode::from_json)
-                .collect::<Result<_>>()?,
-        };
-        let mut anchors = numbering::initial_anchors(&plan);
-        if let Some(entries) = value.get("anchors") {
-            let entries = entries.as_array().ok_or("Invalid numbering anchors")?;
-            if entries.len() > MAX_EPISODES {
-                return Err("Too many numbering anchors".into());
-            }
-            anchors.clear();
-            for entry in entries {
-                fields(entry, &["catalog_id", "season", "episode"])?;
-                let id = numbering::catalog_id(entry)?;
-                let number = crate::numbering::EpisodeNumber {
-                    season: small(entry, "season")?,
-                    episode: small(entry, "episode")?,
-                };
-                number.validate()?;
-                if anchors.insert(id, number).is_some() {
-                    return Err("Duplicate numbering anchor".into());
-                }
-            }
-        }
-        let mut numbering = BTreeMap::new();
-        if let Some(entries) = value.get("numbering") {
-            let entries = entries.as_array().ok_or("Invalid numbering choices")?;
-            if entries.len() > MAX_EPISODES {
-                return Err("Too many numbering choices".into());
-            }
-            for entry in entries {
-                let choice = NumberingChoice::from_json(entry)?;
-                if numbering.insert(choice.catalog_id, choice).is_some() {
-                    return Err("Duplicate numbering choice".into());
-                }
-            }
-        }
-        let record = Self {
-            id: text(value, "id")?.into(),
-            plan,
-            anchors,
-            numbering,
-            monitored: flag(value, "monitored")?,
-            include_specials: flag(value, "include_specials")?,
-            start_date: optional("start_date")?,
-            excluded,
-            revision: integer(value, "revision")?,
-            created_at: integer(value, "created_at")?,
-            updated_at: integer(value, "updated_at")?,
-            checked_at: integer(value, "checked_at")?,
-            next_check_at: integer(value, "next_check_at")?,
-            last_error: optional("last_error")?,
-        };
-        record.validate()?;
-        Ok(record)
     }
 }
 

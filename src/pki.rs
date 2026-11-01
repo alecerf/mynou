@@ -19,6 +19,19 @@ pub(crate) use rsa::sign_pss_sha256_for_test;
 pub use rsa::{verify_pkcs1_sha256, verify_pkcs1_sha384, verify_pss_sha256, verify_pss_sha384};
 use std::net::IpAddr;
 
+/// TLS 1.2 negotiates the ECDSA hash independently of the certificate curve.
+pub(crate) fn verify_ecdsa_cross_hash(
+    key: &PublicKey,
+    message: &[u8],
+    signature: &[u8],
+) -> Result<()> {
+    match key {
+        PublicKey::EcdsaP256 { point } => ecc::verify_ecdsa_p256_sha384(point, message, signature),
+        PublicKey::EcdsaP384 { point } => ecc::verify_ecdsa_p384_sha256(point, message, signature),
+        _ => Err("Unsupported ECDSA key".into()),
+    }
+}
+
 const RSA: &[u8] = &[0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01];
 const RSA_SHA256: &[u8] = &[0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x0b];
 const RSA_SHA384: &[u8] = &[0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x0c];

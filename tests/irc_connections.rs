@@ -35,17 +35,25 @@ fn live_registration_fragments_ping_and_allowlists_precede_durable_receipts() {
     let Value::Array(s) = v.get_mut("irc").unwrap().get_mut("sources").unwrap() else {
         panic!()
     };
-    s[0].insert("password_env", "PWD");
-    s[0].insert("join_key_env", "PWD");
+    s[0].insert("password_env", "MYNOU_TEST_SECRET_B");
+    s[0].insert("join_key_env", "MYNOU_TEST_SECRET_B");
     let cfg = config::from_json(&v, &dir.0).unwrap();
     let peer = thread::spawn(move || {
         let mut stream = accept(&listener);
-        assert!(line(&mut stream) == format!("PASS {}", std::env::var("PWD").unwrap()));
+        assert!(
+            line(&mut stream) == format!("PASS {}", std::env::var("MYNOU_TEST_SECRET_B").unwrap())
+        );
         assert_eq!(line(&mut stream), "NICK mynou");
         assert_eq!(line(&mut stream), "USER mynou 0 * :Mynou");
         announce(&mut stream, SENDER, "#announces", &announcement(99));
         send(&mut stream, ":server 001 mynou :Welcome");
-        assert!(line(&mut stream) == format!("JOIN #announces {}", std::env::var("PWD").unwrap()));
+        assert!(
+            line(&mut stream)
+                == format!(
+                    "JOIN #announces {}",
+                    std::env::var("MYNOU_TEST_SECRET_B").unwrap()
+                )
+        );
         announce(&mut stream, SENDER, "#announces", &announcement(99));
         send(&mut stream, ":mynou!user@fixture JOIN :#announces");
         send(&mut stream, "PING :local-nonce");
@@ -119,17 +127,16 @@ fn reconnect_and_process_restart_retain_the_original_duplicate_identity() {
     let workers = engine.start();
     wait(|| received(&engine, 2));
     let row = rows(&engine).remove(0);
-    let before = std::fs::read(cfg.store_dir.join("announcements.bin")).unwrap();
     drop(workers);
     drop(engine);
+    // Closing checkpointed the redo log; a duplicate must not change it.
+    let receipts = cfg.store_dir.join("announcements.idx");
+    let before = bytes(&receipts);
     let engine = Engine::open(cfg.clone()).unwrap();
     let workers = engine.start();
     wait(|| received(&engine, 1));
     assert_eq!(rows(&engine).remove(0), row);
-    assert_eq!(
-        std::fs::read(cfg.store_dir.join("announcements.bin")).unwrap(),
-        before
-    );
+    assert_eq!(bytes(&receipts), before);
     assert_eq!(
         engine
             .irc_sources()
@@ -161,7 +168,10 @@ fn failures_redact_server_text_and_shutdown_interrupts_an_unfinished_line() {
         assert_eq!(line(&mut stream), "USER mynou 0 * :Mynou");
         send(
             &mut stream,
-            &format!(":server 464 mynou :{}", std::env::var("PWD").unwrap()),
+            &format!(
+                ":server 464 mynou :{}",
+                std::env::var("MYNOU_TEST_SECRET_B").unwrap()
+            ),
         );
         drop(stream);
         let mut stream = accept(&listener);

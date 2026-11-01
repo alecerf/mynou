@@ -47,7 +47,7 @@ fn all_demands(engine: &Engine, id: &str) -> Vec<Value> {
     let mut after: Option<String> = None;
     let mut out = Vec::new();
     loop {
-        let page = engine.requester_page(id, after.as_deref(), 200).unwrap();
+        let page = engine.requester(id, after.as_deref(), 200).unwrap();
         out.extend(
             page.get("demands")
                 .unwrap()
@@ -74,7 +74,7 @@ fn states(engine: &Engine, id: &str) -> (usize, usize) {
 
 fn progress(engine: &Engine, id: &str) -> Value {
     engine
-        .requester(id, 0, 1)
+        .requester(id, None, 1)
         .unwrap()
         .get("sweep")
         .unwrap()
@@ -83,7 +83,7 @@ fn progress(engine: &Engine, id: &str) -> Value {
 
 fn cursor(engine: &Engine, id: &str) -> String {
     engine
-        .requester(id, 0, 1)
+        .requester(id, None, 1)
         .unwrap()
         .get("cursor")
         .unwrap()
@@ -272,7 +272,7 @@ fn the_single_account_watchlist_resumes_its_sweep_across_passes_and_restarts() {
     cfg.plex.enabled = true;
     cfg.plex.url = accounts.url.clone();
     cfg.plex.watchlist_url = format!("{}/alice/watchlist", accounts.url);
-    cfg.plex.token_override = Some(std::env::var("PATH").unwrap());
+    cfg.plex.token_override = Some(std::env::var("MYNOU_TEST_SECRET_A").unwrap());
     let reads = || {
         accounts
             .calls
@@ -370,7 +370,7 @@ fn same_total_reorders_require_a_matching_traversal_before_retiring_origins() {
 
 fn record(engine: &Engine, id: &str, name: &str) -> Value {
     engine
-        .requester(id, 0, 1)
+        .requester(id, None, 1)
         .unwrap()
         .get(name)
         .unwrap()

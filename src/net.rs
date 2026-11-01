@@ -908,8 +908,23 @@ fn read_chunks<R: BufRead>(reader: &mut R, max_body: usize) -> Result<Vec<u8>> {
     Err("Too many HTTP chunks".into())
 }
 
+/// Whether a URI reference starts with a scheme (RFC 3986 section 3.1):
+/// a letter, then letters, digits, `+`, `-` or `.`, up to the first `:`.
+/// A `://` later on, as in a query, does not make it absolute.
+fn has_scheme(reference: &str) -> bool {
+    reference.split_once(':').is_some_and(|(scheme, _)| {
+        scheme
+            .bytes()
+            .next()
+            .is_some_and(|b| b.is_ascii_alphabetic())
+            && scheme
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'+' | b'-' | b'.'))
+    })
+}
+
 fn resolve_redirect(base: &Url, location: &str) -> Result<Url> {
-    if location.contains("://") {
+    if has_scheme(location) {
         return parse_url(location);
     }
     if location.starts_with("//") {
@@ -1070,6 +1085,17 @@ mod tests {
             "/dir/file?q=new"
         );
         assert_eq!(resolve_redirect(&base, "/a/../b/.").unwrap().path, "/b/");
+        // A URL inside the query keeps the reference relative.
+        let next = resolve_redirect(&base, "/download?next=https://example.net/x").unwrap();
+        assert_eq!(next.host, "example.org");
+        assert_eq!(next.path, "/download?next=https://example.net/x");
+        assert_eq!(
+            resolve_redirect(&base, "HTTPS://example.net/y")
+                .unwrap()
+                .host,
+            "example.net"
+        );
+        assert!(resolve_redirect(&base, "ftp://example.net/").is_err());
     }
 
     #[test]

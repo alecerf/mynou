@@ -216,8 +216,10 @@ How requests are checked:
   `{"password": "..."}`) and get a session cookie (`HttpOnly`,
   `SameSite=Strict`) valid for 30 days. Without it, `/api` routes and `/ws`
   answer 401. Scripts on another computer sign in the same way and send the
-  cookie back. `DELETE /api/session` signs out.
-- After 5 failed sign-ins from one address, or 30 in all, within 15 minutes,
+  cookie back. `DELETE /api/session` signs out. Sign out everywhere (Settings,
+  Network, on the Mac) replaces the key that signs sessions, which ends every
+  session and keeps the password.
+- After 5 failed sign-ins from one address (an IPv6 /64 counts as one) within 15 minutes,
   sign-in waits until the window ends. Failures are logged without the password:
   the service journal (`.mynou-service/events.log`) records `sign_in_refused`
   or `sign_in_throttled`, and `mynou serve` also prints the address.
@@ -265,7 +267,8 @@ folder.
 Like Plex Media Server, Mynou updates itself. Once a day, starting a few
 minutes after it starts, it checks the latest
 [GitHub release](https://github.com/alecerf/mynou/releases). It downloads a
-newer executable, checks it against the release's `SHA256SUMS`, makes sure it
+newer executable, checks that the release key signed the release's
+`SHA256SUMS`, checks the executable against it, makes sure it
 runs and reports its version, and stages it next to the installed executable.
 The dashboard then shows the new version.
 

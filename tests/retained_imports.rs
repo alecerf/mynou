@@ -62,7 +62,7 @@ fn restarted_imports_fail_safely_with_plex_disabled_or_stale_indexed_paths() {
             remove_or_replace(Path::new(&imported.imports[0]), &source, case);
             cfg.plex.enabled = plex;
             cfg.plex.url = accounts.url.clone();
-            cfg.plex.token_env = "PATH".into();
+            cfg.plex.token_env = "MYNOU_TEST_SECRET_A".into();
             let mut indexed = movie(7, "Fixture Movie");
             let mut part = Value::object();
             part.insert("file", imported.imports[0].clone());
@@ -249,7 +249,7 @@ fn file_removed_during_plex_confirmation_never_produces_ready_outcomes() {
     cfg.max_attempts = 1;
     cfg.plex.enabled = true;
     cfg.plex.url = accounts.url.clone();
-    cfg.plex.token_env = "PATH".into();
+    cfg.plex.token_env = "MYNOU_TEST_SECRET_A".into();
     accounts.watchlist("alice", vec![movie(7, "Fixture Movie")]);
     let engine = Engine::open_for_management(cfg.clone()).unwrap();
     enable(&engine, "alice");
@@ -345,4 +345,25 @@ fn an_unsafe_retained_upgrade_does_not_replace_its_valid_parent() {
         fs::read(&parent.imports[0]).unwrap(),
         include_bytes!("fixtures/demo.mp4")
     );
+}
+
+#[test]
+fn requests_wait_without_failing_while_downloads_are_off() {
+    let directory = Directory::new();
+    let mut cfg = config::from_json(&config::default_json(), &directory.0).unwrap();
+    cfg.downloads_enabled = false;
+    cfg.max_attempts = 1;
+    let engine = Engine::open_for_management(cfg).unwrap();
+    let id = engine
+        .submit(request(7, "Fixture Movie"))
+        .unwrap_or_else(|_| panic!("Synthetic request submission failed"))
+        .remove(0)
+        .id;
+    engine.tick().unwrap();
+    let job = lock(&engine.store).unwrap().get(&id).unwrap().unwrap();
+    assert_eq!(job.state, "queued");
+    assert_eq!(job.attempts, 0);
+    assert_eq!(job.last_error, None);
+    assert!(job.next_attempt_at > 0);
+    assert!(job.release.is_none());
 }

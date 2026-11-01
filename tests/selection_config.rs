@@ -186,3 +186,68 @@ fn malformed_selection_sections_are_rejected_instead_of_defaulting() {
         assert!(config::from_json(&configuration(selection), Path::new(".")).is_err());
     }
 }
+
+#[test]
+fn size_and_indexer_option_validation_is_strict() {
+    for profile in [
+        r#"{"min_size_mb":0}"#,
+        r#"{"max_size_mb":1000001}"#,
+        r#"{"min_size_mb":2,"max_size_mb":1}"#,
+        r#"{"min_size_mb":"1"}"#,
+        r#"{"max_size_mb":1.5}"#,
+        r#"{"allow_unknown_size":null}"#,
+    ] {
+        assert!(
+            mynou::selection::Profile::from_json(&json::parse(profile).unwrap()).is_err(),
+            "{profile}"
+        );
+    }
+    let valid = json::parse(r#"{"min_size_mb":1,"max_size_mb":1000000}"#).unwrap();
+    let profile = mynou::selection::Profile::from_json(&valid).unwrap();
+    assert!(profile.allow_unknown_size);
+    assert_eq!(
+        mynou::selection::Profile::from_json(&profile.to_json()).unwrap(),
+        profile
+    );
+    let mut document = config::default_json();
+    for (field, value) in [
+        ("priority", "0"),
+        ("priority", "51"),
+        ("priority", "1.5"),
+        ("minimum_seeders", "-1"),
+        ("minimum_seeders", "1000001"),
+        ("prefer_freeleech", "1"),
+        ("seed_ratio_milli", "0"),
+        ("seed_ratio_milli", "1000001"),
+        ("seed_time_secs", "0"),
+        ("seed_time_secs", "315360001"),
+    ] {
+        document.insert(
+            "indexers",
+            json::parse(&format!(
+                r#"[{{"url":"http://127.0.0.1/api","{field}":{value}}}]"#
+            ))
+            .unwrap(),
+        );
+        assert!(
+            config::from_json(&document, Path::new(".")).is_err(),
+            "{field}={value}"
+        );
+    }
+    document.insert(
+        "indexers",
+        json::parse(r#"[{"url":"http://127.0.0.1/api"}]"#).unwrap(),
+    );
+    let parsed = config::from_json(&document, Path::new(".")).unwrap();
+    let options = &parsed.sources[0].options;
+    assert_eq!(
+        (
+            options.priority,
+            options.minimum_seeders,
+            options.prefer_freeleech,
+            options.seed_ratio_milli,
+            options.seed_time_secs
+        ),
+        (25, None, false, None, None)
+    );
+}

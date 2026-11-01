@@ -12,33 +12,82 @@ use crate::{
     json::{self, Value},
     net::HttpClient,
 };
+use std::fs;
+use std::io::Write;
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 use std::time::Duration;
 
 const PLEX_TV: &str = "https://plex.tv/api/v2";
-/// The identifier Mynou already sends to Plex servers and the watchlist.
-const CLIENT: &str = "mynou-rust-std";
 const TIMEOUT: Duration = Duration::from_secs(10);
 /// A server address that answers takes well under this from the same network.
 const PROBE: Duration = Duration::from_secs(3);
 const MAX_ADDRESSES: usize = 8;
 
-fn headers(token: Option<&str>) -> Vec<(String, String)> {
+/// This installation's identifier for Plex, made once. Plex lists each
+/// identifier as a device of the account, so installations must not share
+/// one. The file appears whole or not at all: it is linked into place.
+pub(crate) fn client_id(data_dir: &Path) -> Result<String> {
+    let path = data_dir.join("plex-client-id");
+    if !path.exists() {
+        let id = format!("mynou-{}", hex(&crate::crypto::random_bytes::<16>()?));
+        let draft = data_dir.join(format!(
+            "plex-client-id.{}",
+            hex(&crate::crypto::random_bytes::<8>()?)
+        ));
+        let written = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&draft)
+            .and_then(|mut file| file.write_all(id.as_bytes()).and_then(|()| file.sync_all()))
+            .and_then(|()| match fs::hard_link(&draft, &path) {
+                Err(e) if e.kind() != std::io::ErrorKind::AlreadyExists => Err(e),
+                _ => Ok(()),
+            });
+        let _ = fs::remove_file(&draft);
+        written.map_err(|e| format!("Plex: cannot save this installation's identifier: {e}"))?;
+    }
+    let id = fs::read_to_string(&path)
+        .map_err(|e| format!("Plex: cannot read this installation's identifier: {e}"))?;
+    if id.len() != 38
+        || !id.starts_with("mynou-")
+        || !id[6..].bytes().all(|b| b.is_ascii_hexdigit())
+    {
+        return Err(format!(
+            "Plex: {} is damaged; remove it and connect to Plex again",
+            path.display()
+        ));
+    }
+    Ok(id)
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn headers(client: &str, token: Option<&str>) -> Vec<(String, String)> {
     let mut headers = vec![
         ("Accept".into(), "application/json".into()),
         ("X-Plex-Product".into(), "Mynou".into()),
         ("X-Plex-Version".into(), env!("CARGO_PKG_VERSION").into()),
-        ("X-Plex-Client-Identifier".into(), CLIENT.into()),
+        ("X-Plex-Client-Identifier".into(), client.into()),
     ];
     headers.extend(token.map(|token| ("X-Plex-Token".into(), token.into())));
     headers
 }
 
-fn fetch(method: &str, url: &str, token: Option<&str>, timeout: Duration) -> Result<Value> {
+fn fetch(
+    client: &str,
+    method: &str,
+    url: &str,
+    token: Option<&str>,
+    timeout: Duration,
+) -> Result<Value> {
     let response = HttpClient::new()
         .with_timeout(timeout)
         .with_max_body(4 << 20)
-        .request(method, url, &headers(token), &[])
+        .request(method, url, &headers(client, token), &[])
         .map_err(|_| "Plex could not be reached")?;
     match response.status {
         200..=299 => {}
@@ -194,7 +243,9 @@ impl Engine {
 
     /// Starts a sign-in: a PIN, and the Plex page where the owner confirms it.
     pub fn plex_pin(&self) -> Result<Value> {
+        let client = client_id(&self.config.data_dir)?;
         let pin = fetch(
+            &client,
             "POST",
             &format!("{PLEX_TV}/pins?strong=true"),
             None,
@@ -211,7 +262,7 @@ impl Engine {
         value.insert("id", Value::Number(id as f64));
         value.insert(
             "url",
-            format!("https://app.plex.tv/auth#?clientID={CLIENT}&code={code}&context%5Bdevice%5D%5Bproduct%5D=Mynou"),
+            format!("https://app.plex.tv/auth#?clientID={client}&code={code}&context%5Bdevice%5D%5Bproduct%5D=Mynou"),
         );
         Ok(value)
     }
@@ -219,7 +270,15 @@ impl Engine {
     /// Whether the owner confirmed the PIN; once they have, the account token
     /// is saved as the Plex token.
     pub fn plex_pin_state(&self, id: u64) -> Result<Value> {
-        let pin = fetch("GET", &format!("{PLEX_TV}/pins/{id}"), None, TIMEOUT).map_err(|e| {
+        let client = client_id(&self.config.data_dir)?;
+        let pin = fetch(
+            &client,
+            "GET",
+            &format!("{PLEX_TV}/pins/{id}"),
+            None,
+            TIMEOUT,
+        )
+        .map_err(|e| {
             if e.ends_with(" 404") {
                 "The Plex sign-in expired: try again".into()
             } else {
@@ -240,23 +299,38 @@ impl Engine {
 
     /// The Plex Media Servers the account owns, and which one Mynou uses.
     pub fn plex_servers(&self) -> Result<Value> {
+        let client = client_id(&self.config.data_dir)?;
         let token = self.plex_token()?;
         let resources = fetch(
+            &client,
             "GET",
             &format!("{PLEX_TV}/resources?includeHttps=1&includeIPv6=1"),
             Some(&token),
             TIMEOUT,
         )?;
         let url = self.config.plex.url.as_str();
+        // The server chosen here is remembered by its identifier: every
+        // server lists this machine's address first, so an address alone
+        // cannot tell which one answers there.
+        let document = self.current_settings()?;
+        let chosen = document
+            .get("plex")
+            .and_then(|plex| text(plex, "server"))
+            .map(str::to_owned);
         let servers = owned_servers(&resources)
             .into_iter()
             .map(|server| {
+                let id = text(server, "clientIdentifier").unwrap_or_default();
                 let mut entry = Value::object();
-                entry.insert("id", text(server, "clientIdentifier").unwrap_or_default());
+                entry.insert("id", id);
                 entry.insert("name", text(server, "name").unwrap_or("Plex Media Server"));
                 entry.insert(
                     "current",
-                    self.config.plex.enabled && addresses(server).iter().skip(1).any(|a| a == url),
+                    self.config.plex.enabled
+                        && match &chosen {
+                            Some(chosen) => chosen == id,
+                            None => addresses(server).iter().skip(1).any(|a| a == url),
+                        },
                 );
                 entry
             })
@@ -269,9 +343,11 @@ impl Engine {
     /// Connects Mynou to one of those servers: an address that answers from
     /// here and its film and series sections, saved with the settings.
     pub fn plex_choose(&self, body: &Value) -> Result<Value> {
+        let client = client_id(&self.config.data_dir)?;
         let id = text(body, "id").ok_or("id is required")?;
         let token = self.plex_token()?;
         let resources = fetch(
+            &client,
             "GET",
             &format!("{PLEX_TV}/resources?includeHttps=1&includeIPv6=1"),
             Some(&token),
@@ -286,19 +362,25 @@ impl Engine {
         let url = addresses(server)
             .into_iter()
             .find(|url| {
-                fetch("GET", &format!("{url}/identity"), Some(&token), PROBE).is_ok_and(
-                    |identity| {
-                        identity
-                            .get("MediaContainer")
-                            .and_then(|c| text(c, "machineIdentifier"))
-                            == Some(id)
-                    },
+                fetch(
+                    &client,
+                    "GET",
+                    &format!("{url}/identity"),
+                    Some(&token),
+                    PROBE,
                 )
+                .is_ok_and(|identity| {
+                    identity
+                        .get("MediaContainer")
+                        .and_then(|c| text(c, "machineIdentifier"))
+                        == Some(id)
+                })
             })
             .ok_or_else(|| {
                 format!("{name} does not answer from the Mac running Mynou: check that it is on")
             })?;
         let found = sections(&fetch(
+            &client,
             "GET",
             &format!("{url}/library/sections"),
             Some(&token),
@@ -324,6 +406,7 @@ impl Engine {
             }
         }
         plex.insert("url", url.as_str());
+        plex.insert("server", id);
         plex.insert("enabled", true);
         let mut settings = Value::object();
         settings.insert("settings", document);
@@ -340,8 +423,10 @@ impl Engine {
 
     /// The film and series sections of the server Mynou uses, to choose from.
     pub fn plex_sections(&self) -> Result<Value> {
+        let client = client_id(&self.config.data_dir)?;
         let token = self.plex_token()?;
         let found = sections(&fetch(
+            &client,
             "GET",
             &format!("{}/library/sections", self.config.plex.url),
             Some(&token),

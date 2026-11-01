@@ -8,20 +8,20 @@ use mynou::{
     config,
     engine::Engine,
     irc::{
-        self, Announcement,
+        self,
         protocol::{Decoder, Event, Message, Protocol},
     },
     json::Value,
     selection::Profile,
 };
-use std::{fs, path::Path, thread};
+use std::thread;
 #[test]
 fn irc_is_opt_in_strict_bounded_and_requires_verified_remote_transport() {
     let dir = Directory::new();
     let legacy = config::from_json(&config::default_json(), &dir.0).unwrap();
     assert!(legacy.irc.sources.is_empty());
     let engine = Engine::open_for_management(legacy.clone()).unwrap();
-    assert!(!legacy.store_dir.join("announcements.bin").exists());
+    assert!(!legacy.store_dir.join("announcements.idx").exists());
     drop(engine);
     let mut v = value("irc://127.0.0.1:1");
     let mut irc = settings("ircs://irc.example.test:6697");
@@ -71,9 +71,9 @@ fn irc_is_opt_in_strict_bounded_and_requires_verified_remote_transport() {
         r[0].insert(key, "unknown");
         assert!(config::from_json(&v, &dir.0).is_err());
     }
-    assert!(irc::page("limit=201").is_err());
-    assert!(irc::page("offset=1001").is_err());
-    assert!(irc::page("limit=1&limit=2").is_err());
+    assert!(irc::cursor_page("limit=201").is_err());
+    assert!(irc::cursor_page("offset=0").is_err());
+    assert!(irc::cursor_page("limit=1&limit=2").is_err());
 }
 #[test]
 fn decoder_handles_every_fragment_boundary_tags_and_poisoned_input() {
@@ -199,7 +199,6 @@ fn first_claim_and_deduplication_survive_review_and_restart_without_job_writes()
     let journal = jobs_state::fingerprint(&cfg.store_dir);
     let first = receive(&engine, 7);
     let id = record_id(&first).to_owned();
-    let snapshot_bytes = fs::read(cfg.store_dir.join("announcements.bin")).unwrap();
     let mut changed = announcement(7);
     changed.insert("title", "Changed title with the same hash");
     let duplicate = engine
@@ -209,10 +208,6 @@ fn first_claim_and_deduplication_survive_review_and_restart_without_job_writes()
     assert_eq!(
         duplicate.get("claim_changed").unwrap().as_bool(),
         Some(true)
-    );
-    assert_eq!(
-        fs::read(cfg.store_dir.join("announcements.bin")).unwrap(),
-        snapshot_bytes
     );
     let q = reviewed(&engine, &id, "acknowledge");
     engine.irc_control(&id, &q).unwrap();
@@ -327,101 +322,6 @@ fn disabled_sources_and_untrusted_claims_cannot_change_durable_history() {
     no_jobs(&engine);
 }
 #[test]
-fn checked_history_rejects_corruption_and_signed_semantic_changes_before_startup() {
-    let dir = Directory::new();
-    let cfg = config(&dir.0);
-    let engine = Engine::open_for_management(cfg.clone()).unwrap();
-    receive(&engine, 7);
-    drop(engine);
-    let path = cfg.store_dir.join("announcements.bin");
-    let original = fs::read(&path).unwrap();
-    for index in [0, 8, 20, original.len() - 1] {
-        let mut bad = original.clone();
-        bad[index] ^= 1;
-        fs::write(&path, bad).unwrap();
-        assert!(Engine::open_for_management(cfg.clone()).is_err());
-    }
-    fs::write(&path, &original).unwrap();
-    let original_json = snapshot(&cfg.store_dir);
-    for (key, val) in [
-        ("id", Value::from("f".repeat(64))),
-        ("decision", Value::from("acknowledged")),
-        ("binding", Value::from("f".repeat(64))),
-    ] {
-        let mut v = original_json.clone();
-        let Value::Array(rows) = v.get_mut("records").unwrap() else {
-            panic!()
-        };
-        rows[0].insert(key, val);
-        write_snapshot(&cfg.store_dir, &v);
-        let before = bytes(&cfg.store_dir);
-        assert!(Engine::open_for_management(cfg.clone()).is_err());
-        assert_eq!(bytes(&cfg.store_dir), before);
-    }
-    write_snapshot(&cfg.store_dir, &original_json);
-    #[cfg(unix)]
-    {
-        let link = dir.0.join("history-link");
-        fs::hard_link(&path, &link).unwrap();
-        assert!(Engine::open_for_management(cfg.clone()).is_err());
-        fs::remove_file(link).unwrap();
-    }
-    assert!(Engine::open_for_management(cfg).is_ok());
-}
-#[test]
-fn full_legacy_history_migrates_and_accepts_new_identities() {
-    let dir = Directory::new();
-    let cfg = config(&dir.0);
-    let engine = Engine::open_for_management(cfg.clone()).unwrap();
-    receive(&engine, 1);
-    drop(engine);
-    let mut v = snapshot(&cfg.store_dir);
-    let prototype = v.get("records").unwrap().as_array().unwrap()[0].clone();
-    let binding = prototype.get("binding").unwrap().as_str().unwrap();
-    let mut records = Vec::new();
-    for n in 1..=1000 {
-        let mut record = prototype.clone();
-        let a = announcement(n);
-        let request = Announcement::from_json(&a).unwrap().request;
-        record.insert("announcement", a);
-        record.insert(
-            "id",
-            irc::digest(
-                format!(
-                    "{binding}\n{}\n{}",
-                    request.media_key(),
-                    "1234567890abcdef1234567890abcdef12345678"
-                )
-                .as_bytes(),
-            ),
-        );
-        records.push(record);
-    }
-    v.insert("records", Value::Array(records));
-    write_snapshot(&cfg.store_dir, &v);
-    let engine = Engine::open_for_management(cfg.clone()).unwrap();
-    let before = bytes(&cfg.store_dir);
-    assert_eq!(
-        receive(&engine, 1).get("duplicate").unwrap().as_bool(),
-        Some(true)
-    );
-    assert_eq!(bytes(&cfg.store_dir), before);
-    assert_eq!(
-        receive(&engine, 1001).get("duplicate").unwrap().as_bool(),
-        Some(false)
-    );
-    assert_eq!(
-        engine
-            .irc_announcements(0, 1)
-            .unwrap()
-            .get("total")
-            .unwrap()
-            .as_u64(),
-        Some(1001)
-    );
-    no_jobs(&engine);
-}
-#[test]
 fn offline_reviews_do_not_initialize_repair_or_change_storage() {
     let dir = Directory::new();
     let cfg = config(&dir.0);
@@ -438,19 +338,6 @@ fn offline_reviews_do_not_initialize_repair_or_change_storage() {
             .irc_receive("local", SENDER, "#announces", &announcement(8))
             .is_err()
     );
-    assert_eq!(bytes(&cfg.store_dir), before);
-    drop(preview);
-    let mut legacy = config::from_json(&config::default_json(), Path::new(".")).unwrap();
-    legacy.store_dir = cfg.store_dir.clone();
-    let existing = cfg.store_dir.join("announcements.bin");
-    fs::remove_file(existing).unwrap();
-    let before = bytes(&cfg.store_dir);
-    assert!(Engine::open_for_preview(legacy.clone()).is_err());
-    assert_eq!(bytes(&cfg.store_dir), before);
-    remove_index(&cfg.store_dir);
-    let before = bytes(&cfg.store_dir);
-    let preview = Engine::open_for_preview(legacy).unwrap();
-    assert!(rows(&preview).is_empty());
     assert_eq!(bytes(&cfg.store_dir), before);
 }
 #[test]
@@ -533,20 +420,14 @@ fn cursor_pages_and_duplicates_survive_growth_review_and_restart() {
     let mut seen = std::collections::BTreeSet::new();
     let mut after = None;
     loop {
-        let report = engine
-            .irc_announcements_page(after.as_deref(), 200)
-            .unwrap();
+        let report = engine.irc_announcements(after.as_deref(), 200).unwrap();
         assert_eq!(report.get("total").unwrap().as_u64(), Some(1201));
         let rows = report.get("announcements").unwrap().as_array().unwrap();
         assert!(rows.len() <= 200);
         for r in rows {
             assert!(seen.insert(record_id(r).to_owned()));
         }
-        after = report
-            .get("next_cursor")
-            .unwrap()
-            .as_str()
-            .map(str::to_owned);
+        after = report.get("next").unwrap().as_str().map(str::to_owned);
         if after.is_none() {
             break;
         }

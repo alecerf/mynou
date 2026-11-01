@@ -130,15 +130,11 @@ nothing. `POST /api/requesters/sync` polls every account now.
 Requester demand lives in the private, checksummed `requesters.idx` beside the
 job index. Startup checks bidirectional job and IRC provenance before any
 transfer starts, and an interruption between reservation and job creation is
-recovered without a duplicate job. The first writable start migrates supported
-legacy snapshots and preserves their exact bytes; `requesters.bin` becomes an
-index identity marker. Read [migration and downgrade](inventory-storage.md#requester-storage)
+recovered without a duplicate job. Read [requester storage](inventory-storage.md#requester-storage)
 and the remaining per-operation [limits](limits.md#plex-requester-accounts).
 
-Snapshots saved before the approvals, quotas and notification removals are
-rejected at startup; there is no migration. Removing `requesters.bin` alone
-does not restore startup while requester-provenance jobs or committed IRC
-admissions remain: they require
-their original durable demand and origin. No stored data is deleted
-automatically. Read the [release notes](releases/) and back up private storage
-before upgrading.
+Only the current requester format opens: a ledger written by an earlier build
+is refused at startup and never migrated. Requester-provenance jobs and
+committed IRC admissions need their original durable demand and origin, so the
+whole store directory is recreated together. No stored data is deleted
+automatically.

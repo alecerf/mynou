@@ -1,10 +1,12 @@
-import { label, dateTime, toneOf, qualityOf, episodeCode, mediaLabel, mediaLine, yesNo, JOB_ICONS, jobTone } from './format.js';
+import { label, dateTime, toneOf, qualityOf, episodeCode, mediaLabel, yesNo, JOB_ICONS, jobTone } from './format.js';
 import { $, h, icon, reconcile } from './dom.js';
 import { Motion } from './motion.js';
-import { quality, factList, technical, openDetail, act, skeleton } from './components.js';
+import { quality, factList, openDetail, act, skeleton, sheetPoster, sheetTabs, sheetSection, sheetFacts, catalogEntry, artFor, coverArt } from './components.js';
 import { link } from './link.js';
 import { data, views, itemsOf, titleOf, emptyOrError, loadedItems, libraryTail, seriesTail, jobsLoaded } from './store.js';
 import { openReleases, episodeSearch } from './releases.js';
+import { openJob, libraryState } from './jobs.js';
+import { titleQuality } from './quality.js';
 
 // Library: films, followed series and their episodes.
 
@@ -30,17 +32,11 @@ export function paintCover(el, title, index, year) {
   $('.cover-mark', el).textContent = Number(year) ? String(year) : '';
 }
 
-function libraryState(item) {
-  if (item.imports_present === false) return ['File missing', 'bad'];
-  if (item.pending_upgrade_id) return ['Upgrade on its way', 'accent'];
-  if (item.baseline_required || item.group_baseline_required) return ['Release not recorded', 'warn'];
-  return ['', 'ok'];
-}
-
 export function updateLibraryCard(el, item) {
   const request = item.request ?? {};
   const title = request.title ?? titleOf(item);
   paintCover(el, title, request.kind === 'episode' ? episodeCode(request) : '', request.year);
+  coverArt($('.cover', el), request);
   $('h3', el).textContent = title;
   $('.year', el).textContent = request.kind === 'episode' ? episodeCode(request) : Number(request.year) ? request.year : '';
   $('.quality', el).replaceChildren(...qualityOf(item.release?.title).map((t) => h('span', {}, t)));
@@ -52,26 +48,8 @@ export function updateLibraryCard(el, item) {
   el._item = item;
 }
 
-export function openLibraryEntry(item, back) {
-  const request = item.request ?? {};
-  const [state] = libraryState(item);
-  const title = request.title ?? titleOf(item);
-  openDetail({ title: back ? mediaLabel(request) : title, tone: coverTone(title) },
-    back ? h('button', { type: 'button', class: 'text-link back', onclick: back.run }, `← ${back.label}`) : null,
-    h('p', { class: 'detail-sub' }, [mediaLine(request), label('kind', request.kind)].filter((v, i, all) => v && all.indexOf(v) === i).join(' · ')),
-    quality(qualityOf(item.release?.title)),
-    factList([
-      ['Status', state || 'In your library'],
-      ['Upgrades', item.monitored ? 'Watched for a better release' : 'Not watched'],
-      ['Last check', item.monitored && dateTime(item.monitor_checked_at)],
-      ['Added', dateTime(item.updated_at)],
-    ]),
-    technical([
-      ['Release', item.release?.title], ['Profile', item.release?.profile], ['Job ID', item.id], ['Upgrade job', item.pending_upgrade_id],
-      ['Requester account', item.requester?.account_id],
-      ['TMDB ID', request.tmdb_id], ['Imports', item.imports], ['Pack file', item.pack_file],
-    ]));
-}
+/** A film or an episode of the library opens on its own sheet. */
+export const openLibraryEntry = (item, back) => openJob(item, back);
 
 export const libraryFilter = { kind: '', query: '', layout: 'grid' };
 
@@ -135,7 +113,7 @@ views.library = {
     });
     $('#library').addEventListener('click', (event) => {
       const entry = event.target.closest('.cover') && event.target.closest('.media-card')?._entry;
-      if (entry) (entry.type === 'film' ? openLibraryEntry(entry.item) : openShow(entry));
+      if (entry) openCollectionEntry(entry);
     });
   },
   render() {
@@ -178,6 +156,13 @@ const showKey = (request = {}) => (request.tmdb_id != null
   : `show:${String(request.title ?? '').trim().toLocaleLowerCase()}:${Number(request.year) || 0}`);
 const entryRequest = (entry) => (entry.type === 'film' ? entry.item.request : entry.request) ?? {};
 
+/** Every title as the library shows it: what the search palette looks through. */
+export const collectionEntries = () => collection();
+/** Opens a film on its sheet, a show on its seasons. */
+export function openCollectionEntry(entry) {
+  if (entry.type === 'film') openLibraryEntry(entry.item); else openShow(entry);
+}
+
 /** Films stay single cards; episodes gather under their show, beside the series Mynou follows. */
 function collection() {
   const shows = new Map();
@@ -213,6 +198,7 @@ function updateCollectionCard(el, entry) {
   const request = entry.request ?? {};
   const title = request.title ?? 'Untitled series';
   paintCover(el, title, 'Series', request.year);
+  coverArt($('.cover', el), { ...request, kind: 'series' });
   $('h3', el).textContent = title;
   $('.year', el).textContent = Number(request.year) ? request.year : '';
   const owned = entry.episodes.length;
@@ -230,27 +216,53 @@ function openShow(show) {
   const request = show.request ?? {};
   const series = show.series;
   const title = request.title ?? 'Untitled series';
+  const tone = coverTone(title);
   const back = () => openShow(show);
   const libraryNext = libraryTail.items.length ? libraryTail.next : data.get('library')?.data?.next;
   const imported = new Map(show.episodes.map((e) => [episodeCode(e.request ?? {}), e]));
-  const episodes = h('div', {}, series ? h('ol', { class: 'activity-list' }, skeleton('rows', 6)) : importedList(show, back));
-  openDetail({ title, tone: coverTone(title) },
-    h('p', { class: 'detail-sub' }, [Number(request.year) ? request.year : null, 'Series'].filter(Boolean).join(' · ')),
-    factList(series ? [
-      ['Status', series.monitored ? 'Followed: new episodes are requested' : 'Not followed'],
-      ['Problem', series.last_error],
-      ['Episodes', series.episode_count],
-      ['Without a date', Number(series.undated_count) || null],
-      ['To map', Number(series.unmapped_count) || null],
-      ['Specials', yesNo(series.include_specials)],
-      ['From', series.start_date],
-      ['Last check', dateTime(series.checked_at)],
-      ['Next check', dateTime(series.next_check_at)],
-    ] : [['Status', 'Not followed: these episodes were requested one by one']]),
-    h('h3', {}, series ? 'Episodes' : 'In your library'),
-    episodes,
-    libraryNext ? h('p', { class: 'muted' }, 'Other episodes may be on library pages not loaded yet.') : null,
-    technical([['Series ID', series?.id], ['TMDB ID', request.tmdb_id]]));
+  const owned = show.episodes.length;
+  const total = Number(series?.episode_count) || 0;
+  const [stateText, stateTone] = showState(show);
+  const episodes = h('div', { class: 'sheet-seasons' }, series ? skeleton('lines', 6) : importedList(show, back));
+  const synopsis = h('div');
+  catalogEntry({ ...request, kind: 'series' }).then((found) => {
+    if (found?.overview) synopsis.replaceChildren(sheetSection('Synopsis', h('p', { class: 'sheet-synopsis' }, found.overview)));
+  });
+  const tabs = sheetTabs([
+    ['overview', 'Overview', [
+      synopsis,
+      h('div', { class: 'sheet-highlights' },
+        h('div', {}, h('strong', {}, String(owned)), h('span', {}, owned === 1 ? 'episode in your library' : 'episodes in your library')),
+        total ? h('div', {}, h('strong', {}, String(total)), h('span', {}, 'episodes in the catalog')) : null,
+        Number(series?.unmapped_count) ? h('div', {}, h('strong', {}, String(series.unmapped_count)), h('span', {}, 'to map')) : null),
+      sheetSection('Following', sheetFacts(series ? [
+        ['Status', series.monitored ? 'Followed: new episodes are requested' : 'Not followed'],
+        ['Problem', series.last_error],
+        ['Episodes', series.episode_count],
+        ['Without a date', Number(series.undated_count) || null],
+        ['To map', Number(series.unmapped_count) || null],
+        ['Specials', yesNo(series.include_specials)],
+        ['From', series.start_date],
+        ['Last check', dateTime(series.checked_at)],
+        ['Next check', dateTime(series.next_check_at)],
+      ] : [['Status', 'Not followed: these episodes were requested one by one']])),
+      request.tmdb_id != null ? sheetSection('Quality for this series', titleQuality('series', request.tmdb_id)) : null,
+      h('details', { class: 'sheet-diagnostics' }, h('summary', {}, 'Identifiers'),
+        sheetFacts([['Series ID', series?.id], ['TMDB ID', request.tmdb_id]], 'mono')),
+    ]],
+    ['episodes', 'Seasons & episodes', [
+      episodes,
+      libraryNext ? h('p', { class: 'muted' }, 'Other episodes may be on library pages not loaded yet.') : null,
+    ]],
+  ]);
+  const side = h('div', {},
+    sheetPoster(title, tone, artFor({ ...request, kind: 'series' }), Number(request.year) ? String(request.year) : ''),
+    h('div', { class: 'sheet-sidebar-info' }, h('span', { class: 'chip', dataset: { tone: stateTone } }, icon(stateTone === 'bad' ? 'alert' : 'check'), stateText)));
+  openDetail({ title, tone, side, crumb: ['Your collection', 'Series'], eyebrow: 'Series' },
+    h('p', { class: 'detail-sub' }, [Number(request.year) ? request.year : null, total ? `${owned} of ${total} episodes` : `${owned} ${owned === 1 ? 'episode' : 'episodes'}`].filter(Boolean).join(' · ')),
+    series?.last_error ? h('p', { class: 'sheet-status', dataset: { tone: 'bad' } }, series.last_error) : null,
+    h('div', { class: 'sheet-actions' }, h('button', { type: 'button', class: 'primary', onclick: () => tabs.show('episodes') }, icon('library'), 'Explore the episodes')),
+    tabs);
   if (!series) return;
   // Every catalog episode, season by season, with what Mynou holds for it.
   link.call('GET', `/api/series/${encodeURIComponent(series.id)}`).then((record) => {
@@ -262,16 +274,24 @@ function openShow(show) {
       if (!seasons.has(episode.season)) seasons.set(episode.season, []);
       seasons.get(episode.season).push(episode);
     }
-    const last = [...seasons.keys()].filter((n) => n > 0).at(-1);
-    episodes.replaceChildren(...[...seasons].map(([number, list]) => {
-      const owned = list.filter((e) => imported.has(episodeCode(e))).length;
-      return h('details', { class: 'season', open: number === last },
-        h('summary', {}, number ? `Season ${number}` : 'Specials', h('span', { class: 'muted' }, ` · ${owned} of ${list.length}`)),
-        h('ol', { class: 'activity-list' }, list.map((episode) =>
-          episodeRow(series, episode, imported.get(episodeCode(episode)), jobs.get(episodeCode(episode)), today, back))));
-    }));
-    if (!seasons.size) episodes.replaceChildren(h('p', { class: 'muted' }, 'The catalog lists no episode yet.'));
-    else Motion.arrive(episodes.children);
+    if (!seasons.size) { episodes.replaceChildren(h('p', { class: 'muted' }, 'The catalog lists no episode yet.')); return; }
+    const last = [...seasons.keys()].filter((n) => n > 0).at(-1) ?? [...seasons.keys()][0];
+    const picker = h('div', { class: 'segmented season-picker', role: 'group', 'aria-label': 'Season' });
+    const panels = [...seasons].map(([number, list]) => {
+      const have = list.filter((e) => imported.has(episodeCode(e))).length;
+      picker.append(h('button', { type: 'button', 'aria-pressed': String(number === last), dataset: { season: String(number) } },
+        number ? `Season ${number}` : 'Specials', h('small', {}, `${have}/${list.length}`)));
+      return h('ol', { class: 'activity-list', hidden: number !== last, dataset: { season: String(number) } }, list.map((episode) =>
+        episodeRow(series, episode, imported.get(episodeCode(episode)), jobs.get(episodeCode(episode)), today, back)));
+    });
+    picker.addEventListener('click', (event) => {
+      const button = event.target.closest('button');
+      if (!button) return;
+      for (const b of picker.children) b.setAttribute('aria-pressed', String(b === button));
+      for (const panel of panels) panel.hidden = panel.dataset.season !== button.dataset.season;
+    });
+    episodes.replaceChildren(h('div', { class: 'season-toolbar' }, picker), ...panels);
+    Motion.arrive(panels.filter((p) => !p.hidden).flatMap((p) => [...p.children]));
   }).catch((error) => episodes.replaceChildren(h('p', { class: 'error' }, error.message)));
 }
 

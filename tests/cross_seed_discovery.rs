@@ -319,6 +319,7 @@ fn fixture_with(indexer: &Indexer, json_source: bool) -> Fixture {
         fs::read(&source.path).unwrap(),
     )
     .unwrap();
+    mynou::torrent::index_handmade_transfer(&cfg.downloads, &source.id).unwrap();
     Fixture {
         scratch,
         cfg,

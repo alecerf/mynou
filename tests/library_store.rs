@@ -43,6 +43,8 @@ fn request(title: &str, url: Option<&str>) -> Request {
 
 fn release(title: &str) -> RecordedRelease {
     RecordedRelease {
+        source_id: None,
+        size_bytes: None,
         title: title.into(),
         profile: "hd".into(),
     }
@@ -120,7 +122,9 @@ fn bounded_release_metadata_and_legacy_json_defaults() {
     let mut value = original.to_json();
     remove_library_fields(&mut value);
     assert_eq!(Job::from_json(&value).unwrap(), original);
-    let valid = release(&"a".repeat(2_048));
+    let mut valid = release(&"a".repeat(2_048));
+    valid.source_id = Some("indexer".into());
+    valid.size_bytes = Some(u64::MAX);
     assert_eq!(RecordedRelease::from_json(&valid.to_json()).unwrap(), valid);
     for invalid in [
         release(""),
@@ -128,10 +132,14 @@ fn bounded_release_metadata_and_legacy_json_defaults() {
         release(&"a".repeat(2_049)),
         release("title\0suffix"),
         RecordedRelease {
+            source_id: None,
+            size_bytes: None,
             title: "Example".into(),
             profile: "x".repeat(65),
         },
         RecordedRelease {
+            source_id: None,
+            size_bytes: None,
             title: "Example".into(),
             profile: "café".into(),
         },
@@ -168,28 +176,6 @@ fn missing_import_baseline_can_be_recorded_once_and_survives_restart() {
             .unwrap(),
         recorded
     );
-}
-
-#[test]
-fn legacy_ready_cancellation_migrates_as_cancelled_and_leaves_the_library() {
-    let directory = Directory::new();
-    let mut store = Store::open(&directory.0).unwrap();
-    let mut job = store
-        .submit(request("Legacy ready cancellation", None))
-        .unwrap();
-    job.state = "ready".into();
-    job.imports = vec!["/library/legacy.mkv".into()];
-    store.update(job.clone()).unwrap();
-    assert!(store.cancel(&job.id).is_err());
-    let mut cancelled = store.get(&job.id).unwrap().unwrap();
-    drop(store);
-    // An earlier version could record a cancellation of a ready import.
-    cancelled.state = "cancelled".into();
-    jobs_state::downgrade(&directory.0, std::slice::from_ref(&cancelled));
-    let mut reopened = Store::open(&directory.0).unwrap();
-    assert_eq!(reopened.get(&job.id).unwrap().unwrap().state, "cancelled");
-    assert!(reopened.library_jobs().unwrap().is_empty());
-    assert_eq!(reopened.counts().unwrap().library, 0);
 }
 
 #[test]
@@ -643,7 +629,7 @@ fn unrelated_ready_roots_use_creation_order_even_after_monitor_timestamp_changes
     first.monitor_checked_at = 999_999;
     second.created_at = 200;
     second.updated_at = 200;
-    jobs_state::downgrade(&directory.0, &[first.clone(), second.clone()]);
+    jobs_state::rebuild(&directory.0, &[first.clone(), second.clone()]);
     let mut store = Store::open(&directory.0).unwrap();
     assert_eq!(store.library_jobs().unwrap()[0].id, second.id);
     store.record_monitor_check(&second.id, u64::MAX).unwrap();
@@ -699,7 +685,7 @@ fn unrelated_root_precedence_does_not_change_when_its_ready_child_has_a_lower_id
             job
         })
         .collect();
-    jobs_state::downgrade(&directory.0, &jobs);
+    jobs_state::rebuild(&directory.0, &jobs);
     let mut reopened = Store::open(&directory.0).unwrap();
     assert_eq!(reopened.library_jobs().unwrap()[0].id, child_id);
     assert!(reopened.set_monitored(other_id, false).is_err());
@@ -720,59 +706,4 @@ fn unrelated_root_precedence_does_not_change_when_its_ready_child_has_a_lower_id
         Store::open(&directory.0).unwrap().library_jobs().unwrap(),
         vec![grandchild]
     );
-}
-
-#[test]
-fn migration_rejects_missing_parent_cross_media_and_cycles() {
-    for damage in ["missing", "media", "cycle"] {
-        let directory = Directory::new();
-        let mut store = Store::open(&directory.0).unwrap();
-        let parent = ready(
-            &mut store,
-            "Example",
-            Some("https://example.invalid/parent.torrent"),
-        );
-        let child = store
-            .submit_upgrade(
-                &parent.id,
-                request("Example", Some("https://example.invalid/child.torrent")),
-                release("Example.1080p"),
-            )
-            .unwrap();
-        let child = complete(&mut store, child);
-        drop(store);
-        let (mut parent, mut child) = (parent, child);
-        match damage {
-            "missing" => child.upgrade_parent = Some("0".repeat(32)),
-            "media" => child.request.title = "Unrelated media".into(),
-            _ => parent.upgrade_parent = Some(child.id.clone()),
-        }
-        jobs_state::downgrade(&directory.0, &[parent, child]);
-        let snapshot = directory.0.join("snapshot.bin");
-        let before = fs::read(&snapshot).unwrap();
-        assert!(
-            Store::open(&directory.0).is_err(),
-            "verified {damage} snapshot must be rejected"
-        );
-        assert_eq!(fs::read(&snapshot).unwrap(), before);
-        assert!(!directory.0.join("journal.bin").exists());
-        assert!(!directory.0.join("jobs.idx").exists());
-    }
-}
-
-#[test]
-fn migration_rejects_a_fabricated_upgrade_parent() {
-    let directory = Directory::new();
-    let mut store = Store::open(&directory.0).unwrap();
-    let mut job = store
-        .submit(request(
-            "Example",
-            Some("https://example.invalid/child.torrent"),
-        ))
-        .unwrap();
-    drop(store);
-    job.upgrade_parent = Some("0".repeat(32));
-    job.release = Some(release("Example.1080p"));
-    jobs_state::downgrade(&directory.0, &[job]);
-    assert!(Store::open(&directory.0).err().unwrap().contains("parent"));
 }

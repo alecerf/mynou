@@ -2,7 +2,6 @@
 #![allow(dead_code)]
 use mynou::{
     config::{self, Config},
-    crypto::sha256,
     engine::{Engine, lock},
     json::{self, Value},
     store::{Job, Request},
@@ -87,24 +86,6 @@ pub fn no_private(report: &Value) {
             "Public report contains private routing state"
         );
     }
-}
-pub fn read_checked(path: &Path) -> Value {
-    if path.file_name().unwrap() == "announcements.bin" {
-        return crate::irc_support::snapshot(path.parent().unwrap());
-    }
-    let b = fs::read(path).unwrap();
-    json::parse(std::str::from_utf8(&b[16..b.len() - 32]).unwrap()).unwrap()
-}
-pub fn write_checked(path: &Path, magic: &[u8; 8], v: &Value) {
-    if path.file_name().unwrap() == "announcements.bin" {
-        return crate::irc_support::write_snapshot_format(path.parent().unwrap(), magic, v);
-    }
-    let p = json::stringify(v).into_bytes();
-    let mut b = magic.to_vec();
-    b.extend_from_slice(&(p.len() as u64).to_le_bytes());
-    b.extend_from_slice(&p);
-    b.extend_from_slice(&sha256(&b));
-    fs::write(path, b).unwrap();
 }
 pub fn row_mut<'a>(snapshot: &'a mut Value, id: &str) -> &'a mut Value {
     let Value::Array(rows) = snapshot.get_mut("records").unwrap() else {
@@ -261,7 +242,7 @@ pub fn state_except_irc_freshness(root: &Path) -> (FileBytes, IndexedValues) {
     fs::DirBuilder::new()
         .recursive(true)
         .mode(0o700)
-        .create(copy.join("objects"))
+        .create(&copy)
         .unwrap();
     for (path, bytes) in &files {
         if let Ok(relative) = path.strip_prefix(&directory) {

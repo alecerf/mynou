@@ -290,14 +290,25 @@ impl Engine {
         }
         let (profile_name, profile) = config.selection.profile("episode")?;
         let release = RecordedRelease {
+            source_id: None,
+            size_bytes: None,
             title: query.release_title.clone(),
             profile: profile_name.into(),
         };
-        let candidate = profile.assess(&release.title, &initial[0].request.title);
-        let current = initial[0]
-            .release
-            .as_ref()
-            .map(|old| profile.assess(&old.title, &initial[0].request.title));
+        let candidate = profile.assess_with_size(
+            &release.title,
+            &initial[0].request.title,
+            release.size_bytes,
+            Some(1),
+        );
+        let current = initial[0].release.as_ref().map(|old| {
+            profile.assess_with_size(
+                &old.title,
+                &initial[0].request.title,
+                old.size_bytes,
+                Some(1),
+            )
+        });
         if query.action == "replace"
             && (!candidate.accepted
                 || current.as_ref().is_some_and(|old| {
