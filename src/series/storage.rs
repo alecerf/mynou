@@ -898,6 +898,7 @@ impl SeriesStore {
             check_format(&mut index)?;
             Backend::Ready(Box::new(index))
         } else {
+            crate::store::refuse_older_format(directory, &["series.json"], "Series storage")?;
             Backend::Absent
         };
         Ok(Self {

@@ -1260,6 +1260,17 @@ impl Peer {
         upcoming: &mut dyn FnMut(usize) -> Option<usize>,
         stop: &AtomicBool,
     ) -> Result<Vec<u8>> {
+        self.download_piece_with_timeout(meta, index, upcoming, stop, Duration::from_secs(120))
+    }
+
+    fn download_piece_with_timeout(
+        &mut self,
+        meta: &Meta,
+        index: usize,
+        upcoming: &mut dyn FnMut(usize) -> Option<usize>,
+        stop: &AtomicBool,
+        timeout: Duration,
+    ) -> Result<Vec<u8>> {
         let aggregate = self.download_gate.clone();
         let local = self.local_download_gate.clone();
         let _aggregate_use = aggregate.participate();
@@ -1268,7 +1279,7 @@ impl Peer {
             .ahead
             .pop_front()
             .unwrap_or_else(|| Blocks::new(meta, index, self.v2_wire));
-        let mut deadline = Instant::now() + Duration::from_secs(120);
+        let mut deadline = Instant::now() + timeout;
         let mut messages = current.received.len() * 8 + 256;
         while current.received.iter().any(|v| !v) {
             if self.done.as_ref().is_some_and(|done| done.has(index)) {
@@ -1415,14 +1426,16 @@ impl Peer {
                 }
             }
             let reading = Instant::now();
-            let (id, payload) = self.read(stop)?;
+            let (id, payload) = read_bounded(
+                &mut *self.stream,
+                Some(stop),
+                deadline.min(reading + Duration::from_secs(15)),
+                message_limit(self.piece_count),
+            )?;
             if id == 255 && reading.elapsed() >= Duration::from_secs(1) {
                 // A deliberately paced peer keeps its connection alive while
-                // waiting for payload credit. Rapid keepalives still consume
-                // the bounded message budget, preventing a busy-message loop.
-                deadline = deadline
-                    .checked_add(reading.elapsed())
-                    .ok_or("Peer deadline overflow")?;
+                // waiting for payload credit, but cannot extend stalled block
+                // requests. Rapid keepalives still consume the message budget.
                 messages += 1;
                 continue;
             }
@@ -1471,6 +1484,7 @@ impl Peer {
                     target.data[offset..offset + payload.len() - 8].copy_from_slice(&payload[8..]);
                     target.received[offset / BLOCK] = true;
                     target.pending -= 1;
+                    deadline = Instant::now() + timeout;
                     // A block of the next piece is that piece's progress,
                     // not a message this one waited through.
                     if piece != index {
@@ -1694,36 +1708,37 @@ mod tests {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("listener");
         let stream = TcpStream::connect(listener.local_addr().expect("address")).expect("client");
         let (remote, _) = listener.accept().expect("peer");
-        (
-            Peer {
-                stream: Box::new(stream),
-                metadata_id: None,
-                pex_id: None,
-                metadata_size: None,
-                bitfield: Vec::new(),
-                choked: true,
-                extensions: false,
-                discovered: Vec::new(),
-                pex_allowed: false,
-                v2_wire: false,
-                counters: Arc::new(super::super::TransferCounters::default()),
-                download_gate: Arc::new(super::super::RateGate::default()),
-                local_download_gate: Arc::new(super::super::RateGate::default()),
-                piece_count: meta.map(Meta::count),
-                bitfield_received: false,
-                availability_known: false,
-                request_limit: DEFAULT_REQUEST_LIMIT,
-                request_sent: None,
-                request_rtt: None,
-                ahead: VecDeque::new(),
-                haves: Vec::new(),
-                upload: None,
-                fresh: false,
-                done: None,
-                cancelled: VecDeque::new(),
-            },
-            remote,
-        )
+        (memory_peer(Box::new(stream), meta), remote)
+    }
+
+    fn memory_peer(stream: Box<dyn NetworkStream>, meta: Option<&Meta>) -> Peer {
+        Peer {
+            stream,
+            metadata_id: None,
+            pex_id: None,
+            metadata_size: None,
+            bitfield: Vec::new(),
+            choked: true,
+            extensions: false,
+            discovered: Vec::new(),
+            pex_allowed: false,
+            v2_wire: false,
+            counters: Arc::new(super::super::TransferCounters::default()),
+            download_gate: Arc::new(super::super::RateGate::default()),
+            local_download_gate: Arc::new(super::super::RateGate::default()),
+            piece_count: meta.map(Meta::count),
+            bitfield_received: false,
+            availability_known: false,
+            request_limit: DEFAULT_REQUEST_LIMIT,
+            request_sent: None,
+            request_rtt: None,
+            ahead: VecDeque::new(),
+            haves: Vec::new(),
+            upload: None,
+            fresh: false,
+            done: None,
+            cancelled: VecDeque::new(),
+        }
     }
 
     fn three_piece_meta() -> Meta {
@@ -2305,6 +2320,109 @@ mod tests {
     }
 
     #[test]
+    fn slow_keepalives_do_not_extend_stalled_piece_requests() {
+        let meta = three_piece_meta();
+        let started = Instant::now();
+        // A keepalive once per second used to refund both the time spent
+        // reading and the message budget indefinitely.
+        let stream = TimedMessages {
+            frames: (1..=3)
+                .map(|n| (started + Duration::from_millis(n * 1050), vec![0; 4]))
+                .collect(),
+            input: MemoryStream {
+                input: Vec::new(),
+                output: Vec::new(),
+            },
+        };
+        let mut peer = memory_peer(Box::new(stream), Some(&meta));
+        peer.choked = false;
+        let stop = Arc::new(AtomicBool::new(false));
+        // A watchdog also bounds the unfixed implementation's runtime.
+        let (finished, pending) = std::sync::mpsc::channel();
+        let cancelled = stop.clone();
+        let watchdog = std::thread::spawn(move || {
+            if pending.recv_timeout(Duration::from_millis(2400)).is_err() {
+                cancelled.store(true, Ordering::Release);
+            }
+        });
+        let error = peer
+            .download_piece_with_timeout(
+                &meta,
+                0,
+                &mut |_| None,
+                &stop,
+                Duration::from_millis(1150),
+            )
+            .unwrap_err();
+        let _ = finished.send(());
+        watchdog.join().unwrap();
+        assert!(
+            !stop.load(Ordering::Acquire),
+            "keepalives stalled the request until cancellation"
+        );
+        assert!(matches!(
+            error.as_str(),
+            EXPIRED | "Peer did not provide the requested piece"
+        ));
+        assert!(started.elapsed() < Duration::from_millis(2000));
+    }
+
+    #[test]
+    fn only_new_piece_data_extends_the_request_deadline() {
+        let payload = vec![42; BLOCK * 3];
+        let info = value_dict(&[
+            (b"name", Value::Bytes(b"progress.bin".to_vec())),
+            (b"piece length", Value::Int((BLOCK * 4) as i64)),
+            (b"length", Value::Int(payload.len() as i64)),
+            (
+                b"pieces",
+                Value::Bytes(crate::crypto::sha1(&payload).to_vec()),
+            ),
+        ]);
+        let meta = Meta::parse(&crate::bencode::encode(&value_dict(&[(b"info", info)]))).unwrap();
+        for duplicate in [false, true] {
+            let started = Instant::now();
+            let frames = (0..3)
+                .map(|n| {
+                    let mut body = vec![0; 4];
+                    let offset = if duplicate { 0 } else { n * BLOCK };
+                    body.extend_from_slice(&(offset as u32).to_be_bytes());
+                    body.extend_from_slice(&payload[offset..offset + BLOCK]);
+                    (
+                        started + Duration::from_millis(100 + n as u64 * 200),
+                        frame(7, &body).unwrap(),
+                    )
+                })
+                .collect();
+            let stream = TimedMessages {
+                frames,
+                input: MemoryStream {
+                    input: Vec::new(),
+                    output: Vec::new(),
+                },
+            };
+            let mut peer = memory_peer(Box::new(stream), Some(&meta));
+            peer.choked = false;
+            let result = peer.download_piece_with_timeout(
+                &meta,
+                0,
+                &mut |_| None,
+                &AtomicBool::new(false),
+                Duration::from_millis(300),
+            );
+            if duplicate {
+                assert!(matches!(
+                    result.unwrap_err().as_str(),
+                    EXPIRED | "Peer did not provide the requested piece"
+                ));
+            } else {
+                assert_eq!(result.unwrap(), payload);
+                assert!(started.elapsed() >= Duration::from_millis(500));
+            }
+        }
+    }
+
+    #[test]
     fn slow_drip_read_obeys_an_absolute_deadline_and_cancellation() {
         use std::net::TcpListener;
         for cancel in [false, true] {
@@ -2353,6 +2471,40 @@ mod tests {
     struct MemoryStream {
         input: Vec<u8>,
         output: Vec<u8>,
+    }
+
+    struct TimedMessages {
+        frames: VecDeque<(Instant, Vec<u8>)>,
+        input: MemoryStream,
+    }
+    impl std::io::Read for TimedMessages {
+        fn read(&mut self, data: &mut [u8]) -> std::io::Result<usize> {
+            if self.input.input.is_empty()
+                && self
+                    .frames
+                    .front()
+                    .is_some_and(|(at, _)| Instant::now() >= *at)
+            {
+                self.input.input = self.frames.pop_front().unwrap().1;
+            }
+            self.input.read(data)
+        }
+    }
+    impl Write for TimedMessages {
+        fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
+            self.input.write(data)
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    impl NetworkStream for TimedMessages {
+        fn set_read_timeout(&self, _: Option<Duration>) -> std::io::Result<()> {
+            Ok(())
+        }
+        fn set_write_timeout(&self, _: Option<Duration>) -> std::io::Result<()> {
+            Ok(())
+        }
     }
 
     impl std::io::Read for MemoryStream {

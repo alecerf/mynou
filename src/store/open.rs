@@ -15,7 +15,15 @@ const STAGING: &str = "jobs.idx.creating";
 pub(super) fn open(directory: &Path, lock: File, read_only: bool) -> Result<Store> {
     let path = directory.join(INDEX);
     reject_symlinks(&path)?;
-    let index = if exists(&path)? {
+    let indexed = exists(&path)?;
+    if !indexed {
+        crate::store::refuse_older_format(
+            directory,
+            &["snapshot.bin", "journal.bin"],
+            "Job storage",
+        )?;
+    }
+    let index = if indexed {
         let mut index = Index::open(&path, read_only)?;
         check_format(&mut index)?;
         index

@@ -451,6 +451,8 @@ impl Engine {
     /// The verified `.torrent` of a resolved release, downloaded once through the
     /// authenticated indexer. Its announce list stays in private transfer state;
     /// the download link is never kept.
+    /// The routing-pass lock must remain held through reuse, fetch and route
+    /// publication; cleanup takes the same lock before inspecting these files.
     pub(crate) fn irc_metainfo(
         &self,
         lookup: &Lookup,
@@ -589,6 +591,10 @@ impl Engine {
     /// still acquire from, and abandoned partial downloads. Returns how many
     /// files were removed.
     pub(crate) fn prune_metainfo(&self, now: std::time::SystemTime) -> Result<usize> {
+        // A route may refresh an old file or be writing its partial download.
+        // Serialize the complete use/publication with cleanup, not just the
+        // final job-store check: an mtime check alone races a later refresh.
+        let _route = lock(&self.irc_route_lock)?;
         let dir = self.config.store_dir.join(METAINFO_DIR);
         let entries = match std::fs::read_dir(&dir) {
             Ok(entries) => entries,
@@ -653,6 +659,59 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::{episode, info_hash, refreshed};
+
+    #[test]
+    fn metainfo_prune_waits_for_routing_refresh_and_publication() {
+        use crate::{
+            config,
+            engine::{Engine, lock},
+            pack::tunnel_tests::Directory,
+        };
+        use std::{
+            sync::mpsc,
+            thread,
+            time::{Duration, SystemTime},
+        };
+        let directory = Directory::new();
+        let cfg = config::from_json(&config::default_json(), &directory.0).unwrap();
+        let engine = Engine::open_for_management(cfg).unwrap();
+        let dir = engine.config.store_dir.join(super::METAINFO_DIR);
+        super::private_directory(&dir).unwrap();
+        let path = dir.join(format!("{}.torrent", "1".repeat(40)));
+        let part = dir.join(format!("{}.part", "2".repeat(40)));
+        let obsolete = dir.join(format!("{}.torrent", "3".repeat(40)));
+        let now = SystemTime::now();
+        for path in [&path, &part, &obsolete] {
+            std::fs::File::create(path)
+                .unwrap()
+                .set_modified(now - Duration::from_secs(3 * 86_400))
+                .unwrap();
+        }
+        // Routing owns this lock from the cache refresh through the durable
+        // route publication, including work on its partial metainfo file.
+        let route = lock(&engine.irc_route_lock).unwrap();
+        let (started, starting) = mpsc::channel();
+        let (finished, pending) = mpsc::channel();
+        let pruning = engine.clone();
+        let worker = thread::spawn(move || {
+            started.send(()).unwrap();
+            finished.send(pruning.prune_metainfo(now)).unwrap();
+        });
+        starting.recv().unwrap();
+        let while_routing = pending.recv_timeout(Duration::from_millis(100));
+        let reused = refreshed(&path).unwrap();
+        std::fs::write(&part, b"refreshed partial metainfo").unwrap();
+        drop(route);
+        worker.join().unwrap();
+        assert!(
+            matches!(while_routing, Err(mpsc::RecvTimeoutError::Timeout)),
+            "pruning must wait until the route finishes using its files"
+        );
+        assert!(reused);
+        assert_eq!(pending.recv().unwrap().unwrap(), 1);
+        assert!(path.is_file() && part.is_file());
+        assert!(!obsolete.exists());
+    }
 
     #[test]
     fn a_reused_metainfo_file_is_new_again_and_a_removed_one_is_fetched() {

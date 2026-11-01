@@ -5,6 +5,8 @@ use crate::{Result, json::Value};
 
 const DUE: u8 = 240;
 const MEMBER: u8 = 241;
+/// Held members of unknown age, which only removed upgrades wrote.
+const RETIRED_UNKNOWN: u8 = 245;
 const FORMAT: Key = key(242);
 const LAST: Key = key(244);
 const VERSION: &[u8] = b"mynou-backlog/1";
@@ -65,11 +67,28 @@ pub(crate) fn maintain(
     Ok(())
 }
 
+/// The marker did not change when upgrades went away, so an index one of
+/// them prepared is told apart by the members of unknown age it left.
+/// Read-only opens skip `prepare`, so their stores call this when opening.
+pub(crate) fn current(index: &mut Index) -> Result<()> {
+    let unknown = index.range_summary(key(RETIRED_UNKNOWN), Some(key(RETIRED_UNKNOWN + 1)))?;
+    if unknown.count != 0 {
+        return Err(
+            "Backlog index is from an older Mynou that this version cannot read; \
+             move the data folder aside to start over"
+                .into(),
+        );
+    }
+    Ok(())
+}
+
 /// Marks an index that holds no record of `start..end` yet as maintaining
 /// its backlog; an index with records must already maintain it.
 pub(crate) fn prepare(index: &mut Index, start: Key, end: Key) -> Result<()> {
     match index.get(&FORMAT)?.as_deref() {
-        Some(VERSION) => Ok(()),
+        // The marker did not change when upgrades went away, so an index one
+        // of them prepared is told apart by the members it left.
+        Some(VERSION) => current(index),
         Some(_) => Err("Unsupported backlog index format".into()),
         None => {
             let page = index.page(&Query {

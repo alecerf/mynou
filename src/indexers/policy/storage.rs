@@ -138,6 +138,7 @@ impl Storage {
             check(&mut index)?;
             Backend::Ready(Box::new(index))
         } else {
+            crate::store::refuse_older_format(directory, &["indexers.bin"], "Indexer state")?;
             Backend::Absent
         };
         Ok(Self {

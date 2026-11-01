@@ -239,6 +239,7 @@ impl Storage {
             check(&mut index)?;
             Backend::Ready(Box::new(index))
         } else {
+            crate::store::refuse_older_format(directory, &["feeds.bin"], "Feed state")?;
             Backend::Absent
         };
         Ok(Self {

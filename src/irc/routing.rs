@@ -887,6 +887,9 @@ impl Engine {
                     "claim_mismatch"
                 }
                 "IRC: candidate differs from the admitted profile" => "profile_mismatch",
+                "IRC: metadata file exceeds the admitted profile maximum size" => {
+                    "profile_size_rejected"
+                }
                 "IRC: metadata unavailable or unauthenticated" => "metadata_unavailable",
                 "IRC: metadata file rejected" => "metadata_rejected",
                 "IRC: availability could not be verified" => "availability_unavailable",
@@ -982,6 +985,17 @@ impl Engine {
         }
         let (file, file_length) =
             choose_file(&job, &metadata).map_err(|_| "IRC: metadata file rejected")?;
+        let bound = self.title_binding(&job.request)?;
+        let (_, profile) = admitted_profile(&self.config, &job, bound.as_deref())?;
+        // Announcement admission cannot establish the selected file's size.
+        // Enforce the decimal-MB per-movie/episode cap on authenticated metadata
+        // before reserving ownership or publishing any acquisition origin.
+        if profile
+            .max_size_mb
+            .is_some_and(|max| file_length > u64::from(max) * 1_000_000)
+        {
+            return Err("IRC: metadata file exceeds the admitted profile maximum size".into());
+        }
         let origin = Origin {
             announcement_id: record.id.clone(),
             job_id: job.id.clone(),
@@ -1081,4 +1095,115 @@ pub(crate) fn start(engine: &Arc<Engine>, handles: &mut Vec<JoinHandle<()>>) {
             engine.wait(1000);
         }
     }));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        bencode::{self, Value as B},
+        config,
+        pack::tunnel_tests::Directory,
+        store::Request,
+    };
+    use std::{fs, os::unix::fs::DirBuilderExt};
+
+    #[test]
+    fn routing_rechecks_profile_cap_against_verified_file_length() {
+        for (length, cap, expected) in [
+            (1_000_001, Some(1), "profile_size_rejected"),
+            (1_000_000, Some(1), "routed"),
+            (1_000_001, None, "routed"),
+        ] {
+            let directory = Directory::new();
+            let mut settings = config::default_json();
+            settings.insert("irc", crate::json::parse(r##"{
+                "sources":[{"id":"local","url":"irc://127.0.0.1:1","enabled":true,
+                    "channel":"#announces","sender":"bot!user@fixture",
+                    "announcement_format":{"type":"bracketed","lookup_indexer":"fixture",
+                        "details_prefix":"https://tracker.example/torrents/","categories":{"Films":"movie"}}}],
+                "rules":[{"id":"movies","source":"local","enabled":true,"kind":"movie","profile":"any","action":"grab"}]
+            }"##).unwrap());
+            settings.insert(
+                "indexers",
+                crate::json::parse(
+                    r#"[{
+                "id":"fixture","name":"fixture","kind":"torznab","url":"http://127.0.0.1:1/api",
+                "api_key_env":"MYNOU_ABSENT_IRC_SIZE_FIXTURE_KEY"
+            }]"#,
+                )
+                .unwrap(),
+            );
+            let mut cfg = config::from_json(&settings, &directory.0).unwrap();
+            cfg.selection.profiles.get_mut("any").unwrap().max_size_mb = cap;
+            let engine = Engine::open_for_management(cfg).unwrap();
+            let job = engine
+                .submit(Request {
+                    kind: "movie".into(),
+                    title: "Fixture Movie".into(),
+                    year: 2024,
+                    season: 0,
+                    episode: 0,
+                    tmdb_id: Some(7),
+                    source_numbering: None,
+                    source_path: None,
+                    source_url: None,
+                })
+                .unwrap()
+                .remove(0);
+            let name = "Fixture.Movie.2024.1080p.mp4";
+            let info = B::Dict(BTreeMap::from([
+                (b"name".to_vec(), B::Bytes(name.as_bytes().to_vec())),
+                (b"length".to_vec(), B::Int(length)),
+                (b"piece length".to_vec(), B::Int(1_048_576)),
+                (b"pieces".to_vec(), B::Bytes(vec![1; 20])),
+            ]));
+            let hash: String = crate::crypto::sha1(&bencode::encode(&info))
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect();
+            let metainfo = bencode::encode(&B::Dict(BTreeMap::from([(b"info".to_vec(), info)])));
+            let cache = engine
+                .config
+                .store_dir
+                .join(crate::irc::lookup::METAINFO_DIR);
+            fs::DirBuilder::new().mode(0o700).create(&cache).unwrap();
+            fs::write(cache.join(format!("{hash}.torrent")), metainfo).unwrap();
+            let mut claim = crate::json::parse(
+                r#"{
+                "title":"Fixture.Movie.2024.1080p","media_title":"Fixture Movie",
+                "kind":"movie","year":2024,"tmdb_id":"7"
+            }"#,
+            )
+            .unwrap();
+            claim.insert("info_hash", hash);
+            let received = engine
+                .irc_receive("local", "bot!user@fixture", "#announces", &claim)
+                .unwrap();
+            let report = engine.irc_route_pending().unwrap();
+            assert_eq!(
+                report.get("outcome").and_then(Value::as_str),
+                Some(expected)
+            );
+            let current = lock(&engine.store).unwrap().get(&job.id).unwrap().unwrap();
+            let ledger = lock(&engine.irc_store).unwrap();
+            let record = ledger
+                .get(received.get("id").unwrap().as_str().unwrap())
+                .unwrap()
+                .unwrap();
+            if expected == "routed" {
+                assert_eq!(
+                    current.irc_origin.as_ref().unwrap().file_length,
+                    length as u64
+                );
+                assert_eq!(record.route.unwrap().phase, "routed");
+            } else {
+                assert!(current.irc_origin.is_none() && current.download_id.is_none());
+                assert!(
+                    record.route.is_none(),
+                    "oversized files must not be reserved"
+                );
+            }
+        }
+    }
 }

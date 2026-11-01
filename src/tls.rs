@@ -1029,6 +1029,7 @@ fn legacy_handshake(
                     if !buffered.is_empty() {
                         return Err("TLS data after ServerHelloDone".into());
                     }
+                    stage = 4;
                     break 'flight;
                 }
                 (_, 13) => {
@@ -1049,6 +1050,9 @@ fn legacy_handshake(
             21 => return Err("Server rejected the TLS handshake".into()),
             _ => return Err("Unexpected TLS record during the handshake".into()),
         }
+    }
+    if stage != 4 {
+        return Err("Incomplete TLS 1.2 handshake".into());
     }
     let (public, mut shared) = match peer.ok_or("Incomplete TLS 1.2 handshake")? {
         Share::X25519(peer) => (
@@ -2281,6 +2285,106 @@ pub(crate) mod tests {
             serve_legacy(stream, fault)
         });
         (address, thread)
+    }
+
+    #[test]
+    fn tls12_requires_server_hello_done_before_client_key_exchange() {
+        struct Flight {
+            input: io::Cursor<Vec<u8>>,
+            output: std::sync::Arc<std::sync::Mutex<Vec<u8>>>,
+        }
+        impl Read for Flight {
+            fn read(&mut self, data: &mut [u8]) -> io::Result<usize> {
+                self.input.read(data)
+            }
+        }
+        impl Write for Flight {
+            fn write(&mut self, data: &[u8]) -> io::Result<usize> {
+                self.output.lock().unwrap().extend_from_slice(data);
+                Ok(data.len())
+            }
+            fn flush(&mut self) -> io::Result<()> {
+                Ok(())
+            }
+        }
+        impl crate::net::NetworkStream for Flight {
+            fn set_read_timeout(&self, _: Option<Duration>) -> io::Result<()> {
+                Ok(())
+            }
+            fn set_write_timeout(&self, _: Option<Duration>) -> io::Result<()> {
+                Ok(())
+            }
+        }
+        let mut certificate = Vec::new();
+        let length = (test_fixture::LEAF_DER.len() as u32).to_be_bytes();
+        certificate
+            .extend_from_slice(&((test_fixture::LEAF_DER.len() + 3) as u32).to_be_bytes()[1..]);
+        certificate.extend_from_slice(&length[1..]);
+        certificate.extend_from_slice(test_fixture::LEAF_DER);
+        let certificate = handshake_message(11, &certificate).unwrap();
+        let mut parameters = vec![3, 0, 29, 32];
+        parameters.extend_from_slice(&x25519_public_key([0x24; 32]));
+        let signed = [&[1; 32][..], &[2; 32][..], &parameters].concat();
+        let signature = sign_pss_sha256_for_test(
+            test_fixture::MODULUS,
+            test_fixture::PRIVATE_EXPONENT,
+            &signed,
+        )
+        .unwrap();
+        parameters.extend_from_slice(&[8, 4]);
+        parameters.extend_from_slice(&(signature.len() as u16).to_be_bytes());
+        parameters.extend_from_slice(&signature);
+        let exchange = handshake_message(12, &parameters).unwrap();
+        let done = handshake_message(14, &[]).unwrap();
+        for (buffered, expected) in [
+            (
+                [certificate.clone(), exchange.clone(), vec![14, 0, 2, 0]].concat(),
+                "Incomplete TLS 1.2 handshake",
+            ),
+            (
+                [certificate.clone(), done.clone()].concat(),
+                "Invalid TLS handshake order or type",
+            ),
+            (
+                [exchange.clone(), certificate.clone(), done.clone()].concat(),
+                "Invalid TLS handshake order or type",
+            ),
+            (
+                [certificate, exchange, done, vec![0]].concat(),
+                "TLS data after ServerHelloDone",
+            ),
+        ] {
+            let output = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+            let mut stream = DeadlineStream::from_stream(
+                Box::new(Flight {
+                    // Fragment an incomplete handshake message over the entire
+                    // record budget after a valid certificate and signed share.
+                    input: io::Cursor::new([22, 3, 3, 0, 1, 0].repeat(256)),
+                    output: output.clone(),
+                }),
+                Instant::now() + Duration::from_secs(10),
+            );
+            let session = Legacy {
+                hostname: "localhost",
+                roots: test_fixture::ROOT_PEM,
+                buffered,
+                transcript: Sha256::new(),
+                client_random: [1; 32],
+                server_random: [2; 32],
+                secret: [3; 32],
+                suite: ECDHE_RSA_AES_128_GCM,
+                stapled: false,
+                extended: true,
+            };
+            assert_eq!(
+                legacy_handshake(&mut stream, session).err().as_deref(),
+                Some(expected)
+            );
+            assert!(
+                output.lock().unwrap().is_empty(),
+                "must not send ClientKeyExchange"
+            );
+        }
     }
 
     #[test]
