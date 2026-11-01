@@ -991,7 +991,8 @@ impl Engine {
                 }
             }));
         }
-        if self.config.monitoring.enabled {
+        // Looking for better versions searches indexers: not while downloads are off.
+        if self.config.monitoring.enabled && self.config.downloads_enabled {
             let engine = self.clone();
             handles.push(thread::spawn(move || {
                 while !engine.stopped.load(Ordering::Acquire) {

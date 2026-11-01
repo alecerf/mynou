@@ -574,8 +574,16 @@ fn opt_in_series_monitoring_prefers_a_resolved_pack_and_defaults_keep_individual
             .all(|job| job.pack_origin.is_none() && job.request.source_url.is_none())
     );
     assert!(provider.calls.lock().unwrap().is_empty());
+    // While downloads are off, preferring packs searches nothing.
+    let mut paused = configure(catalog.config(&directory.0.join("paused")), &provider, "{}");
+    paused.series_packs_enabled = true;
+    let paused = Engine::open_for_management(paused).unwrap();
+    let record = paused.track_series(&request(), false, false).unwrap();
+    assert_eq!(record.get("submitted"), Some(&Value::Number(2.0)));
+    assert!(provider.calls.lock().unwrap().is_empty());
     let mut cfg = configure(catalog.config(&directory.0.join("packs")), &provider, "{}");
     cfg.series_packs_enabled = true;
+    cfg.downloads_enabled = true;
     let engine = Engine::open_for_management(cfg).unwrap();
     let record = engine.track_series(&request(), false, false).unwrap();
     assert_eq!(record.get("submitted"), Some(&Value::Number(2.0)));
@@ -604,6 +612,7 @@ fn monitored_pack_preference_acquires_newly_aired_episodes_once_and_falls_back_f
     provider.releases(vec![release("Fixture.Series.S01.1080p", &url, 1)]);
     let mut cfg = configure(catalog.config(&directory.0.join("engine")), &provider, "{}");
     cfg.series_packs_enabled = true;
+    cfg.downloads_enabled = true;
     let engine = Engine::open_for_management(cfg.clone()).unwrap();
     let record = engine.track_series(&request(), false, false).unwrap();
     let series = id(&record).to_owned();
@@ -686,6 +695,7 @@ fn monitoring_bounds_combined_pack_and_episode_submissions_to_sixty_four_per_pas
     ]);
     let mut cfg = configure(catalog.config(&directory.0.join("engine")), &provider, "{}");
     cfg.series_packs_enabled = true;
+    cfg.downloads_enabled = true;
     let engine = Engine::open_for_management(cfg).unwrap();
     let record = engine.track_series(&request(), false, false).unwrap();
     assert_eq!(record.get("submitted"), Some(&Value::Number(64.0)));

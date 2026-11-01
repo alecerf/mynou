@@ -235,12 +235,26 @@ fn handshake_deadline(
 const CLOSED: &str = "Peer connection closed";
 const EXPIRED: &str = "Peer exceeded read deadline";
 const RESET: &str = "Peer read interrupted";
+/// The deadline passed inside a message: the stream is out of step with its frames.
+const PARTIAL: &str = "Peer stalled inside a message";
 
 pub fn read_exact_deadline(
+    stream: &mut dyn NetworkStream,
+    buffer: &mut [u8],
+    stop: Option<&AtomicBool>,
+    deadline: Instant,
+) -> Result<()> {
+    read_exact_from(stream, buffer, stop, deadline, false)
+}
+
+/// `inside` tells that bytes of this message were already read, so that an
+/// expiry reports `PARTIAL` rather than `EXPIRED`.
+fn read_exact_from(
     stream: &mut dyn NetworkStream,
     mut buffer: &mut [u8],
     stop: Option<&AtomicBool>,
     deadline: Instant,
+    mut inside: bool,
 ) -> Result<()> {
     stream
         .set_read_timeout(Some(Duration::from_millis(100)))
@@ -250,13 +264,14 @@ pub fn read_exact_deadline(
             return Err("Download interrupted".into());
         }
         if Instant::now() >= deadline {
-            return Err(EXPIRED.into());
+            return Err(if inside { PARTIAL } else { EXPIRED }.into());
         }
         match stream.read(buffer) {
             Ok(0) => return Err(CLOSED.into()),
             Ok(n) => {
                 let (_, remaining) = buffer.split_at_mut(n);
                 buffer = remaining;
+                inside = true;
             }
             Err(e)
                 if matches!(
@@ -462,7 +477,8 @@ fn read_body(
         return Err("Peer message is too large".into());
     }
     let mut payload = vec![0; length];
-    read_exact_deadline(stream, &mut payload, stop, deadline)?;
+    // Its length prefix is already read.
+    read_exact_from(stream, &mut payload, stop, deadline, true)?;
     Ok((payload[0], payload[1..].to_vec()))
 }
 pub fn extended_handshake(meta: Option<&Meta>, port: u16, pex: bool) -> Vec<u8> {
@@ -741,6 +757,7 @@ impl Peer {
             let (id, payload) = match read {
                 Ok(message) => message,
                 // It may unchoke later; meanwhile it fetches from this side.
+                // An expiry inside a message (`PARTIAL`) ends the connection.
                 Err(e) if e == EXPIRED && self.uploading() => return Ok(()),
                 Err(e) => return Err(e),
             };
@@ -1059,7 +1076,7 @@ impl Peer {
             }
             let deadline = Instant::now() + Duration::from_secs(15);
             let mut rest = [0; 3];
-            read_exact_deadline(&mut *self.stream, &mut rest, Some(stop), deadline)?;
+            read_exact_from(&mut *self.stream, &mut rest, Some(stop), deadline, true)?;
             let (id, payload) = read_body(
                 &mut *self.stream,
                 [first[0], rest[0], rest[1], rest[2]],
@@ -1105,6 +1122,8 @@ impl Peer {
         if !self.extensions {
             return Err("Peer does not provide metadata".into());
         }
+        let started = Instant::now();
+        let handshake_deadline = deadline.unwrap_or(started + Duration::from_secs(5));
         for _ in 0..64 {
             if stop.load(Ordering::Relaxed) {
                 return Err("Download interrupted".into());
@@ -1112,15 +1131,18 @@ impl Peer {
             if self.metadata_id.is_some() && self.metadata_size.is_some() {
                 break;
             }
-            let (id, payload) = read_message_deadline(
-                &mut *self.stream,
-                Some(stop),
-                deadline.unwrap_or(Instant::now() + Duration::from_secs(5)),
-            )?;
+            let (id, payload) =
+                read_message_deadline(&mut *self.stream, Some(stop), handshake_deadline)?;
             self.ancillary(id, &payload)?;
         }
         let ext = self.metadata_id.ok_or("Missing metadata extension")?;
         let size = self.metadata_size.ok_or("Missing metadata size")?;
+        // Anchor the whole exchange to entry, allowing one round trip per block.
+        let deadline = deadline.unwrap_or(
+            started
+                + Duration::from_secs(5)
+                + Duration::from_millis(250) * size.div_ceil(BLOCK) as u32,
+        );
         let mut info = vec![0; size];
         for piece in 0..size.div_ceil(BLOCK) {
             if stop.load(Ordering::Relaxed) {
@@ -1132,23 +1154,13 @@ impl Peer {
             ]);
             let mut request_bytes = vec![ext];
             request_bytes.extend(crate::bencode::encode(&request));
-            write_message_deadline(
-                &mut *self.stream,
-                20,
-                &request_bytes,
-                Some(stop),
-                deadline.unwrap_or(Instant::now() + Duration::from_secs(5)),
-            )?;
+            write_message_deadline(&mut *self.stream, 20, &request_bytes, Some(stop), deadline)?;
             let mut received = false;
             for _ in 0..128 {
                 if stop.load(Ordering::Relaxed) {
                     return Err("Download interrupted".into());
                 }
-                let (id, payload) = read_message_deadline(
-                    &mut *self.stream,
-                    Some(stop),
-                    deadline.unwrap_or(Instant::now() + Duration::from_secs(5)),
-                )?;
+                let (id, payload) = read_message_deadline(&mut *self.stream, Some(stop), deadline)?;
                 if id == 20 && payload.first() == Some(&EXT_METADATA) {
                     let (header, length) = crate::bencode::parse_prefix(&payload[1..])?;
                     let kind = match value_field(&header, b"msg_type") {
@@ -1312,6 +1324,11 @@ impl Peer {
             messages -= 1;
             if stop.load(Ordering::Relaxed) {
                 return Err("Download interrupted".into());
+            }
+            if self.choked {
+                // Our handshake never enables BEP 6: CHOKE discards requests.
+                self.ahead.clear();
+                return Err("Peer choked a pipelined piece".into());
             }
             // Reserve at most two observed round trips of quota (4..100 ms),
             // then drain its replies. At low latency, small batches avoid
@@ -1750,6 +1767,115 @@ mod tests {
         ]);
         Meta::parse(&crate::bencode::encode(&value_dict(&[(b"info", info)])))
             .expect("synthetic metadata")
+    }
+
+    #[test]
+    fn metadata_keepalives_do_not_renew_the_call_deadline() {
+        let meta = three_piece_meta();
+        let started = Instant::now();
+        let stream = TimedMessages {
+            frames: [
+                (1000, vec![0; 4]),
+                (
+                    2000,
+                    frame(20, &extended_handshake(Some(&meta), 0, false)).unwrap(),
+                ),
+                (4000, vec![0; 4]),
+                (5000, vec![0; 4]),
+                (6000, vec![0; 4]),
+            ]
+            .into_iter()
+            .map(|(ms, bytes)| (started + Duration::from_millis(ms), bytes))
+            .collect(),
+            input: MemoryStream {
+                input: Vec::new(),
+                output: Vec::new(),
+            },
+        };
+        let mut peer = memory_peer(Box::new(stream), None);
+        peer.extensions = true;
+        let stop = Arc::new(AtomicBool::new(false));
+        let cancel = stop.clone();
+        let (finished, pending) = std::sync::mpsc::channel();
+        let watchdog = std::thread::spawn(move || {
+            if pending.recv_timeout(Duration::from_secs(7)).is_err() {
+                cancel.store(true, Ordering::Release);
+            }
+        });
+        let error = peer
+            .metadata_before(meta.v1, None, &stop, None)
+            .unwrap_err();
+        let _ = finished.send(());
+        watchdog.join().unwrap();
+        assert_eq!(error, EXPIRED);
+        assert!(!stop.load(Ordering::Acquire));
+        assert!(started.elapsed() < Duration::from_secs(6));
+    }
+
+    #[test]
+    fn mid_piece_choke_requeues_the_pipeline_without_more_requests() {
+        let meta = three_piece_meta();
+        for window in [1, 2] {
+            let mut input = frame(0, &[]).unwrap();
+            input.extend(frame(1, &[]).unwrap());
+            let mut peer = memory_peer(
+                Box::new(MemoryStream {
+                    input,
+                    output: Vec::new(),
+                }),
+                Some(&meta),
+            );
+            peer.choked = false;
+            peer.request_limit = window;
+            let error = peer
+                .download_piece_with_timeout(
+                    &meta,
+                    0,
+                    &mut |_| Some(1),
+                    &AtomicBool::new(false),
+                    Duration::from_millis(100),
+                )
+                .unwrap_err();
+            assert_eq!(error, "Peer choked a pipelined piece");
+            assert!(peer.choked);
+            assert!(peer.ahead.is_empty());
+        }
+    }
+
+    #[test]
+    fn prepare_download_fails_after_a_partial_frame_expires() {
+        let meta = three_piece_meta();
+        // A quiet interested peer stays to download from this side; one that
+        // stalls inside a message is out of step and dropped.
+        for (input, expected) in [(vec![], Ok(())), (vec![0, 0, 0, 5, 4, 0], Err(PARTIAL))] {
+            let mut peer = memory_peer(
+                Box::new(MemoryStream {
+                    input,
+                    output: Vec::new(),
+                }),
+                Some(&meta),
+            );
+            peer.upload = Some(Upload {
+                serving: Serving {
+                    pieces: Arc::new(Pieces::new(&[false; 3])),
+                    base: PathBuf::new(),
+                    upload_gate: Arc::default(),
+                    local_upload_gate: Arc::default(),
+                },
+                announced: vec![0],
+                version: 0,
+                interested: true,
+                unchoked: true,
+                requests: VecDeque::new(),
+                metadata: VecDeque::new(),
+                cached: None,
+            });
+            assert!(peer.uploading());
+            assert_eq!(
+                peer.prepare_download(&meta, &AtomicBool::new(false)),
+                expected.map_err(String::from)
+            );
+        }
     }
 
     #[test]

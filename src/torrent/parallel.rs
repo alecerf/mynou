@@ -598,14 +598,51 @@ fn select_address(
         .copied()
 }
 
+fn merge_peers(
+    addresses: &mut BTreeSet<SocketAddr>,
+    peers: impl IntoIterator<Item = SocketAddr>,
+    workers: &[Option<Worker>],
+    quarantine: &Quarantine,
+    retries: &BTreeMap<SocketAddr, Instant>,
+) {
+    let active = |address: &SocketAddr| {
+        workers
+            .iter()
+            .flatten()
+            .any(|worker| worker.address == *address)
+    };
+    let now = Instant::now();
+    let failed = |address: &SocketAddr| {
+        quarantine.contains(address) || retries.get(address).is_some_and(|retry| *retry > now)
+    };
+    // Reclaim failed hints first, but never remove a live worker's address.
+    if addresses.len() >= 1024 {
+        addresses.retain(|address| active(address) || !failed(address));
+    }
+    super::merge_peers_kept(
+        addresses,
+        peers.into_iter().filter(|peer| !failed(peer)),
+        active,
+    );
+}
+
 fn refresh_peers(
     jobs: &Jobs,
     stop: &AtomicBool,
     id: &str,
     addresses: &mut BTreeSet<SocketAddr>,
+    workers: &[Option<Worker>],
+    quarantine: &Quarantine,
+    retries: &BTreeMap<SocketAddr, Instant>,
 ) -> Result<()> {
     with_generation(jobs, stop, id, |job| {
-        super::merge_peers(addresses, job.tracker_peers.iter().copied());
+        merge_peers(
+            addresses,
+            job.tracker_peers.iter().copied(),
+            workers,
+            quarantine,
+            retries,
+        );
         job.peers = addresses.iter().copied().collect();
         Ok(())
     })
@@ -650,7 +687,7 @@ fn metadata(context: MetadataContext<'_>, addresses: &mut BTreeSet<SocketAddr>) 
         if stop.load(Ordering::Acquire) {
             return Err("Download interrupted".into());
         }
-        refresh_peers(jobs, stop, id, addresses)?;
+        refresh_peers(jobs, stop, id, addresses, &[], &quarantine, &retries)?;
         retries.retain(|_, retry| *retry > Instant::now());
         if group
             .discovery
@@ -662,7 +699,7 @@ fn metadata(context: MetadataContext<'_>, addresses: &mut BTreeSet<SocketAddr>) 
             if peers.is_empty() {
                 next_dht = next_dht.min(Instant::now() + discovery::DHT_RETRY);
             }
-            super::merge_peers(addresses, peers);
+            merge_peers(addresses, peers, &[], &quarantine, &retries);
         }
         // Known addresses are attempted immediately; no DHT lookup occupies
         // this coordinator. Unknown privacy may query only without hints.
@@ -852,7 +889,15 @@ pub(super) fn download(
         if selected.complete(&have) {
             break;
         }
-        refresh_peers(jobs, stop, id, &mut addresses)?;
+        refresh_peers(
+            jobs,
+            stop,
+            id,
+            &mut addresses,
+            &group.workers,
+            &quarantine,
+            &retries,
+        )?;
         if let Some(handle) = group.discovery.as_ref()
             && handle.is_finished()
             && let Some(handle) = group.discovery.take()
@@ -861,7 +906,7 @@ pub(super) fn download(
             if peers.is_empty() {
                 next_dht = next_dht.min(Instant::now() + discovery::DHT_RETRY);
             }
-            super::merge_peers(&mut addresses, peers);
+            merge_peers(&mut addresses, peers, &group.workers, &quarantine, &retries);
         }
         if config.dht && !meta.private && group.discovery.is_none() && Instant::now() >= next_dht {
             next_dht = Instant::now() + Duration::from_secs(60);
@@ -976,7 +1021,7 @@ pub(super) fn download(
                     worker.availability = Some(availability);
                     worker.idle_since = Instant::now();
                     if !meta.private && config.pex {
-                        super::merge_peers(&mut addresses, peers);
+                        merge_peers(&mut addresses, peers, &group.workers, &quarantine, &retries);
                     }
                 }
                 EventKind::Piece {
@@ -1011,7 +1056,13 @@ pub(super) fn download(
                         )?;
                         pieces.add(index);
                         if !meta.private && config.pex {
-                            super::merge_peers(&mut addresses, peers);
+                            merge_peers(
+                                &mut addresses,
+                                peers,
+                                &group.workers,
+                                &quarantine,
+                                &retries,
+                            );
                         }
                     }
                 }
@@ -1283,6 +1334,26 @@ fn commit_piece(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn full_peer_sets_replace_failed_hints_without_readding_them() {
+        let peer = |port| SocketAddr::from(([192, 0, 2, 1], port));
+        let mut addresses: BTreeSet<_> = (1..=1024).map(peer).collect();
+        let mut quarantine = Quarantine::default();
+        quarantine.insert(peer(1));
+        let retries = BTreeMap::from([(peer(2), Instant::now() + RETRY)]);
+        merge_peers(
+            &mut addresses,
+            [peer(1), peer(2), peer(1025)],
+            &[],
+            &quarantine,
+            &retries,
+        );
+        assert!(!addresses.contains(&peer(1)));
+        assert!(!addresses.contains(&peer(2)));
+        assert!(addresses.contains(&peer(1025)));
+        assert!(addresses.len() <= 1024);
+    }
 
     fn metadata(count: usize) -> Meta {
         Meta {

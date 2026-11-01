@@ -325,6 +325,10 @@ fn the_api_reviews_bindings_and_search_previews_select_under_them() {
     assert_eq!(status, 400);
     let (status, _) = server.call("GET", "/api/title-profiles?after=episode:1", None);
     assert_eq!(status, 400);
+    // The interface percent-encodes the cursor it was given.
+    let (status, after) = server.call("GET", "/api/title-profiles?after=movie%3A101", None);
+    assert_eq!(status, 200);
+    assert_eq!(after.get("next"), Some(&Value::Null));
     let (_, listed) = server.call("GET", "/api/title-profiles", None);
     assert_eq!(listed.get("total").and_then(Value::as_u64), Some(1));
 }

@@ -503,16 +503,22 @@ impl Source {
             if Instant::now() >= deadline {
                 return Err("Torrent metadata deadline exceeded".into());
             }
-            let resolved = network
-                .resolve(authority, deadline)
-                .map_err(|_| "Could not resolve magnet peer")?;
+            let resolved = network.resolve(authority, deadline);
             if Instant::now() >= deadline {
                 return Err("Torrent metadata deadline exceeded".into());
             }
+            let Ok(resolved) = resolved else {
+                continue;
+            };
             addresses.extend(resolved.into_iter().take(4).take(256 - addresses.len()));
             if addresses.len() == 256 {
                 break;
             }
+        }
+        // A dead hint is skipped while trackers can still find peers; hints
+        // that are the only source and all fail leave nothing to wait for.
+        if addresses.is_empty() && !self.peers.is_empty() && self.trackers.is_empty() {
+            return Err("Could not resolve magnet peer".into());
         }
         Ok(addresses)
     }
@@ -3462,13 +3468,30 @@ fn update(
 }
 
 fn merge_peers(addresses: &mut BTreeSet<SocketAddr>, peers: impl IntoIterator<Item = SocketAddr>) {
+    merge_peers_kept(addresses, peers, |_| false);
+}
+
+fn merge_peers_kept(
+    addresses: &mut BTreeSet<SocketAddr>,
+    peers: impl IntoIterator<Item = SocketAddr>,
+    keep: impl Fn(&SocketAddr) -> bool,
+) {
     for peer in peers {
+        if peer.port() == 0
+            || peer.ip().is_unspecified()
+            || peer.ip().is_multicast()
+            || addresses.contains(&peer)
+        {
+            continue;
+        }
         if addresses.len() >= 1024 {
-            break;
+            // Fresh hints must not be blocked by a full set of stale peers.
+            let Some(old) = addresses.iter().find(|address| !keep(address)).copied() else {
+                continue;
+            };
+            addresses.remove(&old);
         }
-        if peer.port() != 0 && !peer.ip().is_unspecified() && !peer.ip().is_multicast() {
-            addresses.insert(peer);
-        }
+        addresses.insert(peer);
     }
 }
 fn download(
@@ -4676,6 +4699,82 @@ mod source_network_tests;
 #[cfg(test)]
 mod control_runtime_tests {
     use super::*;
+
+    #[test]
+    fn full_peer_sets_admit_fresh_hints_and_keep_active_addresses() {
+        let peer = |port| SocketAddr::from(([192, 0, 2, 1], port));
+        let mut addresses: BTreeSet<_> = (1..=1024).map(peer).collect();
+        let before = addresses.clone();
+        merge_peers(&mut addresses, [peer(0), peer(100)]);
+        assert_eq!(
+            addresses, before,
+            "invalid and repeated hints evict nothing"
+        );
+        merge_peers(&mut addresses, [peer(1025)]);
+        assert_eq!(addresses.len(), 1024);
+        assert!(addresses.contains(&peer(1025)));
+
+        let active = *addresses.first().unwrap();
+        merge_peers_kept(&mut addresses, [peer(1026)], |address| *address == active);
+        assert_eq!(addresses.len(), 1024);
+        assert!(addresses.contains(&active));
+        assert!(addresses.contains(&peer(1026)));
+        let before = addresses.clone();
+        merge_peers_kept(&mut addresses, [peer(1027)], |_| true);
+        assert_eq!(addresses, before, "active peers cannot be evicted");
+    }
+
+    #[test]
+    fn unresolved_magnet_hints_do_not_abort_peer_resolution() {
+        struct Hints;
+        impl transport::Network for Hints {
+            fn connect(
+                &self,
+                _: SocketAddr,
+                _: Duration,
+            ) -> Result<Box<dyn crate::net::NetworkStream>> {
+                unreachable!()
+            }
+            fn resolve(&self, authority: &str, _: Instant) -> Result<Vec<SocketAddr>> {
+                authority
+                    .parse()
+                    .map(|address| vec![address])
+                    .map_err(|_| "Unresolvable hint".into())
+            }
+            fn datagram(&self, _: bool) -> Result<Box<dyn crate::net::NetworkDatagram>> {
+                unreachable!()
+            }
+            fn http(&self) -> crate::net::HttpClient {
+                unreachable!()
+            }
+            fn listen(&self, _: SocketAddr) -> Result<Box<dyn transport::NetworkListener>> {
+                unreachable!()
+            }
+        }
+        let source = Source::parse_magnet_with_deadline(
+            "magnet:?xt=urn:btih:1111111111111111111111111111111111111111&x.pe=missing.invalid:6881&x.pe=192.0.2.1:6881",
+            None,
+        ).unwrap();
+        assert_eq!(
+            source
+                .peer_addresses(&Hints, Instant::now() + Duration::from_secs(1))
+                .unwrap(),
+            ["192.0.2.1:6881".parse::<SocketAddr>().unwrap()]
+        );
+        assert!(source.peer_addresses(&Hints, Instant::now()).is_err());
+        // Trackers still find peers when every hint fails.
+        let tracked = Source::parse_magnet_with_deadline(
+            "magnet:?xt=urn:btih:1111111111111111111111111111111111111111&tr=http%3A%2F%2Ftracker.invalid%2Fannounce&x.pe=missing.invalid:6881",
+            None,
+        ).unwrap();
+        assert!(!tracked.trackers.is_empty());
+        assert_eq!(
+            tracked
+                .peer_addresses(&Hints, Instant::now() + Duration::from_secs(1))
+                .unwrap(),
+            []
+        );
+    }
 
     #[test]
     fn unchanged_metadata_skips_durable_rewrites_and_rejects_a_swapped_file() {
