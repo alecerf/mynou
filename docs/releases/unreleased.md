@@ -48,6 +48,25 @@ came before the disk indexes, is refused at startup instead of being migrated.
 To start over, stop Mynou and move the data directory aside. Startup no longer
 reports migration progress. See [inventory storage](/docs/inventory-storage.md).
 
+## Fixed: IRC downloads respect the maximum size
+
+An IRC announcement was admitted before the size of its file was known, and the
+quality's maximum size was not checked again once it was. A file larger than
+the maximum is now refused (`profile_size_rejected`) before anything is
+downloaded.
+
+## Fixed: Stalled peers and handshakes time out
+
+A peer sending slow keepalives could hold a piece request forever; only new
+piece data now extends it. Through the VPN, a client repeating its SYN no
+longer keeps a half-open connection waiting past its timeout. A TLS 1.2 server
+that never finishes its handshake is refused instead of answered.
+
+## Fixed: IRC cleanup no longer deletes files in use
+
+The hourly cleanup of IRC metadata could remove a file that a routing pass had
+just refreshed or was still writing. Cleanup now waits for the pass to finish.
+
 ## Fixed: Library posters match their title
 
 A film or series in the library found its poster by searching TMDB for its

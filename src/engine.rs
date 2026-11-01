@@ -85,6 +85,8 @@ pub struct Engine {
     pub(crate) source_network: Arc<dyn crate::torrent::transport::Network>,
     /// Torrents go through the VPN, so transfers wait for it.
     pub(crate) torrents_protected: bool,
+    /// Indexers and IRC go through the VPN, so searches wait for it.
+    sources_protected: bool,
     pub(crate) vpn: Option<Arc<crate::vpn::Operator>>,
     pub(crate) vpn_gate: Option<Arc<crate::vpn::Gate>>,
     start_downloads: bool,
@@ -246,6 +248,8 @@ impl Engine {
             }
             _ => torrent_network,
         };
+        // Only a VPN gate can be waited for; a supplied network is ready.
+        let sources_protected = operator.is_some() && protecting && config.vpn.indexers;
         let protection = if protecting && config.vpn.indexers {
             crate::source_network::Protection::Protected
         } else {
@@ -258,9 +262,8 @@ impl Engine {
         for source in &mut config.irc.sources {
             source.protection = protection;
         }
-        if protecting && config.vpn.tmdb {
-            config.catalog.network = Some(source_network.clone());
-        }
+        // A reopen reuses the previous config, so clear a retired gate too.
+        config.catalog.network = (protecting && config.vpn.tmdb).then(|| source_network.clone());
         let indexer_store =
             crate::indexers::policy::SourceStore::open(&config.store_dir, &config, read_only)?;
         let feed_store =
@@ -289,6 +292,7 @@ impl Engine {
             torrent_network,
             source_network,
             torrents_protected,
+            sources_protected,
             vpn,
             vpn_gate,
             start_downloads,
@@ -412,10 +416,25 @@ impl Engine {
     }
 
     pub fn sync(&self) -> Result<usize> {
+        self.sweep_watchlists().map(|(submitted, _)| submitted)
+    }
+
+    /// One bounded sync pass: the requests it added, and whether it read
+    /// every watchlist whole, which is what `last_sync_at` reports.
+    fn sweep_watchlists(&self) -> Result<(usize, bool)> {
         if !self.config.requesters.accounts.is_empty() {
             let before = lock(&self.store)?.counts()?.jobs;
-            self.sync_requesters()?;
-            return Ok(lock(&self.store)?.counts()?.jobs.saturating_sub(before) as usize);
+            let report = self.sync_requesters()?;
+            let complete = report
+                .get("accounts")
+                .and_then(Value::as_array)
+                .is_some_and(|accounts| {
+                    accounts
+                        .iter()
+                        .all(|a| a.get("complete").and_then(Value::as_bool) == Some(true))
+                });
+            let submitted = lock(&self.store)?.counts()?.jobs.saturating_sub(before) as usize;
+            return Ok((submitted, complete));
         }
         let _guard = lock(&self.sync_lock)?;
         let deadline = Instant::now() + Duration::from_secs(90);
@@ -425,6 +444,7 @@ impl Engine {
             .unwrap_or_else(SweepCursor::start);
         // A bounded number of pages per pass; the durable cursor resumes the
         // sweep in the next pass or after a restart.
+        let mut complete = false;
         for _ in 0..WATCHLIST_PAGES {
             if self.stopped.load(Ordering::Acquire) || Instant::now() >= deadline {
                 break;
@@ -448,10 +468,12 @@ impl Engine {
             };
             lock(&self.store)?.save_watchlist_cursor(&cursor)?;
             if finished {
+                complete = true;
                 break;
             }
         }
-        Ok(lock(&self.store)?.counts()?.jobs.saturating_sub(before) as usize)
+        let submitted = lock(&self.store)?.counts()?.jobs.saturating_sub(before) as usize;
+        Ok((submitted, complete))
     }
 
     /// A page of jobs, newest first, with the cursor of the next page.
@@ -957,10 +979,11 @@ impl Engine {
             let engine = self.clone();
             handles.push(thread::spawn(move || {
                 while !engine.stopped.load(Ordering::Acquire) {
-                    let error = engine.sync().err();
-                    if error.is_none() {
+                    let result = engine.sweep_watchlists();
+                    if matches!(result, Ok((_, true))) {
                         engine.last_sync_at.store(store::now(), Ordering::Release);
                     }
+                    let error = result.err();
                     if let Ok(mut current) = engine.last_sync_error.lock() {
                         *current = error;
                     }
@@ -1000,12 +1023,19 @@ impl Engine {
         }
     }
 
+    /// A network this engine's work needs is retired or not connected yet:
+    /// torrents, or protected indexers while torrents bypass the VPN.
+    fn network_waiting(&self) -> bool {
+        self.torrent_network.generation().is_err()
+            || (self.sources_protected && !matches!(self.source_network.generation(), Ok(Some(_))))
+    }
+
     /// Run one step and release the lease before waiting for the next poll.
     pub fn tick(self: &Arc<Self>) -> Result<bool> {
         // A retired VPN generation suspends acquisition, not the request's
         // retry budget. Its durable intent gates restart until protected again.
         // Transfers that wait for the VPN to connect suspend it the same way.
-        if self.torrent_network.generation().is_err() || self.transfers_waiting() {
+        if self.network_waiting() || self.transfers_waiting() {
             return Ok(false);
         }
         let Some(mut job) = self.claim_requester_job()? else {
@@ -1029,7 +1059,7 @@ impl Engine {
             }
             store.check_ready_promotion(&job)
         });
-        if result.is_err() && self.torrent_network.generation().is_err() {
+        if result.is_err() && self.network_waiting() {
             store.release_lease(&job.id, &lease)?;
             return Ok(false);
         }

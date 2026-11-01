@@ -1664,7 +1664,9 @@ impl<E: Entropy> TcpStack<E> {
             out.push(packet);
         }
         flow.syn_pending = false;
-        flow.deadline = Some(now.saturating_add(flow.rto));
+        // A duplicate SYN asks for another SYN-ACK, not more time in the
+        // backlog. Only the initial send or an expired timer arms a deadline.
+        flow.deadline.get_or_insert(now.saturating_add(flow.rto));
     }
 
     /// Sends data and the FIN within the congestion and peer windows. Returns

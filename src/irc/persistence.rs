@@ -78,8 +78,10 @@ impl AnnouncementStore {
                 .map_err(|_| "IRC: invalid metadata text")?,
             )?)?;
             index::count(&mut index)?;
+            crate::inventory::backlog::current(&mut index)?;
             (Backend::Ready(Box::new(index)), state)
         } else {
+            crate::store::refuse_older_format(directory, &["announcements.bin"], "IRC")?;
             (Backend::Absent, State::default())
         };
         let old = state.clone();

@@ -773,6 +773,24 @@ pub(crate) fn try_lock_file(file: &File) -> std::result::Result<(), fs::TryLockE
 #[cfg(test)]
 pub(crate) static SPAWNING: std::sync::RwLock<()> = std::sync::RwLock::new(());
 
+/// A store without its index but with a file only an older Mynou wrote
+/// would otherwise open empty and hide that data; it is refused instead.
+pub(crate) fn refuse_older_format(directory: &Path, files: &[&str], label: &str) -> Result<()> {
+    for name in files {
+        match fs::symlink_metadata(directory.join(name)) {
+            Ok(_) => {
+                return Err(format!(
+                    "{label}: {name} is from an older Mynou that this version cannot read; \
+                     move the data folder aside to start over"
+                ));
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(format!("{label}: cannot inspect {name}: {error}")),
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn reject_symlinks(path: &Path) -> Result<()> {
     for ancestor in path.ancestors() {
         match fs::symlink_metadata(ancestor) {

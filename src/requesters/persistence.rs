@@ -92,8 +92,10 @@ impl RequesterStore {
             if !state.demands.is_empty() || !state.operator_jobs.is_empty() {
                 return Err("Requester: index metadata contains inventory records".into());
             }
+            crate::inventory::backlog::current(&mut index)?;
             (Backend::Ready(Box::new(index)), state)
         } else {
+            crate::store::refuse_older_format(directory, &["requesters.bin"], "Requester")?;
             (Backend::Absent, State::empty())
         };
         let original = state.clone();

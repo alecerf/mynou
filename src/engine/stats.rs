@@ -25,6 +25,8 @@ const CATEGORIES: [&str; 5] = ["fetched", "in_plex", "in_progress", "failed", "c
 pub(crate) struct Cache {
     report: Option<Value>,
     plex: Option<Plex>,
+    /// When each fetched job became ready, which never changes once known.
+    fetched_at: BTreeMap<String, u64>,
 }
 
 struct Plex {
@@ -35,6 +37,7 @@ struct Plex {
 }
 
 struct Media {
+    id: String,
     kind: &'static str,
     category: usize,
     updated_at: u64,
@@ -104,6 +107,22 @@ impl Engine {
         Ok(())
     }
 
+    /// When a fetched job became ready: its first retained `ready` event.
+    fn fetched_at(&self, found: &Media) -> Result<u64> {
+        if let Some(at) = lock(&self.stats)?.fetched_at.get(&found.id) {
+            return Ok(*at);
+        }
+        let at = lock(&self.store)?
+            .events(&found.id)?
+            .iter()
+            .filter(|event| event.state == "ready")
+            .map(|event| event.at)
+            .min()
+            .unwrap_or(found.updated_at);
+        lock(&self.stats)?.fetched_at.insert(found.id.clone(), at);
+        Ok(at)
+    }
+
     fn compute_stats(&self) -> Result<Value> {
         // Every film and episode, by the most advanced of its jobs.
         let mut media: BTreeMap<String, Media> = BTreeMap::new();
@@ -123,6 +142,7 @@ impl Engine {
                     _ => continue,
                 };
                 let found = Media {
+                    id: job.id.clone(),
                     kind,
                     category: category(&job.state, !job.imports.is_empty()),
                     updated_at: job.updated_at,
@@ -158,14 +178,24 @@ impl Engine {
             if let Some(counts) = by_kind.get_mut(found.kind) {
                 counts[found.category] += 1;
             }
-            let day = (found.updated_at / 86_400) as i64;
-            if found.category == 0 && day >= first_week {
+            // Library checks and edits move `updated_at`; a week counts what
+            // was fetched in it, so it is placed by when the job became ready.
+            if found.category != 0 || ((found.updated_at / 86_400) as i64) < first_week {
+                continue;
+            }
+            let day = (self.fetched_at(found)? / 86_400) as i64;
+            if day >= first_week {
                 let week = ((day - first_week) / 7) as usize;
                 if let Some(slot) = weeks.get_mut(week) {
                     slot[usize::from(found.kind == "episode")] += 1;
                 }
             }
         }
+        let live: std::collections::BTreeSet<&str> =
+            media.values().map(|found| found.id.as_str()).collect();
+        lock(&self.stats)?
+            .fetched_at
+            .retain(|id, _| live.contains(id.as_str()));
         let mut value = Value::object();
         value.insert("computed_at", number(crate::store::now()));
         value.insert("partial", partial);
@@ -277,7 +307,9 @@ impl Engine {
                 let Some(record) = lock(&self.series_store)?.get(id)? else {
                     continue;
                 };
-                if let Some(tmdb) = record.plan.request.tmdb_id {
+                // A series that is no longer followed is still listed, but the
+                // watchlist does not count it as followed.
+                if let Some(tmdb) = record.plan.request.tmdb_id.filter(|_| record.monitored) {
                     followed.insert(tmdb);
                 }
                 let mut counts = [0_u64; 5];

@@ -694,6 +694,49 @@ fn a_burst_limit_defers_the_rest_to_the_next_poll() {
 }
 
 #[test]
+fn duplicate_syns_do_not_postpone_half_open_timeouts() {
+    let mut cfg = config(SERVER);
+    cfg.backlog = 1;
+    cfg.syn_retries = 1;
+    let mut server = stack(cfg, &[SERVER_ISS]);
+    server.listen(G, PORT).unwrap();
+    let syn = forge((CLIENT, 40000), (SERVER, PORT), (100, 0, SYN), b"");
+    assert_eq!(server.ingest(G, T0, &syn), Ingest::Handshake);
+    assert_eq!(
+        server.poll(G, T0).unwrap().next,
+        Some(Duration::from_secs(1))
+    );
+    for (now, deadline) in [(500, 1000), (900, 1000), (1500, 3000), (2900, 3000)] {
+        let now = Duration::from_millis(now);
+        server.ingest(G, now, &syn);
+        let poll = server.poll(G, now).unwrap();
+        assert_eq!(poll.send.len(), 1);
+        assert_eq!(seen(&poll.send[0], CLIENT).flags, SYN | ACK);
+        assert_eq!(poll.next, Some(Duration::from_millis(deadline)));
+        if now == Duration::from_millis(900) {
+            assert_eq!(
+                server.poll(G, Duration::from_secs(1)).unwrap().send.len(),
+                1
+            );
+        }
+    }
+    server.poll(G, Duration::from_secs(3)).unwrap();
+    assert!(
+        server
+            .flows
+            .values()
+            .all(|flow| flow.failure == Some(Failure::Timeout))
+    );
+    server.poll(G, Duration::from_secs(33)).unwrap();
+    assert_eq!(server.flows(), 0, "the backlog slot must be released");
+    let next = forge((CLIENT, 40001), (SERVER, PORT), (200, 0, SYN), b"");
+    assert_eq!(
+        server.ingest(G, Duration::from_secs(33), &next),
+        Ingest::Handshake
+    );
+}
+
+#[test]
 fn unanswered_handshakes_time_out() {
     let mut client = stack(config(CLIENT), &[0, CLIENT_ISS]);
     let handle = client.connect(G, T0, SERVER, PORT).unwrap();

@@ -30,7 +30,17 @@ const FOLDERS: [(&str, &str, &str); 3] = [
 /// The document with its folders as full paths on this machine: `~/` is the
 /// home folder, and a relative path, as in the defaults and older documents,
 /// is under the data directory. A folder may not be a file.
-fn full_folders(mut document: Value, data_dir: &Path) -> Result<Value> {
+fn full_folders(document: Value, data_dir: &Path) -> Result<Value> {
+    folders(document, data_dir, true)
+}
+
+/// The same paths for showing: a folder that became a file is reported when
+/// saving, and must not stop the settings page from loading.
+fn shown_folders(document: Value, data_dir: &Path) -> Value {
+    folders(document.clone(), data_dir, false).unwrap_or(document)
+}
+
+fn folders(mut document: Value, data_dir: &Path, check: bool) -> Result<Value> {
     let home = std::env::var_os("HOME").map(PathBuf::from);
     for (section, key, label) in FOLDERS {
         let Some(Value::String(folder)) = document.get_mut(section).and_then(|s| s.get_mut(key))
@@ -43,7 +53,7 @@ fn full_folders(mut document: Value, data_dir: &Path) -> Result<Value> {
             _ => PathBuf::from(typed),
         };
         let path = config::path(data_dir, path.to_string_lossy().into_owned())?;
-        if path.exists() && !path.is_dir() {
+        if check && path.exists() && !path.is_dir() {
             return Err(format!(
                 "{label}: {} is a file, not a folder",
                 path.display()
@@ -63,7 +73,7 @@ impl Engine {
             .as_ref()
             .map(|config| config.document.clone());
         let current = pending.or(saved).unwrap_or_else(config::default_json);
-        Ok(full_folders(current.clone(), &self.config.data_dir).unwrap_or(current))
+        Ok(shown_folders(current, &self.config.data_dir))
     }
 
     /// Saved settings (or the defaults), the document the engine runs with,
@@ -80,7 +90,7 @@ impl Engine {
         value.insert("active", self.config.document.clone());
         value.insert(
             "defaults",
-            full_folders(config::default_json(), &self.config.data_dir)?,
+            shown_folders(config::default_json(), &self.config.data_dir),
         );
         value.insert(
             "data_dir",

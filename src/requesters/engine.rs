@@ -695,6 +695,8 @@ impl Engine {
                         .ok_or("Requester: missing account")?;
                     report.insert("cursor", record.cursor.to_string());
                     report.insert("success", true);
+                    // Published: this poll read the whole watchlist.
+                    report.insert("complete", record.cursor != attempted[&account.id].cursor);
                 }
                 Err(error) => {
                     let error = if [
@@ -721,6 +723,7 @@ impl Engine {
                     ledger.save_patch(next)?;
                     report.insert("error", error);
                     report.insert("success", false);
+                    report.insert("complete", false);
                 }
             }
             report.insert(
