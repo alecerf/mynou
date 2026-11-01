@@ -17,6 +17,7 @@ import './js/transfers.js';
 import './js/library.js';
 import './js/settings.js';
 import './js/requests.js';
+import './js/storage.js';
 
 function setup() {
   const navLink = ([id, name]) => h('a', { class: 'nav-link', href: `#${id}`, dataset: { view: id } }, icon(id), h('span', {}, name),

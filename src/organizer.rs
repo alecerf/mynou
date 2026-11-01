@@ -1,9 +1,11 @@
 //! Atomic import preserves the download and refuses to overwrite existing files.
 
 use crate::Result;
+use crate::crypto::Sha256;
 use crate::store::{Request, private_options, reject_symlinks, sync_directory, try_lock_file};
 use std::fs::{self, File};
 use std::io::{Read, Seek, SeekFrom, Write};
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -49,17 +51,7 @@ pub(crate) fn check_retained_imports(
 ) -> Result<()> {
     for file in &job.imports {
         let path = Path::new(file);
-        let root = if let Some(requester) = &job.requester {
-            Path::new(if job.request.kind == "movie" {
-                &requester.capture.movies_root
-            } else {
-                &requester.capture.series_root
-            })
-        } else if job.request.kind == "movie" {
-            &config.movies_root
-        } else {
-            &config.series_root
-        };
+        let root = import_root(job, config);
         let under_root = path != root && path.starts_with(root);
         let confined = if let Some(shared) = &job.shared_file {
             // A shared import keeps its recorded destination across config edits.
@@ -76,6 +68,67 @@ pub(crate) fn check_retained_imports(
         }
     }
     Ok(())
+}
+
+/// The import root a job's files must stay under.
+fn import_root<'a>(job: &'a crate::store::Job, config: &'a crate::config::Config) -> &'a Path {
+    match (&job.requester, job.request.kind == "movie") {
+        (Some(requester), true) => Path::new(&requester.capture.movies_root),
+        (Some(requester), false) => Path::new(&requester.capture.series_root),
+        (None, true) => Path::new(&config.movies_root),
+        (None, false) => Path::new(&config.series_root),
+    }
+}
+
+/// The files of an earlier version that are still on disk, with their size:
+/// regular files under the job's import root, reached without symbolic links,
+/// that are neither named by nor the same file as an import of `current`.
+pub(crate) fn earlier_files(
+    job: &crate::store::Job,
+    current: &crate::store::Job,
+    config: &crate::config::Config,
+) -> Vec<(String, u64)> {
+    let root = import_root(job, config);
+    let kept: Vec<(u64, u64)> = current
+        .imports
+        .iter()
+        .filter_map(|file| fs::metadata(file).ok())
+        .map(|metadata| (metadata.dev(), metadata.ino()))
+        .collect();
+    job.imports
+        .iter()
+        .filter(|file| !current.imports.contains(file))
+        .filter_map(|file| {
+            let path = Path::new(file);
+            if !path.is_absolute()
+                || path == root
+                || !path.starts_with(root)
+                || validate_path(path).is_err()
+            {
+                return None;
+            }
+            let metadata = fs::symlink_metadata(path).ok()?;
+            (metadata.is_file() && !kept.contains(&(metadata.dev(), metadata.ino())))
+                .then(|| (file.clone(), metadata.len()))
+        })
+        .collect()
+}
+
+/// Deletes the files `earlier_files` lists, and returns the bytes they held.
+pub(crate) fn delete_earlier_files(
+    job: &crate::store::Job,
+    current: &crate::store::Job,
+    config: &crate::config::Config,
+) -> Result<u64> {
+    let mut freed = 0_u64;
+    for (file, length) in earlier_files(job, current, config) {
+        fs::remove_file(&file).map_err(|error| format!("cannot delete {file}: {error}"))?;
+        freed += length;
+        if let Some(directory) = Path::new(&file).parent() {
+            sync_directory(directory)?;
+        }
+    }
+    Ok(freed)
 }
 
 fn create_directory(path: &Path) -> Result<()> {
@@ -225,6 +278,69 @@ pub(crate) fn import_shared_file_cancellable(
     // Keep the native payload inode private. Only the temporary import and
     // final library name share a link during atomic publication.
     import_destination(source, library, destination, active, true)
+}
+
+/// Device, inode, length and modification time of an open file: what tells
+/// that it is still the same file, unchanged.
+type Fingerprint = (u64, u64, u64, i64, i64);
+
+fn fingerprint(file: &File) -> Result<Fingerprint> {
+    let metadata = file.metadata().map_err(|error| error.to_string())?;
+    Ok((
+        metadata.dev(),
+        metadata.ino(),
+        metadata.len(),
+        metadata.mtime(),
+        metadata.mtime_nsec(),
+    ))
+}
+
+/// Whether `directory` is on the volume of `file`.
+fn same_device(file: &File, directory: &Path) -> Result<bool> {
+    let file = file.metadata().map_err(|error| error.to_string())?;
+    let directory = fs::metadata(directory).map_err(|error| error.to_string())?;
+    Ok(file.dev() == directory.dev())
+}
+
+/// Whether the filesystem of `directory` takes hard links, probed with a
+/// link to the import lock that is removed at once.
+fn links_supported(lock: &Path, directory: &Path) -> bool {
+    let probe = directory.join(format!(
+        ".mynou-{}-link-{}.tmp",
+        std::process::id(),
+        TEMPORARY.fetch_add(1, Ordering::Relaxed)
+    ));
+    let linked = fs::hard_link(lock, &probe).is_ok();
+    let _ = fs::remove_file(&probe);
+    linked
+}
+
+/// The length and SHA-256 of a regular file, read without following links.
+fn file_digest(path: &Path, active: &AtomicBool) -> Result<Option<(u64, [u8; 32])>> {
+    validate_path(path)?;
+    let mut file = private_options()
+        .read(true)
+        .open(path)
+        .map_err(|error| error.to_string())?;
+    if !file
+        .metadata()
+        .map_err(|error| error.to_string())?
+        .is_file()
+    {
+        return Ok(None);
+    }
+    let mut hasher = Sha256::new();
+    let mut length = 0_u64;
+    let mut buffer = vec![0_u8; 1 << 20];
+    loop {
+        active_import(active)?;
+        let count = file.read(&mut buffer).map_err(|error| error.to_string())?;
+        if count == 0 {
+            return Ok(Some((length, hasher.finalize())));
+        }
+        hasher.update(&buffer[..count]);
+        length += count as u64;
+    }
 }
 
 fn same_bytes(source: &mut File, destination: &Path, active: &AtomicBool) -> Result<bool> {
@@ -452,12 +568,45 @@ fn import_destination(
             TEMPORARY.fetch_add(1, Ordering::Relaxed)
         ));
         let mut owns_temporary = false;
+        // A copy on the source's own volume is a copy-on-write clone where the
+        // filesystem has them (APFS): instant, and sharing the source's blocks
+        // until either file changes. A filesystem without hard links (exFAT,
+        // FAT) has no clones either, and keeps the cancellable copy below.
+        let clone = copy_source
+            && same_device(&input, directory)?
+            && links_supported(&lock_path, directory);
         let result = (|| {
             if !copy_source && fs::hard_link(source, &temporary).is_ok() {
                 owns_temporary = true;
                 if !same_bytes(&mut input, &temporary, active)? {
                     return Err("source changed during import".to_owned());
                 }
+            } else if clone {
+                let before = fingerprint(&input)?;
+                owns_temporary = true;
+                // `fs::copy` clones with `fclonefileat` on macOS and falls back
+                // to a kernel copy elsewhere on the same volume.
+                fs::copy(source, &temporary)
+                    .map_err(|error| format!("cannot copy media: {error}"))?;
+                fs::set_permissions(&temporary, fs::Permissions::from_mode(0o600))
+                    .map_err(|error| error.to_string())?;
+                // The path still names the file that was opened and checked,
+                // unchanged, and the copy has its length.
+                let named = fs::symlink_metadata(source).map_err(|error| error.to_string())?;
+                let copied = fs::symlink_metadata(&temporary).map_err(|error| error.to_string())?;
+                if !named.is_file()
+                    || (named.dev(), named.ino()) != (before.0, before.1)
+                    || fingerprint(&input)? != before
+                    || !copied.is_file()
+                    || copied.len() != before.2
+                {
+                    return Err("source changed during copying".to_owned());
+                }
+                private_options()
+                    .read(true)
+                    .open(&temporary)
+                    .and_then(|file| file.sync_all())
+                    .map_err(|error| error.to_string())?;
             } else {
                 let mut output = private_options()
                     .write(true)
@@ -465,11 +614,15 @@ fn import_destination(
                     .open(&temporary)
                     .map_err(|error| format!("cannot access temporary file: {error}"))?;
                 owns_temporary = true;
+                let before = fingerprint(&input)?;
                 input
                     .seek(SeekFrom::Start(0))
                     .map_err(|error| error.to_string())?;
+                // The bytes are hashed as they are copied, then the copy is
+                // read back once: the source is not read a second time.
                 let mut copied = 0_u64;
-                let mut buffer = [0_u8; 131_072];
+                let mut hasher = Sha256::new();
+                let mut buffer = vec![0_u8; 1 << 20];
                 loop {
                     active_import(active)?;
                     let count = input
@@ -478,6 +631,7 @@ fn import_destination(
                     if count == 0 {
                         break;
                     }
+                    hasher.update(&buffer[..count]);
                     output
                         .write_all(&buffer[..count])
                         .map_err(|error| format!("cannot copy media: {error}"))?;
@@ -485,15 +639,19 @@ fn import_destination(
                         .checked_add(count as u64)
                         .ok_or_else(|| "media too large".to_owned())?;
                 }
-                if copied != input.metadata().map_err(|error| error.to_string())?.len() {
+                if copied != before.2 {
                     return Err("media size changed during import".to_owned());
                 }
                 output
                     .flush()
                     .and_then(|_| output.sync_all())
                     .map_err(|error| error.to_string())?;
-                if !same_bytes(&mut input, &temporary, active)? {
+                drop(output);
+                if fingerprint(&input)? != before {
                     return Err("source changed during copying".to_owned());
+                }
+                if file_digest(&temporary, active)? != Some((copied, hasher.finalize())) {
+                    return Err("the copy differs from the source".to_owned());
                 }
             }
             input

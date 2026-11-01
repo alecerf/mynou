@@ -366,17 +366,31 @@ fn read_request(stream: &mut TcpStream) -> Result<HttpRequest> {
         .set_write_timeout(Some(Duration::from_secs(5)))
         .map_err(|e| e.to_string())?;
     let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    // Read in blocks; what follows the blank line is the start of the body.
     let mut data = Vec::new();
-    let mut byte = [0];
-    while !data.ends_with(b"\r\n\r\n") {
+    let mut chunk = [0; 4096];
+    let end = loop {
+        if let Some(at) = data.windows(4).position(|w| w == b"\r\n\r\n") {
+            break at + 4;
+        }
         if data.len() >= MAX_HEADER || std::time::Instant::now() > deadline {
             return Err("Headers are too large or timed out".into());
         }
-        stream
-            .read_exact(&mut byte)
-            .map_err(|_| "Incomplete headers")?;
-        data.push(byte[0]);
+        let n = loop {
+            match stream.read(&mut chunk) {
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                other => break other.map_err(|_| "Incomplete headers")?,
+            }
+        };
+        if n == 0 {
+            return Err("Incomplete headers".into());
+        }
+        data.extend_from_slice(&chunk[..n]);
+    };
+    if end > MAX_HEADER {
+        return Err("Headers are too large or timed out".into());
     }
+    let early = data.split_off(end);
     let text = std::str::from_utf8(&data).map_err(|_| "Headers are not valid UTF-8")?;
     let mut lines = text[..text.len() - 4].split("\r\n");
     let first = lines.next().ok_or("Missing request")?;
@@ -424,7 +438,8 @@ fn read_request(stream: &mut TcpStream) -> Result<HttpRequest> {
         return Err("GET requests must not have a body".into());
     }
     let mut body = vec![0; length];
-    let mut offset = 0;
+    let mut offset = early.len().min(length);
+    body[..offset].copy_from_slice(&early[..offset]);
     while offset < length {
         if std::time::Instant::now() > deadline {
             return Err("Request body timed out".into());
@@ -501,7 +516,11 @@ fn connection(
             error("Content-Type application/json is required"),
         );
     }
-    let free = gate.free(stream, local);
+    // A proxy on this Mac or on the local network would make every client it
+    // serves look local: a forwarded request always needs a session.
+    let proxied = access::proxied(&headers);
+    let local = local && !proxied;
+    let free = !proxied && gate.free(stream, local);
     if path == "/api/session" {
         return session(stream, engine, gate, free, &method, &headers, &body);
     }
@@ -615,6 +634,17 @@ fn session(
             }
         }
         "DELETE" => {
+            // The session ends on the server too, so a copied cookie stops
+            // working. Credentials change only under the store lock.
+            let mut store = lock(&engine.store)?;
+            if let Some(next) = gate
+                .access
+                .sign_out(headers.get("cookie").map(String::as_str))?
+            {
+                store.save_access(Some(&next))?;
+                gate.access.replace(Some(next));
+            }
+            drop(store);
             value.insert("signed_in", false);
             respond_with(stream, 200, value, &session_cookie("", 0))
         }
@@ -1301,6 +1331,9 @@ pub(crate) fn route(
                 };
                 return Ok((200, snapshot));
             }
+            if method == "GET" && path == "/api/library/earlier" {
+                return Ok((200, engine.earlier_versions()?));
+            }
             if let Some(tail) = path.strip_prefix("/api/library/") {
                 let parts: Vec<_> = tail.split('/').collect();
                 if parts.len() != 2
@@ -1309,6 +1342,10 @@ pub(crate) fn route(
                     || !parts[0].bytes().all(|byte| byte.is_ascii_hexdigit())
                 {
                     return Ok((404, error("Unknown library route")));
+                }
+                if parts[1] == "delete-earlier" {
+                    control_body(body, &[], true)?;
+                    return Ok((200, engine.delete_earlier_version(parts[0])?));
                 }
                 if parts[1] == "group" {
                     let value = control_body(
@@ -1955,6 +1992,19 @@ mod tests {
             .0,
             403
         );
+        // A forwarded request is neither this Mac nor the local network.
+        let forwarded = "GET /api/status HTTP/1.1\r\nHost: mynou.example\r\nX-Forwarded-For: 203.0.113.9\r\n\r\n";
+        assert_eq!(exchange(&engine, &open, true, forwarded).0, 401);
+        assert_eq!(
+            post(
+                "/api/access",
+                r#"{"password":null}"#,
+                "Forwarded: for=203.0.113.9\r\n",
+                true
+            )
+            .0,
+            401
+        );
 
         // Only this machine changes the password; reports never show it.
         let (status, _, report) = get("/api/access", &session, false);
@@ -1973,6 +2023,30 @@ mod tests {
         assert_eq!(post("/api/access", r#"{"password":null}"#, "", true).0, 200);
         assert!(lock(&engine.store).unwrap().access().unwrap().is_none());
         assert_eq!(get("/api/status", &session, false).0, 401);
+        // Signing out ends the session on the server, not only the cookie.
+        let credentials = access::Credentials::with_iterations("correct horse battery", 2).unwrap();
+        gate.access.replace(Some(credentials));
+        let (_, head, _) = post(
+            "/api/session",
+            r#"{"password":"correct horse battery"}"#,
+            "",
+            false,
+        );
+        let cookie = head
+            .lines()
+            .find_map(|line| line.strip_prefix("Set-Cookie: "))
+            .unwrap();
+        let session = format!("Cookie: {}\r\n", cookie.split(';').next().unwrap());
+        assert_eq!(get("/api/status", &session, false).0, 200);
+        let signed_out = exchange(
+            &engine,
+            &gate,
+            false,
+            &format!("DELETE /api/session HTTP/1.1\r\nHost: mynou.example\r\n{session}\r\n"),
+        );
+        assert_eq!(signed_out.0, 200);
+        assert_eq!(get("/api/status", &session, false).0, 401);
+        assert!(lock(&engine.store).unwrap().access().unwrap().is_some());
         engine.stopped.store(true, Ordering::Release);
         drop(engine);
         let _ = std::fs::remove_dir_all(&root);

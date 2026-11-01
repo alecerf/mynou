@@ -2221,6 +2221,36 @@ impl Store {
         })
     }
 
+    /// Runs `delete` on an earlier version, a ready import that the current
+    /// version of its media replaced, and records it in the job's history.
+    /// `delete` receives the earlier job and the current one.
+    pub(crate) fn delete_earlier_version(
+        &mut self,
+        id: &str,
+        delete: impl FnOnce(&Job, &Job) -> Result<u64>,
+    ) -> Result<(Job, u64)> {
+        self.mutate(|db| {
+            let mut job = db
+                .get(id)?
+                .ok_or_else(|| "unknown library entry".to_owned())?;
+            let current = db.current_media_job(&job.request.media_key())?;
+            let Some(current) = current.filter(|current| {
+                current.id != job.id && current.state == "ready" && !current.imports.is_empty()
+            }) else {
+                return Err("this version has not been replaced".to_owned());
+            };
+            if job.state != "ready" || job.shared_file.is_some() || db.is_tip(&job.id)? {
+                return Err(
+                    "only an earlier version of a film or episode can be deleted".to_owned(),
+                );
+            }
+            let freed = delete(&job, &current)?;
+            job.updated_at = now();
+            db.commit_jobs(vec![job.clone()], "earlier version deleted from disk")?;
+            Ok((job, freed))
+        })
+    }
+
     pub fn set_baseline(&mut self, id: &str, release: RecordedRelease) -> Result<Job> {
         release.validate()?;
         self.mutate(|db| {

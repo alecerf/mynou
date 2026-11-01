@@ -130,11 +130,17 @@ Web UI / API         Plex watchlists   IRC announcements
   per transfer owns piece claims, verified writes and completion, and hands
   pieces to a bounded set of peer workers. `torrent::control` holds durable
   pause, priority, selection and policy state; `torrent::selection` holds file
-  interests for mapped packs.
+  interests for mapped packs. `torrent::utp` owns the BitTorrent UDP port: one
+  thread reads it, feeding uTP connections and the DHT node
+  (`torrent::dht_node`) and running their timers; uTP streams look like TCP
+  ones to the peer code, through the client's network and listener.
 - `media` reads container metadata with buffered reads and seeks, skipping
   payload such as MP4 `mdat`, Matroska clusters and WAV data. `organizer`
   publishes imports without overwriting: a hard link when possible, otherwise a
-  synchronized copy; it rejects symbolic links on controlled paths.
+  synchronized copy. Downloads of the built-in client keep their own file, so
+  they are copied: on the same APFS volume the copy is a copy-on-write clone,
+  instant and sharing the download's blocks; elsewhere the copy is hashed as it
+  is written and read back once. It rejects symbolic links on controlled paths.
 - `net`, `tls`, `pki` and `crypto` implement HTTP/1.1, the TLS 1.3 and 1.2 client, X.509
   validation and the primitives they need. A failed negotiation never disables
   certificate validation.

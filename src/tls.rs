@@ -1409,6 +1409,20 @@ impl<'a> Decoder<'a> {
     }
 }
 
+/// Fuzzing entry: `data` as each server message the client parses before or
+/// without keys. See `crate::fuzzing`.
+#[doc(hidden)]
+pub(crate) fn fuzz(data: &[u8]) {
+    let _ = read_record(&mut io::Cursor::new(data));
+    let _ = read_server_hello(&mut io::Cursor::new(data));
+    let _ = message_has_tls13(data);
+    let _ = parse_server_hello(data, &[7; 32]);
+    let _ = parse_encrypted_extensions(data);
+    let _ = parse_certificates(data);
+    let _ = parse_legacy_certificates(data);
+    let _ = validate_ticket(data);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;

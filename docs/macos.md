@@ -204,8 +204,10 @@ How requests are checked:
   sockets, must be the same as `Host`, for HTTP requests and `/ws`.
 - Connections from this Mac, from loopback or from the Mac's own address, need
   no sign-in, so `mynou update`, `mynou service` and local scripts work as
-  before. A reverse proxy on the same Mac would therefore pass every request as
-  local: do not put one in front of Mynou.
+  before. A request that a proxy forwarded (it carries `Forwarded`,
+  `X-Forwarded-For`, `X-Forwarded-Host`, `X-Real-IP` or `Via`) is never taken
+  as local or as coming from the local network: it needs a session, and only
+  the Mac itself, without a proxy, can change the password.
 - With **No password on the local network** (`access.local_network_open`),
   computers at a private or link-local address (`10.0.0.0/8`, `172.16.0.0/12`,
   `192.168.0.0/16`, `169.254.0.0/16`, `fc00::/7`, `fe80::/10`) need no sign-in
@@ -216,7 +218,10 @@ How requests are checked:
   `{"password": "..."}`) and get a session cookie (`HttpOnly`,
   `SameSite=Strict`) valid for 30 days. Without it, `/api` routes and `/ws`
   answer 401. Scripts on another computer sign in the same way and send the
-  cookie back. `DELETE /api/session` signs out. Sign out everywhere (Settings,
+  cookie back. `DELETE /api/session` signs out: the session ends on the Mac
+  too, so a copy of the cookie stops working. Mynou remembers up to 256 such
+  sessions until they expire; one more renews the key that signs sessions,
+  which signs every computer out. Sign out everywhere (Settings,
   Network, on the Mac) replaces the key that signs sessions, which ends every
   session and keeps the password.
 - After 5 failed sign-ins from one address (an IPv6 /64 counts as one) within 15 minutes,
@@ -234,8 +239,10 @@ anyone who can watch the traffic, for example on a shared or public Wi-Fi, can
 read the password and the session cookie. Do not open Mynou on a network you do
 not trust, and do not forward its port from your router to the internet.
 
-Port 6881/TCP accepts BitTorrent peers; whether peers can reach it depends on
-your firewall and router. DHT and UDP trackers use outgoing connections only.
+Port 6881/TCP accepts BitTorrent peers, and 6881/UDP accepts uTP peers and
+answers other DHT nodes when the DHT is on; whether they can reach them depends
+on your firewall and router. UDP trackers and DHT lookups use outgoing
+connections only.
 
 Requests, retries and cancellations happen in the web interface. Cancelling a
 request never deletes files or cancels other requests sharing the torrent.

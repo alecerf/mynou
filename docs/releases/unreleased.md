@@ -192,3 +192,62 @@ downloads or seeds, and requests wait without searching or using up their
 attempts; titles already in Plex are still found and marked ready. This helps
 when you move an existing library to Mynou. The overview says when downloads
 are off, and `GET /api/status` reports `downloads_enabled`.
+
+## Changed: Signing out ends the session on the Mac
+
+Signing out used to forget the cookie in the browser only; a copy of it kept
+working for 30 days. Mynou now remembers signed-out sessions until they expire
+and refuses them. See [network access](/docs/macos.md#network-access).
+
+## Fixed: A proxy in front of Mynou no longer skips the password
+
+A request forwarded by a reverse proxy (it carries `Forwarded`,
+`X-Forwarded-For`, `X-Forwarded-Host`, `X-Real-IP` or `Via`) is no longer taken
+as coming from this Mac or from the local network, so it needs a session, and
+it cannot change the password. See
+[network access](/docs/macos.md#network-access).
+
+## Changed: Imports on the same disk are instant
+
+When the library is on the same APFS volume as the downloads, an import is now
+a copy-on-write clone: a 4 GiB film is filed in about 30 ms instead of seconds,
+and takes no extra space until one of the two files changes. On another disk,
+the copy is checked by reading it back once, no longer by reading the download
+a second time as well.
+
+## Added: Free up space
+
+Library, **Free up space** opens Storage: the earlier versions an upgrade
+replaced and the finished downloads, with their size. Mynou still deletes
+nothing by itself; each one goes only when you ask, and Plex is asked to scan
+again. See [free up space](/docs/library.md#free-up-space).
+
+## Added: Peer exchange in both directions
+
+Mynou already learned peers from the others through PEX; it now also tells
+them, once a minute, which peers it is connected to, as other clients do.
+Private torrents still never use PEX. See [limits](/docs/limits.md#bittorrent).
+
+## Added: A DHT node on the BitTorrent port
+
+Mynou now answers other DHT nodes on its BitTorrent UDP port (through the
+forwarded VPN port when the VPN is on) and keeps the peers announced to it, so
+it takes part in the DHT instead of only asking it. Its own lookups say they
+are read-only, so other nodes no longer keep their short-lived sockets. See
+[limits](/docs/limits.md#bittorrent).
+
+## Added: uTP peers
+
+Mynou now also talks to peers over uTP, the UDP transport most BitTorrent
+clients offer, on the same port as TCP. It still dials TCP first; when a peer
+is slow to answer or refuses TCP, uTP is tried as well. uTP transfers back off
+when they start to fill the line, so a download disturbs other traffic less.
+Peers that only accept uTP can now be reached. See
+[limits](/docs/limits.md#bittorrent).
+
+## Changed: Faster peer turnover through the VPN
+
+ProtonVPN's VPN Accelerator accepts every connection itself, so a peer that
+is gone still seems to connect. Mynou now waits 3 seconds instead of 5 for a
+peer's answer while downloading, so such peers are left sooner. Live peers
+answered within 0.8 seconds in measurements.

@@ -428,3 +428,52 @@ Pour le contrôle fournisseur, donner à `torrent_vpn_probe` un profil privé
 mode 0400/0600 sur un chemin physique, puis l'URL HTTPS d'un `.torrent`.
 Ce programme utilise uniquement le transport userspace et n'importe pas de
 configuration dans l'instance installée.
+
+## Délai de connexion aux pairs
+
+Une tentative de connexion à un pair dispose d'1 seconde pendant un
+téléchargement et de 2 secondes pendant la lecture des métadonnées, sans
+nouvel essai. La pile TCP du tunnel retransmet un SYN perdu après 1 seconde
+(RTO initial de la RFC 6298) : à travers le VPN, un SYN ou un SYN-ACK perdu
+fait donc échouer la tentative juste avant sa retransmission.
+
+`peer_connect_probe` mesure ce que ces délais coûtent. Il cherche des pairs IPv4
+dans la DHT (sans annonce) à travers le tunnel, puis les contacte à travers le
+tunnel et directement, avec 6 secondes chacun, et donne la part des connexions
+réussies plus lentes que 0,25 / 0,5 / 1 / 2 / 3 / 4 secondes. Il envoie ensuite
+une poignée de main BitTorrent à chaque pair connecté et mesure, depuis le début
+de l'appel, le temps jusqu'à sa réponse ou jusqu'à la fermeture. Un profil `-`
+mesure la connexion directe seule.
+
+```sh
+cargo run --release --example peer_connect_probe -- PROFIL_PRIVE INFO_HASH [PAIRS]
+```
+
+Mesures du 1ᵉʳ novembre 2026, sur le Mac de développement (Wi-Fi), torrent
+Ubuntu 24.04.3 desktop (`d160b8d8ea35a5b4e52837468fc8f03d55cef1f7`), 300 pairs
+de la DHT, à travers ProtonVPN CH#761 (VPN Accelerator et NAT-PMP actifs) puis
+directement :
+
+| | VPN | Direct |
+| --- | --- | --- |
+| Connectés | 300 (médiane 0,03 s) | 119 (médiane 0,19 s, p99 1,19 s) |
+| Réponse BitTorrent | 25 (médiane 0,20 s, p90 0,40 s, p99 0,76 s) | 23 (médiane 0,17 s, p99 0,42 s) |
+| Fermés avant réponse | 127 | 95 |
+| Silencieux 6 s | 148 | 1 |
+
+Le serveur du VPN accepte lui-même chaque connexion (VPN Accelerator) : à
+travers lui, tous les pairs se connectent en 30 ms, les morts compris, et le
+délai de connexion ne trie plus rien. Les pairs morts restent alors silencieux
+jusqu'à l'échéance de la poignée de main, la moitié des pairs ici. Cette
+échéance passe donc de 5 à 3 secondes pendant un téléchargement (4 fois le p99
+des réponses à travers le VPN) ; la lecture des métadonnées garde 5 secondes.
+Les vrais pairs répondent aussi nombreux à travers le VPN qu'en direct.
+
+En direct, 4 % des connexions réussies (5 sur 119) ont dépassé 1 seconde, dont
+une au-delà de 4 secondes ; une mesure précédente n'en avait aucune. Le délai
+d'une seconde est gardé : ces pairs lents sont rares et une tentative suivante
+les rejoint.
+
+Conséquence pour uTP : à travers ce VPN, TCP « se connecte » toujours en
+30 ms, avant les 250 ms après lesquelles uTP est essayé ; les connexions
+sortantes y restent donc en TCP, et uTP ne sert qu'aux pairs entrants.

@@ -88,19 +88,25 @@ impl TunnelNetwork {
         Ok(addresses)
     }
 
-    fn bind_datagram(&self, ipv6: bool) -> io::Result<Datagram> {
+    fn virtual_datagram(&self, ipv6: bool) -> io::Result<Datagram> {
         // Without IPv6 in the tunnel, IPv6 is refused, never sent elsewhere.
         // A virtual socket serves both families.
         if ipv6 && !self.connector.owner.ipv6 {
             return Err(error(io::ErrorKind::InvalidInput));
         }
+        self.bind_datagram_port(0)
+    }
+
+    /// A virtual datagram socket on `port` of the tunnel interface (0 picks
+    /// one), reachable only through the tunnel.
+    fn bind_datagram_port(&self, port: u16) -> io::Result<Datagram> {
         let (connector, lease) = (&self.connector, Arc::new(()));
         let weak = Arc::downgrade(&lease);
         let socket = connector.owner.call(
             Some(connector.generation),
             Instant::now() + ACCEPT_WAIT,
             move |r| {
-                let socket = r.tunnel.udp_bind(0).map_err(failed)?;
+                let socket = r.tunnel.udp_bind(port).map_err(failed)?;
                 r.leases.push((
                     r.tunnel.status().generation.unwrap_or(0),
                     weak,
@@ -229,7 +235,11 @@ impl Network for TunnelNetwork {
     }
 
     fn datagram(&self, ipv6: bool) -> crate::Result<Box<dyn NetworkDatagram>> {
-        Ok(Box::new(self.bind_datagram(ipv6).map_err(message)?))
+        Ok(Box::new(self.virtual_datagram(ipv6).map_err(message)?))
+    }
+
+    fn bind_datagram(&self, port: u16) -> crate::Result<Box<dyn NetworkDatagram + Sync>> {
+        Ok(Box::new(self.bind_datagram_port(port).map_err(message)?))
     }
 
     fn http(&self) -> HttpClient {

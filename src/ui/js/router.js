@@ -15,6 +15,8 @@ export const VIEWS = [
 ];
 // A request is an action reachable from everywhere, not a place in the navigation.
 const REQUEST_VIEW = ['requests', 'New request'];
+// Disk space is reached from the library and the transfers, and from the search.
+export const STORAGE_VIEW = ['storage', 'Storage'];
 
 function show(hash) {
   const [base, ...rest] = hash.split('/');
@@ -33,7 +35,7 @@ function show(hash) {
   for (const link of document.querySelectorAll('a[data-view]')) {
     if (link.dataset.view === name) link.setAttribute('aria-current', 'page'); else link.removeAttribute('aria-current');
   }
-  const title = [...VIEWS, REQUEST_VIEW].find(([id]) => id === name)[1];
+  const title = [...VIEWS, REQUEST_VIEW, STORAGE_VIEW].find(([id]) => id === name)[1];
   setCurrentView(name, param);
   document.title = `${title} · Mynou`;
   views[name].render?.();

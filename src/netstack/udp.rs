@@ -100,6 +100,19 @@ pub fn build(
     ip::build(source, destination, PROTOCOL_UDP, &segment, mtu)
 }
 
+/// Fuzzing entry: `data` as a datagram with a valid checksum.
+#[doc(hidden)]
+pub(super) fn fuzz(data: &[u8]) {
+    let (source, destination) = (IpAddr::from([198, 51, 100, 7]), IpAddr::from([10, 2, 0, 2]));
+    let mut bytes = data.to_vec();
+    if bytes.len() >= HEADER_LEN {
+        bytes[6..8].fill(0);
+        let sum = segment_sum(source, destination, &bytes);
+        bytes[6..8].copy_from_slice(&(!sum).to_be_bytes());
+    }
+    let _ = parse(source, destination, &bytes);
+}
+
 #[cfg(test)]
 #[path = "udp_tests.rs"]
 mod tests;

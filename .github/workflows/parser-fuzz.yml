@@ -1,0 +1,61 @@
+name: Parser fuzzing
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/parser-fuzz.yml'
+      - 'examples/parser_fuzz.rs'
+      - 'src/bencode.rs'
+      - 'src/json.rs'
+      - 'src/xml.rs'
+      - 'src/net.rs'
+      - 'src/ws.rs'
+      - 'src/tls.rs'
+      - 'src/pki.rs'
+      - 'src/pki/**'
+      - 'src/media.rs'
+      - 'src/media/**'
+      - 'src/irc/protocol.rs'
+      - 'src/wireguard/profile.rs'
+      - 'src/torrent/metainfo.rs'
+      - 'src/torrent/discovery.rs'
+      - 'src/torrent/dht_node.rs'
+      - 'src/torrent/utp.rs'
+      - 'src/netstack/**'
+  schedule:
+    - cron: '17 4 * * 1'
+  workflow_dispatch:
+    inputs:
+      inputs_per_target:
+        description: Inputs per parser
+        default: '2000000'
+permissions:
+  contents: read
+concurrency:
+  group: parser-fuzz-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  fuzz:
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Rust 1.99.1
+        run: rustup toolchain install 1.99.1 --profile minimal
+      - name: Build the fuzzer with release settings, which abort on a panic
+        run: cargo +1.99.1 build --release --offline --locked --example parser_fuzz
+      - name: Mutate every parser's inputs
+        env:
+          INPUTS: ${{ github.event.inputs.inputs_per_target || '1000000' }}
+          SEED: ${{ github.run_id }}
+          TMPDIR: ${{ runner.temp }}
+        run: ./target/release/examples/parser_fuzz "$INPUTS"
+      - name: Keep the input that made a parser panic
+        if: failure()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: parser-fuzz-crash-${{ github.sha }}
+          path: target/parser-fuzz
+          if-no-files-found: ignore
+          retention-days: 30

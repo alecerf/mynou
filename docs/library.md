@@ -119,7 +119,24 @@ source, codec and score upgrades too. Initial selection is unaffected.
 An upgrade imports beside the earlier file under a distinct name ending in
 `[mynou-<job id>]`; it never overwrites. Old imports and downloads are kept and
 there is no automatic cleanup, so Plex may show several versions until you
-remove old files yourself. Plan disk space accordingly.
+remove old files. Plan disk space accordingly.
+
+### Free up space
+
+**Storage** (Library, **Free up space**) lists what Mynou keeps that you may no
+longer need, with its size, and deletes nothing until you ask:
+
+- **Earlier versions**: files of a film or episode that an upgrade replaced.
+  Deleting one removes only those files, never a file of the version that
+  replaced it, records it in the entry's history and asks Plex to scan again.
+  `GET /api/library/earlier` lists them (at most 500 per listing; `limited`
+  says more may exist) and `POST /api/library/ID/delete-earlier` with `{}`
+  deletes one. Entries of a shared video and current versions cannot be deleted
+  this way.
+- **Finished downloads**: complete transfers, largest first, removed with their
+  files through the usual [Remove](transfers.md). On the library's own APFS
+  disk, an import is a clone of its download: they share their blocks, so
+  removing the download alone frees little.
 
 With Plex enabled, the upgrade is ready only when a fresh Plex response reports
 the **new** path in `Part.file`; an existing matching title is not enough. If

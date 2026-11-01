@@ -56,7 +56,7 @@ function openAddTorrent() {
 }
 
 /** Confirms a removal; the downloaded files go too only when asked. */
-function openRemove(transfer, title, removed) {
+export function openRemove(transfer, title, removed) {
   const files = h('input', { type: 'checkbox' });
   const remove = h('button', { type: 'submit', class: 'destructive' }, icon('trash'), 'Remove');
   const form = h('form', { class: 'sheet' },

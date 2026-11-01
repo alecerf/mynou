@@ -146,6 +146,22 @@ fn datagrams_carry_tracker_exchanges_and_refuse_ipv6() {
     assert!(!wire.iter().any(|d| d.windows(8).any(|w| w == b"announce")));
 }
 
+#[test]
+fn the_dht_socket_keeps_its_port_inside_the_tunnel() {
+    let f = Fixture::new();
+    let network = network(&f);
+    let socket = network.bind_datagram(42001).unwrap();
+    assert!(network.bind_datagram(42001).is_err());
+    socket
+        .set_read_timeout(Some(Duration::from_secs(3)))
+        .unwrap();
+    let tracker: SocketAddr = "10.7.0.1:6969".parse().unwrap();
+    socket.send_to(b"ping", tracker).unwrap();
+    let mut buffer = [0; 64];
+    let (n, from) = socket.recv_from(&mut buffer).unwrap();
+    assert_eq!((&buffer[..n], from), (b"echo:ping".as_slice(), tracker));
+}
+
 /// Both ends of a `Pair` with their IPv6 address; the resolver stays IPv4.
 fn dual_stack(client: &mut TunnelConfig, server: &mut TunnelConfig) {
     for (config, local) in [(client, CLIENT6), (server, SERVER6)] {

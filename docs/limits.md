@@ -35,7 +35,8 @@ seeks rather than read, including MP4 `mdat` boxes larger than 4 GiB.
 
 Mynou implements v1, v2 and hybrid torrents, `btih` and `btmh` magnets, the TCP
 peer protocol, metadata exchange, v2 hash proofs, HTTP, HTTPS and UDP trackers,
-a DHT client and PEX reception. Peer data uses TCP only.
+a DHT node (BEP 5, with read-only lookups, BEP 43) and PEX (BEP 11) in both
+directions. Peers connect over TCP or uTP (BEP 29).
 
 - **Peers**: `downloads.max_peers` (1 to 256, default 50) is a per-transfer
   ceiling. Outgoing workers per transfer are
@@ -56,10 +57,16 @@ a DHT client and PEX reception. Peer data uses TCP only.
   boundary. A worker holds a second piece only while unclaimed pieces outnumber
   twice the workers, so the last pieces are not held behind a slow peer. A peer count is not a
   promise of connections or speed.
-- **Connections**: new connections have a one-second attempt timeout,
+- **Connections**: new connections have a one-second attempt timeout, then
+  3 seconds for the peer's handshake while downloading (5 while fetching
+  metadata), since a VPN may accept connections on the peers' behalf;
   established sockets check for cancellation every 100 ms, idle peers rotate
   after two seconds and corrupt peers are excluded for the rest of the download.
   No duplicate end-game requests are sent.
+- **PEX**: on a public torrent, each connection tells its peer, at most once a
+  minute and starting a minute after it opens, which peers were added to and
+  dropped from the download (50 of each at most). Only peers Mynou dialled
+  itself are passed on, flagged reachable; a private torrent never uses PEX.
 - **Discovery** keeps at most 1,024 peers per torrent. Tracker intervals are
   bounded between 30 seconds and 24 hours. Seeding announces `started`,
   `completed` and `stopped`, but a forced stop may not send `stopped`. Torrent
@@ -73,10 +80,26 @@ a DHT client and PEX reception. Peer data uses TCP only.
   becomes ready just because it exists. Unsafe paths and contradictory metadata
   are rejected. Cancelling one request does not stop a torrent another request
   shares.
-- **Network**: port 6881/TCP accepts peers; inbound access depends on your
-  firewall and router. DHT and UDP trackers use outgoing ephemeral sockets, no
-  inbound UDP port is published and the DHT client is not a complete DHT
-  server.
+- **uTP**: outgoing peers are dialled over TCP, and over uTP as well when TCP
+  has not connected within 250 ms or is refused; the first to connect is kept.
+  Incoming uTP peers are served like TCP ones. Each connection keeps at most
+  256 KiB received but unread and 256 KiB in flight, and backs off when the
+  queuing delay passes 100 ms (LEDBAT). Packets carry 1,180 bytes of data.
+  Selective acknowledgements are read but not sent. At most 320 uTP
+  connections are open at once and 8 wait to be accepted; a connection that
+  hears nothing for 90 seconds, or loses a packet six times in a row, ends.
+- **Network**: port 6881/TCP accepts peers and 6881/UDP carries uTP and the DHT;
+  inbound access depends on your firewall and router. Through the VPN both use
+  the forwarded port, inside the tunnel only. Lookups and UDP trackers use
+  outgoing ephemeral sockets.
+- **DHT node**: when `downloads.dht` is on, Mynou answers `ping`, `find_node`,
+  `get_peers` and `announce_peer` on the BitTorrent UDP port, at most 100
+  replies a second. Its routing table keeps at most 8 nodes per bucket, only on
+  public IPv4 addresses; it keeps the peers announced to it for 30 minutes, at
+  most 100 for each of 512 torrents. Tokens change every 5 minutes and stay
+  valid for one more change. It first contacts the network 15 seconds after the
+  client starts. Its table and id are not kept across restarts, and it has no
+  IPv6 node.
 
 ### Transfer controls
 
@@ -429,8 +452,9 @@ IRC announcements:
 
 ## Not supported
 
-- Advanced torrent transports and networking: uTP, WebRTC/WebTorrent, webseeds,
-  automatic NAT traversal (UPnP/NAT-PMP) and a complete persistent DHT table.
+- Advanced torrent transports and networking: WebRTC/WebTorrent, webseeds,
+  automatic NAT traversal (UPnP/NAT-PMP), a persistent DHT table and the IPv6
+  DHT node.
 - Partial seeding, shrinking a selection and automatic cleanup of downloads or
   old imports.
 - Broad tracker and provider coverage, changing authentication schemes and a

@@ -826,6 +826,19 @@ fn tcp_step(error: TcpError) -> Step {
     Step::Done(Err(failure))
 }
 
+/// Fuzzing entry: `data` as an answer to an A and an AAAA question for
+/// `example.com`, under the transaction id it carries.
+#[doc(hidden)]
+pub(super) fn fuzz(data: &[u8]) {
+    let id = u16::from_be_bytes([
+        data.first().copied().unwrap_or(0),
+        data.get(1).copied().unwrap_or(0),
+    ]);
+    let question = b"\x07example\x03com\x00";
+    let _ = parse_response_for(Record::A, id, question, data);
+    let _ = parse_response_for(Record::Aaaa, id, question, data);
+}
+
 #[cfg(test)]
 #[path = "dns_tests.rs"]
 mod tests;

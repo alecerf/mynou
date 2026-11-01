@@ -55,6 +55,7 @@ const MODULES: &[(&str, &str)] = modules![
     "settings",
     "sources",
     "stats",
+    "storage",
     "store",
     "theme",
     "transfers",
