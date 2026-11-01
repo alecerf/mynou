@@ -433,10 +433,16 @@ fn private_directory(dir: &std::path::Path) -> Result<()> {
     match std::fs::symlink_metadata(dir) {
         Ok(m) if m.is_dir() && m.permissions().mode() & 0o077 == 0 => Ok(()),
         Ok(_) => Err("IRC: metainfo directory is not private".into()),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => std::fs::DirBuilder::new()
-            .mode(0o700)
-            .create(dir)
-            .map_err(|_| "IRC: cannot create the metainfo directory".into()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            std::fs::DirBuilder::new()
+                .mode(0o700)
+                .create(dir)
+                .map_err(|_| "IRC: cannot create the metainfo directory")?;
+            match dir.parent() {
+                Some(parent) => crate::store::sync_directory(parent),
+                None => Ok(()),
+            }
+        }
         Err(_) => Err("IRC: metainfo directory is inaccessible".into()),
     }
 }
@@ -456,11 +462,8 @@ impl Engine {
         private_directory(&dir)?;
         let path = dir.join(format!("{}.torrent", a.info_hash));
         let text = path.to_str().ok_or_else(unavailable)?.to_owned();
-        match std::fs::symlink_metadata(&path) {
-            Ok(m) if m.is_file() => return Ok(text),
-            Ok(_) => return Err(unavailable()),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(_) => return Err(unavailable()),
+        if refreshed(&path).map_err(|_| unavailable())? {
+            return Ok(text);
         }
         let source = self
             .config
@@ -500,7 +503,7 @@ impl Engine {
                 .open(&part)
                 .map_err(|_| unavailable())?;
             file.write_all(&body).map_err(|_| unavailable())?;
-            file.sync_all().map_err(|_| unavailable())?;
+            crate::store::sync_file(&file).map_err(|_| unavailable())?;
             let metadata = crate::torrent::inspect_metadata(
                 &*self.torrent_network,
                 part.to_str().ok_or_else(unavailable)?,
@@ -510,7 +513,10 @@ impl Engine {
             if metadata.id != a.info_hash {
                 return Err("IRC: metadata identity differs".to_owned());
             }
-            std::fs::rename(&part, &path).map_err(|_| unavailable())
+            std::fs::rename(&part, &path).map_err(|_| unavailable())?;
+            // The route recorded next names this file: its name must survive
+            // a power loss first.
+            crate::store::sync_directory(&dir)
         })();
         if written.is_err() {
             let _ = std::fs::remove_file(&part);
@@ -532,7 +538,14 @@ pub(crate) fn start(engine: &Arc<Engine>, handles: &mut Vec<JoinHandle<()>>) {
     }
     let engine = engine.clone();
     handles.push(thread::spawn(move || {
+        let mut pruned: Option<Instant> = None;
         while !engine.stopped.load(Ordering::Acquire) {
+            if pruned.is_none_or(|at| at.elapsed() >= PRUNE_EVERY) {
+                pruned = Some(Instant::now());
+                if let Err(error) = engine.prune_metainfo(std::time::SystemTime::now()) {
+                    eprintln!("mynou: IRC metainfo cleanup stopped: {error}");
+                }
+            }
             let busy = engine
                 .irc_resolve_pending()
                 .is_ok_and(|r| r.get("outcome").and_then(Value::as_str) != Some("idle"));
@@ -543,9 +556,134 @@ pub(crate) fn start(engine: &Arc<Engine>, handles: &mut Vec<JoinHandle<()>>) {
     }));
 }
 
+/// Whether a fetched file is there to reuse, after making it new again: the
+/// cleanup leaves files younger than `KEEP_AT_LEAST`, so a file still there
+/// after its refresh stays until the route that reuses it is recorded.
+fn refreshed(path: &std::path::Path) -> std::io::Result<bool> {
+    let present = |path| match std::fs::symlink_metadata(path) {
+        Ok(m) if m.is_file() => Ok(true),
+        Ok(_) => Err(std::io::Error::other("not a file")),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(e) => Err(e),
+    };
+    if !present(path)? {
+        return Ok(false);
+    }
+    match std::fs::File::open(path) {
+        Ok(file) => file.set_modified(std::time::SystemTime::now())?,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(e) => return Err(e),
+    }
+    // Removed between the open and the refresh: fetch it again.
+    present(path)
+}
+
+/// How often fetched metainfo no job needs any more is removed.
+const PRUNE_EVERY: Duration = Duration::from_secs(3600);
+/// A fetched or reused file is kept at least this long, so a route being
+/// recorded for it is never raced.
+const KEEP_AT_LEAST: Duration = Duration::from_secs(24 * 3600);
+
+impl Engine {
+    /// Removes fetched `.torrent` files untouched for a day that no job may
+    /// still acquire from, and abandoned partial downloads. Returns how many
+    /// files were removed.
+    pub(crate) fn prune_metainfo(&self, now: std::time::SystemTime) -> Result<usize> {
+        let dir = self.config.store_dir.join(METAINFO_DIR);
+        let entries = match std::fs::read_dir(&dir) {
+            Ok(entries) => entries,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+            Err(_) => return Err("IRC: metainfo directory is inaccessible".into()),
+        };
+        private_directory(&dir)?;
+        let mut removed = 0;
+        for entry in entries {
+            if self.stopped.load(Ordering::Acquire) {
+                break;
+            }
+            let entry = entry.map_err(|_| "IRC: cannot list the metainfo directory")?;
+            let path = entry.path();
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            let Some((hash, extension)) = name.rsplit_once('.') else {
+                continue;
+            };
+            if !matches!(extension, "torrent" | "part") || info_hash(hash).as_deref() != Some(hash)
+            {
+                continue;
+            }
+            let Some(url) = path.to_str() else {
+                continue;
+            };
+            let old = |path: &std::path::Path| {
+                std::fs::symlink_metadata(path).is_ok_and(|metadata| {
+                    metadata.is_file()
+                        && metadata
+                            .modified()
+                            .ok()
+                            .and_then(|at| now.duration_since(at).ok())
+                            .is_some_and(|age| age >= KEEP_AT_LEAST)
+                })
+            };
+            // Recent files stay without taking the store lock.
+            if !old(&path) {
+                continue;
+            }
+            // The age, the owners and the removal are then decided under the
+            // store lock, which recording a route also takes: a file reused
+            // before this check is new again, and one reused after it is
+            // fetched again.
+            let mut store = lock(&self.store)?;
+            if !old(&path) || extension == "torrent" && store.acquisition_needed(url)? {
+                continue;
+            }
+            if std::fs::remove_file(&path).is_ok() {
+                removed += 1;
+            }
+            drop(store);
+        }
+        if removed > 0 {
+            crate::store::sync_directory(&dir)?;
+        }
+        Ok(removed)
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{episode, info_hash};
+    use super::{episode, info_hash, refreshed};
+
+    #[test]
+    fn a_reused_metainfo_file_is_new_again_and_a_removed_one_is_fetched() {
+        let dir = std::env::temp_dir().join(format!(
+            "mynou-refreshed-{}",
+            crate::crypto::random_bytes::<8>()
+                .unwrap()
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect::<String>()
+        ));
+        std::fs::create_dir(&dir).unwrap();
+        let path = dir.join("old.torrent");
+        let file = std::fs::File::create(&path).unwrap();
+        let old = std::time::SystemTime::now() - std::time::Duration::from_secs(3 * 86_400);
+        file.set_modified(old).unwrap();
+        drop(file);
+        assert!(refreshed(&path).unwrap());
+        let age = std::fs::metadata(&path)
+            .unwrap()
+            .modified()
+            .unwrap()
+            .elapsed()
+            .unwrap();
+        assert!(age < std::time::Duration::from_secs(3600));
+        std::fs::remove_file(&path).unwrap();
+        assert!(!refreshed(&path).unwrap());
+        std::fs::create_dir(&path).unwrap();
+        assert!(refreshed(&path).is_err());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
     use crate::store::Request;
 
     #[test]

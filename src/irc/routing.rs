@@ -625,27 +625,6 @@ fn recovered_record(mut r: Record, jobs: &mut impl crate::store::RecoveryJobs) -
     Record::from_json(&r.to_json())?;
     Ok(r)
 }
-pub(crate) fn recover(
-    store: &mut AnnouncementStore,
-    jobs: &mut impl crate::store::RecoveryJobs,
-    apply: bool,
-) -> Result<()> {
-    for stage in 0..RECOVERY_STAGES {
-        let mut after = None;
-        loop {
-            after = recover_page(store, jobs, apply, stage, after)?.1;
-            if after.is_none() {
-                break;
-            }
-        }
-    }
-    Ok(())
-}
-
-/// Stages of route recovery: announcements with a route (aborting
-/// interrupted reservations when `apply`), then IRC-origin requests.
-pub(crate) const RECOVERY_STAGES: u8 = 2;
-
 /// One page of route recovery: the rows read and the next cursor.
 pub(crate) fn recover_page(
     store: &mut AnnouncementStore,
@@ -1017,6 +996,11 @@ impl Engine {
             file,
             file_length,
             release: RecordedRelease {
+                source_id: source
+                    .announcement_lookup
+                    .as_ref()
+                    .map(|lookup| lookup.indexer.clone()),
+                size_bytes: Some(file_length),
                 title: record.announcement.title.clone(),
                 profile: rule.profile.clone(),
             },

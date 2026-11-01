@@ -59,7 +59,7 @@ fn retired_source_growth_above_both_old_limits_preserves_late_control_and_restar
         index.commit(changes).unwrap();
     }
     assert!(bytes > 2 * 1024 * 1024);
-    assert_eq!(index.len().unwrap(), 10_002 + 3);
+    assert_eq!(index.len().unwrap(), 10_002 + 2);
     drop(index);
     let id = format!("source-{:057x}", 10_001);
     let late = config(&directory, &id);
@@ -85,7 +85,7 @@ fn retired_source_growth_above_both_old_limits_preserves_late_control_and_restar
     assert_eq!(row.get("policy_revision").unwrap().as_str(), Some("2"));
     drop(readonly);
     let mut index = Index::open(&late.store_dir.join("indexers.idx"), true).unwrap();
-    assert_eq!(index.len().unwrap(), 10_002 + 3);
+    assert_eq!(index.len().unwrap(), 10_002 + 2);
     assert_eq!(
         index.get(&key(0x10, Some("first"))).unwrap().unwrap(),
         first_record

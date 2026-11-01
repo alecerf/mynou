@@ -5,7 +5,7 @@ use crate::{
     Result,
     config::Config,
     json::Value,
-    requesters::{digest, valid_digest, valid_id},
+    requesters::{valid_digest, valid_id},
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -14,9 +14,6 @@ use std::{
 pub(crate) mod generation;
 mod storage;
 
-const MAGIC: &[u8; 8] = b"MYNOUF01";
-const MAX_BYTES: usize = 4 * 1024 * 1024;
-const MAX_ROWS: usize = 1_000;
 /// Deduplication window per source; the oldest identities leave first.
 pub(crate) const MAX_SEEN: usize = 1_024;
 pub(crate) const MAX_WATCHED: usize = 64;
@@ -232,7 +229,7 @@ impl FeedStore {
     pub(crate) fn open(dir: &Path, config: &Config, read_only: bool) -> Result<Self> {
         let mut storage = storage::Storage::open(dir, read_only)?;
         let mut watched = BTreeMap::new();
-        // Validate every configured binding before publishing any migration.
+        // Validate every configured binding before writing anything.
         for source in &config.sources {
             let id = source.options.identity(source);
             let binding = source.options.binding(source);
@@ -354,9 +351,6 @@ impl FeedStore {
     pub(crate) fn total(&mut self) -> Result<u64> {
         self.storage.total()
     }
-    pub(crate) fn needs_migration(&self) -> bool {
-        self.storage.needs_migration()
-    }
     pub(crate) fn retained(&mut self, after: Option<&str>, limit: usize) -> Result<Value> {
         let page = self
             .storage
@@ -382,7 +376,6 @@ impl FeedStore {
         );
         value.insert("total", page.total.to_string());
         value.insert("sequence", page.sequence.to_string());
-        value.insert("needs_migration", self.needs_migration());
         Ok(value)
     }
 }

@@ -322,3 +322,128 @@ fn transfer_admission_and_restart_keep_magnet_names_offline_and_use_custom_http(
     drop(client);
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn local_metadata_rejects_special_files_and_a_fifo_swapped_in_after_inspection() {
+    let root = std::env::temp_dir().join(format!(
+        "mynou-source-special-{}",
+        hex(&crate::crypto::random_bytes::<8>().unwrap())
+    ));
+    fs::create_dir(&root).unwrap();
+    let path = root.join("source.torrent");
+    fs::write(&path, metadata()).unwrap();
+    crate::store::BEFORE_PRIVATE_OPEN.with(|hook| {
+        let path = path.clone();
+        *hook.borrow_mut() = Some(Box::new(move |opening| {
+            if opening == path {
+                fs::remove_file(&path).unwrap();
+                let _spawning = crate::store::SPAWNING.write().unwrap();
+                assert!(
+                    std::process::Command::new("mkfifo")
+                        .arg(&path)
+                        .status()
+                        .unwrap()
+                        .success()
+                );
+            }
+        }));
+    });
+    let swapped = Source::parse(&Fake::default(), path.to_str().unwrap());
+    crate::store::BEFORE_PRIVATE_OPEN.with(|hook| *hook.borrow_mut() = None);
+    let special = Source::parse(&Fake::default(), path.to_str().unwrap());
+    fs::remove_dir_all(&root).unwrap();
+    assert!(swapped.is_err());
+    assert_eq!(
+        special.err().as_deref(),
+        Some("Torrent source must be a regular file")
+    );
+}
+
+#[test]
+fn indexer_seed_policy_initializes_new_transfers_and_preserves_user_edits() {
+    let root = std::env::temp_dir().join(format!(
+        "mynou-indexer-seed-{}",
+        hex(&crate::crypto::random_bytes::<8>().unwrap())
+    ));
+    let config = DownloadConfig {
+        state_dir: root.join("state"),
+        data_dir: root.join("data"),
+        listen_port: 0,
+        seed: false,
+        dht: false,
+        pex: false,
+        max_active: 1,
+        max_seeding: 0,
+        max_peers: 4,
+    };
+    let network: Arc<dyn transport::Network> = Arc::new(Fake::default());
+    let defaults = TransferPolicy {
+        upload_limit_bps: 1024,
+        seed_time_secs: Some(600),
+        ..Default::default()
+    };
+    let options = crate::indexers::Options::from_json(
+        &crate::json::parse(r#"{"seed_ratio_milli":2500}"#).unwrap(),
+        "http://127.0.0.1",
+    )
+    .unwrap();
+    let initial = options.seed_policy(&defaults).unwrap();
+    assert_eq!(initial.seed_ratio_milli, Some(2500));
+    assert_eq!(initial.seed_time_secs, Some(600));
+    let client = Client::open_with_policy_and_admission(
+        config.clone(),
+        defaults.clone(),
+        Arc::new(|_| Ok(true)),
+        network.clone(),
+    )
+    .unwrap();
+    let source = format!("magnet:?xt=urn:btih:{}", "ab".repeat(20));
+    let status = client
+        .ensure_acquisition(&source, None, None, Some(initial.clone()))
+        .unwrap();
+    assert_eq!(
+        client.controls(&status.id).unwrap().policy,
+        Some(initial.clone())
+    );
+    let saved = TorrentControl::decode(
+        &fs::read(config.state_dir.join(format!("{}.control", status.id))).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(saved.policy, Some(initial.clone()));
+    let edited = TransferPolicy {
+        seed_ratio_milli: Some(4000),
+        ..defaults
+    };
+    client.set_policy(&status.id, Some(edited.clone())).unwrap();
+    client
+        .ensure_acquisition(&source, None, None, Some(initial.clone()))
+        .unwrap();
+    assert_eq!(
+        client.controls(&status.id).unwrap().policy,
+        Some(edited.clone())
+    );
+    drop(client);
+    let client = Client::open_with_policy_and_admission(
+        config,
+        TransferPolicy::default(),
+        Arc::new(|_| Ok(true)),
+        network,
+    )
+    .unwrap();
+    client
+        .ensure_acquisition(&source, None, None, Some(initial))
+        .unwrap();
+    assert_eq!(client.controls(&status.id).unwrap().policy, Some(edited));
+    client.set_policy(&status.id, None).unwrap();
+    client
+        .ensure_acquisition(
+            &source,
+            None,
+            None,
+            options.seed_policy(&TransferPolicy::default()),
+        )
+        .unwrap();
+    assert_eq!(client.controls(&status.id).unwrap().policy, None);
+    drop(client);
+    fs::remove_dir_all(root).unwrap();
+}

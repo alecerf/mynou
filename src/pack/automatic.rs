@@ -517,6 +517,17 @@ impl Engine {
             integrations::search_pack_candidates(
                 &self.configuration_for_request(&request)?,
                 &request,
+                // A season release covers the catalog season, including episodes
+                // already owned, rather than only the missing requested subset.
+                Some(
+                    scope
+                        .record
+                        .plan
+                        .episodes
+                        .iter()
+                        .filter(|ep| ep.season == query.season)
+                        .count() as u32,
+                ),
                 deadline,
             )?
         };
@@ -658,6 +669,8 @@ impl Engine {
                 candidate_id: candidate.id,
                 torrent_id: metadata.id,
                 release: RecordedRelease {
+                    source_id: candidate.source_id,
+                    size_bytes: candidate.size_bytes,
                     title: candidate.title,
                     profile: candidate.profile,
                 },
@@ -870,6 +883,8 @@ mod tests {
             candidate_id: "c".repeat(64),
             torrent_id: "d".repeat(40),
             release: RecordedRelease {
+                source_id: None,
+                size_bytes: None,
                 title: "Fixture.Series.S01".into(),
                 profile: "any".into(),
             },

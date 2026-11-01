@@ -114,7 +114,6 @@ private paths and raw error strings do not enter these logs.
 | `media_volume_unavailable` / `download_volume_unavailable` | Mount the configured volume; check the account's directory access, then start again. |
 | `state_directory_unavailable` | Restore the data directory's `state/` and account access; do not initialize an empty substitute for missing state. |
 | `runtime_failed` | Check `doctor`, the authenticated status API and filesystem permissions. After a graceful stop, run `serve` interactively if fuller local diagnostics are needed. Keep that output private. |
-| `storage_migration` | Inspect startup progress with `status`; leave the process running while it migrates. |
 | `stopped_cleanly` | Work drained and the supervisor returned successfully. |
 | Loaded process but no log or API | Check the binary and data directory paths and macOS privacy permissions; a process blocked by the OS before main cannot write a Mynou diagnostic. |
 

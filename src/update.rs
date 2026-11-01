@@ -1,6 +1,7 @@
 //! Daily self-update from the latest published release, the way Plex Media
 //! Server updates itself. A newer executable is downloaded, verified against
-//! the release's `SHA256SUMS` and staged next to the running one. It is
+//! the release's `SHA256SUMS`, whose signature by the release key is checked
+//! first, and staged next to the running one. It is
 //! installed when Mynou is idle: Mynou stops cleanly, backs up `state/` and
 //! the previous executable under `updates/` in the data directory, swaps the
 //! executable and restarts on it. If the new version cannot open the storage,
@@ -29,6 +30,16 @@ const FIRST_CHECK: Duration = Duration::from_secs(300);
 const MAX_EXECUTABLE: usize = 256 * 1024 * 1024;
 const KEPT_BACKUPS: usize = 2;
 const NOT_RELEASE: &str = "Only published release executables update themselves";
+/// The public half of the release key (P-256, uncompressed point). The
+/// private half never reaches GitHub: the maintainer signs `SHA256SUMS` on
+/// their own Mac, so a compromised account or workflow cannot ship an update.
+const RELEASE_KEY: [u8; 65] = [
+    0x04, 0x72, 0xc8, 0x58, 0x94, 0x03, 0xe1, 0xf0, 0x79, 0x81, 0x27, 0x34, 0x71, 0x0b, 0xb3, 0x53,
+    0x0d, 0x36, 0x28, 0x7a, 0xfb, 0xba, 0xfa, 0x29, 0x1f, 0x21, 0x9d, 0x95, 0x4f, 0x54, 0x25, 0x33,
+    0x5b, 0x15, 0xe5, 0x00, 0xbb, 0xad, 0x6f, 0xde, 0xa5, 0xcd, 0x90, 0x7a, 0x6f, 0x55, 0x21, 0xe6,
+    0x6c, 0x8c, 0xd7, 0xa3, 0xc8, 0xb0, 0x49, 0x40, 0xc3, 0x63, 0x0f, 0x41, 0x55, 0x50, 0xbf, 0x7c,
+    0xf3,
+];
 
 pub type Version = (u32, u32, u32);
 
@@ -47,12 +58,13 @@ pub fn current() -> Version {
     parse_version(env!("CARGO_PKG_VERSION")).expect("the package version is x.y.z")
 }
 
-/// The executable and checksum manifest of a published release.
+/// The executable, checksum manifest and its signature in a published release.
 #[derive(Debug, PartialEq)]
 pub struct Release {
     pub version: Version,
     pub executable: String,
     pub sums: String,
+    pub signature: String,
 }
 
 pub fn asset_name(version: Version) -> String {
@@ -91,7 +103,15 @@ pub fn release(latest: &Value) -> Result<Release> {
         version,
         executable: url(&asset_name(version))?,
         sums: url("SHA256SUMS")?,
+        signature: url("SHA256SUMS.sig")?,
     })
+}
+
+/// Checks that the release key signed `sums` (DER ECDSA over SHA-256, as
+/// `openssl dgst -sha256 -sign` writes it).
+pub fn verify_sums(sums: &[u8], signature: &[u8]) -> Result<()> {
+    crate::pki::verify_ecdsa_p256_sha256(&RELEASE_KEY, sums, signature)
+        .map_err(|_| "Update: SHA256SUMS is not signed by the release key".into())
 }
 
 /// The digest `SHA256SUMS` lists for `name`.
@@ -275,6 +295,7 @@ fn check() -> Result<(Version, Option<Staged>)> {
         Ok(response.body)
     };
     let sums = download(&release.sums, 64 * 1024)?;
+    verify_sums(&sums, &download(&release.signature, 256)?)?;
     let name = asset_name(release.version);
     let digest = checksum(&String::from_utf8_lossy(&sums), &name)
         .ok_or("Update: SHA256SUMS does not list the executable")?;
@@ -552,6 +573,7 @@ mod tests {
         let document = json::parse(
             r#"{"tag_name":"v9.1.2","draft":false,"prerelease":false,"assets":[
               {"name":"SHA256SUMS","url":"https://api.github.com/assets/1"},
+              {"name":"SHA256SUMS.sig","url":"https://api.github.com/assets/3"},
               {"name":"mynou-v9.1.2-macos-arm64","url":"https://api.github.com/assets/2"}]}"#,
         )
         .unwrap();
@@ -561,6 +583,7 @@ mod tests {
                 version: (9, 1, 2),
                 executable: "https://api.github.com/assets/2".into(),
                 sums: "https://api.github.com/assets/1".into(),
+                signature: "https://api.github.com/assets/3".into(),
             }
         );
         let draft =
@@ -571,6 +594,22 @@ mod tests {
                 .unwrap();
         assert!(release(&missing).unwrap_err().contains("lacks"));
     }
+
+    #[test]
+    fn only_manifests_signed_by_the_release_key_are_trusted() {
+        // Signed with the release key by `openssl dgst -sha256 -sign`.
+        let sums = format!("{}  mynou-v9.1.2-macos-arm64\n", "cd".repeat(32));
+        let signature = (0..SIGNATURE.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&SIGNATURE[i..i + 2], 16).unwrap())
+            .collect::<Vec<_>>();
+        verify_sums(sums.as_bytes(), &signature).unwrap();
+        let forged = sums.replacen("cd", "ce", 1);
+        assert!(verify_sums(forged.as_bytes(), &signature).is_err());
+        assert!(verify_sums(sums.as_bytes(), &signature[1..]).is_err());
+        assert!(verify_sums(sums.as_bytes(), &[]).is_err());
+    }
+    const SIGNATURE: &str = "3045022100d9e4f7f352dd137de791ad6655a4c01a2917ec384552bc99287fd9e7ff9a7e9e02202b8b9189fb31ffbb38590ab4a2d2630b5a226416475a0a995386496f93950901";
 
     #[test]
     fn checksums_are_read_for_the_named_file_only() {

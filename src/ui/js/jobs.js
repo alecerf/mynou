@@ -1,10 +1,11 @@
-import { TERMINAL_STATES, WORKING, label, formatBytes, timeOf, relativeTime, dateTime, JOB_ICONS, jobTone, toneOf, qualityOf, mediaLabel, mediaLine, fractionOf } from './format.js';
+import { TERMINAL_STATES, WORKING, label, formatBytes, timeOf, relativeTime, dateTime, duration, JOB_ICONS, jobTone, toneOf, qualityOf, qualityFacts, episodeCode, mediaLabel, fractionOf } from './format.js';
 import { $, h, icon, reconcile } from './dom.js';
 import { Motion, progressBar, setProgress, setWorking } from './motion.js';
-import { quality, factList, technical, toast, openDetail, act, skeleton } from './components.js';
+import { quality, toast, openDetail, act, skeleton, sheetPoster, sheetTabs, sheetSection, sheetFacts, copyButton, catalogEntry, artFor } from './components.js';
 import { link } from './link.js';
-import { data, views, itemsOf, titleOf, emptyOrError, byUpdated, transferOf, transferSizes, jobsTail, jobsLoaded } from './store.js';
+import { data, views, itemsOf, titleOf, emptyOrError, byUpdated, transferOf, transferSizes, rateOf, jobsTail, jobsLoaded } from './store.js';
 import { openReleases, requestSearch } from './releases.js';
+import { titleQuality } from './quality.js';
 
 // Jobs: one row per request, server-side search and the job detail.
 
@@ -63,43 +64,149 @@ export function wireJobRows(list) {
   });
 }
 
-export async function openJob(job) {
+/** What a library entry is now: [text, tone]; no text when all is well. */
+export function libraryState(item) {
+  if (item.imports_present === false) return ['File missing', 'bad'];
+  if (item.pending_upgrade_id) return ['Upgrade on its way', 'accent'];
+  if (item.baseline_required || item.group_baseline_required) return ['Release not recorded', 'warn'];
+  return ['', 'ok'];
+}
+
+/** A job's state as its sheet tells it: [text, tone]. */
+function jobStatus(job) {
+  if (job.state === 'ready') {
+    const [text, tone] = libraryState(job);
+    return [text || 'In your library', tone];
+  }
+  return [label('job', job.state), job.state === 'failed' ? 'bad' : jobTone(job.state)];
+}
+
+/** The steps a film or an episode goes through, from what its events recorded. */
+function timeline(job, events) {
+  const list = h('ol', { class: 'sheet-timeline' });
+  const last = events.length - 1;
+  list.append(...events.map((event, i) => {
+    const current = i === last && !TERMINAL_STATES.has(job.state);
+    const bad = event.state === 'failed' || event.state === 'cancelled';
+    const mark = current ? String(i + 1) : icon(bad ? 'alert' : 'check');
+    return h('li', { class: bad ? 'is-bad' : current ? 'is-current' : 'is-done' },
+      h('span', { class: 'timeline-mark' }, mark),
+      h('div', {}, h('strong', {}, event.state ? label('job', event.state) : event.message ?? ''), event.state && event.message ? h('p', {}, event.message) : null),
+      h('time', { class: 'timeline-state' }, dateTime(event.at)));
+  }));
+  return list;
+}
+
+/** The sheet of one film or episode: what it is, its files and how Mynou got it.
+    `back` returns to the sheet it came from, such as its series. */
+export async function openJob(job, back) {
   const request = job.request ?? {};
-  const events = h('ol', { class: 'events' }, skeleton('rows', 3));
+  const title = request.title ?? titleOf(job);
+  const tone = toneOf(title);
+  const episode = request.kind === 'episode';
+  const ready = job.state === 'ready';
+  const traits = qualityOf(job.release?.title);
+  const [statusText, statusTone] = jobStatus(job);
   const transfer = transferOf(job);
   const { done, total } = transferSizes(transfer);
+  const rate = rateOf(transfer);
+  const kind = label('kind', request.kind);
+  const entry = catalogEntry(request);
+
   // A film or an episode Mynou searches for itself can also take a release chosen by hand.
   const searchable = ['movie', 'episode'].includes(request.kind) && !request.source_url && !request.source_path
-    && !job.pack_file && !job.imports?.length && job.state !== 'ready';
+    && !job.pack_file && !job.imports?.length && !ready;
   const retry = job.state === 'failed' || job.state === 'cancelled';
-  const actions = h('div', { class: 'actions' },
-    searchable ? h('button', { type: 'button', onclick: () => openReleases(mediaLabel(request), requestSearch(request), { label: 'Back to the job', run: () => openJob(job) }) },
+  const again = { label: episode ? mediaLabel(request) : title, run: () => openJob(job, back) };
+  const tabs = sheetTabs([
+    ['overview', 'Overview', overviewTab(job, request, entry)],
+    ['files', 'Files & quality', filesTab(job)],
+    ['acquisition', 'Acquisition', acquisitionTab(job, request)],
+  ]);
+  const actions = h('div', { class: 'sheet-actions' },
+    searchable ? h('button', { type: 'button', class: 'primary', onclick: () => openReleases(mediaLabel(request), requestSearch(request), again) },
       icon('search'), 'Choose a release') : null,
-    retry ? h('button', { type: 'button', onclick: (e) => act(e.currentTarget, () => link.call('POST', `/api/jobs/${encodeURIComponent(job.id)}/retry`, {}), 'Retry queued') },
-      icon('retry'), 'Search again') : null);
-  openDetail({ title: request.title ?? titleOf(job), tone: toneOf(request.title ?? job.id) },
-    h('p', { class: 'detail-sub' }, [mediaLine(request), label('kind', request.kind)].filter((v, i, all) => v && all.indexOf(v) === i).join(' · ')),
-    quality(qualityOf(job.release?.title)),
-    actions.childElementCount ? actions : null,
-    factList([
-      ['Status', label('job', job.state)],
-      ['Progress', job.state === 'downloading' ? `${Math.round(fractionOf(job.progress) * 100)}%${total ? ` · ${formatBytes(done)} of ${formatBytes(total)}` : ''}` : null],
-      ['Problem', job.last_error],
-      ['Attempts', Number(job.attempts) ? job.attempts : null],
-      ['Next attempt', !TERMINAL_STATES.has(job.state) && dateTime(job.next_attempt_at)],
+    retry ? h('button', { type: 'button', class: searchable ? 'secondary' : 'primary', onclick: (e) => act(e.currentTarget, () => link.call('POST', `/api/jobs/${encodeURIComponent(job.id)}/retry`, {}), 'Retry queued') },
+      icon('retry'), 'Search again') : null,
+    h('button', { type: 'button', class: 'secondary', onclick: () => tabs.show('acquisition') }, icon('jobs'), 'See the acquisition'));
+  const downloading = job.state === 'downloading';
+  const progress = downloading ? h('div', { class: 'sheet-progress' },
+    progressBar('Download progress'),
+    h('p', {}, [`${Math.round(fractionOf(job.progress) * 100)}%`, total && `${formatBytes(Math.min(done, total))} of ${formatBytes(total)}`,
+      rate && `${formatBytes(rate)}/s`, rate && total > done && `${duration((total - done) / rate)} left`].filter(Boolean).join(' · '))) : null;
+  if (progress) setProgress($('.progress', progress), `sheet:${job.id}`, fractionOf(job.progress));
+
+  const side = h('div', {},
+    sheetPoster(title, tone, artFor(request), episode ? episodeCode(request) : Number(request.year) ? String(request.year) : ''),
+    h('div', { class: 'sheet-sidebar-info' },
+      h('span', { class: 'chip', dataset: { tone: statusTone } }, icon(statusTone === 'bad' ? 'alert' : ready ? 'check' : JOB_ICONS[job.state] ?? 'clock'), statusText),
+      traits.length ? quality(traits) : null));
+  openDetail({ title, tone, side, crumb: [ready ? 'Your collection' : 'Activity', kind], eyebrow: [kind, episode ? episodeCode(request) : null].filter(Boolean).join(' · ') },
+    back ? h('button', { type: 'button', class: 'text-link back', onclick: back.run }, `← ${back.label}`) : null,
+    h('p', { class: 'detail-sub' }, [episode ? null : Number(request.year) ? request.year : null, ...traits].filter(Boolean).join(' · ')),
+    // The chip beside the poster gives the state; only a failure needs words here.
+    job.last_error ? h('p', { class: 'sheet-status', dataset: { tone: 'bad' } }, job.last_error) : null,
+    progress,
+    actions,
+    tabs);
+}
+
+function overviewTab(job, request, entry) {
+  const highlights = qualityFacts(job.release?.title).slice(0, 3);
+  const synopsis = h('div');
+  // The synopsis comes from TMDB, the one entry with this title's id.
+  entry.then((found) => { if (found?.overview) synopsis.replaceChildren(sheetSection('Synopsis', h('p', { class: 'sheet-synopsis' }, found.overview))); });
+  return [
+    synopsis,
+    highlights.length ? h('div', { class: 'sheet-highlights' }, highlights.map(([name, value]) => h('div', {}, h('strong', {}, value.split(' · ')[0]), h('span', {}, name)))) : null,
+    request.kind === 'movie' && request.tmdb_id != null ? sheetSection('Quality for this film', titleQuality('movie', request.tmdb_id)) : null,
+    // The title, year and kind head the sheet already; this says what happened to it.
+    sheetSection('About this title', sheetFacts([
+      ['Upgrades', job.state === 'ready' ? (job.monitored ? 'Watched for a better release' : 'Not watched') : null],
+      ['Last upgrade check', job.monitored && dateTime(job.monitor_checked_at)],
       ['Requested', dateTime(job.created_at)],
-      ['Updated', dateTime(job.updated_at)],
-    ]),
-    h('h3', {}, 'Events'), events,
-    technical([
-      ['Job ID', job.id], ['Release', job.release?.title], ['Profile', job.release?.profile], ['TMDB ID', request.tmdb_id],
-      ['Transfer', job.download_id], ['Files', job.files], ['Imports', job.imports], ['Pack file', job.pack_file],
-    ]));
-  try {
-    const list = itemsOf(await link.call('GET', `/api/jobs/${encodeURIComponent(job.id)}/events`));
-    events.replaceChildren(...(list.length ? list.map((e) => h('li', {}, h('time', {}, dateTime(e.at)), h('span', {}, [label('job', e.state), e.message].filter(Boolean).join(' · '))))
-      : [h('li', { class: 'muted' }, 'No events recorded.')]));
-  } catch (e) { events.replaceChildren(h('li', { class: 'error' }, e.message)); }
+      [job.state === 'ready' ? 'Added' : 'Updated', dateTime(job.updated_at)],
+    ])),
+  ];
+}
+
+function filesTab(job) {
+  const imports = itemsOf(job.imports);
+  const downloaded = itemsOf(job.files);
+  const file = (path, tag, chip) => h('article', { class: 'sheet-file' },
+    h('div', { class: 'sheet-file-title' }, h('span', { class: 'badge' }, tag), h('strong', {}, String(path).split('/').at(-1)), chip ? h('span', { class: 'chip' }, chip) : null),
+    h('code', {}, path),
+    h('div', { class: 'sheet-file-actions' }, copyButton(path)));
+  const ext = (path) => (String(path).match(/\.([a-z0-9]{2,4})$/i)?.[1] ?? 'file').toUpperCase();
+  return [
+    sheetSection('Quality', sheetFacts([...qualityFacts(job.release?.title), ['Release', job.release?.title], ['Profile', job.release?.profile]])
+      ?? h('p', { class: 'muted' }, 'No release recorded yet: its quality appears once Mynou picks one.')),
+    sheetSection(imports.length ? 'In your library' : 'Files',
+      ...(imports.length ? imports.map((path) => file(path, ext(path), job.imports_present === false ? 'Missing' : 'Current version'))
+        : downloaded.length ? downloaded.map((path) => file(path, ext(path), 'Downloaded'))
+        : [h('p', { class: 'muted' }, 'No file yet. The files appear here once the download is imported.')]),
+      job.pack_file ? h('p', { class: 'muted' }, `From the pack file ${job.pack_file}`) : null),
+  ];
+}
+
+function acquisitionTab(job, request) {
+  const steps = h('div', {}, skeleton('lines', 3));
+  link.call('GET', `/api/jobs/${encodeURIComponent(job.id)}/events`).then((answer) => {
+    const events = itemsOf(answer);
+    steps.replaceChildren(events.length ? timeline(job, events) : h('p', { class: 'muted' }, 'No events recorded.'));
+  }, (error) => steps.replaceChildren(h('p', { class: 'error' }, error.message)));
+  return [
+    sheetSection(request.kind === 'episode' ? 'How this episode arrived' : 'How this film arrived', steps),
+    sheetSection('Release and selection', sheetFacts([
+      ['Release', job.release?.title], ['Profile', job.release?.profile],
+      ['Problem', job.last_error], ['Attempts', Number(job.attempts) ? job.attempts : null],
+      ['Next attempt', !TERMINAL_STATES.has(job.state) && dateTime(job.next_attempt_at)],
+    ]) ?? h('p', { class: 'muted' }, 'Mynou has not picked a release yet.')),
+    h('details', { class: 'sheet-diagnostics' }, h('summary', {}, 'Identifiers and diagnostics'), sheetFacts([
+      ['Job ID', job.id], ['TMDB ID', request.tmdb_id], ['Transfer', job.download_id], ['Upgrade job', job.pending_upgrade_id],
+      ['Requester account', job.requester?.account_id], ['Pack file', job.pack_file],
+    ], 'mono')),
+  ];
 }
 
 let jobStates = new Set();   // active state filters

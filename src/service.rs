@@ -11,17 +11,6 @@ use std::{
 };
 
 const MAX_LOG: u64 = 65_536;
-static LOG_DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
-
-/// Replace the foreground migration reporter with secret-free service events.
-pub fn report_progress(data_dir: &Path) {
-    let _ = LOG_DIR.set(data_dir.to_owned());
-    crate::progress::set_reporter(|_| {
-        if let Some(path) = LOG_DIR.get() {
-            let _ = log(path, "storage_migration");
-        }
-    });
-}
 
 fn absolute(path: &Path) -> Result<()> {
     if !path.is_absolute()

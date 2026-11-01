@@ -5,8 +5,7 @@
 //! none enumerates the inventory.
 use super::{Job, JobLookup, Result, layout::*, ops::Db};
 
-/// Checks that need only to read other jobs by identifier, so the same rules
-/// validate a legacy snapshot in memory and a transaction against the index.
+/// Checks that need only to read other jobs by identifier.
 pub(super) fn validate_lineage<L: JobLookup>(lookup: &mut L, job: &Job) -> Result<()> {
     if let Some(origin) = &job.irc_origin {
         origin.validate_job(job)?;

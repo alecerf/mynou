@@ -58,7 +58,7 @@ impl Failure {
 pub(crate) struct Mapping {
     /// The public TCP port, on which the torrent listener must accept.
     pub port: u16,
-    pub lifetime: Duration,
+    pub expiry: Instant,
 }
 
 /// RFC 6886 retransmission (first wait, doubling, attempts) within a total
@@ -108,7 +108,10 @@ fn answer(op: u8, packet: &[u8]) -> Option<Result<Mapping, Failure>> {
     }
     // A gateway should not grant more than requested; never trust longer.
     let lifetime = Duration::from_secs(lifetime.min(LIFETIME).into());
-    Some(Ok(Mapping { port, lifetime }))
+    Some(Ok(Mapping {
+        port,
+        expiry: Instant::now() + lifetime,
+    }))
 }
 
 fn map(
@@ -125,6 +128,9 @@ fn map(
     for _ in 0..timing.attempts {
         if stop.load(Ordering::Acquire) {
             return Err(Failure::Unavailable);
+        }
+        if Instant::now() >= deadline {
+            break;
         }
         socket
             .send_to(&packet, gateway)
@@ -170,9 +176,13 @@ pub(crate) fn acquire(
     let deadline = Instant::now() + timing.budget;
     let udp = map(&*socket, gateway, UDP, timing, stop, deadline)?;
     let tcp = map(&*socket, gateway, TCP, timing, stop, deadline)?;
+    let expiry = udp.expiry.min(tcp.expiry);
+    if expiry <= Instant::now() {
+        return Err(Failure::Timeout);
+    }
     Ok(Mapping {
         port: tcp.port,
-        lifetime: udp.lifetime.min(tcp.lifetime),
+        expiry,
     })
 }
 
@@ -288,29 +298,28 @@ fn run(shared: &Shared, network: &dyn Network, gateway: Ipv4Addr, timing: Timing
     let mut retry = timing.retry;
     let mut expiry: Option<Instant> = None;
     while !shared.stop.load(Ordering::Acquire) {
-        let wait = match acquire(network, gateway, &timing, &shared.stop) {
+        let until = match acquire(network, gateway, &timing, &shared.stop) {
             Ok(mapping) => {
-                let at = Instant::now() + mapping.lifetime;
-                expiry = Some(at);
+                expiry = Some(mapping.expiry);
                 shared.set(Status::Active(mapping.port), expiry);
                 retry = timing.retry;
-                mapping.lifetime * 3 / 4
+                let now = Instant::now();
+                now + mapping.expiry.saturating_duration_since(now) * 3 / 4
             }
             Err(failure) => match expiry {
                 // The held port stays valid until its lease ends.
-                Some(at) if Instant::now() < at => retry.min(at - Instant::now()),
+                Some(at) if Instant::now() < at => (Instant::now() + retry).min(at),
                 _ => {
                     expiry = None;
                     shared.set(Status::Unavailable(failure.reason()), None);
                     let wait = retry;
                     retry = retry.saturating_mul(2).min(timing.retry_max);
-                    wait
+                    Instant::now() + wait
                 }
             },
         };
-        let until = Instant::now() + wait;
         while !shared.stop.load(Ordering::Acquire) && Instant::now() < until {
-            thread::sleep((until - Instant::now()).min(POLL));
+            thread::sleep(until.saturating_duration_since(Instant::now()).min(POLL));
         }
     }
 }

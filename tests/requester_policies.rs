@@ -36,16 +36,19 @@ fn account_configuration_is_bounded_strict_and_backwards_compatible() {
     value.insert("requesters", settings.clone());
     assert!(config::from_json(&value, Path::new(".")).is_err());
     for query in [
-        "offset=0&limit=201",
-        "offset=10001",
+        "limit=201",
+        "offset=0",
         "limit=0",
-        "offset=-1",
+        "limit=+1",
         "limit=1&limit=2",
         "token=private",
     ] {
-        assert!(mynou::requesters::page(query).is_err());
+        assert!(mynou::requesters::cursor_page(query).is_err(), "{query}");
     }
-    assert_eq!(mynou::requesters::page("offset=2&limit=3").unwrap(), (2, 3));
+    assert_eq!(
+        mynou::requesters::cursor_page("limit=3").unwrap(),
+        (None, 3)
+    );
 }
 #[test]
 fn new_accounts_require_explicit_opt_in_before_queueing() {
@@ -248,6 +251,8 @@ fn uncaptured_operator_jobs_require_verified_ready_imports_and_compatible_qualit
                 "blocked_baseline" | "accepted_baseline" | "profile_mismatch"
             ) {
                 operator.release = Some(mynou::store::RecordedRelease {
+                    source_id: None,
+                    size_bytes: None,
                     title: format!(
                         "Fixture.Movie.2024.1080p.BluRay.x264{}",
                         if case == "blocked_baseline" {
@@ -393,7 +398,7 @@ fn partial_failure_and_identity_mismatch_preserve_each_accounts_cursor_and_deman
     no_credentials(&result);
     assert_eq!(
         engine
-            .requester("alice", 0, 100)
+            .requester("alice", None, 100)
             .unwrap()
             .get("cursor")
             .unwrap()
@@ -402,7 +407,7 @@ fn partial_failure_and_identity_mismatch_preserve_each_accounts_cursor_and_deman
     );
     assert_eq!(
         engine
-            .requester("bob", 0, 100)
+            .requester("bob", None, 100)
             .unwrap()
             .get("cursor")
             .unwrap()
@@ -422,7 +427,7 @@ fn partial_failure_and_identity_mismatch_preserve_each_accounts_cursor_and_deman
     engine.sync_requesters().unwrap();
     assert_eq!(
         engine
-            .requester("alice", 0, 100)
+            .requester("alice", None, 100)
             .unwrap()
             .get("last_error")
             .unwrap()
@@ -451,7 +456,7 @@ fn policy_changes_during_poll_discard_the_result_before_acquisition() {
     assert!(lock(&engine.store).unwrap().list().unwrap().is_empty());
     assert_eq!(
         engine
-            .requester("alice", 0, 100)
+            .requester("alice", None, 100)
             .unwrap()
             .get("cursor")
             .unwrap()
@@ -545,52 +550,6 @@ fn captured_destination_and_profile_cannot_be_rebound_through_job_updates() {
     q.plan_id = Some(preview.get("plan_id").unwrap().as_str().unwrap().into());
     assert!(engine.requester_control("alice", &q).is_err());
     assert_ne!(jobs_state::fingerprint(&engine.config.store_dir), before);
-}
-#[test]
-fn reservation_recovery_is_idempotent_and_corruption_or_missing_provenance_fails_closed() {
-    let dir = Directory::new();
-    let accounts = Accounts::open();
-    accounts.watchlist("alice", vec![movie(7, "Fixture Movie")]);
-    let cfg = accounts.config(&dir.0);
-    let engine = Engine::open_for_management(cfg.clone()).unwrap();
-    enable(&engine, "alice");
-    engine.sync_requesters().unwrap();
-    let acquired = job(&engine, "alice");
-    let admitted = demand(&engine, "alice").get("admitted_at").cloned();
-    drop(engine);
-    let mut snapshot = read_snapshot(&cfg.store_dir);
-    let Value::Array(rows) = snapshot.get_mut("demands").unwrap() else {
-        panic!("demand array")
-    };
-    let d = &mut rows[0];
-    d.insert("state", "reserved");
-    d.insert("job_id", Value::Null);
-    write_snapshot(&cfg.store_dir, &snapshot);
-    let engine = Engine::open_for_management(cfg.clone()).unwrap();
-    engine.sync_requesters().unwrap();
-    assert_eq!(job(&engine, "alice").id, acquired.id);
-    assert_eq!(lock(&engine.store).unwrap().list().unwrap().len(), 1);
-    assert_eq!(
-        demand(&engine, "alice").get("admitted_at").cloned(),
-        admitted
-    );
-    drop(engine);
-    let saved = fs::read(cfg.store_dir.join("requesters.bin")).unwrap();
-    let mut corrupt = saved.clone();
-    corrupt[20] ^= 1;
-    fs::write(cfg.store_dir.join("requesters.bin"), corrupt).unwrap();
-    assert!(Engine::open_for_management(cfg.clone()).is_err());
-    fs::write(cfg.store_dir.join("requesters.bin"), &saved).unwrap();
-    fs::remove_file(cfg.store_dir.join("requesters.bin")).unwrap();
-    assert!(Engine::open_for_management(cfg.clone()).is_err());
-    fs::write(cfg.store_dir.join("requesters.bin"), saved).unwrap();
-    // Requester provenance in a snapshot of a format that predates it.
-    let jobs = mynou::store::Store::open(&cfg.store_dir)
-        .unwrap()
-        .list()
-        .unwrap();
-    jobs_state::downgrade_as(&cfg.store_dir, &jobs, Some(b"MYNOUS01"));
-    assert!(Engine::open_for_management(cfg).is_err());
 }
 #[test]
 fn legacy_operator_interest_is_retained_when_the_last_requester_removes_demand() {
@@ -709,65 +668,4 @@ fn canonical_episode_demand_retains_captured_source_numbering_when_series_policy
     let engine = Engine::open_for_management(cfg).unwrap();
     engine.sync_requesters().unwrap();
     assert_eq!(job(&engine, "alice").request, acquired.request);
-}
-
-#[test]
-fn an_indexed_requester_job_recovers_a_missing_marker_without_an_empty_preflight() {
-    let dir = Directory::new();
-    let accounts = Accounts::open();
-    accounts.watchlist("alice", vec![movie(7, "Fixture Movie")]);
-    let cfg = accounts.config(&dir.0);
-    let engine = Engine::open_for_management(cfg.clone()).unwrap();
-    enable(&engine, "alice");
-    engine.sync_requesters().unwrap();
-    let acquired = job(&engine, "alice");
-    drop(engine);
-    fs::remove_file(cfg.store_dir.join("snapshot.bin")).unwrap();
-    let reopened = Engine::open_for_management(cfg.clone()).unwrap();
-    assert_eq!(job(&reopened, "alice"), acquired);
-    assert!(cfg.store_dir.join("snapshot.bin").exists());
-}
-
-#[test]
-fn invalid_requester_links_leave_legacy_job_files_unmigrated() {
-    let dir = Directory::new();
-    let accounts = Accounts::open();
-    accounts.watchlist("alice", vec![movie(7, "Fixture Movie")]);
-    let cfg = accounts.config(&dir.0);
-    let engine = Engine::open_for_management(cfg.clone()).unwrap();
-    enable(&engine, "alice");
-    engine.sync_requesters().unwrap();
-    let acquired = job(&engine, "alice");
-    drop(engine);
-    jobs_state::downgrade(&cfg.store_dir, &[acquired]);
-    let original = fs::read(cfg.store_dir.join("snapshot.bin")).unwrap();
-    let mut ledger = read_snapshot(&cfg.store_dir);
-    let Value::Array(rows) = ledger.get_mut("demands").unwrap() else {
-        panic!("Expected demands");
-    };
-    rows[0].insert("job_id", "f".repeat(32));
-    write_snapshot(&cfg.store_dir, &ledger);
-    let saved_ledger = fs::read(cfg.store_dir.join("requesters.bin")).unwrap();
-    let error = match Engine::open_for_management(cfg.clone()) {
-        Ok(_) => panic!("A broken legacy requester link was accepted"),
-        Err(error) => error,
-    };
-    assert!(error.contains("Requester:"), "{error}");
-    assert_eq!(
-        fs::read(cfg.store_dir.join("snapshot.bin")).unwrap(),
-        original
-    );
-    assert_eq!(
-        fs::read(cfg.store_dir.join("requesters.bin")).unwrap(),
-        saved_ledger
-    );
-    assert!(!cfg.store_dir.join("jobs.idx").exists());
-    assert!(!cfg.store_dir.join("jobs.idx.migrating").exists());
-    assert!(!fs::read_dir(&cfg.store_dir).unwrap().any(|entry| {
-        entry
-            .unwrap()
-            .file_name()
-            .to_string_lossy()
-            .contains("legacy-")
-    }));
 }

@@ -187,27 +187,6 @@ fn recovered_record(mut r: Record, requesters: &impl requesters::LedgerRead) -> 
     Record::from_json(&r.to_json())?;
     Ok(r)
 }
-pub(crate) fn recover(
-    store: &mut AnnouncementStore,
-    requesters: &impl requesters::LedgerRead,
-    apply: bool,
-) -> Result<()> {
-    for stage in 0..RECOVERY_STAGES {
-        let mut after = None;
-        loop {
-            after = recover_page(store, requesters, apply, stage, after)?.1;
-            if after.is_none() {
-                break;
-            }
-        }
-    }
-    Ok(())
-}
-
-/// Stages of admission recovery: announcements with an admission (settling
-/// prepared ones when `apply`), then explicit IRC demands against them.
-pub(crate) const RECOVERY_STAGES: u8 = 2;
-
 /// One page of admission recovery: the rows read and the next cursor.
 pub(crate) fn recover_page(
     store: &mut AnnouncementStore,
@@ -376,7 +355,7 @@ impl Engine {
             .ok_or("IRC: missing requester selector")?;
         let account = ledger
             .state
-            .accounts()
+            .accounts
             .get(account_id)
             .ok_or("IRC: requester account is unavailable")?
             .clone();

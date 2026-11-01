@@ -80,8 +80,8 @@ Web UI / API         Plex watchlists   IRC announcements
   the disk-resident `inventory::Index`. Point lookups and cursor pages keep
   routine reads independent of the total inventory. A directory lock excludes
   concurrent owners; checksummed redo recovers interrupted published commits.
-  Legacy journal/snapshot migration validates and preserves the old files before
-  promotion. Read-only opening creates nothing and repairs nothing; see
+  Only the current format opens. Read-only opening creates nothing and repairs
+  nothing; see
   [storage and recovery](inventory-storage.md#job-storage).
 - `integrations` turns Plex, TMDB and source responses into requests, catalog
   plans and candidates. `indexers` keeps source policy, authentication sessions

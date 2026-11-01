@@ -1,5 +1,5 @@
 import { $, h, icon } from './dom.js';
-import { act, busy, openDetail, toast, skeleton } from './components.js';
+import { act, busy, openDetail, toast, skeleton, poster, sheetPoster, sheetSection } from './components.js';
 import { Motion } from './motion.js';
 import { link } from './link.js';
 import { views, itemsOf, loadedItems, jobsLoaded, libraryTail, seriesTail } from './store.js';
@@ -33,6 +33,7 @@ views.requests = {
       const search = ++searches;
       await act($('button[type="submit"]', form), async () => {
         meta.hidden = false;
+        $('#request-idle').hidden = true;
         meta.textContent = 'Searching TMDB…';
         out.replaceChildren(skeleton('cards', 10));
         const results = itemsOf((await link.call('GET', `/api/catalog?${params}`)).results);
@@ -57,29 +58,7 @@ function clear() {
   searches += 1;
   $('#catalog-out').replaceChildren();
   $('#catalog-meta').hidden = true;
-}
-
-// Posters come from the service as data URLs: the page never loads anything
-// from another origin. A few are read at a time, each once.
-const posters = new Map();   // TMDB path -> Promise<data URL | null>
-const waiting = [];
-let reading = 0;
-const DATA_URL = /^data:image\/(jpeg|png);base64,[A-Za-z0-9+/=]+$/;
-function poster(path) {
-  if (!path) return Promise.resolve(null);
-  if (!posters.has(path)) {
-    posters.set(path, new Promise((resolve) => { waiting.push({ path, resolve }); pump(); }));
-  }
-  return posters.get(path);
-}
-function pump() {
-  while (reading < 4 && waiting.length) {
-    const { path, resolve } = waiting.shift();
-    reading += 1;
-    link.call('GET', `/api/catalog/poster?path=${encodeURIComponent(path)}`)
-      .then((value) => resolve(DATA_URL.test(value?.data_url ?? '') ? value.data_url : null), () => resolve(null))
-      .finally(() => { reading -= 1; pump(); });
-  }
+  $('#request-idle').hidden = false;
 }
 
 /** What Mynou already holds for a TMDB title: a film request, or a followed series. */
@@ -130,8 +109,10 @@ function titleCard(title, index) {
 }
 
 function markCard(card) {
-  const status = card._title && known(card._title);
+  // The grid may hold a loading skeleton between two searches: only results are marked.
   const state = $('.media-state', card);
+  if (!state) return;
+  const status = card._title && known(card._title);
   state.hidden = !status;
   if (status) { state.textContent = status[0]; state.dataset.tone = status[1]; }
 }
@@ -179,8 +160,11 @@ async function openTitle(title) {
   } else {
     actions.append(h('a', { class: 'secondary', href: '#library', onclick: () => $('#detail').close() }, icon('library'), 'Open the library'));
   }
-  openDetail({ title: title.title, tone: coverTone(title.title), art },
-    h('p', { class: 'detail-sub' }, [Number(title.year) ? title.year : null, film ? 'Film' : 'Series', title.original_title].filter(Boolean).join(' · '), ' ', state),
-    title.overview ? h('p', { class: 'title-overview' }, title.overview) : null,
-    actions, note);
+  openDetail({
+    title: title.title, tone: coverTone(title.title), crumb: ['New request', film ? 'Film' : 'Series'], eyebrow: film ? 'Film' : 'Series',
+    side: h('div', {}, sheetPoster(title.title, coverTone(title.title), art, Number(title.year) ? String(title.year) : '')),
+  },
+    h('p', { class: 'detail-sub' }, [Number(title.year) ? title.year : null, title.original_title].filter(Boolean).join(' · '), ' ', state),
+    actions, note,
+    title.overview ? sheetSection('Synopsis', h('p', { class: 'title-overview' }, title.overview)) : null);
 }

@@ -723,6 +723,33 @@ fn cookie_reply_under_load_then_mac2_admission() {
 }
 
 #[test]
+fn handshake_and_cookie_replies_go_to_the_request_source_without_roaming() {
+    // Under the load limit an initiation gets a response; past it, the same
+    // initiation again gets a cookie challenge. Both answer its source.
+    for (load, kinds) in [(100, &[2][..]), (1, &[2, 3][..])] {
+        let mut world = World::new(|_, server| server.handshake_load = load);
+        world.relay.capture = true;
+        world.relay.wait_for(1);
+        let initiation = world.relay.captured[0].0.clone();
+        let source = UdpSocket::bind(loopback()).unwrap();
+        source
+            .set_read_timeout(Some(Duration::from_millis(500)))
+            .unwrap();
+        for &kind in kinds {
+            world
+                .server
+                .inbound(&initiation, source.local_addr().unwrap());
+            let mut buffer = [0; 2048];
+            let (n, _) = source.recv_from(&mut buffer).unwrap();
+            assert!(n > 0);
+            assert_eq!(buffer[0], kind, "load {load}");
+        }
+        assert_eq!(world.server.status().remote, Some(world.relay.address(0)));
+        assert_eq!(world.server.stats().roamed, 0);
+    }
+}
+
+#[test]
 fn junk_handshakes_are_refused_without_counting_as_load() {
     let mut world = World::new(|_, server| server.handshake_load = 2);
     // The flood lands before the genuine initiation, in the same load window.
@@ -1248,7 +1275,9 @@ fn a_replayed_initiation_never_moves_the_remote() {
         std::thread::sleep(Duration::from_millis(1));
     }
     let mut buffer = [0u8; 2048];
-    assert!(spoof.recv_from(&mut buffer).is_err());
+    let (length, _) = spoof.recv_from(&mut buffer).unwrap();
+    assert!(length > 0);
+    assert_eq!(buffer[0], 2);
     assert_eq!(world.server.status().remote, Some(world.relay.address(0)));
     assert_eq!(world.server.stats().roamed, 0);
     // The real client still reconnects the server's new generation.

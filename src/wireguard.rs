@@ -151,8 +151,9 @@ impl Session {
 
     pub fn receive(&mut self, packet: &[u8], generation: u64, now: Duration) -> Result<Accepted> {
         let age = self.admit(generation, now)?;
+        // No alignment is required: a sender pads to 16 bytes only up to its
+        // MTU, so a full-sized packet arrives with any length.
         if !(32..=MAX_DATAGRAM).contains(&packet.len())
-            || !packet.len().is_multiple_of(16)
             || packet[..4] != [4, 0, 0, 0]
             || u32::from_le_bytes(packet[4..8].try_into().unwrap()) != self.local_index
         {

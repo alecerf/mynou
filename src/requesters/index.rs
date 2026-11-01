@@ -20,8 +20,6 @@ const IRC: u8 = 6;
 const OPERATOR: u8 = 7;
 const COUNT: u8 = 8;
 const CHUNK: u8 = 9;
-pub(super) const SOURCE: Key = key_const(10);
-pub(super) const CURSOR: Key = key_const(11);
 pub(super) const OPERATOR_COUNT: Key = key_const(12);
 const POLL: u8 = 13;
 const ORIGIN: u8 = 14;
@@ -35,9 +33,6 @@ const SWEEP_FORMAT: &[u8; 8] = b"MYNOUS01";
 const SWEEP_LEN: usize = 8 + 8 + SweepCursor::ENCODED_LEN + 32 + 8;
 /// Index rows of stale origin generations examined per staged commit.
 const COLLECT_ROWS: usize = 2 * MAX_PAGE_ROWS;
-pub(super) fn account_cursor(account: &str, id: &str) -> Result<Key> {
-    Ok(prefix(ACCOUNT, &[&short(account), &raw(id)?]))
-}
 pub(super) fn primary_cursor(id: &str) -> Result<Key> {
     Ok(prefix(DEMAND, &[&raw(id)?]))
 }
@@ -174,25 +169,19 @@ impl Sweep {
     }
     fn decode(bytes: &[u8]) -> Result<Self> {
         let invalid = || "Requester: invalid watchlist sweep".to_owned();
-        if ![SWEEP_LEN, SWEEP_LEN + 34].contains(&bytes.len()) || &bytes[..8] != SWEEP_FORMAT {
+        if bytes.len() != SWEEP_LEN + 34 || &bytes[..8] != SWEEP_FORMAT {
             return Err(invalid());
         }
-        let (multipass, verification) = if bytes.len() == SWEEP_LEN {
-            // Existing cursors may already span several passes. Confirm them.
-            (true, None)
-        } else {
-            let extra = &bytes[SWEEP_LEN..];
-            if extra[0] > 1
-                || extra[1] > 1
-                || (extra[1] == 0 && extra[2..].iter().any(|byte| *byte != 0))
-            {
-                return Err(invalid());
-            }
-            (
-                extra[0] == 1,
-                (extra[1] == 1).then(|| extra[2..].try_into().expect("fixed digest width")),
-            )
-        };
+        let extra = &bytes[SWEEP_LEN..];
+        if extra[0] > 1
+            || extra[1] > 1
+            || (extra[1] == 0 && extra[2..].iter().any(|byte| *byte != 0))
+        {
+            return Err(invalid());
+        }
+        let multipass = extra[0] == 1;
+        let verification =
+            (extra[1] == 1).then(|| extra[2..].try_into().expect("fixed digest width"));
         let cursor_end = 16 + SweepCursor::ENCODED_LEN;
         let sweep = Self {
             epoch: u64::from_be_bytes(bytes[8..16].try_into().map_err(|_| invalid())?),
@@ -577,42 +566,6 @@ pub(super) fn effective(index: &mut Index, mut demand: Demand) -> Result<Demand>
     Ok(demand)
 }
 
-pub(super) fn legacy_page(
-    state: &State,
-    after: Option<Key>,
-    limit: usize,
-    irc: bool,
-) -> Result<(Vec<Demand>, Option<Key>)> {
-    if limit == 0 || limit > MAX_PAGE_ROWS {
-        return Err("Requester: invalid page size".into());
-    }
-    let mut records = Vec::new();
-    let mut bytes = 0;
-    let mut last = None;
-    for demand in state.demands.values() {
-        if irc
-            && !demand
-                .origins
-                .iter()
-                .any(|origin| origin.starts_with("irc:"))
-        {
-            continue;
-        }
-        let key = prefix(if irc { IRC } else { DEMAND }, &[&raw(&demand.id)?]);
-        if after.is_some_and(|after| key <= after) {
-            continue;
-        }
-        let size = json::stringify(&demand.to_json()).len();
-        if records.len() == limit || (!records.is_empty() && bytes + size > MAX_PAGE_BYTES) {
-            return Ok((records, last));
-        }
-        bytes += size;
-        records.push(demand.clone());
-        last = Some(key);
-    }
-    Ok((records, None))
-}
-
 /// One bounded patch, with all derived entries/counters and the metadata fence.
 pub(super) fn commit(
     index: &mut Index,
@@ -800,20 +753,7 @@ pub(super) fn commit_poll(
 }
 
 pub(super) fn prepare_backlog(index: &mut Index) -> Result<()> {
-    crate::inventory::backlog::prepare(
-        index,
-        prefix(DEMAND, &[]),
-        prefix(DEMAND + 1, &[]),
-        |index, key, _| {
-            let id = hex(&key[1..33]);
-            let demand =
-                get(index, &id)?.ok_or("Requester: missing demand during backlog upgrade")?;
-            Ok((
-                matches!(demand.state.as_str(), "pending" | "reserved" | "conflict"),
-                None,
-            ))
-        },
-    )
+    crate::inventory::backlog::prepare(index, prefix(DEMAND, &[]), prefix(DEMAND + 1, &[]))
 }
 
 #[cfg(test)]
@@ -821,17 +761,13 @@ mod sweep_tests {
     use super::*;
 
     #[test]
-    fn confirmation_progress_round_trips_and_legacy_progress_requires_confirmation() {
+    fn confirmation_progress_round_trips() {
         let mut sweep = Sweep::new(7, 42);
         sweep.cursor.position = 200;
         sweep.cursor.anchor = Some([3; 32]);
         sweep.observe("movie:synthetic");
-        let encoded = sweep.encode();
-        let legacy = Sweep::decode(&encoded[..SWEEP_LEN]).unwrap();
-        assert!(legacy.multipass);
-        assert_eq!(legacy.verification, None);
-        assert_eq!(legacy.cursor, sweep.cursor);
-        assert_eq!(legacy.digest, sweep.digest);
+        assert_eq!(Sweep::decode(&sweep.encode()).unwrap(), sweep);
+        assert!(Sweep::decode(&sweep.encode()[..SWEEP_LEN]).is_err());
         sweep.multipass = true;
         sweep.verification = Some([8; 32]);
         assert_eq!(Sweep::decode(&sweep.encode()).unwrap(), sweep);

@@ -4,7 +4,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::{Arc, Mutex, OnceLock};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 use crate::Result;
 use crate::config::{self, Config, Source};
@@ -216,7 +216,10 @@ fn plex_headers(config: &Config) -> Result<Vec<(String, String)>> {
                 .clone()
                 .map_or_else(|| config::secret(&config.plex.token_env), Ok)?,
         ),
-        ("X-Plex-Client-Identifier".into(), "mynou-rust-std".into()),
+        (
+            "X-Plex-Client-Identifier".into(),
+            crate::plex::client_id(&config.data_dir)?,
+        ),
     ])
 }
 
@@ -787,57 +790,82 @@ pub fn catalog_search(config: &Config, kind: &str, text: &str, year: u32) -> Res
         .get("results")
         .and_then(Value::as_array)
         .ok_or("TMDB catalog: missing results")?;
-    let mut results = Vec::new();
-    for item in items.iter().take(20) {
-        let Some(id) = integer(item, "id").filter(|id| *id > 0 && *id <= 9_007_199_254_740_991)
-        else {
-            continue;
-        };
-        let Some(title) = string(item, if tv { "name" } else { "title" })
-            .map(str::trim)
-            .filter(|t| !t.is_empty() && t.len() <= 512 && !t.chars().any(char::is_control))
-        else {
-            continue;
-        };
-        let mut entry = Value::object();
-        entry.insert("tmdb_id", Value::Number(id as f64));
-        entry.insert("kind", kind);
-        entry.insert("title", title);
-        if let Some(original) = string(
-            item,
-            if tv {
-                "original_name"
-            } else {
-                "original_title"
-            },
-        )
-        .map(str::trim)
-        .filter(|o| {
-            !o.is_empty() && *o != title && o.len() <= 512 && !o.chars().any(char::is_control)
-        }) {
-            entry.insert("original_title", original);
-        }
-        let year = string(item, if tv { "first_air_date" } else { "release_date" })
-            .filter(|text| crate::date::day(text).is_ok())
-            .and_then(|text| text[..4].parse::<u32>().ok());
-        entry.insert(
-            "year",
-            year.map_or(Value::Null, |y| Value::Number(f64::from(y))),
-        );
-        if let Some(overview) = string(item, "overview")
-            .map(str::trim)
-            .filter(|o| !o.is_empty())
-        {
-            entry.insert("overview", report_text(overview, 1_000));
-        }
-        if let Some(poster) = string(item, "poster_path").filter(|p| poster_path(p)) {
-            entry.insert("poster", poster);
-        }
-        results.push(entry);
-    }
+    let results = items
+        .iter()
+        .take(20)
+        .filter_map(|item| catalog_entry(item, kind))
+        .collect();
     let mut report = Value::object();
     report.insert("results", Value::Array(results));
     Ok(report)
+}
+
+/// The catalog entry of one title by its TMDB identity, in the same shape as
+/// a search: `results` holds that title, or nothing when TMDB's answer is not
+/// a usable title. The library knows titles by identity, so this is how it
+/// finds their posters without searching by name.
+pub fn catalog_title(config: &Config, kind: &str, tmdb_id: u64) -> Result<Value> {
+    let tv = match kind {
+        "movie" => false,
+        "series" => true,
+        _ => return Err("Catalog: kind must be movie or series".into()),
+    };
+    if tmdb_id == 0 || tmdb_id > 9_007_199_254_740_991 {
+        return Err("Catalog: invalid TMDB identity".into());
+    }
+    let path = format!("{}/{tmdb_id}", if tv { "tv" } else { "movie" });
+    let value = catalog_json(config, &path, &[])?;
+    let results = catalog_entry(&value, kind)
+        .filter(|entry| entry.get("tmdb_id").and_then(Value::as_u64) == Some(tmdb_id))
+        .into_iter()
+        .collect();
+    let mut report = Value::object();
+    report.insert("results", Value::Array(results));
+    Ok(report)
+}
+
+/// One TMDB movie or show as the interface shows it; `None` when it lacks a
+/// valid identity or title.
+fn catalog_entry(item: &Value, kind: &str) -> Option<Value> {
+    let tv = kind == "series";
+    let id = integer(item, "id").filter(|id| *id > 0 && *id <= 9_007_199_254_740_991)?;
+    let title = string(item, if tv { "name" } else { "title" })
+        .map(str::trim)
+        .filter(|t| !t.is_empty() && t.len() <= 512 && !t.chars().any(char::is_control))?;
+    let mut entry = Value::object();
+    entry.insert("tmdb_id", Value::Number(id as f64));
+    entry.insert("kind", kind);
+    entry.insert("title", title);
+    if let Some(original) = string(
+        item,
+        if tv {
+            "original_name"
+        } else {
+            "original_title"
+        },
+    )
+    .map(str::trim)
+    .filter(|o| !o.is_empty() && *o != title && o.len() <= 512 && !o.chars().any(char::is_control))
+    {
+        entry.insert("original_title", original);
+    }
+    let year = string(item, if tv { "first_air_date" } else { "release_date" })
+        .filter(|text| crate::date::day(text).is_ok())
+        .and_then(|text| text[..4].parse::<u32>().ok());
+    entry.insert(
+        "year",
+        year.map_or(Value::Null, |y| Value::Number(f64::from(y))),
+    );
+    if let Some(overview) = string(item, "overview")
+        .map(str::trim)
+        .filter(|o| !o.is_empty())
+    {
+        entry.insert("overview", report_text(overview, 1_000));
+    }
+    if let Some(poster) = string(item, "poster_path").filter(|p| poster_path(p)) {
+        entry.insert("poster", poster);
+    }
+    Some(entry)
 }
 
 /// TMDB serves poster images here, at a width that suits a cover.
@@ -1389,53 +1417,6 @@ pub(crate) fn indexer_metainfo_before(
     Ok(response.body)
 }
 
-// Current UTC date, converted from Unix days to the Gregorian calendar.
-fn today() -> String {
-    let days = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs()
-        / 86_400;
-    let z = days as i64 + 719_468;
-    let era = z / 146_097;
-    let doe = z - era * 146_097;
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let mut year = yoe + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let day = doy - (153 * mp + 2) / 5 + 1;
-    let month = mp + if mp < 10 { 3 } else { -9 };
-    year += i64::from(month <= 2);
-    format!("{year:04}-{month:02}-{day:02}")
-}
-
-fn valid_date(date: &str) -> bool {
-    let b = date.as_bytes();
-    if b.len() != 10
-        || b[4] != b'-'
-        || b[7] != b'-'
-        || !b
-            .iter()
-            .enumerate()
-            .all(|(i, c)| matches!(i, 4 | 7) || c.is_ascii_digit())
-    {
-        return false;
-    }
-    let year = date[..4].parse::<u32>().unwrap_or(0);
-    let month = date[5..7].parse::<u32>().unwrap_or(0);
-    let day = date[8..].parse::<u32>().unwrap_or(0);
-    let max = match month {
-        2 if year.is_multiple_of(4) && (!year.is_multiple_of(100) || year.is_multiple_of(400)) => {
-            29
-        }
-        2 => 28,
-        4 | 6 | 9 | 11 => 30,
-        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
-        _ => 0,
-    };
-    year >= 1800 && day != 0 && day <= max
-}
-
 /// Series without an explicit source become episode requests.
 pub fn expand(config: &Config, request: &Request) -> Result<Vec<Request>> {
     request.validate()?;
@@ -1451,7 +1432,7 @@ pub fn expand(config: &Config, request: &Request) -> Result<Vec<Request>> {
             if expanded.year == 0 {
                 let details = catalog_json(config, &format!("movie/{id}"), &[])?;
                 expanded.year = string(&details, "release_date")
-                    .filter(|s| valid_date(s))
+                    .filter(|s| crate::date::day(s).is_ok())
                     .and_then(|s| s[..4].parse().ok())
                     .unwrap_or(0);
             }
@@ -1475,9 +1456,9 @@ pub fn expand(config: &Config, request: &Request) -> Result<Vec<Request>> {
     if seasons.len() > 1_000 {
         return Err("TMDB catalog: too many seasons".into());
     }
-    let cutoff = today();
+    let cutoff = crate::date::today();
     let year = string(&details, "first_air_date")
-        .filter(|s| valid_date(s))
+        .filter(|s| crate::date::day(s).is_ok())
         .and_then(|s| s[..4].parse().ok())
         .unwrap_or(request.year);
     let mut out = Vec::new();
@@ -1489,7 +1470,7 @@ pub fn expand(config: &Config, request: &Request) -> Result<Vec<Request>> {
             continue;
         }
         let number = u32::try_from(number).map_err(|_| "TMDB catalog: invalid season")?;
-        if let Some(date) = string(season, "air_date").filter(|s| valid_date(s))
+        if let Some(date) = string(season, "air_date").filter(|s| crate::date::day(s).is_ok())
             && date > cutoff.as_str()
         {
             continue;
@@ -1503,7 +1484,8 @@ pub fn expand(config: &Config, request: &Request) -> Result<Vec<Request>> {
             return Err("TMDB catalog: too many episodes in a season".into());
         }
         for episode in episodes {
-            let Some(date) = string(episode, "air_date").filter(|s| valid_date(s)) else {
+            let Some(date) = string(episode, "air_date").filter(|s| crate::date::day(s).is_ok())
+            else {
                 continue;
             };
             if date > cutoff.as_str() {
@@ -1546,6 +1528,8 @@ pub(crate) struct Release {
     pub(crate) title: String,
     pub(crate) url: String,
     pub(crate) seeders: u64,
+    pub(crate) size: Option<u64>,
+    pub(crate) freeleech: Option<bool>,
 }
 
 fn episode_marker(text: &str) -> Option<(u32, u32)> {
@@ -1686,6 +1670,8 @@ fn json_release(item: &Value, base: &str, mapping: &Mapping) -> Option<Release> 
         title: title.into(),
         url,
         seeders: mapping.seeders(item),
+        size: mapping.size(item),
+        freeleech: mapping.freeleech(item),
     })
 }
 
@@ -1810,6 +1796,8 @@ fn source_releases(source: &Source, request: &Request, deadline: Instant) -> Res
 struct Candidate {
     release: Release,
     source: String,
+    source_id: String,
+    priority: u32,
     id: String,
     assessment: Assessment,
 }
@@ -1821,16 +1809,26 @@ impl Candidate {
         value.insert("title", report_text(&self.release.title, 2_048));
         value.insert("source", report_text(&self.source, 128));
         // An indexer may report integers outside JSON's exact range.
+        value.insert("seeders", report_integer(self.release.seeders));
         value.insert(
-            "seeders",
-            if self.release.seeders <= 9_007_199_254_740_991 {
-                Value::Number(self.release.seeders as f64)
-            } else {
-                Value::String(self.release.seeders.to_string())
-            },
+            "size_bytes",
+            self.release.size.map_or(Value::Null, report_integer),
         );
+        value.insert(
+            "freeleech",
+            self.release.freeleech.map_or(Value::Null, Value::from),
+        );
+        value.insert("priority", self.priority);
         value.insert("assessment", self.assessment.to_json());
         value
+    }
+}
+
+pub(crate) fn report_integer(value: u64) -> Value {
+    if value <= 9_007_199_254_740_991 {
+        Value::Number(value as f64)
+    } else {
+        Value::String(value.to_string())
     }
 }
 
@@ -1879,17 +1877,37 @@ fn candidate_id(profile: &str, source: &str, release: &Release) -> String {
     hex(&candidate_digest(profile, source, release))
 }
 
-/// A candidate's report position: accepted first, then higher rank, more
-/// seeders and finally the candidate ID. Byte order is report order, so a
+fn source_identity(profile_name: &str, source: &Source) -> String {
+    candidate_id(
+        profile_name,
+        &source.name,
+        &Release {
+            title: String::new(),
+            url: source.url.clone(),
+            seeders: 0,
+            size: None,
+            freeleech: None,
+        },
+    )
+}
+
+/// A candidate's report position: accepted first, then profile rank, opted-in
+/// freeleech, lower indexer priority, more seeders and the candidate ID. Byte order is report order, so a
 /// position doubles as an opaque cursor that reveals no title or URL.
 type Position = [u8; POSITION_BYTES];
-const POSITION_BYTES: usize = 1 + 5 * 4 + 8 + 32;
+const POSITION_BYTES: usize = 1 + 5 * 4 + 1 + 4 + 8 + 32;
 const DEFAULT_REPORT_PAGE: usize = 100;
 const MAX_REPORT_PAGE: usize = 200;
 /// Accepted season-pack releases whose metadata a pack search may inspect.
 const PACK_CANDIDATES: usize = 8;
 
-fn position(assessment: &Assessment, seeders: u64, digest: &[u8; 32]) -> Position {
+fn position(
+    assessment: &Assessment,
+    seeders: u64,
+    digest: &[u8; 32],
+    freeleech: bool,
+    priority: u32,
+) -> Position {
     let rank = &assessment.rank;
     let mut bytes = [0; POSITION_BYTES];
     bytes[0] = u8::from(!assessment.accepted);
@@ -1906,8 +1924,10 @@ fn position(assessment: &Assessment, seeders: u64, digest: &[u8; 32]) -> Positio
     {
         bytes[1 + at * 4..5 + at * 4].copy_from_slice(&(!value).to_be_bytes());
     }
-    bytes[21..29].copy_from_slice(&(!seeders).to_be_bytes());
-    bytes[29..].copy_from_slice(digest);
+    bytes[21] = u8::from(!freeleech);
+    bytes[22..26].copy_from_slice(&priority.to_be_bytes());
+    bytes[26..34].copy_from_slice(&(!seeders).to_be_bytes());
+    bytes[34..].copy_from_slice(digest);
     bytes
 }
 
@@ -2081,10 +2101,19 @@ fn assess_release(
     profile: &Profile,
     request: &Request,
     release: &Release,
-    pack: bool,
+    pack_episodes: Option<Option<u32>>,
+    options: &crate::indexers::Options,
 ) -> Assessment {
-    let mut assessment = profile.assess(&release.title, &request.title);
+    let pack = pack_episodes.is_some();
+    let mut assessment = profile.assess_with_size(
+        &release.title,
+        &request.title,
+        release.size,
+        pack_episodes.unwrap_or(Some(1)),
+    );
     if (RecordedRelease {
+        source_id: None,
+        size_bytes: None,
         title: release.title.clone(),
         profile: profile_name.into(),
     })
@@ -2111,7 +2140,7 @@ fn assess_release(
             .into(),
         );
     }
-    if release.seeders < config.minimum_seeders {
+    if release.seeders < options.minimum_seeders.unwrap_or(config.minimum_seeders) {
         assessment.accepted = false;
         assessment
             .reasons
@@ -2140,7 +2169,7 @@ fn search_candidates_before(
     request: &Request,
     deadline: Instant,
 ) -> Result<SearchResult> {
-    search_candidates_mode(config, request, deadline, false, None, 0, None)
+    search_candidates_mode(config, request, deadline, None, None, 0, None)
 }
 
 /// A search keeps the selection, at most `limit + 1` report candidates after
@@ -2150,11 +2179,12 @@ fn search_candidates_mode(
     config: &Config,
     request: &Request,
     deadline: Instant,
-    pack: bool,
+    pack_episodes: Option<Option<u32>>,
     after: Option<Position>,
     limit: usize,
     pick: Option<&str>,
 ) -> Result<SearchResult> {
+    let pack = pack_episodes.is_some();
     remaining_search_time(deadline)?;
     request.validate()?;
     if (!pack && !matches!(request.kind.as_str(), "movie" | "episode"))
@@ -2194,28 +2224,35 @@ fn search_candidates_mode(
             result.successful += 1;
             // Hash and bound source metadata once, rather than duplicating an
             // arbitrarily long configured label for every indexer result.
-            let source_identity = candidate_id(
-                profile_name,
-                &source.name,
-                &Release {
-                    title: String::new(),
-                    url: source.url.clone(),
-                    seeders: 0,
-                },
-            );
+            let source_identity = source_identity(profile_name, source);
             let source_label = report_text(&source.name, 128);
             for (index, release) in releases.into_iter().enumerate() {
                 if index % 64 == 0 {
                     remaining_search_time(deadline)?;
                 }
-                let assessment =
-                    assess_release(config, profile_name, profile, request, &release, pack);
+                let assessment = assess_release(
+                    config,
+                    profile_name,
+                    profile,
+                    request,
+                    &release,
+                    pack_episodes,
+                    &source.options,
+                );
                 let digest = candidate_digest(profile_name, &source_identity, &release);
                 result.offer(
-                    position(&assessment, release.seeders, &digest),
+                    position(
+                        &assessment,
+                        release.seeders,
+                        &digest,
+                        source.options.prefer_freeleech && release.freeleech == Some(true),
+                        source.options.priority,
+                    ),
                     Candidate {
                         id: hex(&digest),
                         source: source_label.clone(),
+                        source_id: crate::indexers::feed::source_id(source),
+                        priority: source.options.priority,
                         release,
                         assessment,
                     },
@@ -2297,7 +2334,7 @@ pub fn search_report_page(config: &Config, request: &Request, page: &SearchPage)
     let deadline = Instant::now()
         .checked_add(SEARCH_BUDGET)
         .ok_or("Search: invalid search time budget")?;
-    search_candidates_mode(config, request, deadline, false, after, page.limit, None)
+    search_candidates_mode(config, request, deadline, None, after, page.limit, None)
         .map(|result| result.report())
 }
 
@@ -2317,6 +2354,8 @@ pub struct SelectedRelease {
     pub url: String,
     pub title: String,
     pub profile: String,
+    pub source_id: Option<String>,
+    pub size_bytes: Option<u64>,
     pub assessment: Assessment,
     pub id: String,
 }
@@ -2329,6 +2368,8 @@ fn selected_release(result: SearchResult) -> Result<SelectedRelease> {
         url: candidate.release.url,
         title: candidate.release.title,
         profile: result.profile,
+        source_id: Some(candidate.source_id),
+        size_bytes: candidate.release.size,
         assessment: candidate.assessment,
         id: candidate.id,
     })
@@ -2340,13 +2381,14 @@ fn selected_release(result: SearchResult) -> Result<SelectedRelease> {
 pub(crate) fn search_pack_candidates(
     config: &Config,
     request: &Request,
+    episodes: Option<u32>,
     deadline: Instant,
 ) -> Result<(Value, Vec<SelectedRelease>)> {
     let result = search_candidates_mode(
         config,
         request,
         deadline,
-        true,
+        Some(episodes),
         None,
         DEFAULT_REPORT_PAGE,
         None,
@@ -2360,6 +2402,10 @@ pub(crate) fn search_pack_candidates(
             url: candidate.release.url,
             title: candidate.release.title,
             profile: profile.clone(),
+            source_id: Some(candidate.source_id),
+            // Pack provenance describes the whole release; it is not copied
+            // into an individual episode's upgrade baseline.
+            size_bytes: candidate.release.size,
             assessment: candidate.assessment,
             id: candidate.id,
         })
@@ -2417,11 +2463,13 @@ pub fn pick_release_before(
     if id.len() != 64 || !id.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
         return Err("Search: invalid candidate ID".into());
     }
-    let result = search_candidates_mode(config, request, deadline, false, None, 0, Some(id))?;
+    let result = search_candidates_mode(config, request, deadline, None, None, 0, Some(id))?;
     let candidate = result
         .picked
         .ok_or("Search: this release is no longer offered by the indexers; search again")?;
     RecordedRelease {
+        source_id: None,
+        size_bytes: None,
         title: candidate.release.title.clone(),
         profile: result.profile.clone(),
     }
@@ -2432,6 +2480,8 @@ pub fn pick_release_before(
             url: candidate.release.url,
             title: candidate.release.title,
             profile: result.profile,
+            source_id: Some(candidate.source_id),
+            size_bytes: candidate.release.size,
             assessment: candidate.assessment,
             id: candidate.id,
         },
@@ -2819,12 +2869,14 @@ fn rss_items(text: &str, base: &str) -> Result<(Vec<RssItem>, u32)> {
         let mut size = item
             .child("size")
             .and_then(|v| v.text.trim().parse().ok())
+            .filter(|size| *size > 0)
             .or_else(|| {
                 item.child("enclosure")
                     .and_then(|v| v.attrs.get("length"))
                     .and_then(|v| v.parse().ok())
             })
             .filter(|size| *size > 0);
+        let mut freeleech = None;
         let mut info_hash = None;
         for attr in item.children.iter().filter(|child| child.local() == "attr") {
             match attr.attrs.get("name").map(String::as_str) {
@@ -2834,6 +2886,13 @@ fn rss_items(text: &str, base: &str) -> Result<(Vec<RssItem>, u32)> {
                         .get("value")
                         .and_then(|v| v.parse().ok())
                         .unwrap_or(0)
+                }
+                Some("downloadvolumefactor") => {
+                    freeleech = attr
+                        .attrs
+                        .get("value")
+                        .and_then(|v| v.parse::<f64>().ok())
+                        .and_then(crate::indexers::mapping::volume_factor);
                 }
                 Some("size") => {
                     size = attr
@@ -2875,6 +2934,8 @@ fn rss_items(text: &str, base: &str) -> Result<(Vec<RssItem>, u32)> {
                 title: title.into(),
                 url,
                 seeders,
+                size,
+                freeleech,
             },
             size,
             info_hash,
@@ -2985,6 +3046,7 @@ fn fetch_outcome(error: &str) -> &'static str {
             "authentication_failed"
         }
         "Indexer: response rejected" => "response_rejected",
+        "Indexer: source unavailable" => "source_unavailable",
         "Indexer: network request failed" => "network_failed",
         "Indexer: source policy changed during the request" => "policy_changed",
         "Indexer: request budget expired" => "timed_out",
@@ -3154,16 +3216,15 @@ pub(crate) struct WatchCandidate {
     pub(crate) title: String,
     pub(crate) profile: String,
     pub(crate) assessment: Assessment,
-    pub(crate) seeders: u64,
+    pub(crate) source_id: Option<String>,
+    pub(crate) size_bytes: Option<u64>,
+    position: Position,
 }
 
 impl WatchCandidate {
-    /// Larger rank wins, then seeders; remaining ties are deterministic.
+    /// Use the search report order, including the same opaque digest tie-breaker.
     pub(crate) fn beats(&self, other: &Self) -> bool {
-        (&self.assessment.rank, self.seeders)
-            .cmp(&(&other.assessment.rank, other.seeders))
-            .then_with(|| (&other.title, &other.url).cmp(&(&self.title, &self.url)))
-            .is_gt()
+        self.position < other.position
     }
 }
 
@@ -3173,6 +3234,7 @@ pub(crate) fn assess_feed_entry(
     config: &Config,
     request: &Request,
     entry: &FeedEntry,
+    source: &Source,
 ) -> Option<WatchCandidate> {
     if request.source_path.is_some()
         || request.source_url.is_some()
@@ -3187,20 +3249,127 @@ pub(crate) fn assess_feed_entry(
         profile,
         request,
         &entry.release,
-        false,
+        None,
+        &source.options,
     );
     assessment.accepted.then(|| WatchCandidate {
         url: entry.release.url.clone(),
         title: entry.release.title.clone(),
         profile: profile_name.into(),
-        assessment,
-        seeders: entry.release.seeders,
+        assessment: assessment.clone(),
+        source_id: Some(crate::indexers::feed::source_id(source)),
+        size_bytes: entry.release.size,
+        position: position(
+            &assessment,
+            entry.release.seeders,
+            &candidate_digest(
+                profile_name,
+                &source_identity(profile_name, source),
+                &entry.release,
+            ),
+            source.options.prefer_freeleech && entry.release.freeleech == Some(true),
+            source.options.priority,
+        ),
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn feed_assessment_uses_indexer_seed_gate_and_opt_in_freeleech_preference() {
+        let mut config =
+            config::from_json(&config::default_json(), std::path::Path::new(".")).unwrap();
+        config.minimum_seeders = 10;
+        let mut source = Source {
+            name: "fixture".into(),
+            kind: "json".into(),
+            url: "https://index.test/api".into(),
+            api_key_env: "ABSENT".into(),
+            options: Default::default(),
+        };
+        let mut entry = FeedEntry {
+            id: "a".repeat(32),
+            release: Release {
+                title: "Cafe.Night.2024.1080p".into(),
+                url: "magnet:?xt=urn:btih:fixture".into(),
+                seeders: 2,
+                size: Some(100_000_000),
+                freeleech: Some(true),
+            },
+        };
+        assert!(assess_feed_entry(&config, &movie(), &entry, &source).is_none());
+        source.options.minimum_seeders = Some(0);
+        let plain = assess_feed_entry(&config, &movie(), &entry, &source).unwrap();
+        source.options.prefer_freeleech = true;
+        let preferred = assess_feed_entry(&config, &movie(), &entry, &source).unwrap();
+        assert!(preferred.beats(&plain));
+        entry.release.freeleech = None;
+        let unknown = assess_feed_entry(&config, &movie(), &entry, &source).unwrap();
+        assert!(!unknown.beats(&plain) && !plain.beats(&unknown));
+        source.options.priority = 1;
+        let priority = assess_feed_entry(&config, &movie(), &entry, &source).unwrap();
+        assert!(priority.beats(&plain));
+        config.minimum_seeders = 0;
+        source.options.minimum_seeders = Some(3);
+        assert!(assess_feed_entry(&config, &movie(), &entry, &source).is_none());
+    }
+
+    #[test]
+    fn xml_sizes_and_freeleech_accept_valid_hints_and_ignore_invalid_values() {
+        let xml = r#"<rss xmlns:torznab="urn:t" xmlns:newznab="urn:n"><channel>
+        <item><title>A</title><enclosure url="/a" length="11"/><size>22</size><torznab:attr name="size" value="33"/><torznab:attr name="downloadvolumefactor" value="0"/></item>
+        <item><title>B</title><enclosure url="/b" length="44"/><newznab:attr name="downloadvolumefactor" value="0.5"/></item>
+        <item><title>C</title><enclosure url="/c" length="-1"/><size>bad</size><torznab:attr name="size" value="0"/><torznab:attr name="downloadvolumefactor" value="-1"/></item>
+        <item><title>D</title><enclosure url="/d" length="55"/><size>0</size></item>
+        <item><title>E</title><link>/e</link><newznab:attr name="size" value="66"/><newznab:attr name="downloadvolumefactor" value="NaN"/></item>
+        </channel></rss>"#;
+        let items = rss_releases(xml, "https://index.test/rss").unwrap();
+        assert_eq!(
+            items
+                .iter()
+                .map(|r| (r.size, r.freeleech))
+                .collect::<Vec<_>>(),
+            [
+                (Some(33), Some(true)),
+                (Some(44), Some(false)),
+                (None, None),
+                (Some(55), None),
+                (Some(66), None)
+            ]
+        );
+    }
+
+    #[test]
+    fn json_sizes_and_factors_follow_mapping_and_builtin_defaults() {
+        for mapping in [
+            r#"{}"#,
+            r#"{"mapping":{"size":"stats.bytes","download_volume_factor":"stats.factor"}}"#,
+        ] {
+            let mapping = Mapping::from_json(&json::parse(mapping).unwrap()).unwrap();
+            for (size, factor, expected_size, expected_freeleech) in [
+                ("123", "0", Some(123), Some(true)),
+                (
+                    r#""18446744073709551615""#,
+                    r#""1.0""#,
+                    Some(u64::MAX),
+                    Some(false),
+                ),
+                ("0", "-1", None, None),
+                ("-1", r#""oops""#, None, None),
+                (r#""bad""#, r#""inf""#, None, None),
+                ("null", "null", None, None),
+            ] {
+                let value = json::parse(&format!(r#"[{{"title":"Example","url":"/download","size":{size},"download_volume_factor":{factor},"stats":{{"bytes":{size},"factor":{factor}}}}}]"#)).unwrap();
+                let releases = json_releases(&value, "https://index.test/api", &mapping).unwrap();
+                assert_eq!(
+                    (releases[0].size, releases[0].freeleech),
+                    (expected_size, expected_freeleech)
+                );
+            }
+        }
+    }
 
     #[test]
     fn candidate_positions_order_like_reports_and_round_trip_as_cursors() {
@@ -3217,13 +3386,21 @@ mod tests {
         let low = [0; 32];
         let high = [255; 32];
         let ordered = [
-            position(&assessment(true, 7, 0), 0, &low),
-            position(&assessment(true, -3, 9), u64::MAX, &low),
-            position(&assessment(true, -3, 1), 9, &low),
-            position(&assessment(true, -3, 1), 2, &low),
-            position(&assessment(true, -3, 1), 2, &high),
-            position(&assessment(false, i32::MAX, u32::MAX), u64::MAX, &low),
-            position(&assessment(false, i32::MIN, 0), 0, &high),
+            position(&assessment(true, 7, 0), 0, &low, false, 25),
+            position(&assessment(true, -3, 9), u64::MAX, &low, false, 25),
+            position(&assessment(true, -3, 1), 0, &high, true, 50),
+            position(&assessment(true, -3, 1), 0, &high, false, 1),
+            position(&assessment(true, -3, 1), 9, &low, false, 25),
+            position(&assessment(true, -3, 1), 2, &low, false, 25),
+            position(&assessment(true, -3, 1), 2, &high, false, 25),
+            position(
+                &assessment(false, i32::MAX, u32::MAX),
+                u64::MAX,
+                &low,
+                false,
+                25,
+            ),
+            position(&assessment(false, i32::MIN, 0), 0, &high, false, 25),
         ];
         assert!(ordered.windows(2).all(|pair| pair[0] < pair[1]));
         for position in ordered {
@@ -3506,15 +3683,5 @@ mod tests {
             acquisition_url("/download?id=1", "https://index.example/rss").unwrap(),
             "https://index.example:443/download?id=1"
         );
-    }
-
-    #[test]
-    fn dates_reject_invalid_calendar_days() {
-        assert!(valid_date("2024-02-29"));
-        assert!(!valid_date("2023-02-29"));
-        assert!(!valid_date("2024-04-31"));
-        assert!(!valid_date("2024-00-01"));
-        assert!(!valid_date("2024-01-00"));
-        assert!(valid_date(&today()));
     }
 }

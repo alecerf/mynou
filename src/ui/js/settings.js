@@ -6,6 +6,7 @@ import { link } from './link.js';
 import { data, views, itemsOf, currentParam } from './store.js';
 import { INDEXER_ERRORS, plexError, indexerReports } from './sources.js';
 import { signOut } from './session.js';
+import { qualityGroups, readQuality } from './quality.js';
 
 // The settings document keeps every field; the groups below edit the common
 // ones in place and leave the others untouched. Saving sends the whole document,
@@ -13,7 +14,7 @@ import { signOut } from './session.js';
 // Settings come in pages, #settings/<page>, all in one form so a change on one
 // page survives a visit to another until it is saved or discarded.
 const SETTING_PAGES = [
-  ['library', 'Library'], ['downloads', 'Downloads'], ['vpn', 'VPN'], ['indexers', 'Indexers'], ['services', 'Plex & TMDB'], ['network', 'Network'],
+  ['library', 'Library'], ['downloads', 'Downloads'], ['quality', 'Quality'], ['vpn', 'VPN'], ['indexers', 'Indexers'], ['services', 'Plex & TMDB'], ['network', 'Network'],
 ];
 // A group is [page, title, description, fields]; a field is [path, label, type, options]: `hint` explains it, `when` names the
 // switch it depends on, `scale` and `unit` show a stored number in friendlier
@@ -25,6 +26,7 @@ const SETTING_GROUPS = [
     ['library.series_root', 'Series folder', 'text', { folder: true, hint: 'A full path on the Mac running Mynou.' }],
   ]],
   ['downloads', 'Downloads', 'How the built-in client fetches releases.', [
+    ['downloads.enabled', 'Download torrents', 'check', { hint: 'Off: nothing downloads or seeds, and requests wait. Titles already in Plex are still found, for example while you move an existing library.' }],
     ['downloads.data_dir', 'Download folder', 'text', { folder: true, hint: 'A full path on the Mac running Mynou.' }],
     ['downloads.max_active', 'Downloads at once', 'number'],
     ['downloads.max_peers', 'Peers per download', 'number', { hint: 'More peers, faster downloads. Up to 256, shared between active downloads.' }],
@@ -218,10 +220,57 @@ function settingRow([path, label, type, options = {}]) {
   return h('div', { class: `setting-row${type === 'check' ? ' toggle' : ''}`, dataset: { when: options.when ?? '' } }, text, control);
 }
 
+/** A setting row around a control the caller built. */
+const plainRow = (id, label, hint, control, toggle = false) => h('div', { class: `setting-row${toggle ? ' toggle' : ''}` },
+  h('div', { class: 'setting-label' }, h('label', { htmlFor: id }, label), hint ? h('p', { class: 'hint' }, hint) : null), control);
+
 /** Fields that depend on a switch only show while it is on. */
 function syncDependents() {
   for (const row of $('#settings-form').querySelectorAll('[data-when]:not([data-when=""])')) {
     row.hidden = !$(`[data-path="${row.dataset.when}"]`)?.checked;
+  }
+}
+
+// Rules of one indexer: [field, label, hint, scale, unit, empty]. An empty
+// field keeps the default, which the placeholder names.
+const INDEXER_RULES = [
+  ['priority', 'Priority', 'Between equally good releases, the lower number wins.', 1, '', 'Default, 25'],
+  ['minimum_seeders', 'Minimum seeders', 'Releases with fewer seeders are skipped.', 1, '', null],
+  ['seed_ratio_milli', 'Seed until ratio', 'For downloads from this indexer.', 1000, '', 'Default'],
+  ['seed_time_secs', 'Seed at least', 'For downloads from this indexer.', 3600, 'h', 'Default'],
+];
+
+function indexerRules(indexer) {
+  const changed = INDEXER_RULES.some(([field]) => indexer[field] != null) || indexer.prefer_freeleech;
+  return h('details', { class: 'indexer-rules', open: Boolean(changed) },
+    h('summary', {}, 'Rules for this indexer'),
+    h('div', { class: 'indexer-rules-grid' },
+      INDEXER_RULES.map(([field, label, hint, scale, unit, empty]) => {
+        const value = indexer[field] == null ? '' : String(Math.round((Number(indexer[field]) / scale) * 1000) / 1000);
+        const input = h('input', { type: 'text', inputMode: scale === 1 ? 'numeric' : 'decimal', value, 'aria-label': label, title: hint,
+          placeholder: empty ?? `As in Downloads (${settingValue('minimum_seeders') ?? 1})`, dataset: { rule: field, scale } });
+        return h('label', { class: 'field' }, label, unit ? h('span', { class: 'with-unit' }, input, h('span', { class: 'unit', 'aria-hidden': 'true' }, unit)) : input);
+      }),
+      h('label', { class: 'field toggle-field' },
+        h('input', { type: 'checkbox', class: 'switch', checked: Boolean(indexer.prefer_freeleech), dataset: { rule: 'prefer_freeleech' } }),
+        'Prefer freeleech', h('span', { class: 'hint' }, 'Freeleech downloads do not count against your ratio on this tracker.'))));
+}
+
+/** The rules typed in an indexer row, folded into its settings. */
+function readIndexerRules(row, indexer) {
+  const name = indexer.name || indexer.url || 'This indexer';
+  for (const input of row.querySelectorAll('[data-rule]')) {
+    const field = input.dataset.rule;
+    if (input.type === 'checkbox') {
+      if (input.checked) indexer[field] = true; else delete indexer[field];
+      continue;
+    }
+    const typed = input.value.trim().replace(',', '.');
+    if (!typed) { delete indexer[field]; continue; }
+    const value = Math.round(Number(typed) * Number(input.dataset.scale));
+    if (!Number.isFinite(value) || value < 0) throw new Error(`${name}: ${input.getAttribute('aria-label')} needs a number`);
+    if (field === 'priority' && (value < 1 || value > 50)) throw new Error(`${name}: priority goes from 1 to 50`);
+    indexer[field] = value;
   }
 }
 
@@ -238,6 +287,7 @@ function indexerRow(indexer) {
       h('input', { type: 'url', value: indexer.url ?? '', required: true, placeholder: 'Indexer address', 'aria-label': 'Indexer URL', spellcheck: false, dataset: { field: 'url' } }),
       // Indexers often share one key, so it is replaced here but never removed.
       secretInput(keyName, 'API key', `API key · ${SOURCE_LABELS[secretSource(keyName)].toLowerCase()}`, false)),
+    indexerRules(indexer),
     h('p', { class: 'indexer-state', hidden: true, dataset: { live: 'indexer' } }));
   row._indexer = indexer;
   return row;
@@ -278,11 +328,13 @@ function readSettingsForm() {
     if (on !== Boolean(settingValue(path))) setPath(document, path, on);
   }
   readNetwork(document);
+  readQuality(document, $('#settings-form'));
   document.indexers = [...$('#settings-indexers').children].map((row) => {
     const indexer = { ...row._indexer };
     for (const input of row.querySelectorAll('[data-field]')) {
       indexer[input.dataset.field] = input.type === 'checkbox' ? input.checked : input.value.trim();
     }
+    readIndexerRules(row, indexer);
     if (!indexer.name) delete indexer.name;
     return indexer;
   });
@@ -348,6 +400,8 @@ function networkRows() {
         h('input', { id: 'network-password', type: 'password', autocomplete: 'new-password', maxLength: 1024, disabled: !mac, placeholder: access.password_set ? 'Type to replace' : 'Choose a password' }),
         h('button', { type: 'button', class: 'secondary', disabled: !mac, dataset: { networkAct: 'password' } }, 'Save password'),
         access.password_set && (!on || open) && mac ? h('button', { type: 'button', class: 'ghost danger', dataset: { networkAct: 'remove' } }, 'Remove') : null)),
+    access.password_set && mac ? row(h('span', {}, 'Signed-in computers'), 'Sign out every other computer and phone, for example after losing one. The password stays the same.',
+      h('button', { type: 'button', class: 'ghost danger', dataset: { networkAct: 'sign-out-everywhere' } }, 'Sign out everywhere')) : null,
     mac ? null : row(h('span', {}, 'This computer'), 'Network access changes only on the Mac running Mynou.',
       h('button', { type: 'button', class: 'ghost', dataset: { networkAct: 'sign-out' } }, 'Sign out')),
   ].filter(Boolean);
@@ -374,6 +428,12 @@ function readNetwork(document) {
 async function networkAction(button) {
   const action = button.dataset.networkAct;
   if (action === 'sign-out') { await signOut(); return; }
+  if (action === 'sign-out-everywhere') {
+    if (!confirm('Sign out every other computer and phone?')) return;
+    settings.access = await link.http('POST', '/api/access', { sign_out_everywhere: true });
+    toast('Every other computer is signed out');
+    return;
+  }
   let password = null;
   if (action === 'password') {
     password = $('#network-password').value;
@@ -510,7 +570,7 @@ async function saveSecret(name, value) {
 views.settings = {
   init() {
     $('#settings-nav').replaceChildren(...SETTING_PAGES.map(([page, title]) =>
-      h('a', { href: `#settings/${page}`, dataset: { page } }, title)));
+      h('a', { href: `#settings/${page}`, dataset: { page } }, h('span', {}, title), icon('chevron'))));
     const form = $('#settings-form');
     const dirty = () => {
       const bar = $('#save-bar');
@@ -610,10 +670,12 @@ views.settings = {
     $('#settings-form').removeAttribute('aria-busy');
     settingsState([report.applying && 'A change is being applied.', report.restart_required && 'The listen address changes at the next start.'].filter(Boolean).join(' '));
     if (report.error) toast(report.error, 'bad');
-    $('#settings-groups').replaceChildren(...SETTING_GROUPS.map(([page, title, about, fields]) =>
-      h('section', { class: 'setting-group', dataset: { page } },
-        h('div', { class: 'setting-intro' }, h('h2', {}, title), h('p', { class: 'hint' }, about)),
-        h('div', { class: 'setting-list' }, fields.map(settingRow)))));
+    const group = (page, title, about, rows) => h('section', { class: 'setting-group', dataset: { page } },
+      h('div', { class: 'setting-intro' }, h('h2', {}, title), h('p', { class: 'hint' }, about)),
+      h('div', { class: 'setting-list' }, rows));
+    $('#settings-groups').replaceChildren(
+      ...SETTING_GROUPS.map(([page, title, about, fields]) => group(page, title, about, fields.map(settingRow))),
+      ...qualityGroups(settings.document, plainRow).map(([title, about, rows]) => group('quality', title, about, rows)));
     // Saved indexers keep their position, which is also the order of the live reports.
     $('#settings-indexers').replaceChildren(...itemsOf(settings.document.indexers).map((indexer, i) => Object.assign(indexerRow(indexer), { _saved: i })));
     $('#settings-network').replaceChildren(...networkRows());

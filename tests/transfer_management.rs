@@ -6,7 +6,9 @@ use mynou::json::{self, Value};
 use mynou::net::HttpClient;
 use mynou::server::Api;
 use mynou::store::Request;
-use mynou::torrent::{Client, FilePriority, TorrentControl, TransferPolicy};
+use mynou::torrent::{
+    Client, FilePriority, TorrentControl, TransferPolicy, index_handmade_transfer,
+};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -207,6 +209,7 @@ fn the_active_slot_selects_priority_then_submission_order() {
             control.encode().unwrap(),
         )
         .unwrap();
+        index_handmade_transfer(&cfg, &torrent.id).unwrap();
     }
     let client = Client::open(cfg).unwrap();
     for index in [1, 2, 0] {
@@ -226,77 +229,6 @@ fn the_active_slot_selects_priority_then_submission_order() {
             .store(true, Ordering::Release);
         torrents[index].assert_files(&ready(&client, &torrents[index].id));
     }
-}
-
-#[test]
-fn legacy_native_state_gets_a_stable_queue_without_inventing_traffic_counters() {
-    let scratch = Scratch::new();
-    let torrent = Torrent::single(&scratch.0, "legacy.bin", payload(BLOCK + 9, 47));
-    let cfg = client_config(&scratch.0.join("client"), false);
-    fs::create_dir_all(&cfg.state_dir).unwrap();
-    fs::write(
-        cfg.state_dir.join(format!("{}.torrent", torrent.id)),
-        fs::read(&torrent.path).unwrap(),
-    )
-    .unwrap();
-    fs::write(
-        cfg.state_dir.join(format!("{}.source", torrent.id)),
-        torrent.path.to_str().unwrap(),
-    )
-    .unwrap();
-    for (path, bytes) in &torrent.files {
-        let destination = cfg.data_dir.join(&torrent.id).join(path);
-        fs::create_dir_all(destination.parent().unwrap()).unwrap();
-        fs::write(destination, bytes).unwrap();
-    }
-    let mut expected = vec![torrent.id.clone()];
-    for digit in ['f', '1'] {
-        let id = digit.to_string().repeat(40);
-        fs::write(
-            cfg.state_dir.join(format!("{id}.source")),
-            format!("magnet:?xt=urn:btih:{id}"),
-        )
-        .unwrap();
-        fs::write(cfg.state_dir.join(format!("{id}.paused")), b"paused\n").unwrap();
-        expected.push(id);
-    }
-    expected.sort();
-    let client = Client::open(cfg.clone()).unwrap();
-    torrent.assert_files(&ready(&client, &torrent.id));
-    assert_eq!(ids(&client), expected);
-    let controls: Vec<_> = expected
-        .iter()
-        .map(|id| client.controls(id).unwrap())
-        .collect();
-    for (index, id) in expected.iter().enumerate() {
-        let snapshot = client.transfer(id).unwrap();
-        assert_eq!(counter(&snapshot, "downloaded_bytes"), 0);
-        assert_eq!(counter(&snapshot, "uploaded_bytes"), 0);
-        assert_eq!(controls[index].queue_order, index as u64 + 1);
-        assert!(
-            !controls[index].user_paused,
-            "Legacy cancellation must not become an explicit user pause"
-        );
-        assert!(cfg.state_dir.join(format!("{id}.control")).is_file());
-        if *id != torrent.id {
-            assert_eq!(snapshot.get("paused"), Some(&Value::Bool(true)));
-        }
-    }
-    assert_eq!(
-        counter(&client.transfer(&torrent.id).unwrap(), "verified_bytes"),
-        torrent.total as u64
-    );
-    drop(client);
-    let resumed = Client::open(cfg).unwrap();
-    assert_eq!(ids(&resumed), expected);
-    for (id, control) in expected.iter().zip(&controls) {
-        assert_eq!(resumed.controls(id).unwrap(), *control);
-    }
-    let legacy_paused = "1".repeat(40);
-    resumed.resume_if_allowed(&legacy_paused).unwrap();
-    let snapshot = resumed.transfer(&legacy_paused).unwrap();
-    assert_eq!(snapshot.get("paused"), Some(&Value::Bool(false)));
-    assert_eq!(snapshot.get("user_paused"), Some(&Value::Bool(false)));
 }
 
 #[test]
@@ -333,7 +265,7 @@ fn corrupted_and_inconsistent_control_files_are_rejected_without_rewriting_them(
         let control_path = cfg.state_dir.join(format!("{id}.control"));
         fs::write(&control_path, &encoded).unwrap();
         assert!(
-            Client::open(cfg).is_err(),
+            index_handmade_transfer(&cfg, &id).is_err(),
             "Accepted invalid persisted controls {index}"
         );
         assert_eq!(fs::read(control_path).unwrap(), encoded);
@@ -355,8 +287,9 @@ fn corrupted_and_inconsistent_control_files_are_rejected_without_rewriting_them(
         )
         .unwrap();
     }
+    index_handmade_transfer(&cfg, &"a".repeat(40)).unwrap();
     assert!(
-        Client::open(cfg).is_err(),
+        index_handmade_transfer(&cfg, &"b".repeat(40)).is_err(),
         "Accepted duplicate persisted FIFO positions"
     );
 }
@@ -1526,11 +1459,13 @@ fn restart_checks_cancelled_ownership_before_network_even_beyond_the_first_page(
             format!("magnet:?xt=urn:btih:{retained}").as_bytes(),
         );
         private_write(format!("{retained}.control"), &control.encode().unwrap());
+        index_handmade_transfer(&cfg.downloads, &retained).unwrap();
     }
     let mut control = TorrentControl::new(id.clone(), 71).unwrap();
     control.priority = 100;
     private_write(format!("{id}.source"), magnet.as_bytes());
     private_write(format!("{id}.control"), &control.encode().unwrap());
+    index_handmade_transfer(&cfg.downloads, &id).unwrap();
     let server = Server::open(cfg);
     // Point hydration also must not bypass admission before the background
     // cancellation sweep reaches this identity.

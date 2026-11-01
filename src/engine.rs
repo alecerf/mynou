@@ -177,7 +177,7 @@ impl Engine {
         let store = if read_only {
             Store::open_read_only(&config.store_dir)?
         } else {
-            Store::prepare(&config.store_dir, &config)?
+            Store::open(&config.store_dir)?
         };
         let operator = operator.unwrap_or_else(|| {
             crate::vpn::Operator::load(&config.store_dir, start_downloads && !read_only)
@@ -207,7 +207,7 @@ impl Engine {
         start_downloads: bool,
     ) -> Result<Arc<Self>> {
         network.publication()?;
-        let store = Store::prepare(&config.store_dir, &config)?;
+        let store = Store::open(&config.store_dir)?;
         Self::from_store(config, store, start_downloads, false, false, network, None)
     }
 
@@ -397,6 +397,8 @@ impl Engine {
                 request.clone(),
                 selected.url,
                 RecordedRelease {
+                    source_id: selected.source_id,
+                    size_bytes: selected.size_bytes,
                     title: selected.title,
                     profile: selected.profile,
                 },
@@ -694,14 +696,8 @@ impl Engine {
         let mut v = Value::object();
         v.insert("vpn", self.vpn_status());
         v.insert("version", env!("CARGO_PKG_VERSION"));
+        v.insert("downloads_enabled", self.config.downloads_enabled);
         v.insert("update", crate::update::report());
-        v.insert(
-            "migrations",
-            crate::progress::report(&[
-                self.config.store_dir.as_path(),
-                self.config.downloads.state_dir.as_path(),
-            ]),
-        );
         v.insert("jobs", count(|counts| counts.jobs));
         v.insert("active", count(|counts| counts.active));
         v.insert("ready", count(|counts| counts.ready));
@@ -1111,7 +1107,8 @@ impl Engine {
             return Err("Processing interrupted".into());
         }
         job.last_error = None;
-        if job.state == "processing"
+        if config.downloads_enabled
+            && job.state == "processing"
             && job.imports.is_empty()
             && let Some(id) = &job.download_id
         {
@@ -1135,6 +1132,17 @@ impl Engine {
             job.state = "ready".into();
             job.progress = 1.0;
             job.next_attempt_at = 0;
+            return Ok(());
+        }
+        // With downloads turned off, only what needs no download moves on: a
+        // title already in Plex is ready above, an interrupted import resumes
+        // below. The rest waits, without searching or spending attempts.
+        if !config.downloads_enabled && job.imports.is_empty() && job.request.source_path.is_none()
+        {
+            if job.download_id.is_none() {
+                job.state = "queued".into();
+            }
+            job.next_attempt_at = store::now().saturating_add(60);
             return Ok(());
         }
         if crate::irc::routing::selection_from_irc(
@@ -1217,6 +1225,8 @@ impl Engine {
                             (
                                 selected.url,
                                 Some(RecordedRelease {
+                                    source_id: selected.source_id,
+                                    size_bytes: selected.size_bytes,
                                     title: selected.title,
                                     profile: selected.profile,
                                 }),
@@ -1261,31 +1271,40 @@ impl Engine {
                 } else {
                     // Fetch metadata before acquiring the client internal lock.
                     let source = job.acquisition_url.as_deref().ok_or("Missing source")?;
-                    if let Some(origin) = &job.irc_origin {
-                        client.ensure_bound_files(
-                            source,
-                            std::slice::from_ref(&origin.file),
-                            &origin.torrent_id,
-                        )?
-                    } else if let Some(path) = &job.pack_file {
-                        if let Some(file) = &job.shared_file {
-                            client.ensure_bound_files(
-                                source,
-                                std::slice::from_ref(path),
-                                &file.torrent_id,
-                            )?
-                        } else if let Some(origin) = &job.pack_origin {
-                            client.ensure_bound_files(
-                                source,
-                                std::slice::from_ref(path),
-                                &origin.torrent_id,
-                            )?
-                        } else {
-                            client.ensure_files(source, std::slice::from_ref(path))?
-                        }
-                    } else {
-                        client.ensure(source)?
-                    }
+                    let paths = job
+                        .irc_origin
+                        .as_ref()
+                        .map(|origin| std::slice::from_ref(&origin.file))
+                        .or_else(|| job.pack_file.as_ref().map(std::slice::from_ref));
+                    // A shared or pack torrent is bound only to its pack file.
+                    let expected = job
+                        .irc_origin
+                        .as_ref()
+                        .map(|origin| origin.torrent_id.as_str())
+                        .or_else(|| {
+                            job.pack_file.as_ref()?;
+                            job.shared_file
+                                .as_ref()
+                                .map(|file| file.torrent_id.as_str())
+                                .or_else(|| {
+                                    job.pack_origin
+                                        .as_ref()
+                                        .map(|origin| origin.torrent_id.as_str())
+                                })
+                        });
+                    let policy = job
+                        .release
+                        .as_ref()
+                        .or_else(|| job.pack_origin.as_ref().map(|origin| &origin.release))
+                        .and_then(|release| release.source_id.as_ref())
+                        .and_then(|id| {
+                            config
+                                .sources
+                                .iter()
+                                .find(|source| crate::indexers::feed::source_id(source) == *id)
+                        })
+                        .and_then(|source| source.options.seed_policy(&config.download_policy));
+                    client.ensure_acquisition(source, paths, expected, policy)?
                 };
                 if job
                     .shared_file

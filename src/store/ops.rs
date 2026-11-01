@@ -196,7 +196,7 @@ impl Db<'_> {
                 .and_then(crate::json::Value::as_u64)
                 .ok_or("Missing job chunk length")?;
             if !(2..=16).contains(&count)
-                || length > super::legacy::MAX_RECORD as u64
+                || length > super::layout::MAX_RECORD as u64
                 || length <= crate::inventory::MAX_VALUE_BYTES as u64
                 || count != length.div_ceil(crate::inventory::MAX_VALUE_BYTES as u64)
             {
@@ -682,9 +682,7 @@ impl Db<'_> {
             Some(previous) => owned(previous, &pair.root)?,
             None => BTreeMap::new(),
         };
-        // Keep the diagnostic wake key independent of queue promotion. Do not
-        // add it to legacy migration's `owned` layout: old staged migrations
-        // must still verify before the explicit format-5 upgrade runs.
+        // Keep the diagnostic wake key independent of queue promotion.
         if open(&pair.job) {
             desired.insert(job_due_key(&pair.job)?, Entry::Inline(Vec::new()));
         }

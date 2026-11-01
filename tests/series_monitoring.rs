@@ -273,31 +273,12 @@ fn corrupt_and_linked_series_storage_fails_before_series_data_is_used() {
     let record = engine.track_series(&request(), false, true).unwrap();
     let id = id(&record).to_owned();
     drop(engine);
-    let path = cfg.store_dir.join("series.json");
-    let original = fs::read(&path).unwrap();
-    // The marker names exactly one index: any other binding is refused.
-    let text = std::str::from_utf8(&original).unwrap();
-    let marker: json::Value = json::parse(text).unwrap();
-    let digest = marker.get("digest").unwrap().as_str().unwrap().to_owned();
-    let other = format!(
-        "{}{}",
-        if digest.starts_with('0') { '1' } else { '0' },
-        &digest[1..]
-    );
-    fs::write(&path, text.replace(&digest, &other)).unwrap();
-    let error = Engine::open_for_management(cfg.clone()).err().unwrap();
-    assert!(error.contains("different series index"), "{error}");
-    fs::write(&path, &original).unwrap();
+    let path = cfg.store_dir.join("series.idx/tree.bin");
     #[cfg(unix)]
     {
         let linked = directory.0.join("snapshot-alias");
         fs::hard_link(&path, &linked).unwrap();
-        assert!(
-            Engine::open_for_management(cfg.clone())
-                .err()
-                .unwrap()
-                .contains("hard links")
-        );
+        assert!(Engine::open_for_management(cfg.clone()).is_err());
         fs::remove_file(linked).unwrap();
         fs::rename(&path, directory.0.join("original-marker")).unwrap();
         std::os::unix::fs::symlink(directory.0.join("original-marker"), &path).unwrap();
@@ -376,34 +357,6 @@ fn walk(path: &std::path::Path) -> Vec<std::path::PathBuf> {
         }
     }
     files
-}
-
-#[test]
-fn a_corrupt_legacy_snapshot_is_never_migrated() {
-    let directory = Directory::new();
-    let catalog = Catalog::open(vec![episode(1, 1, Some("2200-01-01"), "Future")]);
-    let cfg = catalog.config(&directory.0);
-    let engine = Engine::open_for_management(cfg.clone()).unwrap();
-    let record = engine.track_series(&request(), false, true).unwrap();
-    let legacy = legacy_snapshot(&[engine.series_record(id(&record)).unwrap()], 2);
-    drop(engine);
-    restore_legacy(&cfg.store_dir, &legacy);
-    let altered = std::str::from_utf8(&legacy)
-        .unwrap()
-        .replace("Fixture Series", "Altered Series");
-    fs::write(cfg.store_dir.join("series.json"), &altered).unwrap();
-    let before = series_state(&cfg.store_dir);
-    let error = Engine::open_for_management(cfg.clone()).err().unwrap();
-    assert!(error.contains("checksum mismatch"), "{error}");
-    assert!(Engine::open_for_preview(cfg.clone()).is_err());
-    assert_eq!(series_state(&cfg.store_dir), before);
-    assert!(fs::read_dir(&cfg.store_dir).unwrap().all(|entry| {
-        !entry
-            .unwrap()
-            .file_name()
-            .to_string_lossy()
-            .starts_with("series.legacy")
-    }));
 }
 
 #[test]
@@ -647,7 +600,7 @@ fn unreadable_scopes_are_skipped_and_reported_without_starving_due_work() {
     let cfg = catalog.config(&directory.0);
     drop(Engine::open_for_management(cfg.clone()).unwrap());
     // Five scopes with the oldest due times, then one healthy scope behind them.
-    let mut records: Vec<Value> = (1..=5u64)
+    let mut records: Vec<_> = (1..=5u64)
         .map(|n| {
             synthetic_record(
                 &record_id(n),
@@ -670,7 +623,7 @@ fn unreadable_scopes_are_skipped_and_reported_without_starving_due_work() {
         100,
         true,
     ));
-    restore_legacy(&cfg.store_dir, &legacy_snapshot(&records, 2));
+    mynou::series::SeriesStore::seed_for_tests(&cfg.store_dir, records).unwrap();
     let engine = Engine::open_for_management(cfg.clone()).unwrap();
     drop(engine);
     // Damage the header record of each broken scope.

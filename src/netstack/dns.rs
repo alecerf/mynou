@@ -186,9 +186,8 @@ pub fn parse_response_for(
     if answers > MAX_RECORDS {
         return Err(ReplyError::Records);
     }
-    let mut owners = vec![question.to_vec()];
-    let mut addresses = Vec::new();
-    let mut ttl: Option<u32> = None;
+    let mut address_records = Vec::new();
+    let mut aliases = Vec::new();
     for _ in 0..answers {
         let (owner, next) = read_name(message, position)?;
         let header = message.get(next..next + 10).ok_or(ReplyError::Truncated)?;
@@ -213,29 +212,47 @@ pub fn parse_response_for(
                     )),
                     _ => return Err(ReplyError::Rdata),
                 };
-                if owners.contains(&owner)
-                    && !unroutable(address)
-                    && !addresses.contains(&address)
-                    && addresses.len() < MAX_ADDRESSES
-                {
-                    addresses.push(address);
-                    ttl = Some(ttl.map_or(record_ttl, |ttl| ttl.min(record_ttl)));
-                }
+                address_records.push((owner, address, record_ttl));
             }
             TYPE_CNAME => {
                 let (target, after) = read_name(message, start)?;
                 if after != end {
                     return Err(ReplyError::Rdata);
                 }
-                if owners.contains(&owner) {
-                    if owners.len() >= MAX_ALIASES {
-                        return Err(ReplyError::Records);
-                    }
-                    owners.push(target);
-                    ttl = Some(ttl.map_or(record_ttl, |ttl| ttl.min(record_ttl)));
-                }
+                aliases.push((owner, target, record_ttl));
             }
             _ => return Err(ReplyError::Type),
+        }
+    }
+    // Resolve the bounded answer set after parsing: records need not put an
+    // alias before its target, or put a CNAME chain in traversal order.
+    let mut owners = vec![question.to_vec()];
+    let mut ttl: Option<u32> = None;
+    loop {
+        let owner = owners.last().ok_or(ReplyError::Records)?;
+        let mut target = None;
+        for (name, next, record_ttl) in &aliases {
+            if name == owner {
+                if target.is_some_and(|target| target != next) {
+                    return Err(ReplyError::Records);
+                }
+                target = Some(next);
+                ttl = Some(ttl.map_or(*record_ttl, |ttl| ttl.min(*record_ttl)));
+            }
+        }
+        let Some(target) = target else { break };
+        if owners.len() >= MAX_ALIASES || owners.contains(target) {
+            return Err(ReplyError::Records);
+        }
+        owners.push(target.clone());
+    }
+    let mut addresses = Vec::new();
+    for (owner, address, record_ttl) in address_records {
+        if owners.contains(&owner) && !unroutable(address) {
+            ttl = Some(ttl.map_or(record_ttl, |ttl| ttl.min(record_ttl)));
+            if !addresses.contains(&address) && addresses.len() < MAX_ADDRESSES {
+                addresses.push(address);
+            }
         }
     }
     match ttl {

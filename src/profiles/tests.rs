@@ -350,46 +350,6 @@ fn reviewed_changes_preview_without_writing_and_apply_only_an_unchanged_plan() {
 }
 
 #[test]
-fn bindings_stored_by_the_removed_import_stay_usable_and_import_is_refused() {
-    let directory = Directory::new();
-    let config = config(&directory);
-    let mut store = TitleProfiles::open(&directory.0, false).unwrap();
-    let (title, stored) = binding(movie(1), "uhd");
-    let mut stored = stored.unwrap();
-    stored.origin = "migration".into();
-    store.commit(&[(title, Some(stored))]).unwrap();
-    drop(store);
-    let mut store = TitleProfiles::open(&directory.0, true).unwrap();
-    let kept = store.get(&movie(1)).unwrap().unwrap();
-    assert_eq!(
-        (kept.profile.as_str(), kept.origin.as_str()),
-        ("uhd", "migration")
-    );
-    let listed = list(&config, &mut store, None, 10).unwrap();
-    let row = &listed.get("bindings").and_then(Value::as_array).unwrap()[0];
-    assert_eq!(row.get("resolved"), Some(&Value::Bool(true)));
-    drop(store);
-    // An explicit operator change replaces it like any other binding.
-    let mut store = TitleProfiles::open(&directory.0, false).unwrap();
-    let preview = control(
-        &config,
-        &mut store,
-        &control_json(r#"{"action":"set","kind":"movie","tmdb_id":1,"profile":"hd"}"#),
-    )
-    .unwrap();
-    assert_eq!(preview.get("rebind").and_then(Value::as_u64), Some(1));
-    for removed in [
-        r#"{"action":"import","import":{"profiles":{"A":"hd"},"titles":[]}}"#,
-        r#"{"action":"set","kind":"movie","tmdb_id":1,"profile":"hd","import":{}}"#,
-    ] {
-        assert!(
-            ControlRequest::from_json(&json::parse(removed).unwrap()).is_err(),
-            "{removed}"
-        );
-    }
-}
-
-#[test]
 fn engine_selection_follows_bindings_for_movies_series_episodes_and_restarts() {
     let directory = Directory::new();
     let config = config(&directory);

@@ -252,6 +252,8 @@ impl Engine {
                 request.clone(),
                 source.into(),
                 RecordedRelease {
+                    source_id: None,
+                    size_bytes: None,
                     title: name.into(),
                     profile: profile.into(),
                 },

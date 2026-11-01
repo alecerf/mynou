@@ -68,31 +68,6 @@ pub(super) enum GroupAction {
     Cancel,
     Retry,
 }
-impl GroupAction {
-    pub(super) fn parse(value: &str) -> Result<Self> {
-        match value {
-            "baseline" => Ok(Self::Baseline),
-            "create" => Ok(Self::Create),
-            "promote" => Ok(Self::Promote),
-            "cancel" => Ok(Self::Cancel),
-            "retry" => Ok(Self::Retry),
-            _ => Err("Unknown shared-group journal action".into()),
-        }
-    }
-}
-
-pub(super) fn group_format(job: &Job) -> bool {
-    job.shared_upgrade.is_some() || (job.shared_file.is_some() && job.release.is_some())
-}
-
-pub(super) struct GroupState<'a> {
-    pub file: &'a SharedFile,
-    pub owners: BTreeSet<u32>,
-    pub first: &'a Job,
-    pub ready: usize,
-    pub cancelled: usize,
-}
-
 /// Group lineage rules that need only identifier lookups.
 pub(super) fn validate_group_lineage<L: JobLookup>(lookup: &mut L, job: &Job) -> Result<()> {
     let lineage = job

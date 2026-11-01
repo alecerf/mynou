@@ -54,14 +54,48 @@ export const Motion = (() => {
     }
     progressValues.set(key, value);
   }
+  /** The pill under the current link; it slides once it has a first place. */
   function nav() {
     const indicator = $('#nav-indicator');
-    const selected = $('#nav [aria-current="page"]');
     if (!indicator) return;
-    if (!selected) { delete indicator.dataset.placed; return; }
-    const top = selected.offsetTop + (selected.offsetHeight - indicator.offsetHeight) / 2;
-    indicator.style.transform = `translateY(${top}px)`;
+    const selected = $('#nav [aria-current="page"]');
+    if (!selected?.offsetParent) { indicator.dataset.state = 'off'; delete indicator.dataset.placed; return; }
+    indicator.dataset.state = 'on';
+    indicator.style.width = `${selected.offsetWidth}px`;
+    indicator.style.height = `${selected.offsetHeight}px`;
+    indicator.style.transform = `translate(${selected.offsetLeft}px, ${selected.offsetTop}px)`;
     if (!indicator.dataset.placed) requestAnimationFrame(() => { indicator.dataset.placed = 'true'; });
+  }
+  const counts = new WeakMap();
+  /** A figure shown for the first time counts up to its value, then reads `text`. */
+  function count(el, to, text) {
+    cancelAnimationFrame(counts.get(el));
+    if (reduce.matches || !Number.isFinite(to) || to <= 0) { el.textContent = text; return; }
+    const start = performance.now(), duration = 900;
+    const step = (now) => {
+      const t = Math.min(1, (now - start) / duration);
+      el.textContent = t < 1 ? Math.round(to * (1 - (1 - t) ** 4)).toLocaleString() : text;
+      if (t < 1) counts.set(el, requestAnimationFrame(step));
+    };
+    el.textContent = '0';
+    counts.set(el, requestAnimationFrame(step));
+  }
+  /** Stops a count under way and shows `text` at once. */
+  function settle(el, text) {
+    cancelAnimationFrame(counts.get(el));
+    el.textContent = text;
+  }
+  /** Cards that catch the light learn where the pointer is. */
+  const LIT = '.stat, .now, .panel, .history-chart, .series-stats, .sheet-highlights';
+  function spotlight() {
+    if (!matchMedia('(hover: hover)').matches) return;
+    addEventListener('pointermove', (event) => {
+      const card = event.target.closest?.(LIT);
+      if (!card) return;
+      const box = card.getBoundingClientRect();
+      card.style.setProperty('--mx', `${event.clientX - box.left}px`);
+      card.style.setProperty('--my', `${event.clientY - box.top}px`);
+    }, { passive: true });
   }
   /** New content in place of old, as in a sheet that changes page. */
   function swap(el) {
@@ -95,7 +129,7 @@ export const Motion = (() => {
     }
   }
   reduce.addEventListener('change', () => { if (reduce.matches) for (const a of document.getAnimations()) a.cancel(); });
-  return { animate, enter, beforeLayout, afterLayout, progress, nav, swap, pop, tick, arrive, nudge, cat };
+  return { animate, enter, beforeLayout, afterLayout, progress, nav, count, settle, spotlight, swap, pop, tick, arrive, nudge, cat };
 })();
 
 /** A progress bar element; `Motion.progress` sets its value. */

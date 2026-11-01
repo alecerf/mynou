@@ -5,13 +5,13 @@ import { libraryFilter } from './library.js';
 
 // Views live in the hash: #library, #jobs…
 
-// [id, label, navigation group], in navigation order.
+// [id, label], in navigation order. Settings sits apart at the foot of the sidebar.
 export const VIEWS = [
-  ['dashboard', 'Overview', ''],
-  ['library', 'Library', ''],
-  ['jobs', 'Jobs', 'Activity'],
-  ['transfers', 'Transfers', 'Activity'],
-  ['settings', 'Settings', ''],
+  ['dashboard', 'Overview'],
+  ['library', 'Library'],
+  ['transfers', 'Transfers'],
+  ['jobs', 'Activity'],
+  ['settings', 'Settings'],
 ];
 // A request is an action reachable from everywhere, not a place in the navigation.
 const REQUEST_VIEW = ['requests', 'New request'];
@@ -30,7 +30,7 @@ function show(hash) {
   const changed = moved || currentParam() !== param;
   if (changed) views[currentView()]?.leave?.();
   for (const section of document.querySelectorAll('.view')) section.hidden = section.id !== `view-${name}`;
-  for (const link of document.querySelectorAll('#nav a, #mobile-nav a, .request-button')) {
+  for (const link of document.querySelectorAll('a[data-view]')) {
     if (link.dataset.view === name) link.setAttribute('aria-current', 'page'); else link.removeAttribute('aria-current');
   }
   const title = [...VIEWS, REQUEST_VIEW].find(([id]) => id === name)[1];

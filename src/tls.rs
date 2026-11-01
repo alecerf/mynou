@@ -5,14 +5,14 @@
 //! Certificate authentication is mandatory; unsupported algorithms fail closed.
 use crate::Result;
 use crate::crypto::{
-    Aes128Gcm, ChaCha20Poly1305, Sha256, hkdf_expand, hkdf_extract, hmac_sha256, sha256, x25519,
-    x25519_public_key,
+    Aes128Gcm, ChaCha20Poly1305, Sha256, constant_time_eq, fill_random as secure_random,
+    hkdf_expand, hkdf_extract, hmac_sha256, sha256, x25519, x25519_public_key,
 };
 use crate::net::DeadlineStream;
 use crate::pki::{
-    PublicKey, p256_public_key, p256_shared_secret, validate_chain, verify_ecdsa_p256_sha256,
-    verify_ecdsa_p384_sha384, verify_pkcs1_sha256, verify_pkcs1_sha384, verify_pss_sha256,
-    verify_pss_sha384,
+    PublicKey, p256_public_key, p256_shared_secret, validate_chain, verify_ecdsa_cross_hash,
+    verify_ecdsa_p256_sha256, verify_ecdsa_p384_sha384, verify_pkcs1_sha256, verify_pkcs1_sha384,
+    verify_pss_sha256, verify_pss_sha384,
 };
 use std::fs::File;
 use std::io::{self, Read, Write};
@@ -437,7 +437,7 @@ impl TlsStream {
                         }
                         let key = expand_label(&receive_secret, "finished", &[], 32)?;
                         let expected = hmac_sha256(&key, &transcript.clone().finalize());
-                        if !constant_time_equal(&expected, &message[4..]) {
+                        if !constant_time_eq(&expected, &message[4..]) {
                             return Err("TLS Finished authentication failed".into());
                         }
                         finished = true;
@@ -637,14 +637,6 @@ fn io_error(message: String) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message)
 }
 
-fn secure_random(destination: &mut [u8]) -> Result<()> {
-    let mut source = File::open("/dev/urandom")
-        .map_err(|_| "TLS requires a system random source (/dev/urandom)")?;
-    source
-        .read_exact(destination)
-        .map_err(|_| "Unable to read system random bytes".into())
-}
-
 fn load_roots() -> Result<Vec<u8>> {
     let paths = match std::env::var_os("MYNOU_CA_FILE") {
         Some(path) => vec![std::path::PathBuf::from(path)],
@@ -690,16 +682,6 @@ fn derive_secret(secret: &[u8], label: &str, digest: &[u8; 32]) -> Result<[u8; 3
     expand_label(secret, label, digest, 32)?
         .try_into()
         .map_err(|_| "Invalid derived TLS secret".into())
-}
-
-fn constant_time_equal(a: &[u8], b: &[u8]) -> bool {
-    if a.len() != b.len() {
-        return false;
-    }
-    a.iter()
-        .zip(b)
-        .fold(0u8, |difference, (a, b)| difference | (a ^ b))
-        == 0
 }
 
 fn handshake_message(kind: u8, body: &[u8]) -> Result<Vec<u8>> {
@@ -1156,15 +1138,27 @@ fn legacy_handshake(
     if header[0] != 20 || payload != [1] {
         return Err("TLS ChangeCipherSpec expected".into());
     }
-    let (header, payload) = read_record(stream)?;
-    let (kind, message) = receive.open(&header, &payload)?;
-    if kind != 22 || message.len() != 16 || message[..4] != [20, 0, 0, 12] {
-        return Err("Invalid TLS Finished message".into());
-    }
-    if !constant_time_equal(&expected, &message[4..]) {
+    let message = read_legacy_finished(stream, &mut receive)?;
+    if !constant_time_eq(&expected, &message[4..]) {
         return Err("TLS Finished authentication failed".into());
     }
     Ok((send, receive))
+}
+
+fn read_legacy_finished(stream: &mut impl Read, receive: &mut LegacyKeys) -> Result<Vec<u8>> {
+    let mut message = Vec::with_capacity(16);
+    while message.len() < 16 {
+        let (header, payload) = read_record(stream)?;
+        let (kind, fragment) = receive.open(&header, &payload)?;
+        if kind != 22 || fragment.is_empty() || message.len() + fragment.len() > 16 {
+            return Err("Invalid TLS Finished message".into());
+        }
+        message.extend_from_slice(&fragment);
+        if message.len() >= 4 && message[..4] != [20, 0, 0, 12] {
+            return Err("Invalid TLS Finished message".into());
+        }
+    }
+    Ok(message)
 }
 
 /// A TLS 1.2 Certificate message: certificates without per-entry extensions.
@@ -1233,6 +1227,11 @@ fn verify_key_exchange(key: &PublicKey, session: &Legacy, body: &[u8]) -> Result
         }
         (0x0503, PublicKey::EcdsaP384 { point }) if !rsa_suite => {
             verify_ecdsa_p384_sha384(point, &signed, signature)
+        }
+        (0x0503, PublicKey::EcdsaP256 { .. }) | (0x0403, PublicKey::EcdsaP384 { .. })
+            if !rsa_suite =>
+        {
+            verify_ecdsa_cross_hash(key, &signed, signature)
         }
         _ => Err("Unsupported TLS ServerKeyExchange signature".into()),
     }?;
@@ -1567,7 +1566,7 @@ pub(crate) mod tests {
             return Err("Invalid client Finished".into());
         }
         let finish_key = expand_label(&receive_secret, "finished", &[], 32)?;
-        if !constant_time_equal(
+        if !constant_time_eq(
             &client_finish[4..],
             &hmac_sha256(&finish_key, &transcript.clone().finalize()),
         ) {
@@ -1989,11 +1988,121 @@ pub(crate) mod tests {
     #[derive(Clone, Copy, PartialEq)]
     enum Legacy12 {
         Aes,
+        FragmentedFinished,
+        FragmentedBadFinished,
+        OversizedFinished,
         ChaChaWithoutExtendedSecret,
         Downgrade,
         NoRenegotiationInfo,
         KeyExchangeSignature,
         Finished,
+    }
+
+    #[test]
+    fn tls12_finished_reassembles_authenticated_records_with_bounded_framing() {
+        for suite in [ECDHE_RSA_AES_128_GCM, ECDHE_RSA_CHACHA20] {
+            let (key, iv) = if suite == ECDHE_RSA_AES_128_GCM {
+                (16, 4)
+            } else {
+                (32, 12)
+            };
+            let finished = handshake_message(20, &[0x5a; 12]).unwrap();
+            for size in 1..=finished.len() {
+                let mut send = LegacyKeys::new(suite, &vec![7; key], &vec![8; iv]).unwrap();
+                let mut receive = LegacyKeys::new(suite, &vec![7; key], &vec![8; iv]).unwrap();
+                let mut records = Vec::new();
+                for fragment in finished.chunks(size) {
+                    records.extend(send.seal(22, fragment).unwrap());
+                }
+                assert_eq!(
+                    read_legacy_finished(&mut records.as_slice(), &mut receive).unwrap(),
+                    finished
+                );
+            }
+            for (kind, message) in [
+                (23, finished.clone()),
+                (22, vec![20, 0, 0, 13]),
+                (22, vec![20; 17]),
+                (22, Vec::new()),
+            ] {
+                let mut send = LegacyKeys::new(suite, &vec![7; key], &vec![8; iv]).unwrap();
+                let mut receive = LegacyKeys::new(suite, &vec![7; key], &vec![8; iv]).unwrap();
+                let records = send.seal(kind, &message).unwrap();
+                assert!(read_legacy_finished(&mut records.as_slice(), &mut receive).is_err());
+            }
+        }
+    }
+
+    #[test]
+    fn tls12_key_exchange_accepts_cross_hash_ecdsa_without_relaxing_tls13() {
+        fn bytes(hex: &str) -> Vec<u8> {
+            hex.as_bytes()
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
+                .collect()
+        }
+        // OpenSSL signatures over the two randoms and X25519 parameters below.
+        let cases = [
+            (
+                0x0503u16,
+                PublicKey::EcdsaP256 {
+                    point: bytes(
+                        "042a6e80feb9b5bfe64b050f1ac2a7ba56041e4edddd24176b36d3bff0db621b0fb6f372400bc998fec744ce97693487ed0188c7136fb6558059dc8bb0f178fcff",
+                    ),
+                },
+                bytes(
+                    "3045022052d54b30f2cf637e6c218887a4d894c4ae7442cb4b1426695bfef1d53e12ec460221008cf7ef62095d76bdafd9987dbcb6b253ad05a669dc0c5668601a6574ec8d039f",
+                ),
+            ),
+            (
+                0x0403u16,
+                PublicKey::EcdsaP384 {
+                    point: bytes(
+                        "04bc500ebb9f4e9896ba27225945a7ed94861df67fe8b28c03dba95cdbf6f6294e03c29bd9599f3b721b3c4fd62725441450e1b5f1963b5958f8c3615de4b7b8deb86af3e470b3794053c83aebc0982cc8208482f4eeca5994560855dad5fc80db",
+                    ),
+                },
+                bytes(
+                    "30640230579db4bbd5906a78b572c31cdd2b6b7cb597e98a6624523b9d5bfdf685c50a6fd00fb4b72052000aec6bf6605987e42502302d38851705d5df3b90b5c8621af4e7176f833708f37bf3b51fcd56f7c40cbdca562c6309d8a51f53544e0291604f6065",
+                ),
+            ),
+        ];
+        let mut session = Legacy {
+            hostname: "localhost",
+            roots: &[],
+            buffered: Vec::new(),
+            transcript: Sha256::new(),
+            client_random: [1; 32],
+            server_random: [2; 32],
+            secret: [0; 32],
+            suite: ECDHE_ECDSA_AES_128_GCM,
+            stapled: false,
+            extended: true,
+        };
+        for (scheme, key, signature) in cases {
+            let mut body = vec![3, 0, 29, 32];
+            body.extend_from_slice(&[3; 32]);
+            body.extend_from_slice(&scheme.to_be_bytes());
+            body.extend_from_slice(&(signature.len() as u16).to_be_bytes());
+            body.extend_from_slice(&signature);
+            assert!(
+                matches!(verify_key_exchange(&key, &session, &body).unwrap(), Share::X25519(peer) if peer == [3; 32])
+            );
+            session.suite = ECDHE_RSA_AES_128_GCM;
+            assert!(verify_key_exchange(&key, &session, &body).is_err());
+            session.suite = ECDHE_ECDSA_AES_128_GCM;
+            body[4] ^= 1;
+            assert!(verify_key_exchange(&key, &session, &body).is_err());
+            let mut certificate_verify = scheme.to_be_bytes().to_vec();
+            certificate_verify.extend_from_slice(&(signature.len() as u16).to_be_bytes());
+            certificate_verify.extend_from_slice(&signature);
+            assert!(
+                verify_certificate_signature(&key, &certificate_verify, &session.transcript)
+                    .unwrap_err()
+                    .contains("Unsupported")
+            );
+        }
     }
 
     /// A synthetic TLS 1.2 server: RSA certificate, X25519, PSS-signed share.
@@ -2119,15 +2228,30 @@ pub(crate) mod tests {
             &transcript.clone().finalize(),
             12,
         );
-        if fault == Legacy12::Finished {
+        if matches!(fault, Legacy12::Finished | Legacy12::FragmentedBadFinished) {
             verify[0] ^= 1;
         }
         stream
             .write_all(&[20, 3, 3, 0, 1, 1])
             .map_err(|e| e.to_string())?;
-        stream
-            .write_all(&send.seal(22, &handshake_message(20, &verify)?)?)
-            .map_err(|e| e.to_string())?;
+        let mut finished = handshake_message(20, &verify)?;
+        if fault == Legacy12::OversizedFinished {
+            finished[3] = 13;
+            finished.push(0);
+        }
+        let size = if matches!(
+            fault,
+            Legacy12::FragmentedFinished | Legacy12::FragmentedBadFinished
+        ) {
+            3
+        } else {
+            finished.len()
+        };
+        for fragment in finished.chunks(size) {
+            stream
+                .write_all(&send.seal(22, fragment)?)
+                .map_err(|e| e.to_string())?;
+        }
         let (header, payload) = read_record(&mut stream)?;
         let (kind, request) = receive.open(&header, &payload)?;
         if kind != 23 || request != b"ping" {
@@ -2161,7 +2285,11 @@ pub(crate) mod tests {
 
     #[test]
     fn tls12_authenticates_both_suites_and_carries_data() {
-        for fault in [Legacy12::Aes, Legacy12::ChaChaWithoutExtendedSecret] {
+        for fault in [
+            Legacy12::Aes,
+            Legacy12::ChaChaWithoutExtendedSecret,
+            Legacy12::FragmentedFinished,
+        ] {
             let (address, server) = legacy_server(fault);
             let mut stream = connect_custom(address, "localhost", test_fixture::ROOT_PEM).unwrap();
             assert!(matches!(stream.send, Protection::Tls12(_)));
@@ -2180,6 +2308,8 @@ pub(crate) mod tests {
             Legacy12::NoRenegotiationInfo,
             Legacy12::KeyExchangeSignature,
             Legacy12::Finished,
+            Legacy12::FragmentedBadFinished,
+            Legacy12::OversizedFinished,
         ] {
             let (address, server) = legacy_server(fault);
             assert!(connect_custom(address, "localhost", test_fixture::ROOT_PEM).is_err());

@@ -274,10 +274,10 @@ fn the_number_of_open_sockets_is_bounded(server: &Server) {
     drop(held);
 }
 
-/// 201 migrated series (more than one page of any size, and more than the old
+/// 201 series (more than one page of any size, and more than the old
 /// 128-scope snapshot allowed) reach the interface through bounded pages.
 fn series_beyond_two_hundred_reach_the_socket_in_pages() {
-    use series_support::{legacy_snapshot, record_id, synthetic_record};
+    use series_support::{record_id, synthetic_record};
     let root = std::env::temp_dir().join(format!("mynou-web-ui-pages-{}", std::process::id()));
     let _ = fs::remove_dir_all(&root);
     let store = root.join("store");
@@ -300,9 +300,8 @@ fn series_beyond_two_hundred_reach_the_socket_in_pages() {
     value.get_mut("downloads").unwrap().insert("enabled", false);
     let mut cfg = config::from_json(&value, &root).unwrap();
     cfg.store_dir = store.clone();
-    // A store written by 0.23: create it, then leave only the old snapshot.
     drop(mynou::engine::Engine::open_for_management(cfg.clone()).unwrap());
-    series_support::restore_legacy(&store, &legacy_snapshot(&records, 2));
+    mynou::series::SeriesStore::seed_for_tests(&store, records).unwrap();
     let server = Server::open(cfg);
     let mut socket = open_when_free(&server);
 
@@ -374,7 +373,7 @@ fn series_beyond_two_hundred_reach_the_socket_in_pages() {
 
 #[test]
 fn jobs_above_the_old_total_cap_reach_http_and_websocket_pages() {
-    use mynou::store::{Event, Request, Store};
+    use mynou::store::{Request, Store};
     use std::collections::BTreeSet;
 
     let root = std::env::temp_dir().join(format!("mynou-job-consumers-{}", std::process::id()));
@@ -411,23 +410,8 @@ fn jobs_above_the_old_total_cap_reach_http_and_websocket_pages() {
             job
         })
         .collect();
-    let events: Vec<_> = jobs
-        .iter()
-        .enumerate()
-        .skip(9_001)
-        .map(|(n, job)| Event {
-            id: n as u64 + 1,
-            job_id: job.id.clone(),
-            state: job.state.clone(),
-            message: "legacy fixture".into(),
-            at: job.updated_at,
-        })
-        .collect();
     jobs_state::reset(&store_dir);
-    jobs_state::write_private(
-        &store_dir.join("snapshot.bin"),
-        &jobs_state::snapshot(&jobs, &events, 10_001, &[0; 32], b"MYNOUS01"),
-    );
+    jobs_state::rebuild(&store_dir, &jobs);
     let mut cfg = config::from_json(&value, &root).unwrap();
     cfg.store_dir = store_dir.clone();
     let server = Server::open(cfg);

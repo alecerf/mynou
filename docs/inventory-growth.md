@@ -42,7 +42,7 @@ including markers, snapshots, secondary entries, history and unreclaimed log
 bytes; it is not filesystem allocated blocks or payload/media size.
 
 Open includes the store's writable initialization/recovery checks in a fresh
-process, without building a legacy inventory. Page measures the first hydrated
+process. Page measures the first hydrated
 200-row page after open, except source policies whose internal primary page is
 measured (there is no retained-policy listing endpoint). Routine pass means:
 
@@ -98,19 +98,17 @@ representations and available disk remain physical/format constraints.
 | Path | Intentional surviving bounds |
 | --- | --- |
 | `src/inventory/{mod,tree,persistence}.rs` | 1 MiB index value; 200-row / 4 MiB pages; 16,384 changes/dirty pages and 128 MiB redo payload per transaction; 64 MiB redo log between checkpoints; tree height 63; 8,192 cached pages; bounded log-cleaning work |
-| `src/store/{legacy,layout,ops}.rs`, `src/store.rs` | 16 MiB per hydrated job (chunked); 1,000 events per job / 4,096 bytes per message; page hydration budget and 1,000 examined search rows; bounded claim/ownership windows and continuing cursors |
-| `src/series/{legacy,storage,engine}.rs` | Legacy 8 MiB snapshot input; 2,000 episodes/numbering decisions per scope/plan; 20,000-row calendar count/offset compatibility window with continuation beyond it; due-pass visit, attempt and time budgets |
-| `src/requesters/{mod,index,persistence}.rs` | Legacy 10,000 demands/operator interests and 16 MiB input; 16 MiB per demand; 512 demands/origins per patch or origins per demand; 32 configured accounts; compatibility offsets stop at 10,000, cursors continue |
-| `src/indexers/{feed,feed/storage,policy,policy/storage}.rs` | Legacy feed 1,000 rows / 4 MiB and policy 1,000 rows / 2 MiB; indexed 200-row patches/pages; 1,024 seen identities per feed; 64 actively watched sources and bounded polls/routing, independent of retained source count |
-| `src/irc/{mod,index,persistence,routing}.rs` | Legacy 1,000 rows / 8 MiB; 200-row patches/pages and routing/backoff windows; bounded configured sources/rules, line and evaluation sizes |
+| `src/store/{layout,ops}.rs`, `src/store.rs` | 16 MiB per hydrated job (chunked); 1,000 events per job / 4,096 bytes per message; page hydration budget and 1,000 examined search rows; bounded claim/ownership windows and continuing cursors |
+| `src/series/{storage,engine}.rs` | 2,000 episodes/numbering decisions per scope/plan; 20,000-row calendar count/offset compatibility window with continuation beyond it; due-pass visit, attempt and time budgets |
+| `src/requesters/{mod,index,persistence}.rs` | 16 MiB per demand; 512 demands/origins per patch or origins per demand; 32 configured accounts; compatibility offsets stop at 10,000, cursors continue |
+| `src/indexers/{feed,feed/storage,policy,policy/storage}.rs` | Indexed 200-row patches/pages; 1,024 seen identities per feed; 64 actively watched sources and bounded polls/routing, independent of retained source count |
+| `src/irc/{mod,index,persistence,routing}.rs` | 200-row patches/pages and routing/backoff windows; bounded configured sources/rules, line and evaluation sizes |
 | `src/torrent/{index,control,parallel}.rs`, `src/torrent.rs` | 64 MiB per status snapshot, bounded metadata/control parsers; 200-row listing and continuing queue cursors; configured active-transfer/peer/concurrency limits, independent of retained transfer count |
 
-The former snapshot/count constants are used by legacy input validation, not
-indexed retention. Configuration/parser/network limits constrain an operation
+Configuration/parser/network limits constrain an operation
 or the actively configured sources; they do not truncate retained inventory.
-Recovery/downgrade instructions for each store remain linked in
-[inventory-storage.md](inventory-storage.md). No version or storage format is
-changed by this evidence increment.
+Recovery instructions for each store are linked in
+[inventory-storage.md](inventory-storage.md).
 
 ## Parent acceptance mapping
 
@@ -123,9 +121,9 @@ in the measurement harness.
 | Movies above former limits, HTTP/WebSocket/CLI access | [`jobs_above_the_old_total_cap_reach_http_websocket_and_cli_pages`](../tests/web_ui.rs); jobs/library growth measurements |
 | Series above scope/episode/byte limits | [`inventories_above_every_former_limit_page_completely_and_survive_restart`](../src/series/tests.rs); series growth measurements |
 | Growth across pages, complete access, bounded page memory | [`grows_past_old_caps_and_pages_every_record_after_restart`, `byte_bounded_pages_resume_after_last_emitted_key_and_reject_mutations`](../src/inventory/tests.rs); every measured full walk |
-| Migration, exact backups and restart | [`every_legacy_format_migrates_as_snapshot_journal_or_both`](../src/store/tests.rs); [`schema_one_and_two_snapshots_migrate_exactly_and_the_original_is_preserved`](../src/series/tests.rs); per-store recovery suites |
-| Interrupted writes and migration | [`migration_resumes_after_an_interruption_at_every_stage`, `a_shared_group_commits_all_owners_or_none_at_every_crash_point`](../src/store/tests.rs); [`published_redo_repairs_covered_torn_root_pages_and_records_only`](../src/inventory/tests.rs) |
-| Storage exhaustion without record loss | [`a_full_disk_at_each_commit_stage_keeps_every_committed_record`](../src/inventory/tests.rs); `full_disk_at_every_migration_flush_preserves_legacy_and_restarts` in [jobs](../src/store/tests.rs), [series](../src/series/tests.rs), [requesters](../src/requesters/index_tests.rs), [feeds](../src/indexers/feed/storage/tests.rs), [policies](../src/indexers/policy/storage/tests.rs), [IRC](../src/irc/tests.rs), and the [native-transfer migration suite](../src/torrent/index.rs) |
+| Creation and restart | [`a_store_that_never_held_jobs_is_created_atomically`](../src/store/tests.rs); [`empty_stores_create_nothing_and_the_first_write_publishes_the_index`](../src/series/tests.rs); per-store recovery suites |
+| Interrupted writes | [`a_shared_group_commits_all_owners_or_none_at_every_crash_point`](../src/store/tests.rs); [`published_redo_repairs_covered_torn_root_pages_and_records_only`](../src/inventory/tests.rs) |
+| Storage exhaustion without record loss | [`a_full_disk_at_each_commit_stage_keeps_every_committed_record`](../src/inventory/tests.rs); [`backlog_full_disk_does_not_publish_freshness`](../src/inventory/backlog.rs); [`full_disk_at_every_creation_flush_restarts_cleanly`](../src/torrent/index.rs) |
 | Fair scheduling, cancellation and policy revisions | [`due_work_is_oldest_first_bounded_per_pass_and_never_starves_old_entries`](../src/series/tests.rs); [`monitoring_windows_reach_old_tips_beyond_inventory_prefixes`, `claim_scan_resumes_after_restart_and_reaches_past_new_old_entries`](../src/store/tests.rs); [requester sweeps](../tests/requester_sweeps.rs), [feed revocation](../tests/feed_watching.rs), [transfer admission fairness](../tests/transfer_inventory_fairness.rs) |
 | Shared-demand deduplication and durable identity | [`durable_dedup_and_exclusive_owner`, `transfer_ownership_reads_a_fixed_window_beyond_former_limits`](../src/store/tests.rs); [requester acquisition](../tests/requester_acquisition.rs), [shared episode files](../tests/shared_episode_files.rs) |
 | Bounded per-pass work and diagnostic truthfulness | Per-store backlog/freshness regressions in [jobs/library](../src/store/tests.rs), [series](../src/series/tests.rs), [requesters](../src/requesters/index_tests.rs), [IRC](../src/irc/tests.rs), [feeds](../tests/feed_watching.rs), [transfers](../src/torrent/index.rs), and [source-policy non-applicability](../src/indexers/policy/storage/tests.rs); [diagnostic semantics](inventory-storage.md#exact-range-summaries) |

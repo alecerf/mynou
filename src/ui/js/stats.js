@@ -18,7 +18,7 @@ function paintOnce(el, value, build) {
   const signature = JSON.stringify(value);
   if (el.dataset.signature === signature) return;
   el.dataset.signature = signature;
-  el.replaceChildren(...[build()].flat().filter(Boolean));
+  el.replaceChildren(...[build()].flat(Infinity).filter(Boolean));
 }
 
 const note = (text, tone) => h('p', { class: 'panel-note', dataset: { tone: tone ?? '' } }, text);

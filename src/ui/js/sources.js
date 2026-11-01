@@ -5,6 +5,7 @@ import { data } from './store.js';
 
 export const INDEXER_ERRORS = {
   authentication_rejected: 'The key or login was refused', rate_limited: 'Too many searches; waiting', response_rejected: 'The indexer answered with an error',
+  source_unavailable: 'The indexer is unavailable for now',
   parse_rejected: 'The answer could not be read', request_failed: 'Could not be reached', protection_unavailable: 'Its network protection is not ready',
   policy_changed: 'Its settings changed', disabled: 'Turned off',
 };

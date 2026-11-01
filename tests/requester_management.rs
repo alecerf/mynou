@@ -92,7 +92,7 @@ fn requester_api_requires_authentication_strict_scopes_and_current_guards() {
     );
     let listing = server.call(
         "GET",
-        "/api/requesters/alice?offset=0&limit=1",
+        "/api/requesters/alice?limit=1",
         &[("Authorization", &format!("Bearer {TOKEN}"))],
         "",
     );

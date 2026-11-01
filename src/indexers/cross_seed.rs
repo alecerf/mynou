@@ -217,6 +217,27 @@ struct Context<'a> {
     nominated: BTreeSet<String>,
 }
 
+/// Keep deferred offers and the unexamined tail after a source failure.
+fn unfinished_offers(
+    offers: Vec<Offer>,
+    mut evaluate: impl FnMut(&Offer) -> Option<bool>,
+) -> (Vec<Offer>, bool) {
+    let mut pending = Vec::new();
+    let mut offers = offers.into_iter();
+    while let Some(offer) = offers.next() {
+        match evaluate(&offer) {
+            Some(true) => {}
+            Some(false) => pending.push(offer),
+            None => {
+                pending.push(offer);
+                pending.extend(offers);
+                return (pending, true);
+            }
+        }
+    }
+    (pending, false)
+}
+
 impl Engine {
     fn cross_seed_sources(&self, only: Option<&str>) -> Vec<(String, &Source)> {
         let mut sources: Vec<_> = self
@@ -447,7 +468,13 @@ impl Engine {
             if !target.ready || target.paused {
                 continue;
             }
-            if !cx.run.force {
+            let pending = match lock(&self.cross_seed_store)
+                .and_then(|mut store| store.pending(&cx.indexer, transfer))
+            {
+                Ok(pending) => pending,
+                Err(_) => return "storage_failed",
+            };
+            if pending.is_none() && !cx.run.force {
                 let last = match lock(&self.cross_seed_store)
                     .and_then(|mut store| store.searched(&cx.indexer, transfer))
                 {
@@ -463,37 +490,44 @@ impl Engine {
                 return "pending";
             }
             searches += 1;
-            tally.searches += 1;
-            if !self.space(cx) {
-                return "pending";
-            }
-            let query = target
-                .name
-                .rsplit_once('.')
-                .filter(|(_, ext)| VIDEO_EXTENSIONS.iter().any(|k| ext.eq_ignore_ascii_case(k)))
-                .map_or(target.name.as_str(), |(stem, _)| stem)
-                .replace(['.', '_'], " ");
-            cx.last_request = Some(Instant::now());
-            let offers = match integrations::offers_before(
-                cx.source,
-                Some(&query),
-                Instant::now() + REQUEST_BUDGET,
-            ) {
-                Ok(offers) => offers,
-                Err(code) => return code,
+            let offers = if let Some(offers) = pending {
+                offers
+            } else {
+                if !self.space(cx) {
+                    return "pending";
+                }
+                let query = target
+                    .name
+                    .rsplit_once('.')
+                    .filter(|(_, ext)| VIDEO_EXTENSIONS.iter().any(|k| ext.eq_ignore_ascii_case(k)))
+                    .map_or(target.name.as_str(), |(stem, _)| stem)
+                    .replace(['.', '_'], " ");
+                cx.last_request = Some(Instant::now());
+                tally.searches += 1;
+                match integrations::offers_before(
+                    cx.source,
+                    Some(&query),
+                    Instant::now() + REQUEST_BUDGET,
+                ) {
+                    Ok(offers) => offers,
+                    Err(code) => return code,
+                }
             };
             let only = BTreeSet::from([transfer.as_str()]);
-            for offer in &offers {
+            let (pending, stopped) = unfinished_offers(offers, |offer| {
                 let verdict = self.cross_seed_offer(cx, catalog, offer, Some(&only));
                 tally.offers += 1;
-                if self.cross_seed_record(cx, verdict, batch, tally).is_none() {
-                    return "stopped";
-                }
-            }
+                self.cross_seed_record(cx, verdict, batch, tally)
+            });
+            let unfinished = !pending.is_empty();
             if !cx.run.dry_run {
-                batch
-                    .searched
-                    .push((cx.indexer.clone(), transfer.clone(), now));
+                batch.finish_search(&cx.indexer, transfer, pending, now);
+            }
+            if stopped {
+                return "stopped";
+            }
+            if unfinished {
+                return "pending";
             }
         }
         "ok"

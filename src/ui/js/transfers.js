@@ -1,7 +1,7 @@
 import { label, formatBytes, duration, mediaLabel, fractionOf, relativeTime } from './format.js';
 import { $, h, icon, reconcile } from './dom.js';
 import { Motion, progressBar, setProgress } from './motion.js';
-import { act, openDetail, toast } from './components.js';
+import { act, openDetail, toast, artFor } from './components.js';
 import { link } from './link.js';
 import { data, views, itemsOf, emptyOrError, transferSizes, rateOf, jobsLoaded, transfersTail, currentParam } from './store.js';
 
@@ -310,11 +310,34 @@ views.transfers = {
     const button = $('#transfers-more');
     button.hidden = !next;
     button.textContent = entry?.total ? `Load more transfers (${itemsOf(entry).length + transfersTail.items.length} of ${entry.total})` : 'Load more transfers';
-    if (emptyOrError('transfers', list, 'No native transfers are active.')) return;
+    const summary = $('#transfer-summary');
+    if (emptyOrError('transfers', list, 'No native transfers are active.')) { summary.hidden = true; return; }
     const first = itemsOf(entry);
     const seen = new Set(first.map((item) => item.id));
+    const all = [...first, ...transfersTail.items.filter((item) => !seen.has(item.id))];
+    // What is still coming in: how many, how fast as measured here, and how much is left.
+    // A cross-seed only checks files already here: it downloads nothing.
+    const coming = all.filter((t) => !t.ready && !t.failed && !t.seed_only);
+    const running = coming.filter((t) => !t.paused && t.running !== false);
+    const speed = running.reduce((sum, t) => sum + rateOf(t), 0);
+    // Counts and bytes left come from the service, over every transfer; the
+    // speed is measured here, so it covers the loaded pages only.
+    const active = Number.isFinite(entry?.active) ? entry.active : running.length;
+    const left = entry?.left_bytes != null ? Number(entry.left_bytes) || 0 : coming.reduce((sum, t) => { const { done, total } = transferSizes(t); return sum + Math.max(0, total - done); }, 0);
+    summary.hidden = false;
+    // Three tiles made once and then only rewritten: the numbers move every second.
+    if (!summary.children.length) summary.append(...['running', 'speed', 'left'].map((key) => h('div', { class: 'stat', dataset: { key } }, h('dt'), h('dd'))));
+    const tile = (key, name, value, tone) => {
+      const el = $(`[data-key="${key}"]`, summary);
+      $('dt', el).textContent = name;
+      $('dt', el).dataset.tone = tone ?? '';
+      $('dd', el).textContent = value;
+    };
+    tile('running', 'In progress', String(active), active ? 'accent' : '');
+    tile('speed', 'Download speed', speed || active ? `${formatBytes(speed)}/s` : 'Idle');
+    tile('left', 'Left to download', left ? formatBytes(left) : 'Nothing');
     const owners = new Map(jobsLoaded().filter((j) => j.download_id).map((j) => [j.download_id, j]));
-    reconcile(list, [...first, ...transfersTail.items.filter((item) => !seen.has(item.id))], (t) => t.id,
+    reconcile(list, all, (t) => t.id,
       () => h('li', { class: 'row' },
         h('span', { class: 'row-state' }),
         h('button', { type: 'button', class: 'open' }, h('div', { class: 'title' }), h('div', { class: 'sub' })),
@@ -339,10 +362,24 @@ views.transfers = {
         const symbol = t.failed ? 'alert' : t.ready || t.selected_ready ? 'check' : t.paused ? 'pause' : 'down';
         if (state.dataset.state !== symbol) {
           const changed = Boolean(state.dataset.state);
-          state.replaceChildren(icon(symbol));
+          state.querySelector('.icon')?.remove();
+          state.append(icon(symbol));
           if (changed) Motion.pop(state);
         }
         Object.assign(state.dataset, { tone, state: symbol });
+        // A transfer started for a title shows that title's poster.
+        const owner = owners.get(t.id)?.request;
+        const art = owner?.title ? `${owner.kind}:${owner.tmdb_id ?? owner.title}` : '';
+        if (state.dataset.art !== art) {
+          state.dataset.art = art;
+          state.classList.remove('has-art');
+          state.querySelector('img')?.remove();
+          if (art) artFor(owner).then((url) => {
+            if (!url || state.dataset.art !== art) return;
+            state.prepend(h('img', { alt: '', decoding: 'async', src: url }));
+            state.classList.add('has-art');
+          });
+        }
         const bar = $('.progress', el);
         // A finished transfer needs no bar: its badge says so.
         bar.hidden = Boolean(t.ready);

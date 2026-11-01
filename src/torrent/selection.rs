@@ -237,6 +237,32 @@ impl SelectionPlan {
         })
     }
 
+    /// Payload bytes of piece `index` that belong to selected files.
+    pub fn piece_bytes(&self, meta: &Meta, index: usize) -> u64 {
+        let start = index as u64 * meta.piece_length as u64;
+        let end = start + meta.piece_size(index) as u64;
+        meta.files
+            .iter()
+            .zip(&self.files)
+            .filter(|(_, wanted)| **wanted)
+            .map(|(file, _)| {
+                end.min(file.offset + file.length)
+                    .saturating_sub(start.max(file.offset))
+            })
+            .sum()
+    }
+
+    /// Selected payload bytes that pieces not yet verified still hold.
+    pub fn missing_bytes(&self, meta: &Meta, have: &[bool]) -> u64 {
+        self.pieces
+            .iter()
+            .zip(have)
+            .enumerate()
+            .filter(|(_, (wanted, have))| **wanted && !**have)
+            .map(|(index, _)| self.piece_bytes(meta, index))
+            .sum()
+    }
+
     pub fn complete(&self, have: &[bool]) -> bool {
         self.pieces
             .iter()

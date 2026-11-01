@@ -7,8 +7,6 @@
 //! one tree path, due work comes from a time-ordered queue in bounded batches,
 //! and lists are cursor pages. There is no total job or byte limit; only the
 //! per-record, per-transaction and per-page bounds of the index remain.
-//! Earlier versions kept every job in one in-memory map behind a journal and
-//! snapshot (`journal.bin`, `snapshot.bin`); `migration` converts them.
 
 use crate::Result;
 use crate::crypto::sha256;
@@ -21,29 +19,21 @@ use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 mod backlog;
-mod children;
 mod groups;
 mod irc;
 mod layout;
-mod legacy;
-mod migration;
 mod monitoring;
+mod open;
 #[cfg(test)]
 pub(crate) mod open_tests;
 mod ops;
-mod ownership;
-mod replay;
 mod rules;
 #[cfg(test)]
 mod tests;
 pub use groups::SharedUpgrade;
-use groups::group_format;
-pub use migration::MigrationReport;
 
 /// Events kept per job (a per-record bound); the total is not limited.
 pub const MAX_JOB_EVENTS: usize = 1_000;
-/// Events the journal of earlier versions retained in total.
-const MAX_EVENTS: usize = 1_000;
 const MAX_EVENT_MESSAGE: usize = 4_096;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -64,6 +54,8 @@ pub struct Request {
 pub struct RecordedRelease {
     pub title: String,
     pub profile: String,
+    pub source_id: Option<String>,
+    pub size_bytes: Option<u64>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -416,6 +408,14 @@ impl Request {
 
 impl RecordedRelease {
     pub fn validate(&self) -> Result<()> {
+        if self
+            .source_id
+            .as_ref()
+            .is_some_and(|id| !crate::requesters::valid_id(id))
+            || self.size_bytes == Some(0)
+        {
+            return Err("Invalid recorded release source ID or size".into());
+        }
         if self.title.trim().is_empty() || self.title.len() > 2_048 || self.title.contains('\0') {
             return Err(
                 "recorded release title must contain 1 to 2,048 bytes without NUL".to_owned(),
@@ -437,6 +437,12 @@ impl RecordedRelease {
         object([
             ("title", Value::String(self.title.clone())),
             ("profile", Value::String(self.profile.clone())),
+            ("source_id", optional_string(&self.source_id)),
+            (
+                "size_bytes",
+                self.size_bytes
+                    .map_or(Value::Null, crate::integrations::report_integer),
+            ),
         ])
     }
 
@@ -445,6 +451,8 @@ impl RecordedRelease {
         let release = Self {
             title: string(map, "title")?,
             profile: string(map, "profile")?,
+            source_id: optional(map, "source_id")?,
+            size_bytes: optional_u64(map, "size_bytes")?,
         };
         release.validate()?;
         Ok(release)
@@ -832,37 +840,30 @@ pub(crate) fn sync_file(file: &File) -> std::io::Result<()> {
     file.sync_all()
 }
 
-/// Stable, private migration I/O diagnostics. Never include an OS path or title.
-pub(crate) fn migration_io(store: &str, action: &str, error: &std::io::Error) -> String {
+/// Stable, private storage I/O diagnostics. Never include an OS path or title.
+pub(crate) fn storage_io(store: &str, action: &str, error: &std::io::Error) -> String {
     if matches!(
         error.kind(),
         std::io::ErrorKind::StorageFull
             | std::io::ErrorKind::QuotaExceeded
             | std::io::ErrorKind::FileTooLarge
     ) {
-        format!(
-            "{store}: {} during migration; free space, then restart; preserved legacy data is kept",
-            STORAGE_FULL
-        )
+        format!("{store}: {STORAGE_FULL}; free space, then restart")
     } else {
-        format!(
-            "{store}: cannot {action} migration data; preserved legacy data is kept; restart after fixing storage"
-        )
+        format!("{store}: cannot {action} data; restart after fixing storage")
     }
 }
 
 /// Directory flushing already classifies exhaustion before returning its error.
-pub(crate) fn migration_sync(store: &str, error: &str) -> String {
+pub(crate) fn storage_sync(store: &str, error: &str) -> String {
     if error.contains(STORAGE_FULL) {
-        migration_io(
+        storage_io(
             store,
             "synchronize",
             &std::io::ErrorKind::StorageFull.into(),
         )
     } else {
-        format!(
-            "{store}: cannot synchronize migration data; preserved legacy data is kept; restart after fixing storage"
-        )
+        format!("{store}: cannot synchronize data; restart after fixing storage")
     }
 }
 
@@ -1005,13 +1006,10 @@ fn create_private_directory(path: &Path) -> Result<()> {
     )
 }
 
-/// Reads other jobs by identifier. Implemented over a legacy snapshot held in
-/// memory and over the index, so lineage rules are written once.
+/// Reads other jobs by identifier, so lineage rules are written once.
 pub(crate) trait JobLookup {
     fn lookup(&mut self, id: &str) -> Result<Option<Job>>;
 }
-
-use rules::validate_lineage;
 
 pub use ops::Counts;
 use ops::{Db, cursor_text, parse_cursor};
@@ -1023,18 +1021,13 @@ const CLAIM_SCAN: usize = 256;
 /// cursor advances in memory on every attempt; a restart resumes from the
 /// last checkpoint, and a fresh process checkpoints its first attempt.
 const CLAIM_CHECKPOINT_SECS: u64 = 60;
-const UNMIGRATED: &str =
-    "Job storage has not been migrated; start the service or any command with write access once";
-
 pub(crate) enum Backend {
     /// Nothing has ever been stored (a read-only open of an empty directory).
     Absent,
-    /// A legacy journal exists but this open cannot migrate it (read-only).
-    Unmigrated,
     Ready(Box<Index>),
 }
 
-/// Read-only job access shared by indexed state and bounded legacy preflight.
+/// Read-only job access used by requester and IRC recovery.
 pub(crate) trait RecoveryJobs {
     fn check_irc_ownership(&mut self, job: &Job) -> Result<()>;
     fn get(&mut self, id: &str) -> Result<Option<Job>>;
@@ -1088,7 +1081,6 @@ pub struct Store {
     claim_cursor: Option<Option<Key>>,
     claim_saved: Option<u64>,
     requester_sweep_rows: usize,
-    pub(crate) migration: Option<MigrationReport>,
 }
 
 impl Drop for Store {
@@ -1297,16 +1289,44 @@ impl Store {
         }
     }
 
-    /// Opens for writing, creating the store, recovering an interrupted write
-    /// and migrating a journal of an earlier version.
-    pub fn open(directory: &Path) -> Result<Self> {
-        Self::open_checked(directory, &mut |_| Ok(()))
+    /// Test support: replaces the closed store at `directory` by one holding
+    /// exactly `jobs`, without their history, as earlier operations could
+    /// have left it. Mynou never calls it.
+    #[doc(hidden)]
+    pub fn rebuild_for_tests(directory: &Path, jobs: &[Job]) -> Result<()> {
+        let index = directory.join("jobs.idx");
+        if fs::symlink_metadata(&index).is_ok() {
+            fs::remove_dir_all(&index).map_err(|error| error.to_string())?;
+        }
+        let mut store = Self::open(directory)?;
+        // A parent must be committed before its upgrades: a batch never holds both.
+        let mut batch: Vec<Job> = Vec::new();
+        for job in jobs {
+            let parent_in_batch = job
+                .upgrade_parent
+                .as_deref()
+                .is_some_and(|parent| batch.iter().any(|staged| staged.id == parent));
+            if batch.len() == 100 || parent_in_batch {
+                store.commit_fixture(&std::mem::take(&mut batch))?;
+            }
+            batch.push(job.clone());
+        }
+        store.commit_fixture(&batch)
     }
 
-    fn open_checked(
-        directory: &Path,
-        preflight: &mut dyn FnMut(&legacy::State) -> Result<()>,
-    ) -> Result<Self> {
+    fn commit_fixture(&mut self, jobs: &[Job]) -> Result<()> {
+        if jobs.is_empty() {
+            return Ok(());
+        }
+        self.mutate(|db| {
+            let changes = db.stage(jobs, "fixture")?;
+            db.0.commit(changes)?;
+            Ok(())
+        })
+    }
+
+    /// Opens for writing, creating the store and recovering an interrupted write.
+    pub fn open(directory: &Path) -> Result<Self> {
         use std::os::unix::fs::PermissionsExt;
         clean_path(directory)?;
         create_private_directory(directory)?;
@@ -1315,29 +1335,12 @@ impl Store {
         let lock = secure_file(&directory.join(".lock"))?;
         try_lock_file(&lock)
             .map_err(|error| format!("storage is already open or cannot be locked: {error}"))?;
-        sync_directory(directory).map_err(|error| migration_sync("Job storage", &error))?;
-        match legacy::inspect(directory, false)? {
-            legacy::Inspection::Legacy(files) => {
-                let state = legacy::parse(files.snapshot.as_deref(), &files.journal)?;
-                legacy::validate(&state)?;
-                preflight(&state)?;
-            }
-            legacy::Inspection::Missing => {
-                if !directory
-                    .join("jobs.idx")
-                    .try_exists()
-                    .map_err(|_| "Cannot inspect the job index")?
-                {
-                    preflight(&legacy::parse(None, &[])?)?;
-                }
-            }
-            legacy::Inspection::Marker { .. } => {}
-        }
-        migration::open(directory, lock, false)
+        sync_directory(directory).map_err(|error| storage_sync("Job storage", &error))?;
+        open::open(directory, lock, false)
     }
 
-    /// Loads existing durable state without creating files, changing permissions,
-    /// recovering or migrating. The lock excludes concurrent writers.
+    /// Loads existing durable state without creating files, changing permissions
+    /// or recovering. The lock excludes concurrent writers.
     pub fn open_read_only(directory: &Path) -> Result<Self> {
         clean_path(directory)?;
         if !fs::metadata(directory)
@@ -1349,36 +1352,14 @@ impl Store {
         let lock = read_only_file(&directory.join(".lock"))?;
         try_lock_file(&lock)
             .map_err(|error| format!("storage is already open or cannot be locked: {error}"))?;
-        migration::open(directory, lock, true)
-    }
-
-    pub(crate) fn prepare(directory: &Path, config: &crate::config::Config) -> Result<Self> {
-        Self::open_checked(directory, &mut |state| {
-            let requesters = crate::requesters::RequesterStore::open(directory, config, true)?;
-            let mut irc = crate::irc::AnnouncementStore::open(directory, &config.irc, true)?;
-            let mut jobs = legacy::View(state);
-            crate::requesters::engine::validate_storage(&requesters, &mut jobs)?;
-            crate::irc::admission::recover(&mut irc, &requesters, false)?;
-            crate::irc::routing::recover(&mut irc, &mut jobs, false)?;
-            Ok(())
-        })
+        open::open(directory, lock, true)
     }
 
     pub fn open_for_management(config: &crate::config::Config) -> Result<Self> {
-        Self::prepare(&config.store_dir, config)
+        Self::open(&config.store_dir)
     }
 
-    pub(crate) fn initialize(&mut self) -> Result<()> {
-        Ok(())
-    }
-
-    pub(super) fn from_parts(
-        _directory: &Path,
-        lock: File,
-        backend: Backend,
-        read_only: bool,
-        migration: Option<MigrationReport>,
-    ) -> Self {
+    pub(super) fn from_parts(lock: File, backend: Backend, read_only: bool) -> Self {
         Self {
             _lock: lock,
             backend,
@@ -1389,14 +1370,12 @@ impl Store {
             claim_cursor: None,
             claim_saved: None,
             requester_sweep_rows: 0,
-            migration,
         }
     }
 
     fn read<T>(&mut self, empty: T, work: impl FnOnce(&mut Db<'_>) -> Result<T>) -> Result<T> {
         match &mut self.backend {
             Backend::Absent => Ok(empty),
-            Backend::Unmigrated => Err(UNMIGRATED.to_owned()),
             Backend::Ready(index) => work(&mut Db(index)),
         }
     }
@@ -1409,7 +1388,7 @@ impl Store {
             return Err("storage unavailable after a write error; reopen storage".to_owned());
         }
         let Backend::Ready(index) = &mut self.backend else {
-            return Err(UNMIGRATED.to_owned());
+            return Err("Job storage does not exist yet".to_owned());
         };
         let result = work(&mut Db(index));
         if result.is_err() && !index.is_usable() {
@@ -1426,20 +1405,16 @@ impl Store {
 
     /// Index size and state for diagnostics, from the durable root only.
     pub(crate) fn storage(&self) -> Value {
-        let mut value = match &self.backend {
+        match &self.backend {
             Backend::Absent => crate::inventory::report("empty", None),
-            Backend::Unmigrated => crate::inventory::report("needs_migration", None),
             Backend::Ready(index) => crate::inventory::report("index", Some(index)),
-        };
-        value.insert("migrated_at_start", self.migration.is_some());
-        value
+        }
     }
 
     /// Storage state for status reports; never fails on an unreadable store.
     pub fn describe(&mut self) -> Value {
         let state = match &self.backend {
             Backend::Absent => "empty",
-            Backend::Unmigrated => "needs_migration",
             Backend::Ready(_) => "index",
         };
         let mut value = Value::object();
@@ -1466,17 +1441,6 @@ impl Store {
                 }
             }
         }
-        value.insert(
-            "migration",
-            self.migration.as_ref().map_or(Value::Null, |report| {
-                let mut value = Value::object();
-                value.insert("jobs", Value::Number(report.jobs as f64));
-                value.insert("events", Value::Number(report.events as f64));
-                value.insert("resumed", report.resumed);
-                value.insert("preserved_snapshot", report.backup.clone());
-                value
-            }),
-        );
         value
     }
 
@@ -1512,8 +1476,7 @@ impl Store {
         })
     }
 
-    /// The saved settings document. Absent until first saved, and in a store
-    /// that still needs migration.
+    /// The saved settings document. Absent until first saved.
     pub fn settings(&mut self) -> Result<Option<Value>> {
         self.record(layout::SETTINGS_KEY)
     }
@@ -1587,7 +1550,6 @@ impl Store {
     pub fn sequence(&mut self) -> Result<u64> {
         match &mut self.backend {
             Backend::Absent => Ok(0),
-            Backend::Unmigrated => Err(UNMIGRATED.to_owned()),
             Backend::Ready(index) => index.sequence(),
         }
     }
@@ -1940,6 +1902,25 @@ impl Store {
                     job.state == "cancelled" && job.download_id.as_deref() == Some(transfer)
                 })?
                 .is_empty())
+        })
+    }
+
+    /// Whether a job may still acquire from `url`, so the file it names must be
+    /// kept: any job that is not ready, and a cancelled IRC job that was never
+    /// imported, since a retry keeps its acquisition URL. Beyond a bounded
+    /// window of owners the answer is conservatively yes.
+    pub(crate) fn acquisition_needed(&mut self, url: &str) -> Result<bool> {
+        const WINDOW: usize = 64;
+        self.read(false, |db| {
+            let owners = db.owners(&layout::acquisition_prefix(url), 17, WINDOW, |job| {
+                job.acquisition_url.as_deref() == Some(url)
+            })?;
+            Ok(owners.len() == WINDOW
+                || owners.iter().any(|job| match job.state.as_str() {
+                    "ready" => false,
+                    "cancelled" => job.irc_origin.is_some() && job.imports.is_empty(),
+                    _ => true,
+                }))
         })
     }
 

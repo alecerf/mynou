@@ -1,32 +1,25 @@
-//! Indexed demand storage; legacy state is retained only during checked migration.
+//! Indexed demand storage (`requesters.idx`).
 use super::{Demand, LedgerRead, Policy, Record, State, index};
 use crate::{
     Result,
     config::Config,
-    crypto::{random_bytes, sha256},
-    inventory::{Change, Index, Key, MAX_PAGE_ROWS},
+    inventory::{Change, Index, Key},
     json,
-    store::{private_options, reject_symlinks, sync_directory, sync_file},
+    store::{reject_symlinks, sync_directory},
 };
 use std::{
     cell::RefCell,
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeMap,
     fs,
-    io::{Read, Write},
-    os::unix::fs::{MetadataExt, PermissionsExt},
     path::{Path, PathBuf},
 };
-const MAX_LEGACY_BYTES: usize = 16 * 1024 * 1024;
-const OLD_MARKER: &[u8; 8] = b"MYNOUR03";
-const MARKER: &[u8; 8] = b"MYNOUR04";
 const INDEX: &str = "requesters.idx";
-const STAGING: &str = "requesters.idx.staging";
+/// Where a new index is built before it takes its name.
+const STAGING: &str = "requesters.idx.creating";
 
 enum Backend {
-    Legacy {
-        state: State,
-        bytes: Option<Vec<u8>>,
-    },
+    /// Nothing stored yet; a writable start creates the index.
+    Absent,
     Ready(Box<Index>),
 }
 pub(crate) struct RequesterStore {
@@ -47,96 +40,18 @@ fn header(state: &State) -> State {
     state.operator_jobs.clear();
     state
 }
-fn parse(bytes: &[u8]) -> Result<State> {
-    if bytes.len() < 48
-        || bytes.len() > MAX_LEGACY_BYTES + 48
-        || ![b"MYNOUR01".as_slice(), b"MYNOUR02".as_slice()].contains(&&bytes[..8])
-        || u64::from_le_bytes(
-            bytes[8..16]
-                .try_into()
-                .map_err(|_| "Requester: invalid snapshot length")?,
-        ) != bytes.len() as u64 - 48
-        || sha256(&bytes[..bytes.len() - 32]).as_slice() != &bytes[bytes.len() - 32..]
-    {
-        return Err("Requester: corrupt or unsupported snapshot".into());
+fn exists(path: &Path) -> Result<bool> {
+    match fs::symlink_metadata(path) {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(_) => Err("Requester: cannot inspect storage".into()),
     }
-    let state = State::from_json(&json::parse(
-        std::str::from_utf8(&bytes[16..bytes.len() - 32])
-            .map_err(|_| "Requester: snapshot is not UTF-8")?,
-    )?)?;
-    if &bytes[..8] == b"MYNOUR01"
-        && state
-            .demands
-            .values()
-            .any(|d| d.origins.iter().any(|o| o.starts_with("irc:")))
-    {
-        return Err("Requester: explicit IRC origins require snapshot format 2".into());
-    }
-    Ok(state)
-}
-fn read(path: &Path) -> Result<Option<Vec<u8>>> {
-    reject_symlinks(path)?;
-    let metadata = match fs::symlink_metadata(path) {
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(_) => return Err("Requester: cannot inspect snapshot".into()),
-        Ok(m) => m,
-    };
-    if !metadata.is_file()
-        || metadata.nlink() != 1
-        || metadata.permissions().mode() & 0o077 != 0
-        || metadata.len() > (MAX_LEGACY_BYTES + 48) as u64
-    {
-        return Err("Requester: invalid snapshot file, permissions or size".into());
-    }
-    let mut file = private_options()
-        .read(true)
-        .open(path)
-        .map_err(|_| "Requester: cannot open snapshot")?;
-    let opened = file
-        .metadata()
-        .map_err(|_| "Requester: cannot inspect open snapshot")?;
-    if opened.dev() != metadata.dev() || opened.ino() != metadata.ino() {
-        return Err("Requester: snapshot changed during open".into());
-    }
-    let mut bytes = Vec::new();
-    Read::take(&mut file, (MAX_LEGACY_BYTES + 49) as u64)
-        .read_to_end(&mut bytes)
-        .map_err(|_| "Requester: cannot read snapshot")?;
-    if bytes.len() as u64 != metadata.len() {
-        return Err("Requester: snapshot changed during read".into());
-    }
-    Ok(Some(bytes))
-}
-fn replace(directory: &Path, path: &Path, bytes: &[u8]) -> Result<()> {
-    reject_symlinks(path)?;
-    let temp = directory.join(format!(
-        ".requesters-{}.tmp",
-        super::digest(&random_bytes::<16>()?)
-    ));
-    let result = (|| {
-        let mut file = private_options()
-            .write(true)
-            .create_new(true)
-            .open(&temp)
-            .map_err(|error| crate::store::migration_io("Requester storage", "write", &error))?;
-        file.write_all(bytes)
-            .and_then(|()| sync_file(&file))
-            .map_err(|error| crate::store::migration_io("Requester storage", "write", &error))?;
-        fs::rename(&temp, path)
-            .map_err(|error| crate::store::migration_io("Requester storage", "write", &error))?;
-        sync_directory(directory)
-            .map_err(|error| crate::store::migration_sync("Requester storage", &error))
-    })();
-    if result.is_err() {
-        let _ = fs::remove_file(temp);
-    }
-    result
 }
 impl RequesterStore {
     /// Index size and state for diagnostics, from the durable root only.
     pub(crate) fn storage(&self) -> crate::json::Value {
         match &*self.backend.borrow() {
-            Backend::Legacy { .. } => crate::inventory::report("legacy", None),
+            Backend::Absent => crate::inventory::report("empty", None),
             Backend::Ready(index) => crate::inventory::report("index", Some(index)),
         }
     }
@@ -146,7 +61,11 @@ impl RequesterStore {
             Backend::Ready(index) => {
                 crate::inventory::backlog::read(index, "requester_admission_scan", at)
             }
-            Backend::Legacy { .. } => Err("Backlog requires writable preparation".into()),
+            Backend::Absent => Ok(crate::inventory::backlog::inactive(
+                "disabled",
+                "requester_admission_scan",
+                None,
+            )),
         }
     }
     pub(crate) fn finish_backlog_pass(&mut self, at: u64) -> Result<()> {
@@ -156,21 +75,14 @@ impl RequesterStore {
         }
         match &mut *self.backend.borrow_mut() {
             Backend::Ready(index) => crate::inventory::backlog::finish(index, at),
-            Backend::Legacy { .. } => Err("Backlog requires writable preparation".into()),
+            Backend::Absent => Ok(()),
         }
     }
     pub(crate) fn open(directory: &Path, config: &Config, read_only: bool) -> Result<Self> {
-        let bytes = read(&directory.join("requesters.bin"))?;
-        let (backend, mut state) = if let Some(bytes) = &bytes
-            && (bytes.starts_with(MARKER) || bytes.starts_with(OLD_MARKER))
-        {
-            if bytes.len() != 72 || sha256(&bytes[..40]).as_slice() != &bytes[40..] {
-                return Err("Requester: corrupt index marker".into());
-            }
-            let mut index = Index::open(&directory.join(INDEX), read_only)?;
-            if index.identity().as_slice() != &bytes[8..40] {
-                return Err("Requester: index identity differs from marker".into());
-            }
+        let path = directory.join(INDEX);
+        reject_symlinks(&path)?;
+        let (backend, mut state) = if exists(&path)? {
+            let mut index = Index::open(&path, read_only)?;
             let value = index
                 .get(&index::HEADER)?
                 .ok_or("Requester: index metadata is missing")?;
@@ -182,13 +94,7 @@ impl RequesterStore {
             }
             (Backend::Ready(Box::new(index)), state)
         } else {
-            let state = bytes
-                .as_deref()
-                .map(parse)
-                .transpose()?
-                .unwrap_or_else(State::empty);
-            let metadata = header(&state);
-            (Backend::Legacy { state, bytes }, metadata)
+            (Backend::Absent, State::empty())
         };
         let original = state.clone();
         for account in &config.requesters.accounts {
@@ -270,20 +176,15 @@ impl RequesterStore {
         self.available()?;
         match &*self.backend.borrow() {
             Backend::Ready(index) => index.sequence(),
-            Backend::Legacy { state, .. } => Ok(state.revision),
+            Backend::Absent => Ok(self.state.revision),
         }
     }
     pub(crate) fn initialize(&mut self) -> Result<()> {
         if self.read_only {
             return Ok(());
         }
-        let legacy = match &*self.backend.borrow() {
-            Backend::Legacy { state, bytes } => Some((state.clone(), bytes.clone())),
-            Backend::Ready(_) => None,
-        };
-        if let Some((state, bytes)) = legacy {
-            let result = self.migrate(&state, bytes.as_deref());
-            match result {
+        if matches!(&*self.backend.borrow(), Backend::Absent) {
+            match self.create() {
                 Ok(index) => *self.backend.borrow_mut() = Backend::Ready(Box::new(index)),
                 Err(error) => {
                     self.poisoned = true;
@@ -292,13 +193,6 @@ impl RequesterStore {
             }
         }
         if let Backend::Ready(index) = &mut *self.backend.borrow_mut() {
-            let path = self.directory.join("requesters.bin");
-            if read(&path)?.is_some_and(|bytes| bytes.starts_with(OLD_MARKER)) {
-                let mut marker = MARKER.to_vec();
-                marker.extend_from_slice(&index.identity());
-                marker.extend_from_slice(&sha256(&marker));
-                replace(&self.directory, &path, &marker)?;
-            }
             index::prepare_backlog(index)?;
         }
         if self.dirty {
@@ -342,7 +236,7 @@ impl RequesterStore {
         let operators: Vec<_> = patch.operator_jobs.iter().cloned().collect();
         let mut backend = self.backend.borrow_mut();
         let Backend::Ready(index) = &mut *backend else {
-            return Err("Requester: checked migration must precede a patch".into());
+            return Err("Requester: storage is not initialized".into());
         };
         let metadata = header(&patch);
         let result = index::commit_poll(index, &metadata, &demands, &operators, stage);
@@ -371,26 +265,7 @@ impl RequesterStore {
                     .collect::<Result<Vec<_>>>()?;
                 Ok((demands, page.next))
             }
-            Backend::Legacy { state, .. } => {
-                let filtered = State {
-                    revision: state.revision,
-                    accounts: BTreeMap::new(),
-                    demands: state
-                        .demands
-                        .iter()
-                        .filter(|(_, d)| d.account_id == account)
-                        .map(|(id, d)| (id.clone(), d.clone()))
-                        .collect(),
-                    operator_jobs: BTreeSet::new(),
-                };
-                index::legacy_page(&filtered, after, limit, false)
-            }
-        }
-    }
-    pub(crate) fn account_cursor(&self, account: &str, id: &str) -> Result<Key> {
-        match &*self.backend.borrow() {
-            Backend::Ready(_) => index::account_cursor(account, id),
-            Backend::Legacy { .. } => index::primary_cursor(id),
+            Backend::Absent => Ok((Vec::new(), None)),
         }
     }
     pub(crate) fn save_admission_cursor(&mut self, state: u8, after: Option<Key>) -> Result<()> {
@@ -418,7 +293,7 @@ impl RequesterStore {
         }
         let mut backend = self.backend.borrow_mut();
         let Backend::Ready(index) = &mut *backend else {
-            return Err("Requester: checked migration must precede cursor writes".into());
+            return Err("Requester: storage is not initialized".into());
         };
         index.commit(vec![Change::Put(key, bytes)])?;
         Ok(())
@@ -440,9 +315,7 @@ impl RequesterStore {
                     .collect::<Result<Vec<_>>>()?;
                 Ok((demands, page.next))
             }
-            Backend::Legacy { .. } => {
-                Err("Requester: writable migration is required before scheduling".into())
-            }
+            Backend::Absent => Ok((Vec::new(), None)),
         }
     }
     pub(crate) fn count(&self, account: &str, state_name: Option<&str>) -> Result<u64> {
@@ -456,14 +329,7 @@ impl RequesterStore {
                     .transpose()?
                     .unwrap_or(255),
             ),
-            Backend::Legacy { state, .. } => Ok(state
-                .demands
-                .values()
-                .filter(|d| {
-                    (account.is_empty() || d.account_id == account)
-                        && state_name.is_none_or(|name| name == d.state)
-                })
-                .count() as u64),
+            Backend::Absent => Ok(0),
         }
     }
     /// The unfinished watchlist sweep of an account, if any.
@@ -471,14 +337,14 @@ impl RequesterStore {
         self.available()?;
         match &mut *self.backend.borrow_mut() {
             Backend::Ready(index) => index::sweep(index, account),
-            Backend::Legacy { .. } => Ok(None),
+            Backend::Absent => Ok(None),
         }
     }
     pub(crate) fn poll_ready(&self, account: &str) -> Result<bool> {
         self.available()?;
         match &mut *self.backend.borrow_mut() {
             Backend::Ready(index) => index::poll_ready(index, account),
-            Backend::Legacy { .. } => Ok(true),
+            Backend::Absent => Ok(true),
         }
     }
     /// One bounded durable retirement pass. A later poll cannot publish before
@@ -518,212 +384,27 @@ impl RequesterStore {
         index.commit(vec![Change::Put(index::clean_key(account), progress)])?;
         Ok(())
     }
-    fn migrate(&self, state: &State, bytes: Option<&[u8]>) -> Result<Index> {
-        let total = (state.demands.len() + state.operator_jobs.len()) as u64;
-        let progress = crate::progress::Tracker::start_if(
-            bytes.is_some(),
-            &self.directory,
-            "requesters",
-            Some(total),
-        );
-        progress.stage("preserving", 0);
-        let source = sha256(bytes.unwrap_or_default());
-        if let Some(bytes) = bytes {
-            let backup = self
-                .directory
-                .join(format!("requesters.legacy-{}.bin", super::digest(&source)));
-            if let Some(known) = read(&backup)? {
-                if known != bytes {
-                    return Err(
-                        "Requester: preserved legacy copy differs; refusing replacement".into(),
-                    );
-                }
-            } else {
-                replace(&self.directory, &backup, bytes)?;
-            }
-        }
-        let published = self.directory.join(INDEX);
-        reject_symlinks(&published)?;
+    /// Builds the index with its metadata under a temporary name, then
+    /// publishes it, so a published index always has its metadata.
+    fn create(&self) -> Result<Index> {
         let staging = self.directory.join(STAGING);
         reject_symlinks(&staging)?;
-        let mut index = if published
-            .try_exists()
-            .map_err(|error| crate::store::migration_io("Requester storage", "write", &error))?
-        {
-            let mut index = Index::open(&published, false)?;
-            if index.get(&index::SOURCE)?.as_deref() != Some(source.as_slice()) {
-                return Err(
-                    "Requester: published index differs from validated legacy source".into(),
-                );
-            }
-            // A promoted index may contain acknowledged changes if somebody
-            // restored old bytes beside it. Never rewrite it before proving
-            // this is exactly the pre-marker migration checkpoint.
-            verify(&mut index, state, &self.state, &source)?;
-            if index.get(&index::CURSOR)?.is_some() {
-                return Err("Requester: promoted index retains a staging cursor".into());
-            }
-            let identity = index.identity();
-            drop(index);
-            let mut marker = MARKER.to_vec();
-            marker.extend_from_slice(&identity);
-            marker.extend_from_slice(&sha256(&marker));
-            replace(
-                &self.directory,
-                &self.directory.join("requesters.bin"),
-                &marker,
-            )?;
-            return Index::open(&published, false);
-        } else {
-            let mut reusable = None;
-            if staging
-                .try_exists()
-                .map_err(|_| "Requester: cannot inspect staging")?
-            {
-                if let Ok(mut inspect) = Index::open(&staging, true)
-                    && !inspect.interrupted()
-                    && inspect.get(&index::SOURCE)?.as_deref() == Some(source.as_slice())
-                {
-                    drop(inspect);
-                    progress.resumed();
-                    reusable = Some(Index::open(&staging, false)?);
-                } else {
-                    let metadata = fs::symlink_metadata(&staging)
-                        .map_err(|_| "Requester: cannot inspect staging")?;
-                    if !metadata.is_dir() || metadata.permissions().mode() & 0o077 != 0 {
-                        return Err("Requester: staging must be a private directory; move it aside explicitly".into());
-                    }
-                    let preserved = self.directory.join(format!(
-                        "requesters.idx.abandoned-{}",
-                        super::digest(&random_bytes::<16>()?)
-                    ));
-                    fs::rename(&staging, &preserved).map_err(|error| {
-                        crate::store::migration_io("Requester storage", "write", &error)
-                    })?;
-                    sync_directory(&self.directory).map_err(|error| {
-                        crate::store::migration_sync("Requester storage", &error)
-                    })?;
-                }
-            }
-            if let Some(index) = reusable {
-                index
-            } else {
-                let mut index = Index::create(&staging)?;
-                index.commit(vec![Change::PutInline(index::SOURCE, source.to_vec())])?;
-                index
-            }
-        };
-        let cursor = index.get(&index::CURSOR)?;
-        let mut batch = Vec::new();
-        let mut done = 0_u64;
-        progress.stage("copying", 0);
-        for demand in state.demands.values() {
-            done += 1;
-            if cursor
-                .as_deref()
-                .is_some_and(|done| demand.id.as_bytes() <= done)
-            {
-                continue;
-            }
-            batch.push(demand.clone());
-            if batch.len() == MAX_PAGE_ROWS {
-                write_migration_batch(&mut index, &self.state, &batch)?;
-                batch.clear();
-                progress.stage("copying", done);
-            }
+        if exists(&staging)? {
+            // Only an interrupted creation leaves it, and it held no demand.
+            fs::remove_dir_all(&staging)
+                .map_err(|_| "Requester: cannot remove an unfinished index")?;
         }
-        if !batch.is_empty() {
-            write_migration_batch(&mut index, &self.state, &batch)?;
-        }
-        progress.stage("copying", done);
-        let operators: Vec<_> = state.operator_jobs.iter().cloned().collect();
-        for batch in operators.chunks(MAX_PAGE_ROWS) {
-            index::commit(&mut index, &self.state, &[], batch)?;
-            done += batch.len() as u64;
-            progress.stage("copying", done);
-        }
-        index::commit(&mut index, &self.state, &[], &[])?;
-        progress.stage("verifying", total);
-        verify(&mut index, state, &self.state, &source)?;
-        if index.get(&index::CURSOR)?.is_some() {
-            index.commit(vec![Change::Delete(index::CURSOR)])?;
-        }
-        let identity = index.identity();
+        let mut index = Index::create(&staging)?;
+        index::prepare_backlog(&mut index)?;
+        index::commit(&mut index, &header(&self.state), &[], &[])?;
         drop(index);
-        progress.stage("promoting", total);
-        if !published
-            .try_exists()
-            .map_err(|_| "Requester: cannot inspect promotion")?
-        {
-            fs::rename(&staging, &published).map_err(|error| {
-                crate::store::migration_io("Requester storage", "write", &error)
-            })?;
-            sync_directory(&self.directory)
-                .map_err(|error| crate::store::migration_sync("Requester storage", &error))?;
-        }
-        let mut marker = MARKER.to_vec();
-        marker.extend_from_slice(&identity);
-        marker.extend_from_slice(&sha256(&marker));
-        replace(
-            &self.directory,
-            &self.directory.join("requesters.bin"),
-            &marker,
-        )?;
-        let index = Index::open(&published, false)?;
-        progress.finish();
-        Ok(index)
+        let path = self.directory.join(INDEX);
+        fs::rename(&staging, &path)
+            .map_err(|error| crate::store::storage_io("Requester storage", "write", &error))?;
+        sync_directory(&self.directory)
+            .map_err(|error| crate::store::storage_sync("Requester storage", &error))?;
+        Index::open(&path, false)
     }
-}
-fn write_migration_batch(index: &mut Index, metadata: &State, batch: &[Demand]) -> Result<()> {
-    index::commit(index, metadata, batch, &[])?;
-    let last = batch.last().ok_or("Requester: empty migration batch")?;
-    index.commit(vec![Change::Put(
-        index::CURSOR,
-        last.id.as_bytes().to_vec(),
-    )])?;
-    Ok(())
-}
-fn verify(index: &mut Index, legacy: &State, metadata: &State, source: &[u8; 32]) -> Result<()> {
-    let mut expected = BTreeMap::from([
-        (
-            index::HEADER,
-            json::stringify(&header(metadata).to_json()).into_bytes(),
-        ),
-        (index::SOURCE, source.to_vec()),
-    ]);
-    let mut counts = BTreeMap::<Key, u64>::new();
-    for demand in legacy.demands.values() {
-        expected.extend(index::entries(demand)?);
-        for account in [&demand.account_id[..], ""] {
-            for state in [index::state_code(&demand.state)?, 255] {
-                *counts.entry(index::counter(account, state)).or_default() += 1;
-            }
-        }
-    }
-    for (key, count) in counts {
-        expected.insert(key, count.to_le_bytes().to_vec());
-    }
-    for id in &legacy.operator_jobs {
-        expected.insert(index::operator_key(id)?, Vec::new());
-    }
-    if !legacy.operator_jobs.is_empty() {
-        expected.insert(
-            index::OPERATOR_COUNT,
-            (legacy.operator_jobs.len() as u64).to_le_bytes().to_vec(),
-        );
-    }
-    if let Some(cursor) = index.get(&index::CURSOR)? {
-        expected.insert(index::CURSOR, cursor);
-    }
-    for (key, value) in &expected {
-        if index.get(key)?.as_ref() != Some(value) {
-            return Err("Requester: migration primary, secondary or metadata proof differs".into());
-        }
-    }
-    if index.len()? != expected.len() as u64 {
-        return Err("Requester: migration contains unacknowledged extra keys".into());
-    }
-    Ok(())
 }
 impl LedgerRead for RequesterStore {
     fn accounts(&self) -> &BTreeMap<String, Record> {
@@ -735,7 +416,7 @@ impl LedgerRead for RequesterStore {
             Backend::Ready(index) => index::get(index, id)?
                 .map(|d| index::effective(index, d))
                 .transpose(),
-            Backend::Legacy { state, .. } => state.demand(id),
+            Backend::Absent => Ok(None),
         }
     }
     fn demands_page(&self, after: Option<Key>, limit: usize) -> Result<(Vec<Demand>, Option<Key>)> {
@@ -750,7 +431,7 @@ impl LedgerRead for RequesterStore {
                     .collect::<Result<Vec<_>>>()?;
                 Ok((demands, page.next))
             }
-            Backend::Legacy { state, .. } => state.demands_page(after, limit),
+            Backend::Absent => Ok((Vec::new(), None)),
         }
     }
     fn irc_demands_page(
@@ -769,14 +450,14 @@ impl LedgerRead for RequesterStore {
                     .collect::<Result<Vec<_>>>()?;
                 Ok((demands, page.next))
             }
-            Backend::Legacy { state, .. } => state.irc_demands_page(after, limit),
+            Backend::Absent => Ok((Vec::new(), None)),
         }
     }
     fn operator_interest(&self, id: &str) -> Result<bool> {
         self.available()?;
         match &mut *self.backend.borrow_mut() {
             Backend::Ready(index) => index::has_operator(index, id),
-            Backend::Legacy { state, .. } => state.operator_interest(id),
+            Backend::Absent => Ok(false),
         }
     }
 }

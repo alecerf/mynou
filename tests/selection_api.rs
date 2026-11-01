@@ -501,3 +501,63 @@ fn invalid_authenticated_search_requests_fail_before_indexer_access_or_journal_w
     );
     assert_eq!(files(&directory.0), before);
 }
+
+#[test]
+fn manual_grab_records_indexer_and_initializes_its_native_seed_policy() {
+    let directory = Directory::new();
+    let indexer = Indexer::open(|_| {
+        (
+            200,
+            format!(
+                r#"[{{"title":"Fixture.Movie.2024.1080p.WEB-DL.EN","seeders":5,"size":150000000,"url":"magnet:?xt=urn:btih:{}"}}]"#,
+                "ab".repeat(20)
+            ),
+        )
+    });
+    let mut document = configuration(&[&indexer]);
+    let downloads = document.get_mut("downloads").unwrap();
+    downloads.insert("enabled", true);
+    downloads.insert("seed_time_secs", 600_u32);
+    let Value::Array(sources) = document.get_mut("indexers").unwrap() else {
+        panic!()
+    };
+    sources[0].insert("id", "fixture");
+    sources[0].insert("seed_ratio_milli", 2500_u32);
+    let server = Server::open(config::from_json(&document, &directory.0).unwrap());
+    let request = movie();
+    let (status, report) =
+        server.call("POST", "/api/search", Some(TOKEN), Some(&request.to_json()));
+    assert_eq!(status, 200, "{report:?}");
+    let mut body = Value::object();
+    body.insert("request", request.to_json());
+    body.insert(
+        "candidate_id",
+        report.get("selected_candidate_id").unwrap().clone(),
+    );
+    let (status, result) = server.call("POST", "/api/grab", Some(TOKEN), Some(&body));
+    assert_eq!(status, 201, "{result:?}");
+    assert!(server.engine.tick().unwrap());
+    let job = lock(&server.engine.store)
+        .unwrap()
+        .list()
+        .unwrap()
+        .pop()
+        .unwrap();
+    let recorded = job.release.as_ref().unwrap();
+    assert_eq!(recorded.source_id.as_deref(), Some("fixture"));
+    assert_eq!(recorded.size_bytes, Some(150_000_000));
+    let id = job
+        .download_id
+        .as_ref()
+        .expect("grab must create a native transfer");
+    let transfer = server.engine.transfer(id).unwrap();
+    let policy = transfer.get("policy").unwrap();
+    assert_eq!(
+        policy.get("seed_ratio_milli").and_then(Value::as_u64),
+        Some(2500)
+    );
+    assert_eq!(
+        policy.get("seed_time_secs").and_then(Value::as_u64),
+        Some(600)
+    );
+}

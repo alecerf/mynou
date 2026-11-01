@@ -111,9 +111,7 @@ a DHT client and PEX reception. Peer data uses TCP only.
   Routine startup and scheduling read bounded windows, not the complete transfer
   directory. Transfer lists return cursor pages of 50 rows by default, at most
   200; every retained identity remains reachable. Paused and finished entries do
-  not each require a resident worker. The first indexed startup migrates legacy
-  state and keeps a private backup; old binaries reject the new format. See
-  [transfer storage and downgrade](transfers.md#storage-migration-and-downgrade).
+  not each require a resident worker. See [transfer storage](transfers.md#storage).
 
 ## Network, HTTP and TLS
 
@@ -155,6 +153,10 @@ a DHT client and PEX reception. Peer data uses TCP only.
 
 Indexers:
 
+- Per-indexer `priority` is 1 to 50 (default 25, lower first), and nullable
+  `minimum_seeders` is 0 to 1,000,000 (default: inherit global). `prefer_freeleech`
+  defaults to false. Nullable `seed_ratio_milli` (1 to 1,000,000) and
+  `seed_time_secs` (1 to 315,360,000) inherit downloads limits when null.
 - Supported formats are RSS, JSON and Torznab, from an endpoint that serves
   them directly; Mynou does not perform a general web search. A search uses at
   most 1,000 configured sources. Responses are limited to 8 MiB.
@@ -190,7 +192,6 @@ Watched feeds:
   most 32 jobs and 32 upgrades. The window keeps 1,024 identities per source.
 - `feeds.idx` retains source state without a total count or aggregate byte cap;
   retained listings and active reconciliation use 200-row, 4 MiB windows.
-  `feeds.bin` is an identity-bound marker; legacy reads remain bounded to 4 MiB.
   A failed save reports `storage_failed`; uncertain writes require restart.
   Corruption, unsupported formats, links and public permissions stop startup.
   A source not polled successfully for seven days is baselined again.
@@ -206,9 +207,7 @@ IRC announcements:
 - Retained announcement identities live in `announcements.idx` without a total
   record or byte limit. Duplicate suppression survives restart without pruning.
   Point reads and listing pages (200 rows, 4 MiB) bound each operation; follow
-  `next_cursor` as `after` beyond the compatibility offset
-  window of 1,000 rows. Legacy snapshots remain bounded to 1,000 rows / 8 MiB
-  during migration. Counters and source health reset when the service restarts.
+  `next` as `after` for later pages. Counters and source health reset when the service restarts.
   Routing scans one 200-row pending page per turn (plus an empty wrap probe)
   and makes at most one attempt per turn. A transient failure backs off for 30
   seconds; at most 200 backoffs are remembered, and a full table drops the one
@@ -271,6 +270,10 @@ IRC announcements:
 - Up to 64 profiles, named with 1 to 64 ASCII letters, digits, hyphens or
   underscores. Lists hold at most 32 entries, terms at most 128 bytes, and
   scores and minimums are bounded to ±100,000.
+- Profile `min_size_mb` and `max_size_mb` are null or integers from 1 to
+  1,000,000, minimum no greater than maximum; 1 MB is 1,000,000 bytes per movie
+  or episode. `allow_unknown_size` defaults to true. Packs scale limits by their
+  expected episode count; unknown counts skip size checks with an issue.
 - Markers are claims in a release name. Selection does not verify audio
   languages or decode video: `VOSTFR` does not mean French audio and `MULTI`
   does not say which languages are present. Automatic selection requires a
@@ -311,8 +314,7 @@ IRC announcements:
   with no total count, aggregate size or automatic eviction: it is an indexed
   [disk store](inventory-storage.md#series-storage), not a snapshot held in memory.
   Each plan still holds at most 2,000 episodes, 100 seasons and 1,000 episodes
-  per catalog season. Earlier versions stopped at 128 scopes, 20,000 episodes and
-  8 MiB; their data migrates on the first start with write access.
+  per catalog season.
 - The service checks due records every minute: at most four per pass (240 an
   hour, so with more monitored records each waits longer than an hour), 64
   episode requests per batch, a 90-second pass budget and 20 seconds per catalog
@@ -374,11 +376,10 @@ IRC announcements:
 
 ## Persistence and platform
 
-- Job journal formats 6 to 8, which stored the removed Usenet provenance, are
-  rejected. Requester snapshots containing removed approval, quota or
-  notification fields and IRC history format 4 are also rejected during startup.
-  These removals provide no migration and do not delete stored data automatically. Read the
-  [release notes](releases/) and back up private storage before upgrading.
+- Only the current format of each store opens. Stores written by earlier
+  builds, including the journal and snapshot files that preceded the disk
+  indexes, are refused and never migrated or deleted automatically: move the
+  store directory aside and start again.
 - Jobs and their secondary ownership indexes live in `jobs.idx`, a single-owner
   disk index with no fixed total job, snapshot or journal-size cap. Job JSON
   keeps its 16 MiB parser/record bound (large jobs use checked 1 MiB chunks).
@@ -390,14 +391,13 @@ IRC announcements:
   hold fewer matches while its cursor continues
   ([listings](inventory-storage.md#listings-and-cursors)). Network/JSON response limits still apply to unusually large records.
   The settings document remains limited to 1 MiB. See
-  [job migration and recovery](inventory-storage.md#job-storage).
+  [job storage](inventory-storage.md#job-storage).
 - Jobs/history, library tips, series, requester demand, feeds, source policies,
   IRC announcements and native transfers use private checksummed disk indexes
   with write-ahead recovery. Retained inventories have no fixed total count or
   aggregate-byte cap; per-record, page, transaction, configured-source and
-  concurrency bounds remain. Legacy snapshot bounds apply to migration inputs,
-  and physical disk and compute resources still constrain growth. Recovery and
-  downgrade guidance for every store is linked in the
+  concurrency bounds remain, and physical disk and compute resources still
+  constrain growth. Recovery guidance for every store is linked in the
   [storage overview](inventory-storage.md). Checksums detect corruption; they do
   not authenticate against someone who can rewrite the files. After an uncertain
   write, reads and writes of that index pause until writable recovery on restart.
@@ -408,12 +408,6 @@ IRC announcements:
   from [the capacity evidence record](inventory-growth.md).
   These readings cover their stated synthetic workloads, not arbitrary network
   throughput, long-term churn or infinite hardware capacity.
-- Series data moves from `series.json` to `series.idx` on the first start with
-  write access; the previous snapshot is kept as `series.legacy-*.json` and
-  `series.json` becomes a marker that older versions refuse. Going back means
-  restoring that copy, which lacks later changes and keeps the old limits. A
-  read-only open of a store that has not been migrated reports that it must be
-  migrated and writes nothing.
 - Request and series writes are separate commits: after a crash, a partly
   recorded episode batch is kept and completed without duplicates. Without
   series storage no series is tracked, and earlier episode jobs are never adopted

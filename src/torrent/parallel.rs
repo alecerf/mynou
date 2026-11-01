@@ -31,6 +31,35 @@ const RETRY: Duration = Duration::from_secs(2);
 // before its connection is closed.
 const INBOUND: usize = 8;
 const INBOUND_WAIT: Duration = Duration::from_secs(5);
+const QUARANTINE_LIMIT: usize = 1024;
+const QUARANTINE_WAIT: Duration = Duration::from_secs(5 * 60);
+
+#[derive(Default)]
+struct Quarantine(BTreeMap<SocketAddr, Instant>);
+
+impl Quarantine {
+    fn insert(&mut self, address: SocketAddr) {
+        let now = Instant::now();
+        self.0.retain(|_, expires| *expires > now);
+        if self.0.len() >= QUARANTINE_LIMIT
+            && !self.0.contains_key(&address)
+            && let Some(oldest) = self
+                .0
+                .iter()
+                .min_by_key(|(_, expires)| **expires)
+                .map(|(a, _)| *a)
+        {
+            self.0.remove(&oldest);
+        }
+        self.0.insert(address, now + QUARANTINE_WAIT);
+    }
+
+    fn contains(&self, address: &SocketAddr) -> bool {
+        self.0
+            .get(address)
+            .is_some_and(|expires| *expires > Instant::now())
+    }
+}
 
 fn peer_limit(config: &DownloadConfig, meta: &Meta) -> usize {
     let strings = meta
@@ -133,7 +162,7 @@ enum EventKind {
         index: usize,
         availability: Option<Vec<u8>>,
     },
-    Failed {
+    Finished {
         corrupt: bool,
     },
 }
@@ -146,6 +175,7 @@ struct Event {
 
 struct Worker {
     address: SocketAddr,
+    outbound: bool,
     ticket: u64,
     commands: SyncSender<Command>,
     stop: Arc<AtomicBool>,
@@ -169,13 +199,17 @@ struct Group {
 }
 
 impl Group {
-    fn retire(&mut self, slot: usize) -> Option<(SocketAddr, bool)> {
+    fn retire(&mut self, slot: usize) -> Option<(SocketAddr, bool, bool)> {
         let worker = self.workers[slot].take()?;
         worker.stop.store(true, Ordering::Release);
         let address = worker.address;
         drop(worker.commands);
         let _ = worker.handle.join();
-        Some((address, worker.corrupt.load(Ordering::Acquire)))
+        Some((
+            address,
+            worker.corrupt.load(Ordering::Acquire),
+            worker.outbound,
+        ))
     }
 }
 
@@ -247,6 +281,45 @@ struct PeerTask {
     /// Pieces verified through any peer.
     done: Arc<wire::Pieces>,
     events: SyncSender<Event>,
+}
+
+// The last event from a worker follows all of its queued pieces, including
+// when it unwinds or its command channel disconnects.
+struct WorkerExit {
+    slot: usize,
+    ticket: u64,
+    events: SyncSender<Event>,
+    stop: Arc<AtomicBool>,
+    corrupt: Arc<AtomicBool>,
+}
+
+impl Drop for WorkerExit {
+    fn drop(&mut self) {
+        let _ = send_event(
+            &self.events,
+            &self.stop,
+            Event {
+                slot: self.slot,
+                ticket: self.ticket,
+                kind: EventKind::Finished {
+                    corrupt: self.corrupt.load(Ordering::Acquire),
+                },
+            },
+        );
+    }
+}
+
+fn spawn_worker(task: PeerTask) -> JoinHandle<()> {
+    thread::spawn(move || {
+        let _exit = WorkerExit {
+            slot: task.slot,
+            ticket: task.ticket,
+            events: task.events.clone(),
+            stop: task.stop.clone(),
+            corrupt: task.corrupt.clone(),
+        };
+        peer_worker(task);
+    })
 }
 
 fn send_event(events: &SyncSender<Event>, stop: &AtomicBool, mut event: Event) -> Result<()> {
@@ -481,21 +554,20 @@ fn peer_worker(mut task: PeerTask) {
         .iter()
         .any(|marker| error.contains(marker));
         task.corrupt.store(corrupt, Ordering::Release);
-        let _ = send(EventKind::Failed { corrupt });
     }
 }
 
 fn retire_peer(
     group: &mut Group,
     slot: usize,
-    quarantine: &mut BTreeSet<SocketAddr>,
+    quarantine: &mut Quarantine,
     retries: &mut BTreeMap<SocketAddr, Instant>,
     corrupt_response: bool,
 ) {
-    if let Some((address, corrupt)) = group.retire(slot) {
+    if let Some((address, corrupt, outbound)) = group.retire(slot) {
         if corrupt_response || corrupt {
             quarantine.insert(address);
-        } else {
+        } else if outbound {
             retries.insert(address, Instant::now() + RETRY);
         }
     }
@@ -504,7 +576,7 @@ fn retire_peer(
 fn select_address(
     addresses: &BTreeSet<SocketAddr>,
     workers: &[Option<Worker>],
-    quarantine: &BTreeSet<SocketAddr>,
+    quarantine: &Quarantine,
     retries: &BTreeMap<SocketAddr, Instant>,
     cursor: Option<SocketAddr>,
 ) -> Option<SocketAddr> {
@@ -571,7 +643,7 @@ fn metadata(context: MetadataContext<'_>, addresses: &mut BTreeSet<SocketAddr>) 
     };
     let mut cursor = None;
     let mut retries = BTreeMap::new();
-    let mut quarantine = BTreeSet::new();
+    let mut quarantine = Quarantine::default();
     let hash = source.wire_hash();
     let mut next_dht = Instant::now();
     loop {
@@ -579,6 +651,7 @@ fn metadata(context: MetadataContext<'_>, addresses: &mut BTreeSet<SocketAddr>) 
             return Err("Download interrupted".into());
         }
         refresh_peers(jobs, stop, id, addresses)?;
+        retries.retain(|_, retry| *retry > Instant::now());
         if group
             .discovery
             .as_ref()
@@ -728,6 +801,9 @@ pub(super) fn download(
                 .sum(),
             Ordering::Relaxed,
         );
+        counters
+            .selected_left
+            .store(selected.missing_bytes(&meta, &have), Ordering::Relaxed);
         Ok(())
     })?;
     // Peers may fetch verified pieces from this side while it downloads.
@@ -759,7 +835,7 @@ pub(super) fn download(
     let mut cursor = None;
     let mut ticket = 0u64;
     let mut retries = BTreeMap::new();
-    let mut quarantine = BTreeSet::new();
+    let mut quarantine = Quarantine::default();
     let mut next_dht = Instant::now();
     let hash = source.wire_hash();
     let (inbound_sender, inbound) = mpsc::sync_channel(INBOUND);
@@ -800,11 +876,15 @@ pub(super) fn download(
         // Incoming peers of this torrent take the next free slots, before any
         // address is dialed; one not given a slot in time is closed.
         while let Ok(peer) = inbound.try_recv() {
-            if peer.hash == hash && waiting.len() < INBOUND {
+            if (meta.v1 == Some(peer.hash) || meta.v2.is_some_and(|v| v[..20] == peer.hash))
+                && !quarantine.contains(&peer.address)
+                && waiting.len() < INBOUND
+            {
                 waiting.push((peer, Instant::now()));
             }
         }
         waiting.retain(|(_, since)| since.elapsed() < INBOUND_WAIT);
+        retries.retain(|_, retry| *retry > Instant::now());
         // At most one connection and `claims` exclusive claims exist per slot.
         // A retired or panicking worker loses its claims when its slot is taken.
         for slot in 0..limit {
@@ -818,6 +898,10 @@ pub(super) fn download(
                     .inspect(|address| cursor = Some(*address)),
             };
             if let Some(address) = address {
+                let outbound = accepted.is_none();
+                let v2_wire = accepted
+                    .as_ref()
+                    .map_or(source.v1.is_none(), |peer| meta.v1 != Some(peer.hash));
                 ticket = ticket
                     .checked_add(1)
                     .ok_or("Peer generation sequence exhausted")?;
@@ -833,7 +917,7 @@ pub(super) fn download(
                     peer_id: *peer_id,
                     port: config.listen_port,
                     pex: config.pex && !meta.private,
-                    v2_wire: source.v1.is_none(),
+                    v2_wire,
                     meta: {
                         if shared_stale {
                             shared = Arc::new(meta.clone());
@@ -856,10 +940,11 @@ pub(super) fn download(
                 };
                 group.workers[slot] = Some(Worker {
                     address,
+                    outbound,
                     ticket,
                     commands,
                     stop: cancel,
-                    handle: thread::spawn(move || peer_worker(task)),
+                    handle: spawn_worker(task),
                     corrupt,
                     uploading,
                     availability: None,
@@ -944,7 +1029,7 @@ pub(super) fn download(
                     worker.availability = Some(availability);
                     worker.idle_since = Instant::now();
                 }
-                EventKind::Failed { corrupt } => {
+                EventKind::Finished { corrupt } => {
                     retire_peer(
                         &mut group,
                         event.slot,
@@ -953,14 +1038,6 @@ pub(super) fn download(
                         corrupt,
                     );
                 }
-            }
-        }
-        for slot in 0..limit {
-            if group.workers[slot]
-                .as_ref()
-                .is_some_and(|worker| worker.handle.is_finished())
-            {
-                retire_peer(&mut group, slot, &mut quarantine, &mut retries, false);
             }
         }
         let (order, fresh_ranks) = with_generation(jobs, stop, id, |job| {
@@ -1057,7 +1134,7 @@ pub(super) fn download(
                 };
                 // The channel holds `claims` commands, so this never waits.
                 if worker.commands.send(Command::Piece(index)).is_err() {
-                    failed = true;
+                    // Its terminal event follows any results still queued.
                     break;
                 }
                 worker.claims.push(index);
@@ -1190,6 +1267,13 @@ fn commit_piece(
     with_generation(jobs, stop, id, |job| {
         have[index] = true;
         super::add_payload(&job.counters.verified, verified_piece_bytes(meta, index));
+        let done = selected.piece_bytes(meta, index);
+        let _ =
+            job.counters
+                .selected_left
+                .try_update(Ordering::Relaxed, Ordering::Relaxed, |left| {
+                    (left != super::UNKNOWN_LEFT).then(|| left.saturating_sub(done))
+                });
         job.status.progress = selected.progress(have);
         job.status.message = "Download in progress".into();
         Ok(())
@@ -1228,6 +1312,34 @@ mod tests {
             max_seeding: 0,
             max_peers: 256,
         }
+    }
+
+    #[test]
+    fn bytes_left_count_only_selected_files() {
+        // Pieces of 32 KiB over U (31 KiB), A (1 KiB) and B (32 KiB): A and B
+        // are selected and only the first piece is verified.
+        let file = |path: &str, offset: u64, length: u64| super::super::metainfo::MediaFile {
+            path: path.into(),
+            offset,
+            length,
+            padding: false,
+            root: None,
+        };
+        let mut meta = metadata(2);
+        meta.v1 = Some([0; 20]);
+        meta.piece_length = 32 * 1024;
+        meta.total = 64 * 1024;
+        meta.files = vec![
+            file("U", 0, 31 * 1024),
+            file("A", 31 * 1024, 1024),
+            file("B", 32 * 1024, 32 * 1024),
+        ];
+        let selection = super::super::FileSelection::paths(&["A".into(), "B".into()]).unwrap();
+        let plan = super::super::selection::SelectionPlan::new(&meta, &selection).unwrap();
+        assert_eq!(plan.piece_bytes(&meta, 0), 1024);
+        assert_eq!(plan.missing_bytes(&meta, &[false, false]), 33 * 1024);
+        assert_eq!(plan.missing_bytes(&meta, &[true, false]), 32 * 1024);
+        assert_eq!(plan.missing_bytes(&meta, &[true, true]), 0);
     }
 
     #[test]
@@ -1302,7 +1414,7 @@ mod tests {
             .send(Event {
                 slot: 0,
                 ticket: 1,
-                kind: EventKind::Failed { corrupt: false },
+                kind: EventKind::Finished { corrupt: false },
             })
             .unwrap();
         let stop = Arc::new(AtomicBool::new(false));
@@ -1310,6 +1422,7 @@ mod tests {
         let (commands, _receiver) = mpsc::sync_channel(1);
         let worker = Worker {
             address: "127.0.0.1:1".parse().unwrap(),
+            outbound: true,
             ticket: 1,
             commands,
             stop,
@@ -1323,7 +1436,7 @@ mod tests {
                         Event {
                             slot: 0,
                             ticket: 1,
-                            kind: EventKind::Failed { corrupt: true }
+                            kind: EventKind::Finished { corrupt: true }
                         }
                     )
                     .is_err()
@@ -1344,7 +1457,7 @@ mod tests {
         let retire = thread::spawn(move || {
             finished.send(group.retire(0)).unwrap();
         });
-        let (_, corrupt) = result
+        let (_, corrupt, outbound) = result
             .recv_timeout(Duration::from_secs(2))
             .unwrap()
             .unwrap();
@@ -1352,6 +1465,7 @@ mod tests {
             corrupt,
             "Exited workers retain their corrupt-peer classification"
         );
+        assert!(outbound);
         retire.join().unwrap();
     }
 }

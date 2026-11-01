@@ -88,6 +88,18 @@ export function qualityOf(title) {
     pick([[/\b(dv|dovi|dolby.?vision)\b/i, 'Dolby Vision'], [/\bhdr(10\+?)?\b/i, 'HDR']]),
   ].filter(Boolean);
 }
+/** The same traits, each with what it describes, for a sheet's facts. */
+export function qualityFacts(title) {
+  const text = String(title ?? '');
+  if (!text) return [];
+  const pick = (rules) => rules.find(([pattern]) => pattern.test(text))?.[1];
+  return [
+    ['Resolution', pick([[/\b(2160p|4k|uhd)\b/i, '2160p · 4K'], [/\b1080[pi]\b/i, '1080p · Full HD'], [/\b720p\b/i, '720p · HD'], [/\b576p\b/i, '576p'], [/\b480p\b/i, '480p']])],
+    ['Video codec', pick([[/\b(x265|h\.?265|hevc)\b/i, 'HEVC · H.265'], [/\b(x264|h\.?264|avc)\b/i, 'H.264 · AVC'], [/\bav1\b/i, 'AV1']])],
+    ['Source', pick([[/\bremux\b/i, 'Blu-ray remux'], [/\b(blu-?ray|bdrip|brrip)\b/i, 'Blu-ray'], [/\bweb-?dl\b/i, 'WEB-DL'], [/\bwebrip\b/i, 'WEBRip'], [/\bhdtv\b/i, 'HDTV']])],
+    ['Dynamic range', pick([[/\b(dv|dovi|dolby.?vision)\b/i, 'Dolby Vision'], [/\bhdr10\+/i, 'HDR10+'], [/\bhdr(10)?\b/i, 'HDR']])],
+  ].filter(([, value]) => value);
+}
 export const episodeCode = (request) =>
   `S${String(request.season ?? 0).padStart(2, '0')} E${String(request.episode ?? 0).padStart(2, '0')}`;
 /** "Title S01 E02" for an episode, "Title (2024)" otherwise. */

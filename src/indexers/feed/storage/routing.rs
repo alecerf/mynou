@@ -44,26 +44,6 @@ pub(super) fn schedule(index: &mut Index) -> Result<String> {
     }
     Ok(id)
 }
-pub(super) fn upgrade(index: &mut Index) -> Result<()> {
-    match index.get(&HEADER)?.as_deref() {
-        Some(FORMAT) => Ok(()),
-        Some(ROUTING_FORMAT) => {
-            check(index)?;
-            index.commit(vec![Change::PutInline(HEADER, FORMAT.to_vec())])?;
-            Ok(())
-        }
-        Some(OLD_FORMAT) => {
-            check(index)?;
-            index.commit(vec![
-                Change::PutInline(HEADER, FORMAT.to_vec()),
-                Change::PutInline(ROUTING, encode_counts(0, 0)),
-                Change::PutInline(SCHEDULE, Vec::new()),
-            ])?;
-            Ok(())
-        }
-        _ => Err("Feed routing: unsupported index format".into()),
-    }
-}
 pub(super) fn header(index: &mut Index, id: &str) -> Result<Option<Header>> {
     let Some(bytes) = index.get(&key(GENERATION, id))? else {
         return Ok(None);
@@ -132,16 +112,12 @@ pub(super) fn cancel(index: &mut Index, id: &str) -> Result<Vec<Change>> {
 impl Storage {
     pub(super) fn writable_index(&mut self) -> Result<&mut Index> {
         self.available()?;
-        if self.read_only || self.upgrade {
-            return Err("Feed routing: writable upgraded storage required".into());
+        if self.read_only {
+            return Err("Feed routing: writable storage required".into());
         }
         let Backend::Ready(index) = &mut self.backend else {
             return Err("Feed routing: indexed storage required".into());
         };
-        let marker = read(&self.directory.join("feeds.bin"))?;
-        if marker.len() != 80 || &marker[..8] != MARKER || marker[16..48] != index.identity() {
-            return Err("Feed routing: marker changed; restart required".into());
-        }
         Ok(index)
     }
     pub(crate) fn capture(&mut self, record: Record, generation: Generation) -> Result<()> {
@@ -178,13 +154,13 @@ impl Storage {
         for (ordinal, bytes) in encoded.into_iter().enumerate() {
             changes.push(Change::Put(entry_key(&record.id, ordinal), bytes));
         }
-        put_with(index, &[record], None, changes)
+        put_with(index, &[record], changes)
     }
     pub(crate) fn pending(&mut self, id: &str) -> Result<Option<Generation>> {
         self.available()?;
         match &mut self.backend {
             Backend::Ready(index) => load(index, id),
-            Backend::Unpublished(..) | Backend::Legacy(_) | Backend::Absent => Ok(None),
+            Backend::Absent => Ok(None),
         }
     }
     pub(crate) fn pending_header(&mut self, id: &str) -> Result<Option<Header>> {
@@ -246,15 +222,15 @@ impl Storage {
     pub(crate) fn routing_counts(&mut self) -> Result<(u64, u64)> {
         self.available()?;
         match &mut self.backend {
-            Backend::Ready(index) if !self.upgrade => counts(index),
-            _ => Ok((0, 0)),
+            Backend::Ready(index) => counts(index),
+            Backend::Absent => Ok((0, 0)),
         }
     }
     pub(crate) fn schedule_cursor(&mut self) -> Result<String> {
         self.available()?;
         match &mut self.backend {
-            Backend::Ready(index) if !self.upgrade => schedule(index),
-            _ => Ok(String::new()),
+            Backend::Ready(index) => schedule(index),
+            Backend::Absent => Ok(String::new()),
         }
     }
     pub(crate) fn scheduled(&mut self, id: &str) -> Result<()> {

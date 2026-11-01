@@ -12,7 +12,7 @@ use mynou::{
     engine::{Engine, lock},
     json::{self, Value},
     pack::SharedFileRequest,
-    store::{Job, RecordedRelease, Store, now},
+    store::{Job, RecordedRelease, now},
 };
 use series_support::{Catalog, episode, id, request};
 use std::{
@@ -354,6 +354,8 @@ fn simultaneous_workers_import_one_range_path_and_block_individual_upgrades() {
                 &ids[0],
                 replacement,
                 RecordedRelease {
+                    source_id: None,
+                    size_bytes: None,
                     title: "Fixture.Series.S01E01.1080p".into(),
                     profile: "default".into()
                 }
@@ -764,50 +766,6 @@ fn retained_shared_import_uses_its_binding_after_the_library_root_changes() {
         assert_eq!(ready.shared_file.as_ref(), Some(binding));
     }
     assert_eq!(fs::read(path).unwrap(), bytes);
-}
-
-#[test]
-fn incomplete_legacy_ownership_is_refused_by_migration_without_writing() {
-    let directory = Directory::new();
-    let catalog = catalog(3);
-    let torrent = torrent(&directory, "metadata");
-    let cfg = catalog.config(&directory.0.join("engine"));
-    let engine = Engine::open_for_management(cfg.clone()).unwrap();
-    let series = tracked(&engine);
-    let mut query = query(torrent.path.to_str().unwrap());
-    query.episodes = vec![1, 2, 3];
-    apply(&engine, &series, &query);
-    let mut owners = lock(&engine.store).unwrap().list().unwrap();
-    drop(engine);
-    owners.pop();
-    // The same group missing its last owner, as a snapshot and as a journal.
-    for journal in [false, true] {
-        jobs_state::reset(&cfg.store_dir);
-        let (journal_magic, snapshot_magic) = jobs_state::magics(&owners);
-        if journal {
-            let event = mynou::store::Event {
-                id: 1,
-                job_id: owners[0].id.clone(),
-                state: owners[0].state.clone(),
-                message: "legacy".into(),
-                at: owners[0].updated_at,
-            };
-            let (bytes, _) = jobs_state::frame(&owners, &event, 1, &[0; 32], journal_magic, None);
-            jobs_state::write_private(&cfg.store_dir.join("journal.bin"), &bytes);
-        } else {
-            let bytes = jobs_state::snapshot(&owners, &[], 0, &[0; 32], snapshot_magic);
-            jobs_state::write_private(&cfg.store_dir.join("snapshot.bin"), &bytes);
-        }
-        let before = snapshot(&cfg.store_dir);
-        assert!(
-            Store::open(&cfg.store_dir)
-                .err()
-                .unwrap()
-                .contains("Incomplete shared ownership")
-        );
-        assert_eq!(snapshot(&cfg.store_dir), before);
-        assert!(!cfg.store_dir.join("jobs.idx").exists());
-    }
 }
 
 #[test]

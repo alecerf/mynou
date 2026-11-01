@@ -92,13 +92,7 @@ fn protected_api_follows_a_chronological_cursor() {
     let first = get("/api/irc/announcements?limit=1");
     assert_eq!(first.status, 200);
     let first = json::parse(&first.body).unwrap();
-    let cursor = first
-        .get("next_cursor")
-        .unwrap()
-        .as_str()
-        .unwrap()
-        .to_owned();
-    assert_eq!(first.get("next"), first.get("next_cursor"));
+    let cursor = first.get("next").unwrap().as_str().unwrap().to_owned();
     let second = get(&format!("/api/irc/announcements?after={cursor}&limit=1"));
     assert_eq!(second.status, 200);
     let second = json::parse(&second.body).unwrap();

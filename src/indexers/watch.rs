@@ -125,10 +125,15 @@ fn routable(job: &Job) -> bool {
         && job.irc_origin.is_none()
 }
 
-fn best(config: &Config, request: &store::Request, fresh: &[&FeedEntry]) -> Option<WatchCandidate> {
+fn best(
+    config: &Config,
+    request: &store::Request,
+    fresh: &[&FeedEntry],
+    source: &Source,
+) -> Option<WatchCandidate> {
     fresh
         .iter()
-        .filter_map(|entry| integrations::assess_feed_entry(config, request, entry))
+        .filter_map(|entry| integrations::assess_feed_entry(config, request, entry, source))
         .reduce(|best, next| if next.beats(&best) { next } else { best })
 }
 
@@ -499,7 +504,7 @@ impl Engine {
                 self.attach_upgrade(source, header.policy_revision, job, &fresh)?
             } else if eligible {
                 let config = self.configuration_for(job)?;
-                match best(&config, &job.request, &fresh) {
+                match best(&config, &job.request, &fresh, source) {
                     Some(candidate) => self.attach_release(
                         source,
                         header.policy_revision,
@@ -610,6 +615,8 @@ impl Engine {
         next.next_attempt_at = 0;
         next.acquisition_url = Some(candidate.url.clone());
         next.release = Some(RecordedRelease {
+            source_id: candidate.source_id.clone(),
+            size_bytes: candidate.size_bytes,
             title: candidate.title.clone(),
             profile: candidate.profile.clone(),
         });
@@ -655,14 +662,19 @@ impl Engine {
         let Ok((_, profile)) = config.selection.profile(&current.request.kind) else {
             return Ok(Attach::Changed);
         };
-        let baseline = profile.assess(&recorded.title, &current.request.title);
+        let baseline = profile.assess_with_size(
+            &recorded.title,
+            &current.request.title,
+            recorded.size_bytes,
+            Some(1),
+        );
         if profile.cutoff_reached(&baseline) {
             return Ok(Attach::Changed);
         }
         let mut request = current.request.clone();
         request.source_path = None;
         request.source_url = None;
-        let Some(candidate) = best(&config, &request, fresh) else {
+        let Some(candidate) = best(&config, &request, fresh, source) else {
             return Ok(Attach::Changed);
         };
         if (baseline.accepted && candidate.assessment.rank <= baseline.rank)
@@ -673,6 +685,8 @@ impl Engine {
         }
         request.source_url = Some(candidate.url.clone());
         let release = RecordedRelease {
+            source_id: candidate.source_id,
+            size_bytes: candidate.size_bytes,
             title: candidate.title,
             profile: candidate.profile,
         };
@@ -817,7 +831,6 @@ impl Engine {
         report.insert("pending_generations", generations.to_string());
         report.insert("captured_entries", entries.to_string());
         report.insert("retained_sources", feeds.total()?.to_string());
-        report.insert("needs_migration", feeds.needs_migration());
         report.insert("sources", Value::Array(rows));
         Ok(report)
     }

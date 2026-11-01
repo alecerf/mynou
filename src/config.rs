@@ -358,29 +358,19 @@ fn local_network_open(value: &Value) -> Result<bool> {
     }
 }
 
-/// Only torrents go through the VPN unless chosen otherwise. A document from
-/// before these choices keeps sources it marked `protected` behind the VPN.
+/// Only torrents go through the VPN unless chosen otherwise.
 fn vpn_uses(value: &Value) -> Result<VpnUses> {
-    let protected = |list: Option<&Value>| {
-        list.and_then(Value::as_array).is_some_and(|sources| {
-            sources
-                .iter()
-                .any(|s| s.get("protection").and_then(Value::as_str) == Some("protected"))
-        })
-    };
-    let legacy = protected(value.get("indexers"))
-        || protected(value.get("irc").and_then(|irc| irc.get("sources")));
     let Some(section) = value.get("vpn") else {
         return Ok(VpnUses {
             torrents: true,
-            indexers: legacy,
+            indexers: false,
             tmdb: false,
         });
     };
     expect_object(section)?;
     Ok(VpnUses {
         torrents: boolean(section, "torrents", true)?,
-        indexers: boolean(section, "indexers", legacy)?,
+        indexers: boolean(section, "indexers", false)?,
         tmdb: boolean(section, "tmdb", false)?,
     })
 }
@@ -462,10 +452,9 @@ pub fn load(data_dir: &Path) -> Result<Config> {
 }
 pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
     if number(v, "schema_version", 0, 1)? != 1 {
-        return Err(
-            "Configuration: use Rust schema 1; previous Go SQLite data remains separate".into(),
-        );
+        return Err("Configuration: use schema 1".into());
     }
+    check_secret_fields(v)?;
     let library = section(v, "library")?;
     let d = section(v, "downloads")?;
     let p = section(v, "plex")?;
@@ -655,8 +644,15 @@ fn stored(name: &str) -> Option<String> {
 }
 
 /// The raw saved secret, else the environment variable of the same name.
+/// Only `MYNOU_` variables are read, so that settings cannot reach the rest
+/// of the service's environment.
 pub fn lookup(name: &str) -> Option<String> {
-    stored(name).or_else(|| std::env::var(name).ok())
+    stored(name).or_else(|| environment(name))
+}
+
+fn environment(name: &str) -> Option<String> {
+    check_secret_name(name).ok()?;
+    std::env::var(name).ok()
 }
 
 /// A saved secret, else the environment variable of the same name.
@@ -683,25 +679,42 @@ pub fn optional_secret(name: &str) -> Result<Option<String>> {
 pub fn source(name: &str) -> &'static str {
     if stored(name).is_some_and(|v| !v.trim().is_empty()) {
         "stored"
-    } else if std::env::var(name).is_ok_and(|v| !v.trim().is_empty()) {
+    } else if environment(name).is_some_and(|v| !v.trim().is_empty()) {
         "environment"
     } else {
         "missing"
     }
 }
 
-/// Secret names are environment-variable names.
+/// Secret names are environment-variable names starting with `MYNOU_`.
 pub fn check_secret_name(name: &str) -> Result<()> {
-    if name.is_empty()
+    if name.len() <= "MYNOU_".len()
         || name.len() > 128
+        || !name.starts_with("MYNOU_")
         || !name
             .bytes()
-            .enumerate()
-            .all(|(i, b)| b == b'_' || b.is_ascii_uppercase() || i > 0 && b.is_ascii_digit())
+            .all(|b| b == b'_' || b.is_ascii_uppercase() || b.is_ascii_digit())
     {
-        return Err("Secret names use 1 to 128 uppercase letters, digits and underscores".into());
+        return Err(
+            "Secret names start with MYNOU_ and use up to 128 uppercase letters, digits and underscores"
+                .into(),
+        );
     }
     Ok(())
+}
+
+/// Every field ending in `_env` names a secret.
+fn check_secret_fields(value: &Value) -> Result<()> {
+    match value {
+        Value::Object(map) => map.iter().try_for_each(|(key, value)| match value {
+            Value::String(name) if key.ends_with("_env") => {
+                check_secret_name(name).map_err(|e| format!("Configuration: {key}: {e}"))
+            }
+            _ => check_secret_fields(value),
+        }),
+        Value::Array(items) => items.iter().try_for_each(check_secret_fields),
+        _ => Ok(()),
+    }
 }
 
 pub fn check_secret_value(value: &str) -> Result<()> {

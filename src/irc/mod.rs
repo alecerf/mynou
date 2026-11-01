@@ -21,8 +21,6 @@ pub use routing::Origin;
 pub use sasl::Settings as Sasl;
 use std::collections::{BTreeMap, BTreeSet};
 
-const MAX_LEGACY_RECORDS: usize = 1000;
-pub const MAX_OFFSET: usize = 1000;
 pub const MAX_SOURCES: usize = 8;
 pub const MAX_RULES: usize = 64;
 pub fn valid_id(s: &str) -> bool {
@@ -916,7 +914,6 @@ impl Record {
 pub(crate) struct State {
     pub revision: u64,
     pub bindings: BTreeMap<String, String>,
-    pub records: BTreeMap<String, Record>,
 }
 impl State {
     pub(crate) fn to_json(&self) -> Value {
@@ -931,14 +928,10 @@ impl State {
                     .collect(),
             ),
         );
-        v.insert(
-            "records",
-            Value::Array(self.records.values().map(Record::to_json).collect()),
-        );
         v
     }
     pub(crate) fn from_json(v: &Value) -> Result<Self> {
-        only(v, &["revision", "bindings", "records"])?;
+        only(v, &["revision", "bindings"])?;
         let mut s = Self {
             revision: integer(v, "revision")?,
             ..Self::default()
@@ -957,19 +950,6 @@ impl State {
                 return Err("IRC: invalid retained source ID".into());
             }
             s.bindings.insert(k.clone(), b.into());
-        }
-        for v in v
-            .get("records")
-            .and_then(Value::as_array)
-            .filter(|a| a.len() <= MAX_LEGACY_RECORDS)
-            .ok_or("IRC: announcement history is full")?
-        {
-            let r = Record::from_json(v)?;
-            if s.bindings.get(&r.source_id) != Some(&r.binding)
-                || s.records.insert(r.id.clone(), r).is_some()
-            {
-                return Err("IRC: duplicate or unbound announcement".into());
-            }
         }
         Ok(s)
     }
@@ -1014,15 +994,7 @@ impl ControlRequest {
         v
     }
 }
-pub fn page(query: &str) -> Result<(usize, usize)> {
-    let p = crate::requesters::page(query)?;
-    if p.0 > MAX_OFFSET {
-        return Err("IRC: page offset exceeds history bounds".into());
-    }
-    Ok(p)
-}
-
-/// Strict chronological cursor query. Offset is supported separately for old callers.
+/// Strict chronological cursor query.
 pub fn cursor_page(query: &str) -> Result<(Option<String>, usize)> {
     let mut after = None;
     let mut limit = 100;

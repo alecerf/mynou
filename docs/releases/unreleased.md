@@ -36,8 +36,30 @@ profile, or with the VPN off, everything uses your own connection: a new
 installation no longer waits for a VPN choice before it does anything. While the
 VPN connects, only what goes through it waits; the Plex watchlist, TMDB and the
 rest start at once. The per-source `"protection"` setting gives way to the
-Indexers switch; an older document that protected a source turns it on. See
+Indexers switch, and is no longer read. See
 [protected sources](/docs/protected-sources.md).
+
+## Changed: Only the current storage format opens
+
+Mynou no longer converts the storage of earlier builds. Jobs, series,
+requests, feeds, source policies, IRC history and transfers open only in their
+current format; anything older, including the journal and snapshot files that
+came before the disk indexes, is refused at startup instead of being migrated.
+To start over, stop Mynou and move the data directory aside. Startup no longer
+reports migration progress. See [inventory storage](/docs/inventory-storage.md).
+
+## Fixed: Library posters match their title
+
+A film or series in the library found its poster by searching TMDB for its
+name and keeping the result with the same TMDB id; a title outside the first
+results showed no poster. Mynou now asks TMDB for that id directly
+(`GET /api/catalog?kind=movie&tmdb_id=N`).
+
+## Fixed: Storage files stop growing after deletions
+
+Pages that deleted records left empty in a store's index were never used
+again, so the index file grew with every delete and re-add. They are now
+reused before the file grows. The file still does not shrink.
 
 ## Changed: Folders are full paths
 
@@ -77,3 +99,77 @@ from about 3,000 scattered reads (47 MB, half a second on an internal SSD,
 seconds on a hard disk or network share) to one 16 KiB read; an AVI also needs
 one read, and an MP4 a few, with no long table read. See the
 [media benchmark](/docs/media-benchmark.md).
+
+## Changed: Updates must be signed
+
+Mynou now installs an update only when the release key signed the release's
+`SHA256SUMS`. The key never reaches GitHub, so a compromised account or build
+cannot push an update to your Mac. Releases carry `SHA256SUMS.sig`; see
+[verify release assets](/docs/validation.md#verify-release-assets).
+
+## Added: Sign out everywhere
+
+Settings, Network, on the Mac, can sign out every other computer and phone at
+once, for example after losing one, without changing the password. See
+[network access](/docs/macos.md#network-access).
+
+## Changed: Failed sign-ins no longer lock everyone out
+
+Only the address that failed waits after 5 wrong passwords; another computer can
+no longer block your phone by failing on purpose. An IPv6 /64 counts as one
+address.
+
+## Changed: Secret names start with MYNOU_
+
+Settings name secrets, and the environment variables Mynou falls back to, only
+with the `MYNOU_` prefix, so settings cannot read the rest of the service's
+environment.
+
+## Changed: Each installation has its own Plex identity
+
+Mynou now sends Plex an identifier of its own, made on first use, instead of
+one shared by every installation, so Plex lists each installation as its own
+device.
+
+## Fixed: A requester retry survives a crash
+
+Retrying a failed watchlist request no longer gets lost when Mynou stops
+between recording the retry and queuing the request again.
+
+## Changed: Lists page only by cursor
+
+`GET /api/requesters/ID` and `GET /api/irc/announcements` no longer accept
+`offset`; follow `next` as `after`. IRC history no longer repeats `next` as
+`next_cursor`.
+
+## Added: Choose the quality in Settings
+
+Settings has a new **Quality** page. For films and for series, choose a quality
+(4K when available, up to 1080p, up to 720p, or any), an audio language,
+preferred or required, and the smallest and largest size you accept. Words to
+avoid and to prefer in release names apply to both. A film or a series can use
+another quality from its own sheet. See
+[release selection profiles](/docs/selection.md).
+
+## Added: Sizes and freeleech from indexers
+
+Mynou now reads the size of each release, and whether it is freeleech, from
+the indexers that say so. Profiles can set `min_size_mb`, `max_size_mb` and
+`allow_unknown_size`; search previews show each release's size. See
+[how a candidate is judged](/docs/selection.md#how-a-candidate-is-judged).
+
+## Added: Rules for each indexer
+
+Each indexer can have a priority (between equally good releases, the lower
+number wins), its own minimum of seeders, a preference for freeleech releases,
+and its own seeding goal (ratio and time) for what it downloads. Set them under
+**Rules for this indexer** in Settings, Indexers. See
+[sources](/docs/sources.md).
+
+## Added: Turn downloads off
+
+Settings, Downloads has a **Download torrents** switch. While it is off, nothing
+downloads or seeds, and requests wait without searching or using up their
+attempts; titles already in Plex are still found and marked ready. This helps
+when you move an existing library to Mynou. The overview says when downloads
+are off, and `GET /api/status` reports `downloads_enabled`.

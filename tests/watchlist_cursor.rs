@@ -25,7 +25,7 @@ fn a_single_account_sweep_resumes_before_any_job_was_submitted() {
     config.plex.enabled = true;
     config.plex.url = accounts.url.clone();
     config.plex.watchlist_url = format!("{}/alice/watchlist", accounts.url);
-    config.plex.token_override = Some(std::env::var("PATH").unwrap());
+    config.plex.token_override = Some(std::env::var("MYNOU_TEST_SECRET_A").unwrap());
     let reads = || {
         accounts
             .calls

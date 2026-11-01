@@ -132,14 +132,11 @@ fn requests_follow_the_documented_mapping_and_grant_the_tcp_port() {
         vec![(reply(packet[1], 0, port, 60), gateway())]
     }));
     let stop = AtomicBool::new(false);
+    let started = Instant::now();
     let mapping = acquire(&network, GATEWAY, &fast(), &stop).unwrap();
-    assert_eq!(
-        mapping,
-        Mapping {
-            port: 53186,
-            lifetime: Duration::from_secs(60)
-        }
-    );
+    assert_eq!(mapping.port, 53186);
+    assert!(mapping.expiry >= started + Duration::from_secs(60));
+    assert!(mapping.expiry <= Instant::now() + Duration::from_secs(60));
     // UDP then TCP, public port 1, private port 0, 60 seconds, version 0.
     assert_eq!(
         network.sent(),
@@ -148,6 +145,33 @@ fn requests_follow_the_documented_mapping_and_grant_the_tcp_port() {
             (vec![0, 2, 0, 0, 0, 0, 0, 1, 0, 0, 0, 60], gateway()),
         ]
     );
+}
+
+#[test]
+fn acquisition_does_not_extend_or_revive_the_earlier_mapping() {
+    for delay in [Duration::from_millis(150), Duration::from_millis(1100)] {
+        let network = Gateway::new(Box::new(move |packet| {
+            if packet[1] == TCP {
+                thread::sleep(delay);
+            }
+            vec![(reply(packet[1], 0, 53186, 1), gateway())]
+        }));
+        let mut timing = fast();
+        timing.first_wait = Duration::from_secs(2);
+        timing.budget = Duration::from_secs(3);
+        let result = acquire(&network, GATEWAY, &timing, &AtomicBool::new(false));
+        if delay < Duration::from_secs(1) {
+            assert!(
+                result
+                    .unwrap()
+                    .expiry
+                    .saturating_duration_since(Instant::now())
+                    < Duration::from_millis(950)
+            );
+        } else {
+            assert_eq!(result, Err(Failure::Timeout));
+        }
+    }
 }
 
 #[test]
@@ -196,7 +220,7 @@ fn foreign_and_unrelated_answers_are_ignored_and_bad_grants_are_malformed() {
     let stop = AtomicBool::new(false);
     let mapping = acquire(&network, GATEWAY, &fast(), &stop).unwrap();
     // Never trust a lifetime longer than requested.
-    assert_eq!(mapping.lifetime, Duration::from_secs(60));
+    assert!(mapping.expiry <= Instant::now() + Duration::from_secs(60));
     assert_eq!(network.sent().len(), 2);
 
     for (port, lifetime) in [(0, 60), (53186, 0)] {

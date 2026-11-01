@@ -657,8 +657,14 @@ impl HttpConnector for Connector {
             }
             let addresses = self.resolve(host, deadline)?;
             let mut last = error(io::ErrorKind::ConnectionAborted);
-            for address in addresses {
-                match self.open(address, port, deadline) {
+            let count = addresses.len();
+            for (index, address) in addresses.into_iter().enumerate() {
+                // Share the remaining budget so a silent candidate cannot
+                // consume the time reserved for every later address.
+                let now = Instant::now();
+                let budget = remaining(deadline)? / (count - index) as u32;
+                let attempt = (now + budget).min(deadline);
+                match self.open(address, port, attempt) {
                     Ok(stream) => return Ok(Box::new(stream)),
                     Err(e) => last = e,
                 }

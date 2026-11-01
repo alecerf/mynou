@@ -204,9 +204,6 @@ impl Engine {
 
     /// Store initialization, run only after every read-only stage passed.
     fn initialize_stores(&self) -> Result<()> {
-        if !self.read_only {
-            lock(&self.store)?.initialize()?;
-        }
         lock(&self.indexer_store)?.initialize(&self.config)?;
         let mut feeds = lock(&self.feed_store)?;
         feeds.initialize()?;

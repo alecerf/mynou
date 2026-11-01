@@ -15,10 +15,11 @@ use crate::{
 };
 use std::collections::BTreeMap;
 
-pub(super) const FORMAT: &[u8] = b"mynou-jobs/1";
+pub(super) const FORMAT: &[u8] = b"mynou-jobs/5";
+/// Largest encoded job record.
+pub(super) const MAX_RECORD: usize = 16 * 1024 * 1024;
 
 pub(super) const T_META: u8 = 0x01;
-pub(super) const T_MIGRATION: u8 = 0x02;
 pub(super) const T_JOB: u8 = 0x10;
 pub(super) const T_EVENTS: u8 = 0x11;
 pub(super) const T_ALL: u8 = 0x12;
@@ -67,26 +68,18 @@ pub(super) const FORMAT_KEY: Key = single(T_META, 0);
 pub(super) const COUNTS_KEY: Key = single(T_META, 1);
 pub(super) const LIBRARY_COUNT_KEY: Key = single(T_META, 2);
 pub(super) const MONITOR_COUNTS_KEY: Key = single(T_META, 3);
-pub(super) const MONITOR_CURSOR_KEY: Key = single(T_META, 4);
-pub(super) const CHILD_CURSOR_KEY: Key = single(T_META, 5);
 /// Resume point of the single-account Plex watchlist sweep.
 pub(super) const WATCHLIST_CURSOR_KEY: Key = single(T_META, 6);
 pub(super) const CLAIM_CURSOR_KEY: Key = single(T_META, 7);
 pub(super) const REQUESTER_SWEEP_CURSOR_KEY: Key = single(T_META, 8);
-pub(super) const OWNERSHIP_CURSOR_KEY: Key = single(T_META, 9);
 pub(super) const LIBRARY_LAST_PASS_KEY: Key = single(T_META, 10);
-pub(super) const JOB_BACKLOG_CURSOR_KEY: Key = single(T_META, 11);
 pub(super) const JOB_LAST_PASS_KEY: Key = single(T_META, 12);
 /// The settings document saved from the API or `mynou settings --save`.
 pub(super) const SETTINGS_KEY: Key = single(T_META, 13);
 /// Write-only secrets saved from the API or `mynou secrets --set`.
 pub(super) const SECRETS_KEY: Key = single(T_META, 14);
-// single(T_META, 15) held the digest of the API access token, removed with
-// the sign-in; older stores may still carry it, so it is not reused.
 /// The network access password hash and session key; null once removed.
 pub(super) const ACCESS_KEY: Key = single(T_META, 16);
-pub(super) const MIGRATION_SOURCE_KEY: Key = single(T_MIGRATION, 0);
-pub(super) const MIGRATION_CURSOR_KEY: Key = single(T_MIGRATION, 1);
 
 const fn single(table: u8, sub: u8) -> Key {
     let mut key = [0; 64];
@@ -552,11 +545,6 @@ impl Entry {
             Self::Inline(data) => Change::PutInline(key, data),
         }
     }
-    pub(super) fn bytes(&self) -> &[u8] {
-        match self {
-            Self::File(data) | Self::Inline(data) => data,
-        }
-    }
 }
 
 /// A job's identity roots: the first ancestor of its upgrade lineage.
@@ -703,7 +691,7 @@ pub(super) fn owned(job: &Job, root: &Root) -> Result<BTreeMap<Key, Entry>> {
         );
     }
     let encoded = encode_job(job);
-    if encoded.len() > super::legacy::MAX_RECORD {
+    if encoded.len() > MAX_RECORD {
         return Err("A job record exceeds the 16 MiB record limit".into());
     }
     if encoded.len() <= crate::inventory::MAX_VALUE_BYTES {

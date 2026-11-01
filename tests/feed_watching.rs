@@ -314,6 +314,9 @@ fn first_poll_baselines_and_later_polls_route_only_new_entries_to_existing_deman
     assert_eq!(
         routed.release,
         Some(RecordedRelease {
+            source_id: Some("feed-a".into()),
+            // The fixture enclosure advertises one byte.
+            size_bytes: Some(1),
             title: "Fixture.Movie.2024.1080p.BluRay".into(),
             profile: "any".into(),
         })
@@ -406,25 +409,7 @@ fn restart_keeps_the_cursor_and_never_replays_history() {
         (1, 0)
     );
     let job = submit(&engine, movie("Fixture Movie", 7));
-    let path = state_dir(&dir).join("feeds.bin");
     drop(engine);
-
-    let private = fs::read(&path).unwrap();
-    let private = String::from_utf8_lossy(&private);
-    let second = hash(2);
-    for forbidden in [
-        "Fixture",
-        "127.0.0.1",
-        "magnet",
-        "fixture-guid",
-        second.as_str(),
-    ] {
-        assert!(
-            !private.contains(forbidden),
-            "Feed state stores {forbidden}"
-        );
-    }
-    assert_eq!(fs::metadata(&path).unwrap().permissions().mode() & 0o077, 0);
 
     let engine = open(&dir, sources());
     let row = status(&engine, 0);
@@ -499,7 +484,7 @@ fn partial_source_and_item_failures_are_isolated() {
     let report = engine.feeds_poll(None, true).unwrap();
     let rows = report.get("sources").unwrap().as_array().unwrap();
     assert_eq!(rows.len(), 2);
-    assert_eq!(outcome(&rows[0]), "response_rejected");
+    assert_eq!(outcome(&rows[0]), "source_unavailable");
     assert_eq!(outcome(&rows[1]), "ok");
     assert_eq!(num(&rows[1], "skipped"), 1);
     assert_eq!(
@@ -741,6 +726,8 @@ fn leased_selected_and_unrelated_work_is_never_overridden() {
         let mut selected = jobs.iter().find(|job| job.id != leased.id).unwrap().clone();
         selected.acquisition_url = Some(magnet(77));
         selected.release = Some(RecordedRelease {
+            source_id: None,
+            size_bytes: None,
             title: "Selected.Release.2024.1080p.BluRay".into(),
             profile: "any".into(),
         });

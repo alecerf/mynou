@@ -29,6 +29,9 @@ and send it back whole as `{"settings": {...}}` to `POST /api/settings`:
         "allow_unknown_source": false,
         "allow_unknown_codec": false,
         "allow_unknown_language": false,
+        "min_size_mb": null,
+        "max_size_mb": null,
+        "allow_unknown_size": true,
         "required_terms": [],
         "blocked_terms": ["cam"],
         "score_rules": [
@@ -125,17 +128,28 @@ choosing.
   Totals below `minimum_score` are rejected. Its default of zero rejects any
   negative total, so set a lower minimum (for example `-100` for a `-10` rule)
   to downrank instead of reject.
+- `min_size_mb` and `max_size_mb` default to `null` (no limit). Each accepts
+  an integer from 1 to 1,000,000, with the minimum no greater than the maximum.
+  **1 MB = 1,000,000 bytes.** Limits apply per movie or episode, inclusively.
+  `allow_unknown_size` defaults to `true`; setting it to `false` rejects releases
+  without a valid advertised size. Size is a gate, never a ranking criterion.
+  Season packs multiply both limits by the expected catalog season episode
+  count, including episodes already owned. When that count is unknown, size
+  checks are skipped and `assessment.attributes.issues` explains why.
 
 Accepted candidates are ranked by:
 
 1. the highest custom score;
 2. resolution, source, codec and language preferences, in that order;
-3. more seeds, then the smallest candidate identity digest for exact ties.
+3. freeleech, only when that indexer sets `prefer_freeleech: true` and the
+   release explicitly advertises freeleech;
+4. lower indexer `priority` (1 to 50, default 25);
+5. more seeds, then the smallest candidate identity digest for exact ties.
 
 The digest tie-breaker is deterministic but can choose a different release
 than earlier versions, which compared the title and URL on an exact tie.
 
-With an unrestricted profile and no score rules, seed count decides. Source
+With an unrestricted profile, no score rules and default indexer options, seed count decides. Source
 order never bypasses a profile, and when nothing is accepted Mynou does not
 fall back to a rejected release. Strict title, year and episode matching still
 applies: a profile cannot turn an unrelated release into a match.
@@ -152,7 +166,10 @@ A preview contacts your sources but records no request, writes nothing to the
 journal and starts no download. The report lists accepted and rejected
 candidates with their attributes, ranks and reasons, opaque candidate IDs and
 `selected_candidate_id` for the proposed winner. It never includes acquisition
-URLs or credentials. Candidates are listed best first in pages of 100
+URLs or credentials. Each candidate also includes `size_bytes` (a JSON integer,
+or a decimal string above 9,007,199,254,740,991, or `null`), `freeleech`
+(`true`, `false` or `null`) and its indexer's numeric `priority`.
+Candidates are listed best first in pages of 100
 (`limit` 1 to 200): `candidate_count` is the total, `reported_count` the rows
 of this page and `next` an opaque cursor for the following page, passed back as
 `after` (`null` on the last page). Each page repeats the live search,

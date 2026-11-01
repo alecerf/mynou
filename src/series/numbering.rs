@@ -231,7 +231,7 @@ impl Record {
         self.validate()
     }
 
-    pub(super) fn fetch_catalog(
+    pub(crate) fn fetch_catalog(
         &self,
         engine: &Engine,
         full: bool,

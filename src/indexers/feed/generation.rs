@@ -172,6 +172,17 @@ pub(crate) fn encode_entry(header: &Header, ordinal: usize, entry: &FeedEntry) -
     value.insert("title", entry.release.title.clone());
     value.insert("url", entry.release.url.clone());
     value.insert("seeders", entry.release.seeders.to_string());
+    value.insert(
+        "size_bytes",
+        entry
+            .release
+            .size
+            .map_or(Value::Null, |n| n.to_string().into()),
+    );
+    value.insert(
+        "freeleech",
+        entry.release.freeleech.map_or(Value::Null, Value::from),
+    );
     value
 }
 pub(crate) fn decode_entry(header: &Header, ordinal: usize, value: &Value) -> Result<FeedEntry> {
@@ -185,6 +196,8 @@ pub(crate) fn decode_entry(header: &Header, ordinal: usize, value: &Value) -> Re
             "title",
             "url",
             "seeders",
+            "size_bytes",
+            "freeleech",
         ],
     )?;
     let id = text(value, "id")?;
@@ -204,6 +217,14 @@ pub(crate) fn decode_entry(header: &Header, ordinal: usize, value: &Value) -> Re
             title,
             url,
             seeders: num(value, "seeders")?,
+            size: match value.get("size_bytes") {
+                None | Some(Value::Null) => None,
+                Some(_) => Some(num(value, "size_bytes")?).filter(|n| *n > 0),
+            },
+            freeleech: match value.get("freeleech") {
+                None | Some(Value::Null) => None,
+                Some(v) => Some(v.as_bool().ok_or("Feed routing: invalid freeleech")?),
+            },
         },
     })
 }

@@ -20,7 +20,7 @@ fn existing_plex_media_under_the_mapped_destination_needs_no_native_acquisition(
     let mut cfg = accounts.config(&directory.0);
     cfg.plex.enabled = true;
     cfg.plex.url = accounts.url.clone();
-    cfg.plex.token_env = "PATH".into();
+    cfg.plex.token_env = "MYNOU_TEST_SECRET_A".into();
     cfg.plex.path_mappings = vec![mynou::config::PathMapping {
         mynou_prefix: cfg.requesters.destinations[0]
             .movies_root
@@ -89,7 +89,7 @@ fn opt_in_precedes_native_acquisition_and_captured_route_survives_edit_restart_a
     cfg.sources = vec![provider.source("json")];
     cfg.plex.enabled = true;
     cfg.plex.url = accounts.url.clone();
-    cfg.plex.token_env = "PATH".into();
+    cfg.plex.token_env = "MYNOU_TEST_SECRET_A".into();
     cfg.plex.token_override = None;
     accounts.watchlist("alice", vec![movie(7, "Fixture Movie")]);
     accounts.response("/library/sections/1/refresh", 200, Value::object());
@@ -157,7 +157,7 @@ fn opt_in_precedes_native_acquisition_and_captured_route_survives_edit_restart_a
     assert_eq!(ready_job.imports, scanning.imports);
     assert_eq!(ready_job.requester, captured);
     assert_eq!(fs::read(&ready_job.imports[0]).unwrap(), bytes);
-    let report = engine.requester("alice", 0, 100).unwrap();
+    let report = engine.requester("alice", None, 100).unwrap();
     assert_eq!(
         demand(&engine, "alice")
             .get("outcome")

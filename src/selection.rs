@@ -85,7 +85,7 @@ impl SelectionConfig {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Profile {
     /// Ordered from most preferred to least preferred; an empty list is unrestricted.
     pub resolutions: Vec<u32>,
@@ -102,6 +102,32 @@ pub struct Profile {
     pub blocked_terms: Vec<String>,
     pub score_rules: Vec<ScoreRule>,
     pub minimum_score: i32,
+    pub min_size_mb: Option<u32>,
+    pub max_size_mb: Option<u32>,
+    pub allow_unknown_size: bool,
+}
+
+impl Default for Profile {
+    fn default() -> Self {
+        Self {
+            resolutions: Vec::new(),
+            cutoff_resolution: None,
+            sources: Vec::new(),
+            codecs: Vec::new(),
+            languages: Vec::new(),
+            allow_unknown_resolution: false,
+            allow_unknown_source: false,
+            allow_unknown_codec: false,
+            allow_unknown_language: false,
+            required_terms: Vec::new(),
+            blocked_terms: Vec::new(),
+            score_rules: Vec::new(),
+            minimum_score: 0,
+            min_size_mb: None,
+            max_size_mb: None,
+            allow_unknown_size: true,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -114,6 +140,26 @@ pub struct ScoreRule {
 impl Profile {
     pub fn from_json(value: &Value) -> Result<Self> {
         expect_object(value)?;
+        let size_limit = |field: &str| -> Result<Option<u32>> {
+            match value.get(field) {
+                None | Some(Value::Null) => Ok(None),
+                Some(v) => v
+                    .as_u64()
+                    .filter(|v| (1..=1_000_000).contains(v))
+                    .map(|v| Some(v as u32))
+                    .ok_or_else(|| {
+                        format!("Selection: {field} must be null or an integer from 1 to 1000000")
+                    }),
+            }
+        };
+        let min_size_mb = size_limit("min_size_mb")?;
+        let max_size_mb = size_limit("max_size_mb")?;
+        if min_size_mb
+            .zip(max_size_mb)
+            .is_some_and(|(min, max)| min > max)
+        {
+            return Err("Selection: min_size_mb must not exceed max_size_mb".into());
+        }
         let mut resolutions = Vec::new();
         for value in list(value, "resolutions")? {
             let resolution = value
@@ -162,6 +208,14 @@ impl Profile {
         Ok(Self {
             resolutions,
             cutoff_resolution,
+            min_size_mb,
+            max_size_mb,
+            allow_unknown_size: match value.get("allow_unknown_size") {
+                None => true,
+                Some(v) => v
+                    .as_bool()
+                    .ok_or("Selection: allow_unknown_size must be a boolean")?,
+            },
             sources: choices(value, "sources", SOURCES)?,
             codecs: choices(value, "codecs", CODECS)?,
             languages: choices(value, "languages", LANGUAGES)?,
@@ -215,6 +269,15 @@ impl Profile {
                 ),
             ),
             ("minimum_score", number(self.minimum_score)),
+            (
+                "min_size_mb",
+                self.min_size_mb.map_or(Value::Null, Value::from),
+            ),
+            (
+                "max_size_mb",
+                self.max_size_mb.map_or(Value::Null, Value::from),
+            ),
+            ("allow_unknown_size", self.allow_unknown_size.into()),
         ])
     }
 
@@ -237,6 +300,53 @@ impl Profile {
     }
 
     pub fn assess(&self, release_title: &str, media_title: &str) -> Assessment {
+        self.assess_with_size(release_title, media_title, None, Some(1))
+    }
+
+    /// Limits are decimal MB per movie/episode. None means an unknown pack count;
+    /// do not mistake a whole pack for one episode or reject it for missing size.
+    pub fn assess_with_size(
+        &self,
+        release_title: &str,
+        media_title: &str,
+        size: Option<u64>,
+        episodes: Option<u32>,
+    ) -> Assessment {
+        let mut assessment = self.assess_title(release_title, media_title);
+        let limited =
+            self.min_size_mb.is_some() || self.max_size_mb.is_some() || !self.allow_unknown_size;
+        match episodes.filter(|count| *count > 0) {
+            None if !limited => {}
+            None => assessment
+                .attributes
+                .issues
+                .push("Pack episode count is unknown; size limits were not applied".into()),
+            Some(count) => match size.filter(|size| *size > 0) {
+                None if !self.allow_unknown_size => {
+                    assessment.reasons.push("Release size is unknown".into())
+                }
+                Some(size) => {
+                    let bytes =
+                        |mb: u32| (u64::from(mb) * 1_000_000).saturating_mul(u64::from(count));
+                    if self.min_size_mb.is_some_and(|min| size < bytes(min)) {
+                        assessment
+                            .reasons
+                            .push("Release is smaller than the profile minimum size".into());
+                    }
+                    if self.max_size_mb.is_some_and(|max| size > bytes(max)) {
+                        assessment
+                            .reasons
+                            .push("Release is larger than the profile maximum size".into());
+                    }
+                }
+                None => {}
+            },
+        }
+        assessment.accepted = assessment.reasons.is_empty();
+        assessment
+    }
+
+    fn assess_title(&self, release_title: &str, media_title: &str) -> Assessment {
         let (attributes, suffix, invalid) = parse_attributes(release_title, media_title);
         let mut reasons = Vec::new();
         if invalid.global {
@@ -826,6 +936,51 @@ mod tests {
 
     fn parse_profile(json: &str) -> Profile {
         Profile::from_json(&json::parse(json).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn size_limits_are_decimal_per_episode_and_unknown_pack_counts_are_explained() {
+        let profile = Profile::from_json(
+            &crate::json::parse(
+                r#"{"min_size_mb":100,"max_size_mb":200,"allow_unknown_size":false}"#,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let assess = |size, count| profile.assess_with_size("Example 2026", "Example", size, count);
+        assert!(assess(Some(100_000_000), Some(1)).accepted);
+        assert!(assess(Some(200_000_000), Some(1)).accepted);
+        assert_eq!(
+            assess(Some(99_999_999), Some(1)).reasons,
+            ["Release is smaller than the profile minimum size"]
+        );
+        assert_eq!(
+            assess(Some(200_000_001), Some(1)).reasons,
+            ["Release is larger than the profile maximum size"]
+        );
+        assert_eq!(assess(None, Some(1)).reasons, ["Release size is unknown"]);
+        assert!(
+            Profile::default()
+                .assess_with_size("Example", "Example", None, Some(1))
+                .accepted
+        );
+        assert!(assess(Some(600_000_000), Some(3)).accepted);
+        assert!(!assess(Some(299_999_999), Some(3)).accepted);
+        assert!(!assess(Some(600_000_001), Some(3)).accepted);
+        let unknown = assess(None, None);
+        assert!(unknown.accepted);
+        assert!(
+            unknown
+                .attributes
+                .issues
+                .iter()
+                .any(|s| s.contains("episode count is unknown"))
+        );
+        assert!(assess(Some(1), None).accepted);
+        assert_eq!(
+            assess(Some(150_000_000), Some(1)).rank,
+            assess(Some(180_000_000), Some(1)).rank
+        );
     }
 
     #[test]

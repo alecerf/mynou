@@ -1,6 +1,6 @@
 use super::checksum::xxh64;
 use super::{Key, MAX_VALUE_BYTES, Query};
-use crate::{Result, crypto::sha256};
+use crate::Result;
 use std::{
     collections::{BTreeMap, HashMap, VecDeque},
     fs::File,
@@ -12,14 +12,14 @@ pub(super) const PAGE_SIZE: usize = 4096;
 const FANOUT: usize = 32;
 /// Operation bound on the distinct pages one transaction may rewrite.
 pub(super) const MAX_DIRTY_PAGES: usize = 16_384;
-// Pages written before XXH64 checksums carry SHA-256 and stay readable.
-const NODE_MAGIC: &[u8; 8] = b"MYNOUIN1";
-const COUNTED_MAGIC: &[u8; 8] = b"MYNOUIN2";
-const HEADER_MAGIC: &[u8; 8] = b"MYNOUI01";
-const FAST_NODE_MAGIC: &[u8; 8] = b"MYNOUIN3";
-const FAST_COUNTED_MAGIC: &[u8; 8] = b"MYNOUIN4";
-/// Also adds the active segment length; earlier releases refuse it.
-const FAST_HEADER_MAGIC: &[u8; 8] = b"MYNOUI02";
+const LEAF_MAGIC: &[u8; 8] = b"MYNOUIN3";
+/// Branches carry the record count of each child.
+const BRANCH_MAGIC: &[u8; 8] = b"MYNOUIN4";
+const HEADER_MAGIC: &[u8; 8] = b"MYNOUI02";
+/// A page no node uses, waiting in the free list for its next allocation.
+const FREE_MAGIC: &[u8; 8] = b"MYNOUIF1";
+/// The level byte of a free page: never a valid node level.
+const FREE_LEVEL: u8 = u8::MAX;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct Header {
@@ -29,6 +29,9 @@ pub(super) struct Header {
     pub next: u64,
     pub count: u64,
     pub level: u8,
+    /// First page of the free list, or zero: pages emptied by deletions or
+    /// left by a shrinking root, reused before the file grows.
+    pub free: u64,
     /// Value log: segments `tail..head` exist; `tail_offset` is how far the
     /// cleaner has read into `tail`; byte totals count whole segment files and
     /// the envelopes still referenced by the tree.
@@ -51,6 +54,7 @@ impl Header {
             next: 1,
             count: 0,
             level: 0,
+            free: 0,
             head: 0,
             tail: 0,
             tail_offset: 0,
@@ -61,7 +65,7 @@ impl Header {
     }
     pub fn encode(self) -> [u8; PAGE_SIZE] {
         let mut bytes = [0; PAGE_SIZE];
-        bytes[..8].copy_from_slice(FAST_HEADER_MAGIC);
+        bytes[..8].copy_from_slice(HEADER_MAGIC);
         for (offset, value) in [
             (8, self.sequence),
             (16, self.root),
@@ -79,30 +83,16 @@ impl Header {
             (97, self.log_bytes),
             (105, self.live_bytes),
             (113, self.head_length),
+            (121, self.free),
         ] {
             bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
         }
         seal(&mut bytes);
         bytes
     }
-    /// The root format of releases before the redo log, for test fixtures.
-    #[cfg(test)]
-    pub fn encode_legacy(self) -> [u8; PAGE_SIZE] {
-        let mut bytes = self.encode();
-        bytes[..8].copy_from_slice(HEADER_MAGIC);
-        bytes[113..121].fill(0);
-        let digest = sha256(&bytes[..PAGE_SIZE - 32]);
-        bytes[PAGE_SIZE - 32..].copy_from_slice(&digest);
-        bytes
-    }
-    /// A root written before the redo log, which never has one.
-    pub fn is_legacy(bytes: &[u8]) -> bool {
-        bytes.get(..8) == Some(HEADER_MAGIC.as_slice())
-    }
     pub fn decode(bytes: &[u8]) -> Result<Self> {
-        let fast = check(bytes, HEADER_MAGIC, FAST_HEADER_MAGIC)?;
-        let used = if fast { 121 } else { 113 };
-        if bytes[used..PAGE_SIZE - 32].iter().any(|byte| *byte != 0) {
+        check(bytes, HEADER_MAGIC)?;
+        if bytes[129..PAGE_SIZE - 32].iter().any(|byte| *byte != 0) {
             return Err("Invalid inventory header padding".into());
         }
         let header = Self {
@@ -114,12 +104,13 @@ impl Header {
             next: integer(bytes, 24)?,
             count: integer(bytes, 32)?,
             level: bytes[40],
+            free: integer(bytes, 121)?,
             head: integer(bytes, 73)?,
             tail: integer(bytes, 81)?,
             tail_offset: integer(bytes, 89)?,
             log_bytes: integer(bytes, 97)?,
             live_bytes: integer(bytes, 105)?,
-            head_length: if fast { integer(bytes, 113)? } else { 0 },
+            head_length: integer(bytes, 113)?,
         };
         let smallest =
             super::persistence::SEGMENT_HEADER_BYTES + super::persistence::ENVELOPE_BYTES;
@@ -144,6 +135,8 @@ impl Header {
             || header.level > 63
             || (header.count == 0) != (header.root == 0)
             || (header.root == 0 && header.level != 0)
+            || header.free >= header.next
+            || (header.free != 0 && header.free == header.root)
         {
             return Err("Invalid inventory root metadata".into());
         }
@@ -152,18 +145,14 @@ impl Header {
     }
 }
 
-/// A leaf reference names a legacy record file (`length` bytes whose SHA-256
-/// is `digest`), an envelope in a value-log segment (segment number, offset
-/// and either the first 20 bytes of the value's SHA-256 or, when `fast`, the
-/// envelope's XXH64 followed by zeros, in `digest`), or carries at most 32
-/// bytes inline in the tree page itself, zero-padded in the digest field.
+/// A leaf reference names an envelope in a value-log segment (segment number,
+/// offset and the envelope's XXH64 followed by zeros, in `digest`), or carries
+/// at most 32 bytes inline in the tree page itself, zero-padded in `digest`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct ValueRef {
     pub length: u32,
     pub digest: [u8; 32],
     pub inline: bool,
-    pub segment: bool,
-    pub fast: bool,
 }
 
 const INLINE_FLAG: u32 = 0x8000_0000;
@@ -173,29 +162,6 @@ const LENGTH_MASK: u32 = !(INLINE_FLAG | SEGMENT_FLAG | FAST_FLAG);
 pub(super) const MAX_INLINE_BYTES: usize = 32;
 
 impl ValueRef {
-    pub fn file(data: &[u8]) -> Self {
-        Self {
-            length: data.len() as u32,
-            digest: sha256(data),
-            inline: false,
-            segment: false,
-            fast: false,
-        }
-    }
-    /// A value written before XXH64 envelopes, bound by its own SHA-256.
-    pub fn segment(number: u64, offset: u32, data: &[u8]) -> Self {
-        let mut digest = [0; 32];
-        digest[..8].copy_from_slice(&number.to_le_bytes());
-        digest[8..12].copy_from_slice(&offset.to_le_bytes());
-        digest[12..].copy_from_slice(&sha256(data)[..20]);
-        Self {
-            length: data.len() as u32,
-            digest,
-            inline: false,
-            segment: true,
-            fast: false,
-        }
-    }
     /// A value bound to its envelope's checksum, so one hash verifies both.
     pub fn logged(number: u64, offset: u32, length: u32, checksum: u64) -> Self {
         let mut digest = [0; 32];
@@ -206,11 +172,9 @@ impl ValueRef {
             length,
             digest,
             inline: false,
-            segment: true,
-            fast: true,
         }
     }
-    /// The envelope checksum of a `fast` segment reference.
+    /// The envelope checksum of a segment reference.
     pub fn checksum(&self) -> u64 {
         u64::from_le_bytes(self.digest[12..20].try_into().unwrap_or_default())
     }
@@ -231,8 +195,6 @@ impl ValueRef {
             length: data.len() as u32,
             digest,
             inline: true,
-            segment: false,
-            fast: false,
         })
     }
     pub fn inline_data(&self) -> &[u8] {
@@ -241,12 +203,8 @@ impl ValueRef {
     fn stored_length(self) -> u32 {
         if self.inline {
             self.length | INLINE_FLAG
-        } else if self.fast {
-            self.length | SEGMENT_FLAG | FAST_FLAG
-        } else if self.segment {
-            self.length | SEGMENT_FLAG
         } else {
-            self.length
+            self.length | SEGMENT_FLAG | FAST_FLAG
         }
     }
 }
@@ -255,14 +213,16 @@ impl ValueRef {
 pub(super) struct Link {
     pub key: Key,
     pub page: u64,
-    /// None in legacy branches, until explicitly upgraded. Never guess zero.
-    pub count: Option<u64>,
+    /// Records in the child's subtree.
+    pub count: u64,
 }
 
 #[derive(Clone, Debug)]
 pub(super) enum Items {
     Leaf(Vec<(Key, ValueRef)>),
     Branch(Vec<Link>),
+    /// A free page and the next one in the free list (zero ends it).
+    Free(u64),
 }
 
 #[derive(Clone, Debug)]
@@ -274,38 +234,32 @@ pub(super) struct Node {
 }
 
 impl Node {
-    pub(super) fn count(&self) -> Result<Option<u64>> {
+    pub(super) fn count(&self) -> Result<u64> {
         match &self.items {
-            Items::Leaf(items) => Ok(Some(items.len() as u64)),
-            Items::Branch(items) => {
-                let mut total = 0_u64;
-                let mut complete = true;
-                for link in items {
-                    let Some(count) = link.count else {
-                        complete = false;
-                        continue;
-                    };
-                    if count == 0 {
-                        return Err("Empty inventory subtree count".into());
-                    }
-                    total = total
-                        .checked_add(count)
-                        .ok_or("Inventory subtree count overflow")?;
+            Items::Leaf(items) => Ok(items.len() as u64),
+            Items::Branch(items) => items.iter().try_fold(0_u64, |total, link| {
+                if link.count == 0 {
+                    return Err("Empty inventory subtree count".into());
                 }
-                Ok(complete.then_some(total))
-            }
+                total
+                    .checked_add(link.count)
+                    .ok_or_else(|| "Inventory subtree count overflow".into())
+            }),
+            Items::Free(_) => Err(free_page()),
         }
     }
     fn len(&self) -> usize {
         match &self.items {
             Items::Leaf(items) => items.len(),
             Items::Branch(items) => items.len(),
+            Items::Free(_) => 0,
         }
     }
     fn first(&self) -> Result<Key> {
         match &self.items {
             Items::Leaf(items) => items.first().map(|(key, _)| *key),
             Items::Branch(items) => items.first().map(|link| link.key),
+            Items::Free(_) => None,
         }
         .ok_or_else(|| "Empty inventory node".into())
     }
@@ -313,19 +267,31 @@ impl Node {
         match &self.items {
             Items::Leaf(items) => items.last().map(|(key, _)| *key),
             Items::Branch(items) => items.last().map(|link| link.key),
+            Items::Free(_) => None,
         }
         .ok_or_else(|| "Empty inventory node".into())
     }
     pub fn encode(&self) -> Result<[u8; PAGE_SIZE]> {
+        let mut bytes = [0; PAGE_SIZE];
+        if let Items::Free(next) = self.items {
+            if self.level != FREE_LEVEL || next == self.id {
+                return Err("Invalid free inventory page".into());
+            }
+            bytes[..8].copy_from_slice(FREE_MAGIC);
+            bytes[8..16].copy_from_slice(&self.id.to_le_bytes());
+            bytes[16] = FREE_LEVEL;
+            bytes[24..56].copy_from_slice(&self.identity);
+            bytes[56..64].copy_from_slice(&next.to_le_bytes());
+            seal(&mut bytes);
+            return Ok(bytes);
+        }
         if self.len() == 0 || self.len() > FANOUT {
             return Err("Invalid inventory node size".into());
         }
-        let mut bytes = [0; PAGE_SIZE];
-        let counted = matches!(&self.items, Items::Branch(items) if items.iter().any(|link| link.count.is_some()));
-        bytes[..8].copy_from_slice(if counted {
-            FAST_COUNTED_MAGIC
-        } else {
-            FAST_NODE_MAGIC
+        bytes[..8].copy_from_slice(match &self.items {
+            Items::Leaf(_) => LEAF_MAGIC,
+            Items::Branch(_) => BRANCH_MAGIC,
+            Items::Free(_) => unreachable!("free pages are encoded above"),
         });
         self.count()?;
         bytes[8..16].copy_from_slice(&self.id.to_le_bytes());
@@ -347,29 +313,48 @@ impl Node {
                 for link in items {
                     bytes[cursor..cursor + 64].copy_from_slice(&link.key);
                     bytes[cursor + 64..cursor + 72].copy_from_slice(&link.page.to_le_bytes());
-                    if counted {
-                        bytes[cursor + 72..cursor + 80]
-                            .copy_from_slice(&link.count.unwrap_or(0).to_le_bytes());
-                    }
-                    cursor += if counted { 80 } else { 72 };
+                    bytes[cursor + 72..cursor + 80].copy_from_slice(&link.count.to_le_bytes());
+                    cursor += 80;
                 }
             }
+            Items::Free(_) => unreachable!("free pages are encoded above"),
         }
         seal(&mut bytes);
         Ok(bytes)
     }
-    pub fn decode(bytes: &[u8], id: u64, level: u8, next: u64, identity: [u8; 32]) -> Result<Self> {
-        let magic = bytes.get(..8);
-        let counted =
-            magic == Some(COUNTED_MAGIC.as_slice()) || magic == Some(FAST_COUNTED_MAGIC.as_slice());
-        if counted {
-            check(bytes, COUNTED_MAGIC, FAST_COUNTED_MAGIC)?;
+    /// Any page a redo record may carry: a node at its level, or a free page.
+    pub fn decode_page(bytes: &[u8], id: u64, next: u64, identity: [u8; 32]) -> Result<Self> {
+        if bytes.get(..8) == Some(FREE_MAGIC.as_slice()) {
+            Self::decode_free(bytes, id, next, identity)
         } else {
-            check(bytes, NODE_MAGIC, FAST_NODE_MAGIC)?;
+            Self::decode(bytes, id, bytes[16], next, identity)
         }
-        if counted && level == 0 {
-            return Err("Invalid counted inventory leaf".into());
+    }
+    fn decode_free(bytes: &[u8], id: u64, next: u64, identity: [u8; 32]) -> Result<Self> {
+        check(bytes, FREE_MAGIC)?;
+        let following = integer(bytes, 56)?;
+        if integer(bytes, 8)? != id
+            || bytes[16] != FREE_LEVEL
+            || bytes[17..24].iter().any(|byte| *byte != 0)
+            || bytes[24..56] != identity
+            || following >= next
+            || following == id
+            || bytes[64..PAGE_SIZE - 32].iter().any(|byte| *byte != 0)
+        {
+            return Err("Invalid free inventory page".into());
         }
+        Ok(Self {
+            identity,
+            id,
+            level: FREE_LEVEL,
+            items: Items::Free(following),
+        })
+    }
+    pub fn decode(bytes: &[u8], id: u64, level: u8, next: u64, identity: [u8; 32]) -> Result<Self> {
+        if level > 63 {
+            return Err("Invalid inventory node identity, level or count".into());
+        }
+        check(bytes, if level == 0 { LEAF_MAGIC } else { BRANCH_MAGIC })?;
         let count = u16::from_le_bytes(bytes[17..19].try_into().map_err(|_| "Invalid node count")?)
             as usize;
         if integer(bytes, 8)? != id
@@ -414,8 +399,9 @@ impl Node {
                     } else {
                         MAX_VALUE_BYTES
                     }
-                    || (inline && segment)
-                    || (fast && (!segment || digest[20..].iter().any(|byte| *byte != 0)))
+                    || inline == (segment || fast)
+                    || segment != fast
+                    || (!inline && digest[20..].iter().any(|byte| *byte != 0))
                     || (inline && digest[length as usize..].iter().any(|byte| *byte != 0))
                 {
                     return Err("Oversized or malformed inventory value reference".into());
@@ -426,8 +412,6 @@ impl Node {
                         length,
                         digest,
                         inline,
-                        segment,
-                        fast,
                     },
                 ));
                 cursor += 100;
@@ -436,17 +420,12 @@ impl Node {
                 if page == 0 || page >= next || page == id {
                     return Err("Invalid inventory child reference".into());
                 }
-                let count = if counted {
-                    integer(bytes, cursor + 72)?
-                } else {
-                    0
-                };
                 branches.push(Link {
                     key,
                     page,
-                    count: (count != 0).then_some(count),
+                    count: integer(bytes, cursor + 72)?,
                 });
-                cursor += if counted { 80 } else { 72 };
+                cursor += 80;
             }
         }
         if bytes[cursor..PAGE_SIZE - 32].iter().any(|byte| *byte != 0) {
@@ -475,8 +454,9 @@ struct Bounds {
 }
 
 /// Decoded pages that were verified against their checksum and are still
-/// current. A commit replaces the pages it rewrote once they are applied;
-/// page identities are never reused, so other entries stay valid. At most
+/// current. A commit replaces the pages it rewrote once they are applied,
+/// including pages it freed or reused from the free list, so every entry
+/// stays the page's current content. At most
 /// `CACHE_NODES` entries (32 MiB of pages, under 28 MiB decoded) are kept,
 /// evicting the oldest first; only a store that large ever fills it.
 #[derive(Default)]
@@ -570,7 +550,7 @@ impl<'a> Tree<'a> {
         if node.level != level
             || bounds
                 .count
-                .is_some_and(|count| node.count().ok() != Some(Some(count)))
+                .is_some_and(|count| node.count().ok() != Some(count))
             || bounds
                 .upper
                 .is_some_and(|key| node.last().ok() != Some(key))
@@ -591,6 +571,7 @@ impl<'a> Tree<'a> {
         for level in (0..=self.header.level).rev() {
             let node = self.node(id, level, bounds)?;
             match &node.items {
+                Items::Free(_) => return Err(free_page()),
                 Items::Leaf(items) => {
                     return Ok(items
                         .binary_search_by(|(found, _)| found.cmp(key))
@@ -604,7 +585,7 @@ impl<'a> Tree<'a> {
                     };
                     id = link.page;
                     bounds = Bounds {
-                        count: link.count,
+                        count: Some(link.count),
                         upper: Some(link.key),
                         lower: if index == 0 {
                             bounds.lower
@@ -628,6 +609,7 @@ impl<'a> Tree<'a> {
         for level in (0..=self.header.level).rev() {
             let node = self.node(id, level, bounds)?;
             match &node.items {
+                Items::Free(_) => return Err(free_page()),
                 Items::Leaf(items) => {
                     return rank
                         .checked_add(items.partition_point(|(found, _)| found < key) as u64)
@@ -639,9 +621,7 @@ impl<'a> Tree<'a> {
                     for child in items.iter().copied() {
                         if child.key < *key {
                             rank = rank
-                                .checked_add(child.count.ok_or(
-                                    "Inventory range counts need an explicit writable upgrade",
-                                )?)
+                                .checked_add(child.count)
                                 .filter(|rank| *rank <= self.header.count)
                                 .ok_or("Inventory rank overflow")?;
                         } else {
@@ -650,7 +630,7 @@ impl<'a> Tree<'a> {
                                 Bounds {
                                     upper: Some(child.key),
                                     lower,
-                                    count: child.count,
+                                    count: Some(child.count),
                                 },
                             ));
                             break;
@@ -679,10 +659,7 @@ impl<'a> Tree<'a> {
             });
         }
         let root = self.node(self.header.root, self.header.level, Bounds::default())?;
-        if root.count()?.is_none() {
-            return Err("Inventory range counts need an explicit writable upgrade".into());
-        }
-        if root.count()? != Some(self.header.count) {
+        if root.count()? != self.header.count {
             return Err("Inventory subtree count disagrees with the root".into());
         }
         let lower = self.rank(&start)?;
@@ -711,131 +688,6 @@ impl<'a> Tree<'a> {
         Ok(super::RangeSummary { count, first })
     }
 
-    /// Only missing summaries are visited. Partial parents are saved too, so
-    /// restart skips completed subtrees. At most budget + tree height branch
-    /// pages are dirtied; each has at most FANOUT children.
-    pub(super) fn prepare_counts(&mut self, budget: usize) -> Result<bool> {
-        if self.header.root == 0 {
-            return Ok(true);
-        }
-        let count = self.upgrade_counts(
-            self.header.root,
-            self.header.level,
-            Bounds::default(),
-            budget,
-        )?;
-        if count.is_some_and(|count| count != self.header.count) {
-            return Err("Inventory subtree count disagrees with the root".into());
-        }
-        Ok(count.is_some())
-    }
-
-    /// A metadata-only redo may add counts, but may not change any branch
-    /// identity, key or child pointer. A torn page is restored from the
-    /// checksummed WAL as with record transactions.
-    pub(super) fn validate_count_upgrade(&mut self) -> Result<()> {
-        for (id, node) in &self.dirty {
-            let Items::Branch(new) = &node.items else {
-                return Err("Invalid inventory count-upgrade page".into());
-            };
-            let bytes = read_page(self.file, *id)?;
-            if let Ok(old) = Node::decode(
-                &bytes,
-                *id,
-                node.level,
-                self.header.next,
-                self.header.identity,
-            ) {
-                let Items::Branch(old) = old.items else {
-                    return Err("Inventory count upgrade changed a leaf".into());
-                };
-                if old.len() != new.len()
-                    || old.iter().zip(new).any(|(old, new)| {
-                        old.key != new.key
-                            || old.page != new.page
-                            || old.count.is_some_and(|count| Some(count) != new.count)
-                    })
-                {
-                    return Err("Inventory count upgrade changed existing entries".into());
-                }
-            }
-        }
-        let upgraded = self.dirty.values().cloned().collect::<Vec<_>>();
-        for node in upgraded {
-            let Items::Branch(links) = node.items else {
-                unreachable!("checked above")
-            };
-            let mut lower = None;
-            for child in links {
-                if child.count.is_some() {
-                    self.node(
-                        child.page,
-                        node.level - 1,
-                        Bounds {
-                            upper: Some(child.key),
-                            lower,
-                            count: child.count,
-                        },
-                    )?;
-                }
-                lower = Some(child.key);
-            }
-        }
-        if self.header.root != 0 {
-            let root = self.node(self.header.root, self.header.level, Bounds::default())?;
-            if root
-                .count()?
-                .is_some_and(|count| count != self.header.count)
-            {
-                return Err("Inventory subtree count disagrees with the root".into());
-            }
-        }
-        Ok(())
-    }
-
-    fn upgrade_counts(
-        &mut self,
-        id: u64,
-        level: u8,
-        bounds: Bounds,
-        budget: usize,
-    ) -> Result<Option<u64>> {
-        let mut node = Arc::unwrap_or_clone(self.node(id, level, bounds)?);
-        if let Some(count) = node.count()? {
-            return Ok(Some(count));
-        }
-        let Items::Branch(items) = &mut node.items else {
-            unreachable!("leaves have counts")
-        };
-        let mut changed = false;
-        let mut lower = bounds.lower;
-        for child in items {
-            if child.count.is_none() {
-                if self.dirty.len() >= budget {
-                    break;
-                }
-                child.count = self.upgrade_counts(
-                    child.page,
-                    level - 1,
-                    Bounds {
-                        upper: Some(child.key),
-                        lower,
-                        count: None,
-                    },
-                    budget,
-                )?;
-                // A partially upgraded child is also durable progress, even
-                // when its total is not yet known.
-                changed |= child.count.is_some();
-            }
-            lower = Some(child.key);
-        }
-        let count = node.count()?;
-        if changed {
-            self.dirty.insert(id, node);
-        }
-        Ok(count)
-    }
     pub fn range(&mut self, query: &Query, limit: usize) -> Result<Vec<(Key, ValueRef)>> {
         let mut rows = Vec::new();
         if self.header.root != 0 {
@@ -843,7 +695,7 @@ impl<'a> Tree<'a> {
                 Link {
                     key: [255; 64],
                     page: self.header.root,
-                    count: Some(self.header.count),
+                    count: self.header.count,
                 },
                 self.header.level,
                 Bounds::default(),
@@ -865,6 +717,7 @@ impl<'a> Tree<'a> {
     ) -> Result<()> {
         let node = self.node(link.page, level, bounds)?;
         match &node.items {
+            Items::Free(_) => return Err(free_page()),
             Items::Leaf(items) => {
                 for (key, value) in items.iter().copied() {
                     if key < query.start || query.after.is_some_and(|after| key <= after) {
@@ -895,7 +748,7 @@ impl<'a> Tree<'a> {
                             child,
                             level - 1,
                             Bounds {
-                                count: child.count,
+                                count: Some(child.count),
                                 upper: Some(child.key),
                                 lower,
                             },
@@ -913,13 +766,50 @@ impl<'a> Tree<'a> {
         }
         Ok(())
     }
+    /// Reuses the first free page, or grows the file by one page.
     fn allocate(&mut self) -> Result<u64> {
+        if self.header.free != 0 {
+            let id = self.header.free;
+            let page = if let Some(node) = self.dirty.get(&id) {
+                node.clone()
+            } else if let Some(node) = self.cache.get(&id) {
+                Node::clone(node)
+            } else {
+                Node::decode_free(
+                    &read_page(self.file, id)?,
+                    id,
+                    self.header.next,
+                    self.header.identity,
+                )?
+            };
+            let Items::Free(next) = page.items else {
+                return Err("Inventory free list names a page in use".into());
+            };
+            if next >= self.header.next || next == id {
+                return Err("Invalid free inventory page".into());
+            }
+            self.header.free = next;
+            return Ok(id);
+        }
         let id = self.header.next;
         self.header.next = id
             .checked_add(1)
             .ok_or("Inventory page identity overflow")?;
         offset(self.header.next)?;
         Ok(id)
+    }
+    /// Puts page `id`, which nothing references any more, on the free list.
+    fn free(&mut self, id: u64) {
+        self.dirty.insert(
+            id,
+            Node {
+                identity: self.header.identity,
+                id,
+                level: FREE_LEVEL,
+                items: Items::Free(self.header.free),
+            },
+        );
+        self.header.free = id;
     }
     pub fn change(&mut self, key: &Key, value: Option<ValueRef>, existed: bool) -> Result<()> {
         let links = if self.header.root == 0 {
@@ -937,7 +827,7 @@ impl<'a> Tree<'a> {
                 vec![Link {
                     key: *key,
                     page: id,
-                    count: Some(1),
+                    count: 1,
                 }]
             } else {
                 Vec::new()
@@ -966,7 +856,9 @@ impl<'a> Tree<'a> {
                     if items.len() != 1 {
                         break;
                     }
-                    self.header.root = items[0].page;
+                    let child = items[0].page;
+                    self.free(self.header.root);
+                    self.header.root = child;
                     self.header.level -= 1;
                 }
             }
@@ -1019,6 +911,7 @@ impl<'a> Tree<'a> {
     ) -> Result<Vec<Link>> {
         let mut node = Arc::unwrap_or_clone(self.node(id, level, bounds)?);
         match &mut node.items {
+            Items::Free(_) => return Err(free_page()),
             Items::Leaf(items) => match (items.binary_search_by_key(key, |(key, _)| *key), value) {
                 (Ok(index), Some(value)) => items[index].1 = value,
                 (Ok(index), None) => {
@@ -1036,7 +929,7 @@ impl<'a> Tree<'a> {
                     child.page,
                     level - 1,
                     Bounds {
-                        count: child.count,
+                        count: Some(child.count),
                         upper: Some(child.key),
                         lower: if index == 0 {
                             bounds.lower
@@ -1051,7 +944,7 @@ impl<'a> Tree<'a> {
             }
         }
         if node.len() == 0 {
-            self.dirty.remove(&id);
+            self.free(id);
             return Ok(Vec::new());
         }
         let mut links = Vec::new();
@@ -1065,6 +958,7 @@ impl<'a> Tree<'a> {
                 items: match &mut node.items {
                     Items::Leaf(items) => Items::Leaf(items.split_off(midpoint)),
                     Items::Branch(items) => Items::Branch(items.split_off(midpoint)),
+                    Items::Free(_) => return Err(free_page()),
                 },
             };
             links.push(Link {
@@ -1085,6 +979,10 @@ impl<'a> Tree<'a> {
         self.dirty.insert(id, node);
         Ok(links)
     }
+}
+
+fn free_page() -> String {
+    "Inventory tree references a free page".into()
 }
 
 pub(super) fn offset(id: u64) -> Result<u64> {
@@ -1112,19 +1010,15 @@ fn seal(bytes: &mut [u8; PAGE_SIZE]) {
     bytes[PAGE_SIZE - 32..PAGE_SIZE - 24].copy_from_slice(&digest.to_le_bytes());
     bytes[PAGE_SIZE - 24..].fill(0);
 }
-/// Accepts the SHA-256 page of `legacy` or the XXH64 page of `fast`, and
-/// says which one it was.
-fn check(bytes: &[u8], legacy: &[u8; 8], fast: &[u8; 8]) -> Result<bool> {
+/// Accepts only a page that starts with `magic` and carries its XXH64.
+fn check(bytes: &[u8], magic: &[u8; 8]) -> Result<()> {
     let body = PAGE_SIZE - 32;
-    let valid = bytes.len() == PAGE_SIZE
-        && if &bytes[..8] == fast {
-            xxh64(&bytes[..body]).to_le_bytes() == bytes[body..body + 8]
-                && bytes[body + 8..].iter().all(|byte| *byte == 0)
-        } else {
-            &bytes[..8] == legacy && sha256(&bytes[..body]).as_slice() == &bytes[body..]
-        };
-    if !valid {
+    if bytes.len() != PAGE_SIZE
+        || &bytes[..8] != magic
+        || xxh64(&bytes[..body]).to_le_bytes() != bytes[body..body + 8]
+        || bytes[body + 8..].iter().any(|byte| *byte != 0)
+    {
         return Err("Invalid inventory page format or checksum".into());
     }
-    Ok(&bytes[..8] == fast)
+    Ok(())
 }

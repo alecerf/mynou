@@ -210,8 +210,8 @@ mod tests {
     fn form() -> Form {
         Form {
             login_url: "http://127.0.0.1:1/login".into(),
-            username_env: "PATH".into(),
-            password_env: "PWD".into(),
+            username_env: "MYNOU_TEST_SECRET_A".into(),
+            password_env: "MYNOU_TEST_SECRET_B".into(),
             username_field: "user".into(),
             password_field: "password".into(),
             cookie_name: "sid".into(),

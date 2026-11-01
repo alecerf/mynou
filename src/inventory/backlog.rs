@@ -1,13 +1,11 @@
 //! Private scheduler indexes. Callers reserve tables 240..245 and update
 //! membership in the same transaction as their authoritative records.
-use super::{Change, Index, Key, MAX_PAGE_ROWS, Query};
+use super::{Change, Index, Key, Query};
 use crate::{Result, json::Value};
 
 const DUE: u8 = 240;
 const MEMBER: u8 = 241;
-const UNKNOWN: u8 = 245;
 const FORMAT: Key = key(242);
-const CURSOR: Key = key(243);
 const LAST: Key = key(244);
 const VERSION: &[u8] = b"mynou-backlog/1";
 pub(crate) const CHECKPOINT_SECS: u64 = 60;
@@ -22,9 +20,9 @@ fn member(id: &Key) -> Key {
     key[1..33].copy_from_slice(&crate::crypto::sha256(id));
     key
 }
-fn due(member: &Key, at: Option<u64>) -> Key {
-    let mut key = key(if at.is_some() { DUE } else { UNKNOWN });
-    key[1..9].copy_from_slice(&at.unwrap_or(0).to_be_bytes());
+fn due(member: &Key, at: u64) -> Key {
+    let mut key = key(DUE);
+    key[1..9].copy_from_slice(&at.to_be_bytes());
     key[9..41].copy_from_slice(&member[1..33]);
     key
 }
@@ -37,31 +35,25 @@ fn number(bytes: Vec<u8>) -> Result<u64> {
     ))
 }
 
-/// Preserve the age while work stays pending. Re-entry starts a new wait.
-pub(crate) fn update(
+/// Keeps membership in the same transaction as the record it describes, and
+/// preserves the age while work stays pending. Re-entry starts a new wait.
+pub(crate) fn maintain(
     index: &mut Index,
     changes: &mut Vec<Change>,
     id: &Key,
     pending: bool,
-    at: Option<u64>,
+    at: u64,
 ) -> Result<()> {
+    match index.get(&FORMAT)?.as_deref() {
+        Some(VERSION) => {}
+        None => return Err("Backlog index is not prepared".into()),
+        _ => return Err("Unsupported backlog index format".into()),
+    }
     let member = member(id);
-    let previous = index
-        .get(&member)?
-        .map(|bytes| {
-            if bytes.is_empty() {
-                Ok(None)
-            } else {
-                number(bytes).map(Some)
-            }
-        })
-        .transpose()?;
+    let previous = index.get(&member)?.map(number).transpose()?;
     match (previous, pending) {
         (None, true) => {
-            changes.push(Change::PutInline(
-                member,
-                at.map_or_else(Vec::new, |at| at.to_be_bytes().to_vec()),
-            ));
+            changes.push(Change::PutInline(member, at.to_be_bytes().to_vec()));
             changes.push(Change::PutInline(due(&member, at), Vec::new()));
         }
         (Some(at), false) => {
@@ -73,77 +65,26 @@ pub(crate) fn update(
     Ok(())
 }
 
-/// Legacy migrations must first verify their exact original tables. They
-/// prepare derived membership only after promotion has been proved.
-pub(crate) fn maintain(
-    index: &mut Index,
-    changes: &mut Vec<Change>,
-    id: &Key,
-    pending: bool,
-    at: u64,
-) -> Result<()> {
+/// Marks an index that holds no record of `start..end` yet as maintaining
+/// its backlog; an index with records must already maintain it.
+pub(crate) fn prepare(index: &mut Index, start: Key, end: Key) -> Result<()> {
     match index.get(&FORMAT)?.as_deref() {
-        Some(VERSION) => update(index, changes, id, pending, Some(at)),
-        None => Ok(()),
-        _ => Err("Unsupported backlog index format".into()),
-    }
-}
-
-/// Explicit writable startup only. Pages and continuation share one WAL
-/// transaction, including when a page has no pending work. No primary is changed.
-pub(crate) fn prepare(
-    index: &mut Index,
-    start: Key,
-    end: Key,
-    mut classify: impl FnMut(&mut Index, &Key, &[u8]) -> Result<(bool, Option<u64>)>,
-) -> Result<()> {
-    let format = index.get(&FORMAT)?;
-    if format.as_deref().is_some_and(|format| format != VERSION) {
-        return Err("Unsupported backlog index format".into());
-    }
-    if format.is_none() {
-        let mut after = index
-            .get(&CURSOR)?
-            .map(|bytes| {
-                bytes
-                    .as_slice()
-                    .try_into()
-                    .map_err(|_| "Invalid backlog upgrade cursor".to_owned())
-            })
-            .transpose()?;
-        if after.is_some_and(|k| k < start || k >= end) {
-            return Err("Backlog upgrade cursor outside its primary table".into());
-        }
-        loop {
+        Some(VERSION) => Ok(()),
+        Some(_) => Err("Unsupported backlog index format".into()),
+        None => {
             let page = index.page(&Query {
                 start,
                 end: Some(end),
-                after,
-                limit: MAX_PAGE_ROWS,
+                limit: 1,
                 ..Query::default()
             })?;
-            if page.entries.is_empty() {
-                break;
+            if !page.entries.is_empty() {
+                return Err("Backlog index is missing from a store with records".into());
             }
-            let mut changes = Vec::new();
-            for (id, bytes) in page.entries {
-                let (pending, at) = classify(index, &id, &bytes)?;
-                update(index, &mut changes, &id, pending, at)?;
-                after = Some(id);
-            }
-            changes.push(Change::Put(CURSOR, after.unwrap().to_vec()));
-            index.commit(changes)?;
-            if page.next.is_none() {
-                break;
-            }
+            index.commit(vec![Change::PutInline(FORMAT, VERSION.to_vec())])?;
+            Ok(())
         }
-        index.commit(vec![
-            Change::PutInline(FORMAT, VERSION.to_vec()),
-            Change::Delete(CURSOR),
-        ])?;
     }
-    while !index.prepare_range_counts(64)? {}
-    Ok(())
 }
 
 /// Persist only successful bounded scheduler passes, at most once a minute.
@@ -186,28 +127,10 @@ pub(crate) fn read(index: &mut Index, unit: &str, at: u64) -> Result<Value> {
     // These queues have no retry timer: every member is scheduled now,
     // including observations made before a wall-clock rollback.
     let summary = index.range_summary(key(DUE), Some(key(DUE + 1)))?;
-    let unknown = index
-        .range_summary(key(UNKNOWN), Some(key(UNKNOWN + 1)))?
-        .count;
-    let oldest = if unknown == 0 {
-        summary
-            .first
-            .map(|key| u64::from_be_bytes(key[1..9].try_into().unwrap()).min(at))
-    } else {
-        None
-    };
-    let mut value = report(
-        unit,
-        at,
-        summary
-            .count
-            .checked_add(unknown)
-            .ok_or("Backlog count overflow")?,
-        oldest,
-        last(index)?,
-    );
-    value.insert("unknown_due_times", unknown.to_string());
-    Ok(value)
+    let oldest = summary
+        .first
+        .map(|key| u64::from_be_bytes(key[1..9].try_into().unwrap()).min(at));
+    Ok(report(unit, at, summary.count, oldest, last(index)?))
 }
 
 pub(crate) fn unavailable() -> Value {
@@ -227,7 +150,7 @@ pub(crate) fn inactive(state: &str, unit: &str, last: Option<u64>) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::inventory::{Fault, legacy_range_index};
+    use crate::inventory::Fault;
     use std::{fs, path::PathBuf};
 
     struct Directory(PathBuf);
@@ -251,66 +174,87 @@ mod tests {
         key[1..9].copy_from_slice(&n.to_be_bytes());
         key
     }
+    /// 421 records, each pending since its number.
     fn fixture() -> (Directory, Index) {
         let directory = Directory::new();
         let mut index = Index::create(&directory.0).unwrap();
-        index
-            .commit(
-                (0..421)
-                    .map(|n| Change::PutInline(id(n), vec![1]))
-                    .collect(),
-            )
-            .unwrap();
-        (directory, index)
-    }
-    fn prepare_fixture(index: &mut Index) {
-        prepare(index, key(1), key(2), |_, id, _| {
-            Ok((true, Some(u64::from_be_bytes(id[1..9].try_into().unwrap()))))
-        })
-        .unwrap();
-    }
-    #[test]
-    fn backlog_preserves_unknown_legacy_ages_until_work_leaves_the_queue() {
-        let (directory, mut index) = fixture();
-        prepare(&mut index, key(1), key(2), |_, _, _| Ok((true, None))).unwrap();
-        let value = read(&mut index, "fixture", 10).unwrap();
-        assert_eq!(value.get("due"), Some(&Value::from("421")));
-        assert_eq!(value.get("unknown_due_times"), Some(&Value::from("421")));
-        assert_eq!(value.get("oldest_due_at"), Some(&Value::Null));
+        prepare(&mut index, key(1), key(2)).unwrap();
         let mut changes = Vec::new();
         for n in 0..421 {
-            update(&mut index, &mut changes, &id(n), false, Some(20)).unwrap();
+            changes.push(Change::PutInline(id(n), vec![1]));
+            maintain(&mut index, &mut changes, &id(n), true, n).unwrap();
         }
         index.commit(changes).unwrap();
+        (directory, index)
+    }
+
+    #[test]
+    fn preparing_needs_an_empty_range_or_an_existing_backlog() {
+        let directory = Directory::new();
+        let mut index = Index::create(&directory.0).unwrap();
+        index
+            .commit(vec![Change::PutInline(id(0), vec![1])])
+            .unwrap();
         let mut changes = Vec::new();
-        update(&mut index, &mut changes, &id(0), true, Some(30)).unwrap();
+        assert!(maintain(&mut index, &mut changes, &id(0), true, 1).is_err());
+        assert!(prepare(&mut index, key(1), key(2)).is_err());
+        assert!(read(&mut index, "fixture", 1).is_err());
+        let (_directory, mut index) = fixture();
+        prepare(&mut index, key(1), key(2)).unwrap();
+    }
+
+    #[test]
+    fn backlog_keeps_ages_until_work_leaves_the_queue() {
+        let (directory, mut index) = fixture();
+        let before = index.requests();
+        let sequence = index.sequence().unwrap();
+        let value = read(&mut index, "fixture", 500).unwrap();
+        assert_eq!(
+            index.requests() - before,
+            3,
+            "format, one range summary, last-pass metadata only"
+        );
+        assert_eq!(index.sequence().unwrap(), sequence);
+        assert_eq!(value.get("due"), Some(&Value::from("421")));
+        assert_eq!(value.get("oldest_due_at"), Some(&Value::from("0")));
+        assert_eq!(value.get("oldest_due_age_secs"), Some(&Value::from("500")));
+        let mut changes = Vec::new();
+        for n in 0..420 {
+            maintain(&mut index, &mut changes, &id(n), false, 600).unwrap();
+        }
+        // Still pending: the original age stays.
+        maintain(&mut index, &mut changes, &id(420), true, 600).unwrap();
         index.commit(changes).unwrap();
+        let mut changes = Vec::new();
+        maintain(&mut index, &mut changes, &id(0), true, 700).unwrap();
+        index.commit(changes).unwrap();
+        finish(&mut index, 500).unwrap();
+        let sequence = index.sequence().unwrap();
+        finish(&mut index, 559).unwrap();
+        assert_eq!(
+            index.sequence().unwrap(),
+            sequence,
+            "idle passes do not flush on every tick"
+        );
+        finish(&mut index, 560).unwrap();
         drop(index);
         let mut index = Index::open(&directory.0, true).unwrap();
-        let value = read(&mut index, "fixture", 40).unwrap();
-        assert_eq!(value.get("due"), Some(&Value::from("1")));
-        assert_eq!(value.get("unknown_due_times"), Some(&Value::from("0")));
-        assert_eq!(value.get("oldest_due_age_secs"), Some(&Value::from("10")));
-        let value = read(&mut index, "fixture", 20).unwrap();
-        assert_eq!(value.get("due"), Some(&Value::from("1")));
+        let value = read(&mut index, "fixture", 800).unwrap();
+        assert_eq!(value.get("due"), Some(&Value::from("2")));
+        assert_eq!(value.get("oldest_due_at"), Some(&Value::from("420")));
+        assert_eq!(
+            value.get("last_completed_pass_at"),
+            Some(&Value::from("560"))
+        );
+        // A wall-clock rollback never reports a negative age.
+        let value = read(&mut index, "fixture", 100).unwrap();
+        assert_eq!(value.get("oldest_due_at"), Some(&Value::from("100")));
         assert_eq!(value.get("oldest_due_age_secs"), Some(&Value::from("0")));
     }
 
     #[test]
-    fn backlog_full_disk_does_not_publish_freshness_or_lose_legacy_rows() {
+    fn backlog_full_disk_does_not_publish_freshness() {
         let (directory, mut index) = fixture();
-        assert!(
-            crate::store::with_full_disk_after(0, || prepare(
-                &mut index,
-                key(1),
-                key(2),
-                |_, _, _| Ok((true, None))
-            ))
-            .is_err()
-        );
-        drop(index);
-        let mut index = Index::open(&directory.0, false).unwrap();
-        prepare_fixture(&mut index);
         finish(&mut index, 10).unwrap();
         assert!(crate::store::with_full_disk_after(0, || finish(&mut index, 80)).is_err());
         drop(index);
@@ -325,51 +269,7 @@ mod tests {
     }
 
     #[test]
-    fn backlog_counts_growth_removal_rollback_and_restart_without_payload_reads() {
-        let (directory, mut index) = fixture();
-        legacy_range_index(&mut index);
-        assert!(read(&mut index, "fixture", 500).is_err());
-        prepare_fixture(&mut index);
-        let before = index.requests();
-        let sequence = index.sequence().unwrap();
-        let value = read(&mut index, "fixture", 500).unwrap();
-        assert_eq!(
-            index.requests() - before,
-            4,
-            "format, two range summaries, last-pass metadata only"
-        );
-        assert_eq!(value.get("due"), Some(&Value::from("421")));
-        assert_eq!(value.get("oldest_due_at"), Some(&Value::from("0")));
-        assert_eq!(index.sequence().unwrap(), sequence);
-        assert_eq!(
-            read(&mut index, "fixture", 10).unwrap().get("due"),
-            Some(&Value::from("421"))
-        );
-        let mut changes = Vec::new();
-        update(&mut index, &mut changes, &id(0), false, Some(500)).unwrap();
-        update(&mut index, &mut changes, &id(900), true, Some(500)).unwrap();
-        index.commit(changes).unwrap();
-        finish(&mut index, 500).unwrap();
-        let sequence = index.sequence().unwrap();
-        finish(&mut index, 559).unwrap();
-        assert_eq!(
-            index.sequence().unwrap(),
-            sequence,
-            "idle passes do not flush on every tick"
-        );
-        finish(&mut index, 560).unwrap();
-        drop(index);
-        let mut index = Index::open(&directory.0, true).unwrap();
-        let value = read(&mut index, "fixture", u64::MAX).unwrap();
-        assert_eq!(value.get("due"), Some(&Value::from("421")));
-        assert_eq!(value.get("oldest_due_at"), Some(&Value::from("1")));
-        assert_eq!(
-            value.get("last_completed_pass_at"),
-            Some(&Value::from("560"))
-        );
-    }
-    #[test]
-    fn backlog_upgrade_and_membership_recover_at_every_wal_boundary() {
+    fn backlog_membership_recovers_at_every_wal_boundary() {
         for fault in [
             Fault::Staged,
             Fault::Published,
@@ -378,18 +278,9 @@ mod tests {
             Fault::Unlinked,
         ] {
             let (directory, mut index) = fixture();
-            index.inject(Some(fault));
-            assert!(prepare(&mut index, key(1), key(2), |_, _, _| Ok((true, Some(10)))).is_err());
-            drop(index);
-            let mut index = Index::open(&directory.0, false).unwrap();
-            prepare(&mut index, key(1), key(2), |_, _, _| Ok((true, Some(10)))).unwrap();
-            assert_eq!(
-                read(&mut index, "fixture", 20).unwrap().get("due"),
-                Some(&Value::from("421"))
-            );
             finish(&mut index, 20).unwrap();
             let mut changes = Vec::new();
-            update(&mut index, &mut changes, &id(0), false, Some(30)).unwrap();
+            maintain(&mut index, &mut changes, &id(0), false, 30).unwrap();
             changes.push(Change::PutInline(LAST, 80_u64.to_be_bytes().to_vec()));
             index.inject(Some(fault));
             assert!(index.commit(changes).is_err());
@@ -401,7 +292,7 @@ mod tests {
             } else {
                 ("420", "80")
             };
-            assert_eq!(value.get("due"), Some(&Value::from(count)));
+            assert_eq!(value.get("due"), Some(&Value::from(count)), "{fault:?}");
             assert_eq!(
                 value.get("last_completed_pass_at"),
                 Some(&Value::from(last))

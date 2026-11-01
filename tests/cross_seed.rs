@@ -871,6 +871,7 @@ fn api_authorization_and_cli_register_only_the_selected_readonly_seed() {
         fs::read(&source.path).unwrap(),
     )
     .unwrap();
+    mynou::torrent::index_handmade_transfer(&cfg.downloads, &source.id).unwrap();
     let engine = Engine::open(cfg.clone()).unwrap();
     wait(|| engine.transfer(&source.id).unwrap().get("ready") == Some(&Value::Bool(true)));
     let api = Api::bind(engine.clone()).unwrap();

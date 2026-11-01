@@ -51,49 +51,25 @@ impl Engine {
         v.insert("lookup", lock(&self.irc_lookup)?.to_json());
         Ok(v)
     }
-    pub fn irc_announcements(&self, offset: usize, limit: usize) -> Result<Value> {
-        if offset > super::MAX_OFFSET || limit == 0 || limit > 200 {
-            return Err("IRC: invalid page bounds; use a cursor beyond offset 1000".into());
-        }
-        let ledger = lock(&self.irc_store)?;
-        let mut after = None;
-        let mut remaining = offset;
-        while remaining > 0 {
-            let (rows, next) = ledger.page(2, after, remaining.min(200))?;
-            remaining -= rows.len();
-            if next.is_none() {
-                return self.irc_history_report(&ledger, Vec::new(), None, Some(offset), limit);
-            }
-            after = next;
-        }
-        let (rows, next) = ledger.page(2, after, limit)?;
-        self.irc_history_report(&ledger, rows, next, Some(offset), limit)
-    }
-    pub fn irc_announcements_page(&self, after: Option<&str>, limit: usize) -> Result<Value> {
+    pub fn irc_announcements(&self, after: Option<&str>, limit: usize) -> Result<Value> {
         let after = after.map(super::index::parse_cursor).transpose()?;
         let ledger = lock(&self.irc_store)?;
         let (rows, next) = ledger.page(2, after, limit)?;
-        self.irc_history_report(&ledger, rows, next, None, limit)
+        self.irc_history_report(&ledger, rows, next, limit)
     }
     fn irc_history_report(
         &self,
         ledger: &super::AnnouncementStore,
         rows: Vec<Record>,
         next: Option<crate::inventory::Key>,
-        offset: Option<usize>,
         limit: usize,
     ) -> Result<Value> {
         let runtime = lock(&self.irc_route_runtime)?;
         let mut v = Value::object();
         v.insert("total", Value::Number(ledger.count()? as f64));
-        if let Some(offset) = offset {
-            v.insert("offset", Value::Number(offset as f64));
-        }
         v.insert("limit", limit as u32);
         let next = next.map_or(Value::Null, |k| Value::from(super::index::cursor(&k)));
-        // `next` is the field of every other cursor page; `next_cursor` stays for old callers.
-        v.insert("next", next.clone());
-        v.insert("next_cursor", next);
+        v.insert("next", next);
         v.insert(
             "announcements",
             Value::Array(rows.iter().map(|r| runtime.annotate(r)).collect()),

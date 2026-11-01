@@ -15,14 +15,8 @@ const ORDER: u8 = 19;
 const SEED: u8 = 20;
 const WIRE: u8 = 21;
 const ALL_ORDERED: u8 = 22;
-const DISCOVERY: u8 = 23;
-const OLD_FORMAT: &[u8] = b"mynou-transfers/1";
 const FORMAT: &[u8] = b"mynou-transfers/2";
-const BUILDING: &[u8] = b"mynou-transfers/1-building";
-const SENTINEL: &str = "0000000000000000000000000000000000000000.torrent";
 const SNAPSHOT_LIMIT: usize = 64 * 1024 * 1024;
-#[cfg(test)]
-thread_local! {static MIGRATION_STOP:std::cell::Cell<bool> = const {std::cell::Cell::new(false)};}
 
 const fn single(table: u8) -> Key {
     let mut key = [0; 64];
@@ -319,111 +313,23 @@ impl TransferIndex {
     pub fn open(config: &mut DownloadConfig) -> Result<Self> {
         let ownership = state_lock(&config.state_dir)?;
         let path = config.state_dir.join("transfers.idx");
-        let marker = config.state_dir.join(SENTINEL);
-        let mut marker_bytes = match fs::symlink_metadata(&marker) {
-            Ok(_) => checked_read(&marker, 72)?,
+        let mut index = match fs::symlink_metadata(&path) {
+            Ok(_) => Index::open(&path, false)?,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                if fs::symlink_metadata(&path).is_ok() {
-                    return Err(
-                        "Transfer index marker is missing; restore matching store backup".into(),
-                    );
-                }
-                for suffix in ["source", "seed", "control", "paused"] {
-                    let reserved = config
-                        .state_dir
-                        .join(format!("0000000000000000000000000000000000000000.{suffix}"));
-                    if fs::symlink_metadata(&reserved).is_ok() {
-                        return Err(
-                            "Reserved transfer migration identity conflicts with legacy state"
-                                .into(),
-                        );
-                    }
-                }
-                let mut bytes = b"MYNOUT01".to_vec();
-                bytes.extend_from_slice(&crate::crypto::random_bytes::<32>()?);
-                bytes.extend_from_slice(&sha256(&bytes));
-                atomic_write(&marker, &bytes)?;
-                bytes
+                create(&config.state_dir)?
             }
-            Err(_) => return Err("Cannot inspect transfer format marker".into()),
+            Err(_) => return Err("Cannot inspect transfer index".into()),
         };
-        if marker_bytes.len() != 72
-            || !matches!(&marker_bytes[..8], b"MYNOUT01" | b"MYNOUT02")
-            || sha256(&marker_bytes[..40]).as_slice() != &marker_bytes[40..]
-        {
-            return Err("Transfer migration marker or reserved identity conflict".into());
+        if index.get(&HEADER)?.as_deref() != Some(FORMAT) {
+            return Err("Unsupported transfer catalog format".into());
         }
-        let published = &marker_bytes[..8] == b"MYNOUT02";
-        if published && fs::symlink_metadata(&path).is_err() {
-            return Err(
-                "Published transfer index is missing; restore matching store backup".into(),
-            );
-        }
-        let identity = marker_bytes[8..40]
-            .try_into()
-            .map_err(|_| "Invalid transfer identity marker")?;
-        let mut index = if published {
-            Index::open_bound(&path, false, identity)?
-        } else {
-            open_bound_catalog(&path, identity)?
-        };
-        if index.is_empty()? {
-            if published {
-                return Err(
-                    "Published transfer catalog is empty; restore matching store backup".into(),
-                );
-            }
-            index.commit(vec![
-                Change::Put(HEADER, BUILDING.to_vec()),
-                Change::Put(COUNTS, Counts::default().encode()),
-            ])?;
-        }
-        let mut store = Self {
+        crate::inventory::backlog::prepare(&mut index, single(PRIMARY), single(PRIMARY + 1))?;
+        Ok(Self {
             index,
             directory: config.state_dir.clone(),
             session: crate::crypto::random_bytes()?,
             _ownership: ownership,
-        };
-        match store.index.get(&HEADER)?.as_deref() {
-            Some(FORMAT) | Some(OLD_FORMAT) => {}
-            Some(BUILDING) if !published => store.migrate(config)?,
-            _ => return Err("Unsupported transfer catalog format".into()),
-        }
-        if &marker_bytes[..8] == b"MYNOUT01" {
-            marker_bytes[..8].copy_from_slice(b"MYNOUT02");
-            let digest = sha256(&marker_bytes[..40]);
-            marker_bytes[40..].copy_from_slice(&digest);
-            atomic_write(&marker, &marker_bytes)?;
-        }
-        if store.index.get(&HEADER)?.as_deref() != Some(FORMAT) {
-            store
-                .index
-                .commit(vec![Change::PutInline(HEADER, FORMAT.to_vec())])?;
-        }
-        crate::inventory::backlog::prepare(
-            &mut store.index,
-            single(PRIMARY),
-            single(PRIMARY + 1),
-            |index, key, _| {
-                let id = key_id(key, 1)?;
-                let bytes = index
-                    .get(&id_key(PRIMARY, &id)?)?
-                    .ok_or("Missing transfer during backlog preparation")?;
-                let digest: [u8; 32] = bytes
-                    .as_slice()
-                    .try_into()
-                    .map_err(|_| "Invalid transfer digest")?;
-                let record = Record::decode(&checked_read(
-                    &store
-                        .directory
-                        .join("transfer-snapshots")
-                        .join(hex(&digest)),
-                    SNAPSHOT_LIMIT,
-                )?)?;
-                Ok((record.queued(), None))
-            },
-        )?;
-        Ok(store)
+        })
     }
     pub(super) fn backlog(&mut self, at: u64) -> Result<crate::json::Value> {
         crate::inventory::backlog::read(&mut self.index, "transfer_queue_scan", at)
@@ -860,143 +766,27 @@ impl TransferIndex {
             counts.listing,
         ))
     }
-    fn migrate(&mut self, config: &DownloadConfig) -> Result<()> {
-        let backup = self.directory.join(".transfers-legacy");
-        let resumed = fs::symlink_metadata(&backup).is_ok();
-        ensure_private_directory(&backup)?;
-        let mut legacy = 0_u64;
-        // Freeze and verify each original independently. This is migration-only
-        // enumeration; normal opens read only the root, marker and queue window.
-        let mut max_order = self.counts()?.order;
-        for entry in
-            fs::read_dir(&self.directory).map_err(|_| "Cannot enumerate legacy transfer state")?
-        {
-            let entry = entry.map_err(|_| "Cannot read legacy transfer entry")?;
-            let name = entry.file_name();
-            let Some(name) = name.to_str() else { continue };
-            if name == SENTINEL {
-                continue;
-            }
-            let Some((id, suffix)) = name.rsplit_once('.') else {
-                continue;
-            };
-            if !["torrent", "source", "seed", "control", "paused"].contains(&suffix)
-                || id_key(PRIMARY, id).is_err()
-            {
-                continue;
-            }
-            let bytes = checked_read_with_permissions(&entry.path(), SNAPSHOT_LIMIT, false)?;
-            legacy += 1;
-            let saved = backup.join(name);
-            // A prior imported row may have materialized a previously absent
-            // compatibility control. It is derived state, not legacy backup.
-            if suffix == "control"
-                && !saved.exists()
-                && let Some(imported) = self.get(id)?
-            {
-                if imported.control.encode()? != bytes {
-                    return Err("Migrated transfer controls changed before publication".into());
-                }
-                continue;
-            }
-            if saved.exists() {
-                if checked_read(&saved, SNAPSHOT_LIMIT)? != bytes {
-                    return Err(
-                        "Legacy transfer changed during migration; restore matching backup".into(),
-                    );
-                }
-            } else {
-                atomic_write(&saved, &bytes)?;
-            }
-            if suffix == "control" {
-                max_order = max_order.max(TorrentControl::decode(&bytes)?.queue_order);
-            }
-        }
-        // A first start finds no legacy file: creating the catalog is not a migration.
-        let progress =
-            crate::progress::Tracker::start_if(legacy > 0, &self.directory, "transfers", None);
-        if resumed {
-            progress.resumed();
-        }
-        progress.stage("preserving", 0);
-        let mut counts = self.counts()?;
-        counts.order = max_order;
-        self.index
-            .commit(vec![Change::Put(COUNTS, counts.encode())])?;
-        // Disk-stage identities in bounded batches. Filename discovery order
-        // must not change the legacy lexicographic FIFO assignment.
-        let mut pending = BTreeMap::new();
-        for entry in
-            fs::read_dir(&backup).map_err(|_| "Cannot enumerate transfer migration backup")?
-        {
-            let entry = entry.map_err(|_| "Cannot read transfer migration backup")?;
-            let name = entry.file_name();
-            let Some(name) = name.to_str() else { continue };
-            let Some((id, suffix)) = name.rsplit_once('.') else {
-                continue;
-            };
-            if !["torrent", "source", "seed"].contains(&suffix) {
-                continue;
-            }
-            let raw = id_key(PRIMARY, id)?;
-            let mut staged = single(DISCOVERY);
-            staged[1..33].copy_from_slice(&raw[2..34]);
-            staged[33] = raw[1];
-            pending.insert(staged, Change::PutInline(staged, Vec::new()));
-            if pending.len() >= 64 {
-                self.index
-                    .commit(std::mem::take(&mut pending).into_values().collect())?;
-            }
-        }
-        if !pending.is_empty() {
-            self.index.commit(pending.into_values().collect())?;
-        }
-        let mut done = 0_u64;
-        progress.stage("copying", 0);
-        loop {
-            let page = self.index.page(&Query {
-                start: single(DISCOVERY),
-                end: Some(single(DISCOVERY + 1)),
-                limit: 64,
-                ..Query::default()
-            })?;
-            if page.entries.is_empty() {
-                break;
-            }
-            for (staged, _) in page.entries {
-                let size = usize::from(staged[33]);
-                if ![40, 64].contains(&size) {
-                    return Err("Invalid migration identity width".into());
-                }
-                let id = hex(&staged[1..1 + size / 2]);
-                if self.get(&id)?.is_none() {
-                    let mut job = super::load_job(config, &id)?;
-                    if !self.directory.join(format!("{id}.control")).exists() {
-                        job.control.queue_order = self.next_order()?;
-                    }
-                    self.save(&job)?;
-                }
-                let control_path = self.directory.join(format!("{id}.control"));
-                if !control_path.exists() {
-                    let imported = self.get(&id)?.ok_or("Missing migrated transfer")?;
-                    atomic_write(&control_path, &imported.control.encode()?)?;
-                }
-                #[cfg(test)]
-                if MIGRATION_STOP.with(|stop| stop.get()) {
-                    return Err("Transfer migration interrupted by fixture".into());
-                }
-                self.index.commit(vec![Change::Delete(staged)])?;
-                done += 1;
-                progress.stage("copying", done);
-            }
-        }
-        progress.stage("promoting", done);
-        self.index
-            .commit(vec![Change::Put(HEADER, FORMAT.to_vec())])?;
-        progress.total(done);
-        progress.finish();
-        Ok(())
+}
+
+/// Builds an empty catalog under a temporary name, then publishes it.
+fn create(directory: &Path) -> Result<Index> {
+    let staging = directory.join("transfers.idx.creating");
+    crate::store::reject_symlinks(&staging)?;
+    if fs::symlink_metadata(&staging).is_ok() {
+        // Only an interrupted creation leaves it, and it held no transfer.
+        fs::remove_dir_all(&staging).map_err(|_| "Cannot remove an unfinished transfer index")?;
     }
+    let mut index = Index::create(&staging)?;
+    index.commit(vec![
+        Change::PutInline(HEADER, FORMAT.to_vec()),
+        Change::Put(COUNTS, Counts::default().encode()),
+    ])?;
+    crate::inventory::backlog::prepare(&mut index, single(PRIMARY), single(PRIMARY + 1))?;
+    drop(index);
+    let path = directory.join("transfers.idx");
+    fs::rename(&staging, &path).map_err(|_| "Cannot publish the transfer index")?;
+    crate::store::sync_directory(directory).map_err(|_| "Cannot synchronize the transfer index")?;
+    Index::open(&path, false)
 }
 
 fn checked_read(path: &Path, limit: usize) -> Result<Vec<u8>> {
@@ -1063,126 +853,6 @@ fn ensure_private_directory(path: &Path) -> Result<()> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => mkdir_private(path),
         Err(_) => Err("Cannot inspect private transfer directory".into()),
     }
-}
-
-fn optional_read(path: &Path, limit: usize) -> Result<Option<Vec<u8>>> {
-    match fs::symlink_metadata(path) {
-        Ok(_) => checked_read(path, limit).map(Some),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(_) => Err("Cannot inspect transfer creation artifact".into()),
-    }
-}
-fn check_creation(path: &Path, identity: [u8; 32]) -> Result<()> {
-    ensure_private_directory(path)?;
-    let mut expected = b"MYNOUID1".to_vec();
-    expected.extend_from_slice(&identity);
-    expected.extend_from_slice(&sha256(&expected));
-    let identity_bytes = optional_read(&path.join("identity.bin"), 72)?;
-    if identity_bytes
-        .as_ref()
-        .is_some_and(|bytes| !expected.starts_with(bytes))
-    {
-        return Err("Foreign transfer creation identity".into());
-    }
-    let complete = identity_bytes.as_deref() == Some(expected.as_slice());
-    for entry in fs::read_dir(path).map_err(|_| "Cannot enumerate transfer creation artifacts")? {
-        let entry = entry.map_err(|_| "Cannot inspect transfer creation artifact")?;
-        match entry.file_name().to_str() {
-            Some(".lock") => {
-                if !checked_read(&entry.path(), 0)?.is_empty() {
-                    return Err("Invalid transfer creation lock".into());
-                }
-            }
-            Some("identity.bin") => {}
-            Some("tree.bin") => {
-                let bytes = checked_read(&entry.path(), 4095)?;
-                if !complete || !Index::valid_creation_prefix(identity, &bytes) {
-                    return Err("Foreign transfer creation tree".into());
-                }
-            }
-            Some("redo.bin") => {
-                let bytes = checked_read(&entry.path(), Index::CREATION_REDO_BYTES)?;
-                if !complete || !Index::valid_creation_redo(identity, &bytes) {
-                    return Err("Foreign transfer creation redo log".into());
-                }
-            }
-            Some("objects") => {
-                ensure_private_directory(&entry.path())?;
-                if !complete
-                    || fs::read_dir(entry.path())
-                        .map_err(|_| "Cannot inspect initial transfer objects")?
-                        .next()
-                        .is_some()
-                {
-                    return Err("Foreign populated transfer creation objects".into());
-                }
-            }
-            _ => return Err("Unknown transfer creation artifact".into()),
-        }
-    }
-    Ok(())
-}
-fn open_bound_catalog(path: &Path, identity: [u8; 32]) -> Result<Index> {
-    match fs::symlink_metadata(path) {
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            return Index::create_bound(path, identity);
-        }
-        Err(_) => return Err("Cannot inspect transfer index".into()),
-        Ok(_) => {}
-    }
-    ensure_private_directory(path)?;
-    match fs::symlink_metadata(path.join("tree.bin")) {
-        Ok(metadata) if metadata.len() >= 4096 => return Index::open_bound(path, false, identity),
-        Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
-            return Err("Cannot inspect transfer creation tree".into());
-        }
-        _ => {}
-    }
-    check_creation(path, identity)?;
-    let lock_path = path.join(".lock");
-    let lock = if optional_read(&lock_path, 0)?.is_some() {
-        let inspected =
-            fs::symlink_metadata(&lock_path).map_err(|_| "Cannot inspect initial transfer lock")?;
-        private_state_file(&inspected)?;
-        crate::store::before_private_open(&lock_path);
-        let lock = crate::store::private_options()
-            .read(true)
-            .write(true)
-            .open(&lock_path)
-            .map_err(|_| "Cannot open initial transfer lock")?;
-        let opened = lock
-            .metadata()
-            .map_err(|_| "Cannot inspect initial transfer lock")?;
-        private_state_file(&opened)?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::MetadataExt;
-            if opened.dev() != inspected.dev() || opened.ino() != inspected.ino() {
-                return Err("Initial transfer lock changed during opening".into());
-            }
-        }
-        lock
-    } else {
-        crate::store::private_options()
-            .read(true)
-            .write(true)
-            .create_new(true)
-            .open(&lock_path)
-            .map_err(|_| "Cannot create initial transfer lock")?
-    };
-    crate::store::try_lock_file(&lock).map_err(|_| "Transfer index creation is already owned")?;
-    check_creation(path, identity)?;
-    let parent = path.parent().ok_or("Transfer index has no parent")?;
-    let preserved = parent.join(format!(
-        "transfers.idx.incomplete-{}",
-        hex(&crate::crypto::random_bytes::<16>()?)
-    ));
-    fs::rename(path, &preserved).map_err(|_| "Cannot preserve interrupted transfer index")?;
-    crate::store::sync_directory(parent)
-        .map_err(|_| "Cannot synchronize transfer creation recovery")?;
-    let index = Index::create_bound(path, identity);
-    drop(lock);
-    index
 }
 
 fn state_lock(directory: &Path) -> Result<File> {
@@ -1268,6 +938,10 @@ mod tests {
             }
             id
         }
+        /// Records the transfer of `source` in the index, as adding it does.
+        fn add(&self, index: &mut TransferIndex, id: &str) {
+            index.save(&load_job(&self.config, id).unwrap()).unwrap();
+        }
     }
     impl Drop for Fixture {
         fn drop(&mut self) {
@@ -1280,19 +954,13 @@ mod tests {
         use crate::json::Value as Json;
         let mut fixture = Fixture::new();
         let first = fixture.source(1, Some(1));
-        fixture.source(2, Some(2));
+        let second = fixture.source(2, Some(2));
         let mut index = TransferIndex::open(&mut fixture.config).unwrap();
+        fixture.add(&mut index, &first);
+        fixture.add(&mut index, &second);
         assert_eq!(
             index.backlog(u64::MAX).unwrap().get("due"),
             Some(&Json::from("2"))
-        );
-        assert_eq!(
-            index.backlog(u64::MAX).unwrap().get("unknown_due_times"),
-            Some(&Json::from("2"))
-        );
-        assert_eq!(
-            index.backlog(u64::MAX).unwrap().get("oldest_due_at"),
-            Some(&Json::Null)
         );
         let mut record = index.get(&first).unwrap().unwrap();
         record.paused = true;
@@ -1322,57 +990,6 @@ mod tests {
     }
 
     #[test]
-    fn migration_assigns_missing_fifo_after_existing_and_preserves_backup() {
-        let mut fixture = Fixture::new();
-        let first = fixture.source(1, Some(900));
-        let second = fixture.source(2, None);
-        atomic_write(
-            &fixture.config.state_dir.join(format!("{first}.paused")),
-            b"paused\n",
-        )
-        .unwrap();
-        let mut index = TransferIndex::open(&mut fixture.config).unwrap();
-        assert!(index.get(&first).unwrap().unwrap().paused);
-        assert_eq!(index.get(&first).unwrap().unwrap().control.queue_order, 900);
-        assert_eq!(
-            index.get(&second).unwrap().unwrap().control.queue_order,
-            901
-        );
-        assert_eq!(index.queue(200).unwrap(), vec![second]);
-        assert_eq!(index.aggregates().unwrap(), (2, 0, 0));
-        let marker = checked_read(&fixture.config.state_dir.join(SENTINEL), 72).unwrap();
-        assert!(
-            Meta::parse(&marker).is_err(),
-            "legacy torrent readers must reject marker"
-        );
-        assert_eq!(
-            checked_read(
-                &fixture
-                    .config
-                    .state_dir
-                    .join(".transfers-legacy")
-                    .join(format!("{first}.paused")),
-                8
-            )
-            .unwrap(),
-            b"paused\n"
-        );
-    }
-
-    #[test]
-    fn every_interrupted_initial_creation_resumes_with_bound_identity() {
-        for stage in 1..=7 {
-            let mut fixture = Fixture::new();
-            fixture.source(1, Some(1));
-            Index::inject_creation(Some(stage));
-            assert!(TransferIndex::open(&mut fixture.config).is_err());
-            Index::inject_creation(None);
-            let mut index = TransferIndex::open(&mut fixture.config).unwrap();
-            assert_eq!(index.aggregates().unwrap().0, 1, "stage {stage}");
-        }
-    }
-
-    #[test]
     fn published_snapshot_save_recovers_without_dangling_reference() {
         for fault in [
             crate::inventory::Fault::Staged,
@@ -1383,6 +1000,7 @@ mod tests {
             let mut fixture = Fixture::new();
             let id = fixture.source(1, Some(1));
             let mut index = TransferIndex::open(&mut fixture.config).unwrap();
+            fixture.add(&mut index, &id);
             let job = load_job(&fixture.config, &id).unwrap();
             job.counters.downloaded.store(42, Ordering::Relaxed);
             index.index.inject(Some(fault));
@@ -1404,6 +1022,7 @@ mod tests {
         let mut fixture = Fixture::new();
         let id = fixture.source(1, Some(1));
         let mut index = TransferIndex::open(&mut fixture.config).unwrap();
+        fixture.add(&mut index, &id);
         let job = load_job(&fixture.config, &id).unwrap();
         let before = index.page(None, 200).unwrap().3;
         for count in 1..=4 {
@@ -1424,35 +1043,6 @@ mod tests {
         drop(index);
         let mut reopened = TransferIndex::open(&mut fixture.config).unwrap();
         assert!(!reopened.get(&id).unwrap().unwrap().current);
-    }
-
-    #[test]
-    fn interrupted_import_resumes_and_existing_owner_preserves_marker() {
-        let mut fixture = Fixture::new();
-        for n in 1..=3 {
-            fixture.source(n, None);
-        }
-        MIGRATION_STOP.with(|stop| stop.set(true));
-        assert!(TransferIndex::open(&mut fixture.config).is_err());
-        MIGRATION_STOP.with(|stop| stop.set(false));
-        let mut index = TransferIndex::open(&mut fixture.config).unwrap();
-        assert_eq!(index.aggregates().unwrap().0, 3);
-        let marker = checked_read(&fixture.config.state_dir.join(SENTINEL), 72).unwrap();
-        assert!(TransferIndex::open(&mut fixture.config).is_err());
-        assert_eq!(
-            checked_read(&fixture.config.state_dir.join(SENTINEL), 72).unwrap(),
-            marker
-        );
-        drop(index);
-        fs::rename(
-            fixture.config.state_dir.join("transfers.idx"),
-            fixture.config.state_dir.join("saved-index"),
-        )
-        .unwrap();
-        assert!(
-            TransferIndex::open(&mut fixture.config).is_err(),
-            "ready marker must not rebuild missing committed index"
-        );
     }
 
     #[test]
@@ -1490,28 +1080,17 @@ mod tests {
     fn published_catalog_damage_never_restarts_initial_creation() {
         for missing in [true, false] {
             let mut fixture = Fixture::new();
-            fixture.source(1, Some(1));
-            drop(TransferIndex::open(&mut fixture.config).unwrap());
-            let marker_path = fixture.config.state_dir.join(SENTINEL);
-            let marker = fs::read(&marker_path).unwrap();
-            let catalog = fixture.config.state_dir.join("transfers.idx");
-            let tree = catalog.join("tree.bin");
-            for object in fs::read_dir(catalog.join("objects")).unwrap() {
-                let object = object.unwrap();
-                if object.file_type().unwrap().is_dir() {
-                    fs::remove_dir_all(object.path()).unwrap();
-                } else {
-                    fs::remove_file(object.path()).unwrap();
-                }
-            }
+            let id = fixture.source(1, Some(1));
+            let mut index = TransferIndex::open(&mut fixture.config).unwrap();
+            fixture.add(&mut index, &id);
+            drop(index);
+            let tree = fixture.config.state_dir.join("transfers.idx/tree.bin");
             if missing {
                 fs::remove_file(&tree).unwrap();
             } else {
                 fs::write(&tree, []).unwrap();
             }
             assert!(TransferIndex::open(&mut fixture.config).is_err());
-            assert_eq!(fs::read(&marker_path).unwrap(), marker);
-            assert_eq!(fs::read_dir(catalog.join("objects")).unwrap().count(), 0);
             if missing {
                 assert!(!tree.exists());
             } else {
@@ -1521,25 +1100,29 @@ mod tests {
     }
 
     #[test]
-    fn marker_loss_and_foreign_creation_artifacts_are_explicit_errors() {
+    fn foreign_catalog_directories_are_errors_and_kept() {
         let mut fixture = Fixture::new();
-        let index = TransferIndex::open(&mut fixture.config).unwrap();
-        drop(index);
-        fs::remove_file(fixture.config.state_dir.join(SENTINEL)).unwrap();
-        assert!(TransferIndex::open(&mut fixture.config).is_err());
-        let mut other = Fixture::new();
-        Index::inject_creation(Some(1));
-        assert!(TransferIndex::open(&mut other.config).is_err());
-        Index::inject_creation(None);
         atomic_write(
-            &other.config.state_dir.join("transfers.idx/foreign"),
+            &fixture.config.state_dir.join("transfers.idx/foreign"),
             b"preserve",
         )
         .unwrap();
-        assert!(TransferIndex::open(&mut other.config).is_err());
+        assert!(TransferIndex::open(&mut fixture.config).is_err());
         assert_eq!(
-            checked_read(&other.config.state_dir.join("transfers.idx/foreign"), 8).unwrap(),
+            checked_read(&fixture.config.state_dir.join("transfers.idx/foreign"), 8).unwrap(),
             b"preserve"
+        );
+        // An interrupted creation leaves only staging, which held nothing.
+        let mut other = Fixture::new();
+        drop(Index::create(&other.config.state_dir.join("transfers.idx.creating")).unwrap());
+        let mut index = TransferIndex::open(&mut other.config).unwrap();
+        assert_eq!(index.aggregates().unwrap().0, 0);
+        assert!(
+            !other
+                .config
+                .state_dir
+                .join("transfers.idx.creating")
+                .exists()
         );
     }
 
@@ -1552,22 +1135,13 @@ mod tests {
         let cases = [
             (".transfers.lock", 0, "Cannot open private transfer state"),
             (".transfers.lock", 1, "Cannot open transfer ownership lock"),
-            ("source", 0, "Cannot open private transfer state"),
         ];
         for (name, skip, opened) in cases {
             for swap in [Swap::Symlink, Swap::Fifo, Swap::Replaced] {
                 let fixture = Fixture::new();
-                let id = fixture.source(1, Some(1));
                 let mut config = fixture.config.clone();
-                if name == ".transfers.lock" {
-                    drop(TransferIndex::open(&mut config).unwrap());
-                }
-                let name = if name == "source" {
-                    format!("{id}.source")
-                } else {
-                    name.to_owned()
-                };
-                let error = swapped(&name, skip, swap, move || {
+                drop(TransferIndex::open(&mut config).unwrap());
+                let error = swapped(name, skip, swap, move || {
                     TransferIndex::open(&mut config).map(drop)
                 });
                 match swap {
@@ -1590,38 +1164,29 @@ mod tests {
         }
     }
     #[test]
-    fn full_disk_at_every_migration_flush_preserves_legacy_and_restarts() {
+    fn full_disk_at_every_creation_flush_restarts_cleanly() {
         for boundary in 0..1000 {
             let mut fixture = Fixture::new();
-            let id = fixture.source(1, Some(42));
-            let path = fixture.config.state_dir.join(format!("{id}.source"));
-            let original = fs::read(&path).unwrap();
             let result = crate::store::with_full_disk_after(boundary, || {
                 TransferIndex::open(&mut fixture.config)
             });
             let error = match result {
                 Ok(value) => {
                     drop(value);
-                    assert!(boundary > 10);
+                    assert!(boundary > 3);
                     return;
                 }
                 Err(error) => error,
             };
             assert!(
-                error.starts_with("Transfer storage: "),
-                "boundary {boundary}: {error}"
-            );
-            assert!(
                 error.contains("disk") || error.contains(crate::store::STORAGE_FULL),
                 "boundary {boundary}: {error}"
             );
             assert!(!error.contains(fixture.root.to_str().unwrap()), "{error}");
-            assert_eq!(fs::read(path).unwrap(), original);
             let mut index = TransferIndex::open(&mut fixture.config).unwrap();
-            assert_eq!(index.get(&id).unwrap().unwrap().control.queue_order, 42);
-            assert_eq!(index.aggregates().unwrap().0, 1);
+            assert_eq!(index.aggregates().unwrap().0, 0);
         }
-        panic!("migration fixture exceeded its durability boundary budget");
+        panic!("creation fixture exceeded its durability boundary budget");
     }
 }
 

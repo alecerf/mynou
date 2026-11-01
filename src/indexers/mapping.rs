@@ -101,6 +101,11 @@ fn count(v: &Value) -> Option<u64> {
     v.as_u64().or_else(|| v.as_str()?.parse().ok())
 }
 
+/// Invalid advertised factors are unknown, never a response parse failure.
+pub(crate) fn volume_factor(value: f64) -> Option<bool> {
+    (value.is_finite() && value >= 0.0).then_some(value == 0.0)
+}
+
 /// How a `json` source is queried and read. The default reproduces the built-in
 /// behavior, so sources without a `mapping` section are unchanged.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -110,6 +115,7 @@ pub(crate) struct Mapping {
     urls: Vec<Path>,
     seeders: Option<Path>,
     size: Option<Path>,
+    download_volume_factor: Option<Path>,
     details: Option<Path>,
     tmdb_id: Option<Path>,
     info_hash: Option<Path>,
@@ -133,6 +139,7 @@ impl Mapping {
                 "url",
                 "seeders",
                 "size",
+                "download_volume_factor",
                 "details",
                 "tmdb_id",
                 "info_hash",
@@ -152,6 +159,7 @@ impl Mapping {
             urls: paths(v, "url", MAX_ALTERNATIVES)?,
             seeders: single("seeders")?,
             size: single("size")?,
+            download_volume_factor: single("download_volume_factor")?,
             details: single("details")?,
             tmdb_id: single("tmdb_id")?,
             info_hash: single("info_hash")?,
@@ -273,13 +281,27 @@ impl Mapping {
         .unwrap_or(0)
     }
 
-    /// Advertised payload bytes, when mapped and positive.
+    /// Advertised payload bytes, from the mapped or default field, when positive.
     pub(crate) fn size(&self, item: &Value) -> Option<u64> {
-        self.size
-            .as_ref()
-            .and_then(|path| path.find(item))
-            .and_then(count)
-            .filter(|size| *size > 0)
+        match &self.size {
+            Some(path) => path.find(item),
+            None => item.get("size"),
+        }
+        .and_then(count)
+        .filter(|size| *size > 0)
+    }
+
+    pub(crate) fn freeleech(&self, item: &Value) -> Option<bool> {
+        let value = match &self.download_volume_factor {
+            Some(path) => path.find(item),
+            None => item.get("download_volume_factor"),
+        }?;
+        let factor = match value {
+            Value::Number(n) => *n,
+            Value::String(s) => s.parse::<f64>().ok()?,
+            _ => return None,
+        };
+        volume_factor(factor)
     }
 
     /// Whether items carry the details page, TMDB ID and hash that an IRC
