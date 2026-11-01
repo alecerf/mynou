@@ -656,6 +656,9 @@ pub fn page(query: &str) -> Result<(Option<Title>, usize)> {
     for field in query.split('&').filter(|f| !f.is_empty()) {
         match field.split_once('=') {
             Some(("after", text)) if after.is_none() => {
+                // Clients percent-encode the cursor, `:` included.
+                let text = crate::torrent::url_decode(text)
+                    .map_err(|_| "Title profile: invalid cursor")?;
                 let (kind, id) = text
                     .split_once(':')
                     .ok_or("Title profile: invalid cursor")?;

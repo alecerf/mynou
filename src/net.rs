@@ -946,21 +946,25 @@ fn resolve_redirect(base: &Url, location: &str) -> Result<Url> {
         Some((path, query)) => (path, Some(query)),
         None => (next.path.as_str(), None),
     };
-    let trailing = path.ends_with('/') || path.ends_with("/.") || path.ends_with("/..");
     let mut components = Vec::new();
-    for part in path.split('/') {
+    let mut parts = path.split('/').skip(1).peekable();
+    while let Some(part) = parts.next() {
         match part {
-            "" | "." => {}
+            "." => {
+                if parts.peek().is_none() {
+                    components.push("");
+                }
+            }
             ".." => {
                 components.pop();
+                if parts.peek().is_none() {
+                    components.push("");
+                }
             }
             _ => components.push(part),
         }
     }
     let mut normalized = format!("/{}", components.join("/"));
-    if trailing && !normalized.ends_with('/') {
-        normalized.push('/');
-    }
     if let Some(query) = query {
         normalized.push('?');
         normalized.push_str(query);
@@ -1096,6 +1100,25 @@ mod tests {
             "example.net"
         );
         assert!(resolve_redirect(&base, "ftp://example.net/").is_err());
+    }
+
+    #[test]
+    fn redirect_dot_segments_preserve_empty_segments() {
+        let base = parse_url("https://example.org/dir//file?q=old").unwrap();
+        for (location, expected) in [
+            ("/a//b", "/a//b"),
+            ("/a//b//", "/a//b//"),
+            ("/a//./b", "/a//b"),
+            ("/a//../b", "/a/b"),
+            ("/a//.", "/a//"),
+            ("/a///..", "/a//"),
+            ("/../../b", "/b"),
+            ("../target", "/dir/target"),
+            ("next//part?q=/../", "/dir//next//part?q=/../"),
+            ("?q=new", "/dir//file?q=new"),
+        ] {
+            assert_eq!(resolve_redirect(&base, location).unwrap().path, expected);
+        }
     }
 
     #[test]

@@ -326,7 +326,9 @@ impl Engine {
         deadline: Instant,
     ) -> Result<(Record, Vec<Job>)> {
         let mut submitted = Vec::new();
-        let pack_plan = if self.config.series_packs_enabled {
+        // A pack search reads indexers and torrent metadata from peers: not
+        // while downloads are off.
+        let pack_plan = if self.config.series_packs_enabled && self.config.downloads_enabled {
             let mut series = lock(&self.series_store)?;
             let record = series.get(id)?.ok_or("Unknown monitored series")?;
             if record.revision != revision {

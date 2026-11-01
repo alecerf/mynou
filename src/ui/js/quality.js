@@ -148,14 +148,18 @@ let bindings = null;
 
 async function binding(kind, tmdbId) {
   if (!bindings) {
-    bindings = new Map();
+    // Kept only once every page arrived: a failed read leaves no partial list.
+    // 500 pages of 200 hold the 100,000 bindings the server allows.
+    const loaded = new Map();
     let after = null;
-    for (let page = 0; page < 20; page++) {
+    for (let page = 0; page < 500; page++) {
       const reply = await link.call('GET', `/api/title-profiles?limit=200${after ? `&after=${encodeURIComponent(after)}` : ''}`);
-      for (const b of reply.bindings ?? []) bindings.set(`${b.kind}:${b.tmdb_id}`, b.profile);
+      for (const b of reply.bindings ?? []) loaded.set(`${b.kind}:${b.tmdb_id}`, b.profile);
       after = reply.next;
       if (!after) break;
     }
+    if (after) throw new Error('Too many titles have their own quality to show this one');
+    bindings ??= loaded;
   }
   return bindings.get(`${kind}:${tmdbId}`) ?? null;
 }
