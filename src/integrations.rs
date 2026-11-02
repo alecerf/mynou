@@ -1593,11 +1593,11 @@ fn release_matches(request: &Request, title: &str) -> bool {
                     },
                 ));
         return !later_episode
-            && rest.get(at).is_some_and(|label| expected.matches(label))
-            && !rest.iter().skip(at + 1).any(|label| {
-                crate::numbering::conflicting_marker(expected, label, 0)
+            && expected.matches(rest, at)
+            && !(at + 1..rest.len()).any(|at| {
+                crate::numbering::conflicting_marker(expected, rest, at, 0)
                     || matches!(expected, crate::numbering::SourceNumber::Absolute(_))
-                        && crate::numbering::decimal_token(label).is_some()
+                        && crate::numbering::number_label(rest, at).is_some()
             });
     }
     if request.kind != "movie" {
@@ -3627,6 +3627,23 @@ mod tests {
         assert!(!release_matches(&request, "Cafe.Night.S02E03-E04.1080p"));
         assert!(!release_matches(&request, "Cafe.Night.S02E03.S03E01.1080p"));
         assert!(!release_matches(&request, "Cafe.Night.Another.Show.S02E03"));
+        request.source_numbering = Some(crate::numbering::SourceNumber::Absolute(13));
+        for title in [
+            "Cafe.Night.013.1080p.WEB.H.264.AAC2.0-GRP",
+            "Cafe.Night.2024.013.1080p.DDP5.1.H.265",
+            "Cafe.Night.013.X.265.DD+7.1",
+            "Cafe.Night.013.AAC.2.0",
+        ] {
+            assert!(release_identity_matches(&request, title), "{title}");
+        }
+        for title in [
+            "Cafe.Night.013-014.H.264",
+            "Cafe.Night.013.013.AAC2.0",
+            "Cafe.Night.0013-2200.H.265",
+            "Cafe.Night.013.H.264.AAC2.0.014",
+        ] {
+            assert!(!release_identity_matches(&request, title), "{title}");
+        }
     }
 
     #[test]

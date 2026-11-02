@@ -181,8 +181,8 @@ fn episode(name: &str) -> Result<EpisodeNumber> {
         .ok_or("IRC: announced episode numbering is missing or ambiguous")?;
     let expected = SourceNumber::SeasonEpisode(number);
     if number.episode == 0
-        || t.iter()
-            .any(|s| episode_marker(s).is_none() && conflicting_marker(expected, s, 0))
+        || (0..t.len())
+            .any(|at| episode_marker(&t[at]).is_none() && conflicting_marker(expected, &t, at, 0))
     {
         return Err("IRC: announced episode numbering is missing or ambiguous".into());
     }
@@ -795,6 +795,30 @@ mod tests {
         assert!(matches("Fixture.Show.2022.S06E06.1080p"));
         assert!(!matches("Fixture.Show.2005.S06E06.1080p"));
         assert!(!matches("Fixture.Show.S06E07.1080p"));
+        let absolute = Request {
+            source_numbering: Some(crate::numbering::SourceNumber::Absolute(13)),
+            ..request.clone()
+        };
+        for title in [
+            "Fixture.Show.013.1080p.WEB.H.264.AAC2.0-GRP",
+            "Fixture.Show.2022.013.DDP5.1.H.265",
+            "Fixture.Show.013.DD+7.1.AAC.2.0",
+        ] {
+            assert!(
+                super::super::routing::title_matches(&absolute, title),
+                "{title}"
+            );
+        }
+        for title in [
+            "Fixture.Show.013-014.H.264",
+            "Fixture.Show.013.013.AAC2.0",
+            "Fixture.Show.0013-2200.H.265",
+        ] {
+            assert!(
+                !super::super::routing::title_matches(&absolute, title),
+                "{title}"
+            );
+        }
         let movie = Request {
             kind: "movie".into(),
             season: 0,

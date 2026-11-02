@@ -8,7 +8,7 @@ use super::{
         ENVELOPE_BYTES, Fault, SEGMENT_HEADER_BYTES, SEGMENT_TARGET_OVERRIDE, redo_bodies,
         rewrite_redo_body,
     },
-    tree::Header,
+    tree::{Header, PAGE_SIZE},
 };
 use crate::crypto::random_bytes;
 use std::{
@@ -207,6 +207,38 @@ fn segment_envelopes_bind_their_key_store_and_private_file() {
     fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
     let mut index = Index::open(&directory.0, true).unwrap();
     assert_eq!(index.get(&key(1)).unwrap(), Some(vec![4; 100]));
+}
+
+#[test]
+fn read_only_recovery_replays_a_transaction_without_page_images() {
+    let directory = Directory::new();
+    let mut index = Index::create(&directory.0).unwrap();
+    let before = index.header;
+    index.inject(Some(Fault::Published));
+    assert!(index.commit(vec![Change::Delete(key(1))]).is_err());
+    drop(index);
+    let tree = fs::read(directory.0.join("tree.bin")).unwrap();
+    let redo = fs::read(directory.0.join("redo.bin")).unwrap();
+    let body = redo_bodies(&directory.0).pop().unwrap();
+    assert_eq!(&body[2 * PAGE_SIZE..2 * PAGE_SIZE + 4], &0u32.to_le_bytes());
+    let after = Header {
+        sequence: before.sequence + 1,
+        ..before
+    };
+
+    let mut index = Index::open(&directory.0, true).unwrap();
+    assert_eq!(index.header, after);
+    assert_eq!(index.len().unwrap(), 0);
+    assert_eq!(index.get(&key(1)).unwrap(), None);
+    drop(index);
+    assert_eq!(fs::read(directory.0.join("tree.bin")).unwrap(), tree);
+    assert_eq!(fs::read(directory.0.join("redo.bin")).unwrap(), redo);
+
+    let index = Index::open(&directory.0, false).unwrap();
+    assert_eq!(index.header, after);
+    drop(index);
+    let index = Index::open(&directory.0, true).unwrap();
+    assert_eq!(index.header, after);
 }
 
 #[test]

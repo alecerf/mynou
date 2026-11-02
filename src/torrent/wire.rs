@@ -9,7 +9,7 @@ use std::{
     net::SocketAddr,
     path::PathBuf,
     sync::{
-        Arc, RwLock,
+        Arc, Mutex, RwLock,
         atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering},
     },
     time::{Duration, Instant},
@@ -99,6 +99,7 @@ struct Upload {
     /// Metadata pieces asked for by a peer that has only a magnet link.
     metadata: VecDeque<usize>,
     cached: Option<(usize, Vec<u8>)>,
+    last_block: Arc<Mutex<Option<Instant>>>,
 }
 
 /// Blocks served after each downloaded message, so uploads never hold up the
@@ -760,6 +761,7 @@ impl Peer {
                     requests: VecDeque::new(),
                     metadata: VecDeque::new(),
                     cached: None,
+                    last_block: Arc::default(),
                 })
             }
             None => None,
@@ -868,21 +870,29 @@ impl Peer {
                 Ok(message) => message,
                 // It may unchoke later; meanwhile it fetches from this side.
                 // An expiry inside a message (`PARTIAL`) ends the connection.
-                Err(e) if e == EXPIRED && self.uploading() => return Ok(()),
+                Err(e) if e == EXPIRED && self.interested() => return Ok(()),
                 Err(e) => return Err(e),
             };
             self.ancillary(id, &payload)?;
             self.upload(meta, stop, UPLOAD_BATCH)?;
         }
-        if self.uploading() {
+        if self.interested() {
             return Ok(());
         }
         Err("Peer keeps the download choked".into())
     }
 
     /// Whether the peer is interested in what this side uploads.
-    pub fn uploading(&self) -> bool {
+    fn interested(&self) -> bool {
         self.upload.as_ref().is_some_and(|upload| upload.interested)
+    }
+
+    /// Shares completed payload uploads with the coordinator. Interest and
+    /// metadata requests do not count as payload activity.
+    pub fn watch_uploads(&mut self, last: Arc<Mutex<Option<Instant>>>) {
+        if let Some(upload) = &mut self.upload {
+            upload.last_block = last;
+        }
     }
 
     /// Whether availability or choking changed since the last call.
@@ -1131,6 +1141,10 @@ impl Peer {
                 stop,
                 &self.counters.uploaded,
             )?;
+            *upload
+                .last_block
+                .lock()
+                .map_err(|_| "Peer upload state lock is poisoned")? = Some(Instant::now());
         }
         Ok(())
     }
@@ -2040,6 +2054,67 @@ mod tests {
     }
 
     #[test]
+    fn upload_activity_requires_a_served_payload_block() {
+        let meta = three_piece_meta();
+        let stop = AtomicBool::new(false);
+        let mut peer = memory_peer(
+            Box::new(MemoryStream {
+                input: Vec::new(),
+                output: Vec::new(),
+            }),
+            Some(&meta),
+        );
+        peer.upload = Some(Upload {
+            serving: Serving {
+                pieces: Arc::new(Pieces::new(&[true, false, false])),
+                base: PathBuf::new(),
+                upload_gate: Arc::default(),
+                local_upload_gate: Arc::default(),
+            },
+            announced: vec![0x80],
+            version: 0,
+            interested: false,
+            unchoked: false,
+            requests: VecDeque::new(),
+            metadata: VecDeque::new(),
+            cached: Some((0, vec![42; BLOCK])),
+            last_block: Arc::default(),
+        });
+        let last_upload = Arc::new(Mutex::new(None));
+        peer.watch_uploads(last_upload.clone());
+        peer.ancillary(2, &[]).unwrap();
+        peer.upload(&meta, &stop, UPLOAD_BATCH).unwrap();
+        assert!(peer.interested());
+        assert!(last_upload.lock().unwrap().is_none());
+        assert_eq!(peer.counters.uploaded.load(Ordering::Relaxed), 0);
+
+        let mut request = vec![0; 8];
+        request.extend_from_slice(&(BLOCK as u32).to_be_bytes());
+        peer.ancillary(6, &request).unwrap();
+        assert!(last_upload.lock().unwrap().is_none());
+        let before = Instant::now();
+        peer.upload(&meta, &stop, UPLOAD_BATCH).unwrap();
+        let first = last_upload.lock().unwrap().unwrap();
+        assert!(first >= before);
+        assert_eq!(peer.counters.uploaded.load(Ordering::Relaxed), BLOCK as u64);
+
+        peer.upload(&meta, &stop, UPLOAD_BATCH).unwrap();
+        assert_eq!(*last_upload.lock().unwrap(), Some(first));
+        peer.ancillary(6, &request).unwrap();
+        peer.upload(&meta, &stop, UPLOAD_BATCH).unwrap();
+        assert!(
+            last_upload
+                .lock()
+                .unwrap()
+                .is_some_and(|last| last >= first)
+        );
+        assert_eq!(
+            peer.counters.uploaded.load(Ordering::Relaxed),
+            (2 * BLOCK) as u64
+        );
+    }
+
+    #[test]
     fn prepare_download_fails_after_a_partial_frame_expires() {
         let meta = three_piece_meta();
         // A quiet interested peer stays to download from this side; one that
@@ -2066,8 +2141,9 @@ mod tests {
                 requests: VecDeque::new(),
                 metadata: VecDeque::new(),
                 cached: None,
+                last_block: Arc::default(),
             });
-            assert!(peer.uploading());
+            assert!(peer.interested());
             assert_eq!(
                 peer.prepare_download(&meta, &AtomicBool::new(false)),
                 expected.map_err(String::from)

@@ -345,6 +345,7 @@ struct Flow {
     rttvar: Duration,
     sample: Option<(u32, Duration)>,
     /// Karn: no measurement until all possibly retransmitted bytes settle.
+    /// Also suppresses fast retransmits until that recovery point is acknowledged.
     ambiguous_until: Option<u32>,
     deadline: Option<Duration>,
     retries: u32,
@@ -1320,12 +1321,14 @@ impl<E: Entropy> TcpStack<E> {
             && segment.payload.is_empty()
             && segment.flags & FIN == 0
             && flow.snd_una != flow.snd_max
+            && flow.ambiguous_until.is_none()
             && flow.snd_wnd != 0
             && u32::from(segment.window) << flow.snd_scale == flow.snd_wnd
         {
             flow.dup_acks += 1;
             if flow.dup_acks == 3 {
                 // Fast retransmit, Tahoe style: back to slow start from snd_una.
+                // Keep the timeout running until new data is acknowledged.
                 self.collapse(flow);
             }
         }
@@ -1356,7 +1359,6 @@ impl<E: Entropy> TcpStack<E> {
         flow.cwnd = flow.mss;
         flow.dup_acks = 0;
         flow.snd_nxt = flow.snd_una;
-        flow.deadline = None;
     }
 
     fn fin_acknowledged(&self, flow: &mut Flow, now: Duration) {

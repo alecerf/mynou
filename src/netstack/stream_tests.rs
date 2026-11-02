@@ -681,6 +681,75 @@ fn three_duplicate_acknowledgments_trigger_a_fast_retransmit() {
 }
 
 #[test]
+fn duplicate_acknowledgments_do_not_postpone_loss_timeouts() {
+    let (mut pair, client, _, _) = established();
+    pair.a.config.retries = 1;
+    pair.a.send(G, client, &pattern(4 * 1384)).unwrap();
+    let packets = pair.a.poll(G, T0).unwrap().send;
+    pair.b.ingest(G, T0, &packets[1]);
+    let ack = pair.b.poll(G, T0).unwrap().send.remove(0);
+
+    for (first, last, deadline, retries) in [(100, 900, 1000, 0), (1100, 2900, 3000, 1)] {
+        for millis in (first..=last).step_by(100) {
+            let now = Duration::from_millis(millis);
+            for _ in 0..3 {
+                pair.a.ingest(G, now, &ack);
+            }
+            let poll = pair.a.poll(G, now).unwrap();
+            // Only the first three duplicates fast-retransmit this loss window.
+            assert_eq!(poll.send.len(), usize::from(millis == 100));
+            assert_eq!(poll.next, Some(Duration::from_millis(deadline)));
+            assert_eq!(pair.a.flows[&client.key].retries, retries);
+        }
+        let poll = pair.a.poll(G, Duration::from_millis(deadline)).unwrap();
+        assert_eq!(poll.send.len(), 1);
+        if retries == 0 {
+            assert_eq!(seen(&poll.send[0], SERVER).sequence, CLIENT_ISS + 1);
+            assert_eq!(pair.a.flows[&client.key].retries, 1);
+            assert_eq!(poll.next, Some(Duration::from_secs(3)));
+        } else {
+            assert_eq!(seen(&poll.send[0], SERVER).flags, RST | ACK);
+            assert_eq!(pair.a.flows[&client.key].failure, Some(Failure::Timeout));
+        }
+    }
+}
+
+#[test]
+fn fast_retransmit_waits_for_recovery_and_allows_the_next_loss() {
+    let (mut pair, client, server, _) = established();
+    let data = pattern(4 * 1384);
+    for _ in 0..2 {
+        pair.a.send(G, client, &data).unwrap();
+        let packets = pair.a.poll(G, T0).unwrap().send;
+        pair.b.ingest(G, T0, &packets[1]);
+        let duplicate = pair.b.poll(G, T0).unwrap().send.remove(0);
+        // A window update after the previous read may precede the duplicates.
+        for _ in 0..4 {
+            pair.a.ingest(G, T0, &duplicate);
+        }
+        let resent = pair.a.poll(G, T0).unwrap().send;
+        assert_eq!(resent.len(), 1);
+        pair.b.ingest(G, T0, &resent[0]);
+        let partial = pair.b.poll(G, T0).unwrap().send.remove(0);
+        pair.a.ingest(G, T0, &partial);
+        let flow = &pair.a.flows[&client.key];
+        assert!(lt(flow.snd_una, flow.ambiguous_until.unwrap()));
+        let remaining = pair.a.poll(G, T0).unwrap().send;
+        // A partial acknowledgment does not permit another fast retransmit.
+        for _ in 0..3 {
+            pair.a.ingest(G, T0, &partial);
+        }
+        assert!(pair.a.poll(G, T0).unwrap().send.is_empty());
+        for packet in remaining {
+            pair.b.ingest(G, T0, &packet);
+        }
+        pair.pump();
+        assert_eq!(read(&mut pair.b, server), data);
+        assert!(pair.a.flows[&client.key].ambiguous_until.is_none());
+    }
+}
+
+#[test]
 fn a_burst_limit_defers_the_rest_to_the_next_poll() {
     let (mut pair, client, _, _) = established();
     pair.a.config.burst = 2;

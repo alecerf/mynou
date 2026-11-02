@@ -359,22 +359,20 @@ impl Engine {
             .ok_or("This Plex server is no longer on the account")?;
         let name = text(server, "name").unwrap_or("Plex Media Server");
         // An address counts only when the server there is the one chosen.
+        // `/identity` needs no sign-in, so the token goes to no address before
+        // it proved to be that server: a local address is plain HTTP, on a
+        // network that may not be the server's.
         let url = addresses(server)
             .into_iter()
             .find(|url| {
-                fetch(
-                    &client,
-                    "GET",
-                    &format!("{url}/identity"),
-                    Some(&token),
-                    PROBE,
+                fetch(&client, "GET", &format!("{url}/identity"), None, PROBE).is_ok_and(
+                    |identity| {
+                        identity
+                            .get("MediaContainer")
+                            .and_then(|c| text(c, "machineIdentifier"))
+                            == Some(id)
+                    },
                 )
-                .is_ok_and(|identity| {
-                    identity
-                        .get("MediaContainer")
-                        .and_then(|c| text(c, "machineIdentifier"))
-                        == Some(id)
-                })
             })
             .ok_or_else(|| {
                 format!("{name} does not answer from the Mac running Mynou: check that it is on")

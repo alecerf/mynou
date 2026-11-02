@@ -159,8 +159,11 @@ impl Node {
             return;
         }
         if let Some(entry) = self.table.get_mut(&address) {
-            *entry = (id, now);
-            return;
+            if entry.0 == id {
+                entry.1 = now;
+                return;
+            }
+            self.table.remove(&address);
         }
         let index = bucket(&self.id, &id);
         let members: Vec<_> = self
@@ -275,7 +278,7 @@ impl Node {
         let Some(sender) = id_of(value_field(arguments, b"id")) else {
             return Some(Self::error(transaction, 203, "Protocol Error"));
         };
-        let read_only = matches!(value_field(arguments, b"ro"), Some(Value::Int(1)));
+        let read_only = matches!(value_field(&message, b"ro"), Some(Value::Int(1)));
         let method = value_field(&message, b"q")?.as_bytes()?;
         let mut reply = vec![(&b"id"[..], Value::Bytes(self.id.to_vec()))];
         match method {
@@ -370,6 +373,23 @@ impl Node {
             && raw.len() % 26 == 0
         {
             for node in raw.as_chunks::<26>().0.iter().take(K * 2) {
+                let id = std::array::from_fn(|i| node[i]);
+                let index = bucket(&self.id, &id);
+                // A full, fresh bucket cannot admit this node. Trying it
+                // again on every answer would keep refreshes running.
+                if id == self.id
+                    || self
+                        .table
+                        .values()
+                        .filter(|(other, seen)| {
+                            bucket(&self.id, other) == index
+                                && now.duration_since(*seen) < NODE_STALE
+                        })
+                        .count()
+                        >= K
+                {
+                    continue;
+                }
                 if let Ok(found) = decode_peers(&node[20..], false) {
                     for address in found {
                         if routable(address)
@@ -545,10 +565,13 @@ mod tests {
         );
         assert_eq!(node.table.get(&client).map(|e| e.0), Some([1; 20]));
         // A read-only lookup is answered but never enters the table.
-        let ro = query(
-            b"ping",
-            &[(b"id", Value::Bytes(vec![2; 20])), (b"ro", Value::Int(1))],
-        );
+        let ro = crate::bencode::encode(&value_dict(&[
+            (b"t", Value::Bytes(b"aa".to_vec())),
+            (b"y", Value::Bytes(b"q".to_vec())),
+            (b"q", Value::Bytes(b"ping".to_vec())),
+            (b"ro", Value::Int(1)),
+            (b"a", value_dict(&[(b"id", Value::Bytes(vec![2; 20]))])),
+        ]));
         reply(&mut node, &ro, other);
         assert!(!node.table.contains_key(&other));
 
@@ -674,6 +697,73 @@ mod tests {
         node.learn(far(30), "9.9.9.30:6881".parse().unwrap(), now + NODE_STALE);
         assert_eq!(node.table.len(), K);
         assert!(node.table.contains_key(&"9.9.9.30:6881".parse().unwrap()));
+    }
+
+    #[test]
+    fn changed_ids_obey_bucket_capacity() {
+        let mut node = Node::new().unwrap();
+        node.id = [0; 20];
+        let now = Instant::now();
+        let far = [0x80; 20];
+        for n in 0..K as u8 {
+            node.learn(far, SocketAddr::from(([9, 9, 9, n], 6881)), now);
+        }
+        let address = "8.8.8.8:6881".parse().unwrap();
+        node.learn([1; 20], address, now);
+        node.learn(far, address, now);
+        assert_eq!(node.table.len(), K);
+        assert!(!node.table.contains_key(&address));
+
+        // An unchanged id refreshes its entry even in a full bucket.
+        let member = SocketAddr::from(([9, 9, 9, 0], 6881));
+        node.learn(far, member, now + Duration::from_secs(1));
+        assert_eq!(node.table[&member].1, now + Duration::from_secs(1));
+        // A changed id can replace a stale member of its new bucket.
+        node.learn([1; 20], address, now);
+        node.learn(far, address, now + NODE_STALE);
+        assert_eq!(node.table.len(), K);
+        assert_eq!(node.table[&address].0, far);
+    }
+
+    #[test]
+    fn fresh_full_buckets_do_not_trigger_continuous_refreshes() {
+        let mut node = Node::new().unwrap();
+        node.id = [0; 20];
+        let now = Instant::now();
+        let far = [0x80; 20];
+        for n in 0..K as u8 {
+            node.learn(far, SocketAddr::from(([9, 9, 9, n], 6881)), now);
+        }
+        let queries = node.refresh(&[], now);
+        let mut nodes = far.to_vec();
+        nodes.extend_from_slice(&compact("8.8.8.8:6881".parse().unwrap()).unwrap());
+        for (packet, from) in queries {
+            let sent = crate::bencode::parse(&packet).unwrap();
+            let answer = value_dict(&[(
+                b"r",
+                value_dict(&[
+                    (b"id", Value::Bytes(far.to_vec())),
+                    (b"nodes", Value::Bytes(nodes.clone())),
+                ]),
+            )]);
+            let transaction = value_field(&sent, b"t").unwrap().as_bytes().unwrap();
+            node.answered(&answer, transaction, from, now);
+            assert!(!node.due(now + Duration::from_millis(20)));
+        }
+        assert!(!node.due(now + REFRESH_EVERY - Duration::from_millis(1)));
+        assert!(node.due(now + REFRESH_EVERY));
+        // The same candidate can be tried once the bucket has a stale member.
+        let from = SocketAddr::from(([9, 9, 9, 0], 6881));
+        node.pending.insert(*b"aa", (from, now + NODE_STALE));
+        let answer = value_dict(&[(
+            b"r",
+            value_dict(&[
+                (b"id", Value::Bytes(far.to_vec())),
+                (b"nodes", Value::Bytes(nodes)),
+            ]),
+        )]);
+        node.answered(&answer, b"aa", from, now + NODE_STALE);
+        assert!(node.heard.contains(&"8.8.8.8:6881".parse().unwrap()));
     }
 
     #[test]

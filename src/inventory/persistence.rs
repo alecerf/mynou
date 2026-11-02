@@ -722,8 +722,9 @@ fn open_checked(directory: &Path, read_only: bool) -> Result<Index> {
     let file = private_file(&redo_path, !read_only)?;
     let (redo, header, mut replay) = recover(directory, &mut tree, file, identity, read_only)?;
     let redo = (!read_only).then(|| Box::new(redo));
-    // Pages a read-only open replayed need not have reached the tree file.
-    if replay.pages.is_empty() {
+    // A replayed transaction need not have reached the tree file, even
+    // when it changes only the header and contains no page images.
+    if !replay.replayed {
         let root = Header::decode(&tree::read_page(&mut tree, 0)?)?;
         if root != header
             || tree.metadata().map_err(|error| io_text(&error))?.len() != tree::offset(header.next)?
@@ -771,6 +772,7 @@ fn open_checked(directory: &Path, read_only: bool) -> Result<Index> {
 
 #[derive(Default)]
 struct Replay {
+    replayed: bool,
     pages: HashMap<u64, std::sync::Arc<Node>>,
     /// Per segment, where the pending bytes start and the bytes.
     segments: HashMap<u64, (u64, Vec<u8>)>,
@@ -778,7 +780,10 @@ struct Replay {
 
 impl Replay {
     fn new(records: &[Transaction]) -> Result<Self> {
-        let mut replay = Self::default();
+        let mut replay = Self {
+            replayed: !records.is_empty(),
+            ..Self::default()
+        };
         for transaction in records {
             for (id, node) in &transaction.pages {
                 replay.pages.insert(*id, std::sync::Arc::new(node.clone()));
@@ -834,6 +839,12 @@ fn recover(
     // Every path a replay could write or remove is inspected first.
     for transaction in &records {
         preflight_redo(directory, transaction)?;
+        if record_target(transaction).is_some() {
+            // Existing entries may have been created by the crashed process
+            // without a directory flush. Persist them before retiring the WAL.
+            redo.directories.insert(directory.to_owned());
+            redo.directories.insert(directory.join("segments"));
+        }
     }
     for transaction in &records {
         apply_logged(
@@ -857,7 +868,14 @@ fn recover(
         remove_segments(directory, retired..slot.tail)?;
     }
     drop_unlogged(directory, &state)?;
-    Ok((redo, state, Replay::default()))
+    Ok((
+        redo,
+        state,
+        Replay {
+            replayed: !records.is_empty(),
+            ..Replay::default()
+        },
+    ))
 }
 
 /// Removes appends of changes that never became durable: bytes past the

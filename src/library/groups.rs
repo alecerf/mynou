@@ -176,13 +176,13 @@ pub(super) fn group_title_matches(jobs: &[Job], title: &str) -> bool {
         rest = &rest[1..];
     }
     let split_range = rest.len() >= 2
-        && start.matches(&rest[0])
+        && start.matches(rest, 0)
         && match end {
             SourceNumber::SeasonEpisode(number) => {
                 rest[1].strip_prefix('e').and_then(numbering::decimal_token) == Some(number.episode)
-                    || end.matches(&rest[1])
+                    || end.matches(rest, 1)
             }
-            SourceNumber::Absolute(_) => end.matches(&rest[1]),
+            SourceNumber::Absolute(_) => end.matches(rest, 1),
         };
     let chained_range = match (start, end, rest.first()) {
         (SourceNumber::SeasonEpisode(a), SourceNumber::SeasonEpisode(b), Some(label)) => {
@@ -204,8 +204,9 @@ pub(super) fn group_title_matches(jobs: &[Job], title: &str) -> bool {
     } else {
         return false;
     };
-    !rest[consumed..].iter().any(|label| {
-        numbering::conflicting_marker(start, label, first.request.year)
+    !(consumed..rest.len()).any(|at| {
+        let label = &rest[at];
+        numbering::conflicting_marker(start, rest, at, first.request.year)
             || label
                 .strip_prefix('s')
                 .and_then(numbering::decimal_token)
