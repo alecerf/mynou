@@ -44,13 +44,19 @@ checks the complete trace, including startup, shutdown and fixture subprocesses:
   unexpected events and truncated JSON fail validation. An exact test name must
   appear in the compiled harness list before the runner invokes it.
 
-Negative controls run first. Actual Rust std/Direct calls attempt refused TCP,
+Negative controls run first, one at a time. Actual Rust std/Direct calls attempt refused TCP,
 host `localhost` resolution, a direct loopback UDP send and default HTTP to a
 closed loopback port. A separate tiny C fixture requires `getaddrinfo` failure
 with `AI_NUMERICHOST`, which cannot issue an external DNS query. The runner
 requires the corresponding observations; Python negative tests separately prove
 that each forbidden event and undeclared endpoint is rejected. These controls
 also detect stripped or ineffective dylib injection on the exercised symbols.
+
+The 43 observed fixtures then run with three workers by default; `--workers`
+accepts 1–4. Each fixture keeps its own trace and log, and `summary.json` retains
+the declared fixture order and counts. Failures identify the fixture and log;
+a 120-second timeout kills its entire process group and preserves captured output.
+The separate real-route supervisor stays serial because it changes host routes.
 
 ## Scenarios and reproduction
 
@@ -243,7 +249,7 @@ TMPDIR=/private/tmp cargo test --lib --no-run --offline --locked \
   --message-format=json > /private/tmp/mynou-observer-build.jsonl
 TMPDIR=/private/tmp python3 -B .github/scripts/host_io_observer.py \
   --build-json /private/tmp/mynou-observer-build.jsonl \
-  --output /private/tmp/mynou-observer-results
+  --output /private/tmp/mynou-observer-results --workers 3
 ```
 
 Use a fresh output directory for every run. `summary.json` records scenario

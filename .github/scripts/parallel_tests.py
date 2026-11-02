@@ -151,6 +151,26 @@ def weights(paths):
     return result
 
 
+def cargo_env(root):
+    """The `[env]` of .cargo/config.toml: the harnesses run without Cargo, so
+    it would not reach them otherwise. Only `NAME = "string"` entries are
+    accepted (JSON string syntax), so anything else fails loudly."""
+    path = root / ".cargo/config.toml"
+    if not path.is_file():
+        return {}
+    env, section = {}, None
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("["):
+            section = line
+        elif section == "[env]":
+            name, _, value = line.partition("=")
+            env[name.strip()] = json.loads(value.strip())
+    return env
+
+
 def terminate(process):
     try:
         os.killpg(process.pid, signal.SIGKILL)
@@ -272,8 +292,9 @@ def main():
     if not 1 <= args.timeout <= 1800:
         parser.error("Per-target timeout must be 1–1800 seconds")
     root = Path.cwd().resolve()
-    cached = root / "target/debug/mynou-ci-test-timings.json"
-    history = weights([root / ".github/scripts/test_durations.json", cached])
+    for name, value in cargo_env(root).items():
+        os.environ.setdefault(name, value)
+    history = weights([root / ".github/scripts/test_durations.json"])
     targets = discover(args.manifest, root, expected_sources(args.metadata, root))
     harnesses = len(targets)
     targets = library_shards(targets, root)
@@ -300,8 +321,6 @@ def main():
     if os.environ.get("GITHUB_STEP_SUMMARY"):
         with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a") as stream:
             stream.write("\n".join(summary) + "\n")
-    if report["success"]:
-        cached.write_text(encoded)
     print(f"All-target result: {'passed' if report['success'] else 'FAILED'}; {report['counts']['passed']} passed, {report['counts']['failed']} failed; {report['seconds']:.3f}s", flush=True)
     return 0 if report["success"] else 1
 

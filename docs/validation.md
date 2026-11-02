@@ -11,17 +11,18 @@ commit only: an earlier green run does not validate later changes.
 
 | Workflow | Runs on | Purpose |
 | --- | --- | --- |
-| Mynou CI | Pull requests; manual dispatch; a pushed `v<version>` tag | Select tests, macOS arm64 build, start check and packaging from the diff; manual runs validate everything, releases only build and publish |
-| Repository checks | Pull requests; manual dispatch | Python tooling and scheduler tests when their inputs change |
+| Mynou CI | Pull requests; manual dispatch; a pushed `v<version>` tag | Select tests, macOS arm64 build, start check, packaging and Python tooling tests from the diff; manual runs validate everything, releases only build and publish |
+| Warm the build cache | Pushes to `trunk` changing Rust inputs; manual dispatch | Saves trunk's incremental debug build state for pull requests; see [caches](#caches) |
 | Release policy | Pull requests | Version changes only in a release PR |
 | CodeQL | Pull requests, pushes to `trunk`, weekly schedule, manual dispatch | Required security analysis; Rust and JavaScript selected by diff |
 | WireGuard interoperability | Manual dispatch only | Optional isolated independent-peer test |
 | Parser fuzzing | Pull requests changing a parser; weekly schedule; manual dispatch | Mutates inputs of every parser that reads untrusted bytes; see [parser fuzzing](#parser-fuzzing) |
+| Measurement evidence | Pull requests changing the torrent engine, tunnel, virtual stack, inventory growth or build inputs; manual dispatch | One optimized library harness compile, then the selected [torrent](torrent-load.md), [tunnel](tunnel-load.md), [inventory growth](inventory-growth.md) or (manual only) [representative](representative-load.md) measurements |
 
 ## Mynou CI
 
 The workflow in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) has
-a shared change selector and five validation/release jobs. Mynou ships for macOS
+a shared change selector and six validation/release jobs. Mynou ships for macOS
 on Apple Silicon only, so `validate` and `build`
 run on an Apple Silicon `macos-26` runner. A small Linux **decide** job runs
 beside the checks. The native CI does not run for a commit pushed to `trunk`: protection
@@ -37,9 +38,10 @@ on `trunk`, and it raised the version over its parent. A failed decision publish
    with no dependencies), formatting, the
    [torrent network inventory](network-inventory.md) and Clippy with warnings denied. Scheduler
    and release tooling tests run in the Linux `organization` check.
-   It then runs every Cargo test harness,
-   using the physical runner directory as temporary directory because Mynou refuses the
-   symbolic link behind macOS's default one.
+   It then runs every Cargo test harness, with a RAM disk as temporary
+   directory: its `/Volumes` mount point is physical, unlike the symbolic link
+   behind macOS's default one, which Mynou refuses, and it makes each
+   `F_FULLFSYNC` cheap without skipping it.
 2. **build** produces the published `aarch64-apple-darwin` executable. CI checks
    that the binary has the exact target architecture, then starts it on an
    empty data directory: it must become ready, answer `GET /api/status` and
@@ -147,8 +149,11 @@ them by top-level module and uses exact-name filters so every test executes once
 This gives each large persistence module its own finite deadline, rather than
 timing out the cumulative duration of unrelated library tests. Other harnesses
 run whole. By default it runs up to four group processes (no more than the CPU
-count) with two test threads each. CI gives each group 480 seconds before killing
-its process group (the standalone scheduler default is 180 seconds). Every group
+count) with two test threads each; CI runs five on its three cores, because most
+tests wait on timers and sockets rather than the CPU. CI gives each group 480
+seconds before killing its process group (the standalone scheduler default is
+180 seconds). The harnesses run without Cargo, so the scheduler passes them the
+`[env]` of `.cargo/config.toml` itself. Every group
 must exit successfully with one complete summary and no failed or ignored tests.
 Library groups must report exactly their discovered test names and counts; the
 groups together must cover the full library without overlap or omissions. Tests
@@ -158,8 +163,10 @@ Each group runs from its own writable temporary directory under `target/`, so
 relative-path fixtures do not modify the checkout or collide with other groups.
 Compiled-in fixture paths still point to the original source directory.
 
-Slower harnesses start first, using recorded timings. Timings change the order
-only, never the set of tests. Logs, `report.json` and a duration table are kept in
+Slower harnesses start first, using the timings recorded in
+[test_durations.json](../.github/scripts/test_durations.json) (refresh it from a
+run's `report.json` when the order drifts). Timings change the order only, never
+the set of tests. Logs, `report.json` and a duration table are kept in
 the `mynou-tests-<commit>` artifact for seven days, including failed runs. Test
 builds omit debug symbols; debug assertions and overflow checks stay enabled.
 
@@ -188,15 +195,18 @@ a crashing input as an artifact.
 
 ## Caches
 
-Only successful runs on `trunk` (a manual dispatch there) save caches, and pull
-requests restore them only when one exists, so a cold cache costs a PR about 80
-seconds in parallel jobs. Keys
-are exact fingerprints of the manifests, sources, tests and workflow,
-with no partial-key fallback. The test cache holds
-compiled harnesses, their build manifest and timing history; every test still
-runs. Release caches hold only the target binary; its checks and start check still run.
-Caches never contain a journal, downloads, a library or personal configuration,
-and they never authorize a release.
+Pull requests can restore caches saved on `trunk`, never another pull
+request's, and Mynou CI does not run on `trunk`. So
+[test-cache.yml](../.github/workflows/test-cache.yml) runs Clippy and compiles
+every test target on each `trunk` commit that changes a Rust input, and saves
+`target/debug` under that commit. `validate` restores the newest one and still
+runs Clippy and the full test build: Cargo checks every input and rustc's
+incremental state recompiles only what the pull request changed (about 60%
+faster than a cold build). The cache never replaces compilation or a test, is
+started over past 4 GiB, and no pull request saves one. The release binary is
+never cached: every build compiles it from scratch. Caches never contain a
+journal, downloads, a library or personal configuration, and they never
+authorize a release.
 
 ## Releases
 

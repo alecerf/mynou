@@ -7,10 +7,21 @@ scheduled worker throughput remain finite.
 
 ## Reproduce and interpret
 
-The `Inventory growth evidence` workflow runs on `macos-26` (arm64), against
-synthetic data only, using a release library test harness, Rust 1.99.1 and no
-Cargo dependencies. It also supports manual dispatch. The measurement script
-is [.github/scripts/inventory_growth.py](../.github/scripts/inventory_growth.py).
+The `growth` stage of [Measurement evidence](../.github/workflows/measurements.yml)
+runs on `macos-26` (arm64) for growth implementation, measurement script or shared
+build changes. It uses synthetic data on the runner's ordinary disk, a release
+library test harness, Rust 1.99.1 and no Cargo dependencies. Selected measurements
+share one compilation and run sequentially, with separate summaries and artifacts.
+The measurement script is
+[.github/scripts/inventory_growth.py](../.github/scripts/inventory_growth.py).
+
+To dispatch only inventory growth (disabled by default):
+
+```sh
+gh workflow run measurements.yml -f torrent=false -f tunnel=false \
+  -f growth=true -f representative=false
+```
+
 Locally, compile with:
 
 ```sh

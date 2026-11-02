@@ -17,10 +17,22 @@ protection.
 
 ## Reproduce
 
-The `Torrent engine load evidence` workflow runs on `macos-26` (arm64) when the
-torrent engine, the tunnel, the virtual stack or the harness changes, and can be
-dispatched manually. It uses Rust 1.99.1, a release library test harness and no
-Cargo dependencies. Locally, compile with:
+The `torrent` stage of [Measurement evidence](../.github/workflows/measurements.yml)
+runs on `macos-26` (arm64) when the torrent engine, tunnel, virtual stack or
+measurement script changes. Shared build inputs select torrent, tunnel and
+growth measurements. Selected stages share one Rust 1.99.1 release library test
+harness, run sequentially and retain separate summaries and 30-day artifacts.
+A failed stage does not skip later selected stages; any stage failure fails
+the job. No Cargo dependencies are needed.
+
+Manual dispatch defaults to torrent and tunnel. To run only torrent load:
+
+```sh
+gh workflow run measurements.yml -f torrent=true -f tunnel=false \
+  -f growth=false -f representative=false
+```
+
+Locally, compile with:
 
 ```sh
 cargo test --release --lib --no-run --offline --locked --message-format=json

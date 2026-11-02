@@ -35,7 +35,7 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       publish: ${{ steps.decision.outputs.publish }}
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # The parent of a tagged commit carries the previous version and the notes.
           fetch-depth: 2
@@ -54,7 +54,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          if [ "$GITHUB_REF_TYPE" != tag ]; then
+          if [ "$GITHUB_EVENT_NAME" != push ] || [ "$GITHUB_REF_TYPE" != tag ]; then
             echo "publish=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -96,10 +96,13 @@ jobs:
     if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.tests == 'true') }}
     # Mynou ships for macOS Apple Silicon only, so its checks run there too.
     runs-on: macos-26
-    # No job deadline: the suite needs about ten minutes of three-core runner
-    # time and grows with coverage, so a fixed deadline kept cancelling green
-    # runs (#237). parallel_tests.py still bounds each group at 480 seconds.
+    # A generous whole-job bound for a hung step; parallel_tests.py still
+    # bounds each test group at 480 seconds. Green runs take about five minutes;
+    # a tight deadline kept cancelling them as the suite grew (#237).
+    timeout-minutes: 30
     env:
+      # test-cache.yml warms the cache with the same settings: Cargo rebuilds
+      # everything when a profile setting differs.
       CARGO_PROFILE_DEV_DEBUG: '0'
       CARGO_PROFILE_TEST_DEBUG: '0'
     outputs:
@@ -109,24 +112,22 @@ jobs:
         env:
           SELECTION_RESULT: ${{ needs.changes.result }}
         run: test "$SELECTION_RESULT" = success
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Install Rust 1.99.1
         run: |
           rustup toolchain install 1.99.1 --profile minimal --component rustfmt --component clippy
           rustup default 1.99.1
-      - name: Restore exact compiled test harnesses
-        id: cache
-        uses: actions/cache/restore@v6.1.0
+      - name: Restore incremental build state from trunk
+        # Only test-cache.yml, on trunk, saves this cache. Cargo still checks
+        # every input and rebuilds what changed: the cache only makes the
+        # rebuild incremental, it never stands in for compilation.
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: |
-            target/debug/deps
-            target/debug/examples
-            target/debug/mynou
-            target/debug/mynou-ci-test-build.jsonl
-            target/debug/mynou-ci-test-timings.json
-          key: ${{ runner.os }}-${{ runner.arch }}-${{ github.repository }}-rust-1.99.1-tests-v2-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/**', 'build.rs', 'src/**', 'tests/**', '.github/workflows/ci.yml') }}
+          path: target/debug
+          key: rust-1.99.1-${{ runner.arch }}-debug0-v3-${{ github.sha }}
+          restore-keys: rust-1.99.1-${{ runner.arch }}-debug0-v3-
       - name: Verify the dependency graph
         id: metadata
         run: |
@@ -149,57 +150,56 @@ jobs:
       - name: Generate independent crypto reference fixtures
         run: python3 .github/scripts/crypto_fixtures.py "$RUNNER_TEMP/mynou-crypto-vectors.json"
       - name: Compile all test harnesses
-        if: steps.cache.outputs.cache-hit != 'true'
         run: cargo test --all-targets --no-run --offline --locked --message-format=json-render-diagnostics > target/debug/mynou-ci-test-build.jsonl
-      - name: Observe attempted host I/O in native WireGuard fixtures
-        run: |
-          export TMPDIR="$(cd "$RUNNER_TEMP" && pwd -P)"
-          python3 .github/scripts/host_io_observer.py --build-json target/debug/mynou-ci-test-build.jsonl --output "$RUNNER_TEMP/mynou-test-results/host-io"
-      - name: Observe real host route loss on the disposable macOS runner
-        run: |
-          export TMPDIR="$(cd "$RUNNER_TEMP" && pwd -P)"
-          python3 .github/scripts/host_route_observer.py --build-json target/debug/mynou-ci-test-build.jsonl --library "$RUNNER_TEMP/mynou-test-results/host-io/host_io_observer.dylib" --output "$RUNNER_TEMP/mynou-test-results/host-routes"
-      - name: Run all Rust test harnesses in parallel
-        env:
-          MYNOU_CRYPTO_FIXTURES: ${{ runner.temp }}/mynou-crypto-vectors.json
-          # The harnesses run without cargo, so `[env]` in .cargo/config.toml
-          # does not reach them; keep these equal to it.
-          MYNOU_TEST_SECRET_A: mynou-test-secret-a
-          MYNOU_TEST_SECRET_B: mynou-test-secret-b
-          MYNOU_TEST_INVALID_TOKEN: "invalid token: spaces/and:colons"
+      - name: Put test storage on a RAM disk
         run: |
           # On macOS, sync_all is F_FULLFSYNC (a whole-drive cache flush), and
           # the growing-inventory tests issue tens of thousands of them (#238).
           # A RAM disk keeps every durability call while making it cheap. The
           # suite peaked near 170 MiB of temporary data; allocate 2 GiB. Its
           # /Volumes mount point is physical, unlike macOS's symlinked default
-          # temporary directory, which Mynou refuses.
+          # temporary directory, which Mynou refuses. Every later step,
+          # observers included, uses it.
           ram_disk=$(hdiutil attach -nomount ram://4194304 | awk 'NR == 1 { print $1 }')
           diskutil erasevolume APFS mynou-tests "$ram_disk" > /dev/null
-          export TMPDIR="$(cd /Volumes/mynou-tests && pwd -P)"
-          test "$TMPDIR" = /Volumes/mynou-tests
-          # Growing-inventory regressions measured 358 seconds in the library
-          # harness. Retain every case with a finite eight-minute budget.
-          python3 .github/scripts/parallel_tests.py target/debug/mynou-ci-test-build.jsonl --metadata "$RUNNER_TEMP/metadata.json" --output "$RUNNER_TEMP/mynou-test-results/rust" --timeout 480
+          tmp="$(cd /Volumes/mynou-tests && pwd -P)"
+          test "$tmp" = /Volumes/mynou-tests
+          echo "TMPDIR=$tmp" >> "$GITHUB_ENV"
+      - name: Observe attempted host I/O in native WireGuard fixtures
+        run: python3 .github/scripts/host_io_observer.py --build-json target/debug/mynou-ci-test-build.jsonl --output "$RUNNER_TEMP/mynou-test-results/host-io"
+      - name: Observe real host route loss on the disposable macOS runner
+        run: python3 .github/scripts/host_route_observer.py --build-json target/debug/mynou-ci-test-build.jsonl --library "$RUNNER_TEMP/mynou-test-results/host-io/host_io_observer.dylib" --output "$RUNNER_TEMP/mynou-test-results/host-routes"
+      - name: Run all Rust test harnesses in parallel
+        env:
+          MYNOU_CRYPTO_FIXTURES: ${{ runner.temp }}/mynou-crypto-vectors.json
+        # Growing-inventory regressions measured 358 seconds in the library
+        # harness: every group keeps a finite eight-minute budget. Most tests
+        # wait on timers and sockets rather than the CPU, so the scheduler runs
+        # more groups than the runner has cores.
+        run: python3 .github/scripts/parallel_tests.py target/debug/mynou-ci-test-build.jsonl --metadata "$RUNNER_TEMP/metadata.json" --output "$RUNNER_TEMP/mynou-test-results/rust" --timeout 480 --workers 5
       - name: Preserve test timings and logs
         if: always()
-        uses: actions/upload-artifact@v7.0.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: mynou-tests-${{ github.sha }}
           path: ${{ runner.temp }}/mynou-test-results
           if-no-files-found: ignore
           retention-days: 7
-      - name: Save successful compiled test harnesses
-        if: success() && github.event_name != 'pull_request' && github.ref == 'refs/heads/trunk' && steps.cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6.1.0
+  organization:
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.tooling == 'true') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require a successful change selection
+        env:
+          SELECTION_RESULT: ${{ needs.changes.result }}
+        run: test "$SELECTION_RESULT" = success
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          path: |
-            target/debug/deps
-            target/debug/examples
-            target/debug/mynou
-            target/debug/mynou-ci-test-build.jsonl
-            target/debug/mynou-ci-test-timings.json
-          key: ${{ steps.cache.outputs.cache-primary-key }}
+          persist-credentials: false
+      - name: Exercise CI, release and interoperability tooling
+        run: python3 -m unittest discover -s .github/scripts/tests -p 'test_*.py' -v
   build:
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.build == 'true') }}
@@ -211,23 +211,16 @@ jobs:
         env:
           SELECTION_RESULT: ${{ needs.changes.result }}
         run: test "$SELECTION_RESULT" = success
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Restore exact release binary
-        id: cache
-        uses: actions/cache/restore@v6.1.0
-        with:
-          path: |
-            target/aarch64-apple-darwin/release/mynou
-          key: ${{ runner.os }}-${{ runner.arch }}-rust-1.99.1-release-v1-aarch64-apple-darwin-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/**', 'build.rs', 'src/**', '.github/workflows/ci.yml') }}
       - name: Install Rust 1.99.1 and target
-        if: steps.cache.outputs.cache-hit != 'true'
         run: |
           rustup toolchain install 1.99.1 --profile minimal --target aarch64-apple-darwin
           rustup default 1.99.1
+      # Always built from scratch: a published binary never comes from a cache.
+      # The build runs beside validate, off its critical path.
       - name: Build the release executable
-        if: steps.cache.outputs.cache-hit != 'true'
         run: cargo build --release --offline --locked --target aarch64-apple-darwin --bin mynou
       - name: Verify the macOS release binary
         run: |
@@ -284,19 +277,12 @@ jobs:
                   service.kill()
           SMOKE
       - name: Preserve the executable for packaging
-        uses: actions/upload-artifact@v7.0.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: mynou-native-aarch64-apple-darwin-${{ github.sha }}
           path: target/aarch64-apple-darwin/release/mynou
           if-no-files-found: error
           retention-days: 1
-      - name: Save exact release binary
-        if: success() && github.event_name != 'pull_request' && github.ref == 'refs/heads/trunk' && steps.cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6.1.0
-        with:
-          path: |
-            target/aarch64-apple-darwin/release/mynou
-          key: ${{ steps.cache.outputs.cache-primary-key }}
   package:
     needs: [changes, decide, validate, build]
     # Test-only changes need no package; packaging-only changes and releases
@@ -309,10 +295,16 @@ jobs:
       version: ${{ needs.decide.outputs.version }}
       publish: ${{ needs.decide.outputs.publish }}
     steps:
-      - uses: actions/checkout@v7.0.1
+      # A failed decision must fail package, not let it pass on a version that
+      # was read before the decision failed.
+      - name: Require a successful release decision
+        env:
+          DECISION_RESULT: ${{ needs.decide.result }}
+        run: test "$DECISION_RESULT" = success
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@v8.0.2
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: mynou-native-aarch64-apple-darwin-${{ github.sha }}
           path: ${{ runner.temp }}/mynou-macos-arm64
@@ -332,7 +324,7 @@ jobs:
           cmp "$RUNNER_TEMP/mynou-macos-arm64/mynou" "$RUNNER_TEMP/mynou-release/$name"
           (cd "$RUNNER_TEMP/mynou-release" && sha256sum "$name" > SHA256SUMS && sha256sum -c SHA256SUMS)
       - name: Preserve validated release files
-        uses: actions/upload-artifact@v7.0.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: mynou-release-${{ github.sha }}
           path: ${{ runner.temp }}/mynou-release/*
@@ -340,20 +332,20 @@ jobs:
           retention-days: 7
   release:
     needs: package
-    # Only a pushed version tag that passed the decision publishes. The
-    # explicit result check is needed: a release skips validate, and the
-    # implicit success() would skip this job too.
-    if: ${{ !cancelled() && needs.package.result == 'success' && github.ref_type == 'tag' && needs.package.outputs.publish == 'true' }}
+    # Only a pushed version tag that passed the decision publishes; a manual
+    # dispatch on a tag never does. The explicit result check is needed: a
+    # release skips validate, and the implicit success() would skip this job too.
+    if: ${{ !cancelled() && needs.package.result == 'success' && github.event_name == 'push' && github.ref_type == 'tag' && needs.package.outputs.publish == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2
           persist-credentials: false
-      - uses: actions/download-artifact@v8.0.2
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: mynou-release-${{ github.sha }}
           path: ${{ runner.temp }}/mynou-release

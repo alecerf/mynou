@@ -53,8 +53,24 @@ to `finite` and exposes the same choice.
 
 `--smoke` uses 16 retained torrents and a two-second window. It checks the
 fixture only. Ordinary tests skip the fixture unless its environment
-variables are present. The manual `Representative torrent load` workflow
-preserves the results for its exact checked-out commit.
+variables are present. The manual `representative` stage of
+[Measurement evidence](../.github/workflows/measurements.yml) preserves results
+for its exact checked-out commit. It never runs on pull requests and is disabled
+by default. Selected measurements share one Rust 1.99.1 release library test
+harness on `macos-26`, with separate summaries and artifacts.
+
+To dispatch only the full Engine measurement:
+
+```sh
+gh workflow run measurements.yml -f torrent=false -f tunnel=false \
+  -f growth=false -f representative=true \
+  -f smoke=false -f engine=true -f queue_mode=finite
+```
+
+These representative options retain their defaults: `smoke=false`, `engine=true`
+and `queue_mode=finite`. Set `smoke=true` for a fixture check, `engine=false` for
+the historical Client workload, or `queue_mode=unlimited` / `default` for the
+other queue modes. Dispatch runs do not cancel earlier runs on the same ref.
 
 Artifacts contain the source commit, dirty status, harness SHA-256, toolchain,
 finite workload, raw log, BSD process timing, JSON measurements and a summary.

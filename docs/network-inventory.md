@@ -8,7 +8,7 @@ directly. CI rejects every finding outside the explicit Direct adapters, even
 when it is added to the inventory, and checks the remaining Direct sites for drift.
 
 The script uses only the Python standard library. The `validate` job of Mynou CI
-runs it on every product change. The Repository checks workflow runs its
+runs it on every product change, and its `organization` job runs its
 fixtures whenever the tooling changes. To run it locally:
 
 ```sh

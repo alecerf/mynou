@@ -1,0 +1,194 @@
+name: Measurement evidence
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/measurements.yml'
+      - '.github/scripts/torrent_load.py'
+      - '.github/scripts/tunnel_load.py'
+      - '.github/scripts/inventory_growth.py'
+      - '.github/scripts/measurement_plan.py'
+      - '.github/scripts/cargo_artifacts.py'
+      - '.github/scripts/tests/test_measurement_plan.py'
+      - '.github/scripts/tests/test_cargo_artifacts.py'
+      - 'src/torrent.rs'
+      - 'src/torrent/**'
+      - 'src/tunnel.rs'
+      - 'src/tunnel_http.rs'
+      - 'src/tunnel_http_tests.rs'
+      - 'src/tunnel_load_tests.rs'
+      - 'src/tunnel_network.rs'
+      - 'src/netstack.rs'
+      - 'src/netstack/**'
+      - 'src/growth.rs'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+      - '.cargo/**'
+  workflow_dispatch:
+    inputs:
+      torrent:
+        description: Measure torrent engine load
+        type: boolean
+        default: true
+      tunnel:
+        description: Measure tunnel load
+        type: boolean
+        default: true
+      growth:
+        description: Measure inventory growth on the runner disk
+        type: boolean
+        default: false
+      representative:
+        description: Measure a representative mixed torrent workload
+        type: boolean
+        default: false
+      smoke:
+        description: Check the representative fixture only (16 retained, 2 seconds)
+        type: boolean
+        default: false
+      engine:
+        description: Exercise full Engine, authenticated API, automation and in-flight incidents
+        type: boolean
+        default: true
+      queue_mode:
+        description: Download/seed queues to measure
+        type: choice
+        options: [finite, unlimited, default]
+        default: finite
+permissions:
+  contents: read
+defaults:
+  run:
+    # An explicit bash adds pipefail, so `| tee` cannot hide a failed measurement.
+    shell: bash
+concurrency:
+  group: measurements-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      any: ${{ steps.select.outputs.any }}
+      torrent: ${{ steps.select.outputs.torrent }}
+      tunnel: ${{ steps.select.outputs.tunnel }}
+      growth: ${{ steps.select.outputs.growth }}
+      representative: ${{ steps.select.outputs.representative }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Select measurements from the complete PR diff or dispatch inputs
+        id: select
+        run: python3 .github/scripts/measurement_plan.py
+  measure:
+    needs: plan
+    if: ${{ needs.plan.outputs.any == 'true' }}
+    runs-on: macos-26
+    timeout-minutes: 225
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Rust 1.99.1
+        timeout-minutes: 5
+        run: rustup toolchain install 1.99.1 --profile minimal
+      - name: Compile the optimized library harness once
+        id: compile
+        timeout-minutes: 20
+        run: cargo +1.99.1 test --release --lib --no-run --offline --locked --message-format=json > "$RUNNER_TEMP/load-build.jsonl"
+      - name: Resolve the library test executable
+        id: harness
+        run: |
+          harness=$(python3 .github/scripts/cargo_artifacts.py "$RUNNER_TEMP/load-build.jsonl")
+          echo "path=$harness" >> "$GITHUB_OUTPUT"
+      - name: Measure increasing synthetic engine-level torrent load
+        id: torrent
+        if: ${{ !cancelled() && steps.harness.outcome == 'success' && needs.plan.outputs.torrent == 'true' }}
+        timeout-minutes: 45
+        env:
+          HARNESS: ${{ steps.harness.outputs.path }}
+        run: |
+          python3 .github/scripts/torrent_load.py "$HARNESS" --output "$RUNNER_TEMP/torrent-load" | tee "$RUNNER_TEMP/torrent-load-console.log"
+          cat "$RUNNER_TEMP/torrent-load/summary.md" >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve torrent measurements, environment and raw process logs
+        if: ${{ always() && needs.plan.outputs.torrent == 'true' }}
+        timeout-minutes: 2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: torrent-load-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/torrent-load
+            ${{ runner.temp }}/torrent-load-console.log
+            ${{ runner.temp }}/load-build.jsonl
+          if-no-files-found: error
+          retention-days: 30
+      - name: Measure increasing synthetic tunnel load
+        id: tunnel
+        if: ${{ !cancelled() && steps.harness.outcome == 'success' && needs.plan.outputs.tunnel == 'true' }}
+        timeout-minutes: 30
+        env:
+          HARNESS: ${{ steps.harness.outputs.path }}
+        run: |
+          python3 .github/scripts/tunnel_load.py "$HARNESS" --output "$RUNNER_TEMP/tunnel-load" | tee "$RUNNER_TEMP/tunnel-load-console.log"
+          cat "$RUNNER_TEMP/tunnel-load/summary.md" >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve tunnel measurements, environment and raw process logs
+        if: ${{ always() && needs.plan.outputs.tunnel == 'true' }}
+        timeout-minutes: 2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tunnel-load-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/tunnel-load
+            ${{ runner.temp }}/tunnel-load-console.log
+            ${{ runner.temp }}/load-build.jsonl
+          if-no-files-found: error
+          retention-days: 30
+      - name: Measure synthetic inventories on the runner disk
+        id: growth
+        if: ${{ !cancelled() && steps.harness.outcome == 'success' && needs.plan.outputs.growth == 'true' }}
+        timeout-minutes: 60
+        env:
+          HARNESS: ${{ steps.harness.outputs.path }}
+        run: |
+          python3 .github/scripts/inventory_growth.py "$HARNESS" --output "$RUNNER_TEMP/inventory-growth" | tee "$RUNNER_TEMP/inventory-growth-console.log"
+          cat "$RUNNER_TEMP/inventory-growth/summary.md" >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve inventory measurements, environment and raw process logs
+        if: ${{ always() && needs.plan.outputs.growth == 'true' }}
+        timeout-minutes: 2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: inventory-growth-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/inventory-growth
+            ${{ runner.temp }}/inventory-growth-console.log
+            ${{ runner.temp }}/load-build.jsonl
+          if-no-files-found: error
+          retention-days: 30
+      - name: Measure a finite mixed workload
+        id: representative
+        if: ${{ !cancelled() && steps.harness.outcome == 'success' && needs.plan.outputs.representative == 'true' }}
+        timeout-minutes: 40
+        env:
+          HARNESS: ${{ steps.harness.outputs.path }}
+          SMOKE: ${{ inputs.smoke }}
+          ENGINE: ${{ inputs.engine }}
+          QUEUE_MODE: ${{ inputs.queue_mode }}
+        run: |
+          args=()
+          if [ "$ENGINE" = true ]; then args+=(--engine); fi
+          if [ "$SMOKE" = true ]; then args+=(--smoke); fi
+          python3 .github/scripts/representative_load.py "$HARNESS" --output "$RUNNER_TEMP/representative-load" --queue-mode "$QUEUE_MODE" "${args[@]}"
+          cat "$RUNNER_TEMP/representative-load/summary.md" >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve exact-commit representative measurements
+        if: ${{ always() && needs.plan.outputs.representative == 'true' }}
+        timeout-minutes: 2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: representative-load-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/representative-load
+            ${{ runner.temp }}/load-build.jsonl
+          if-no-files-found: error
+          retention-days: 30
