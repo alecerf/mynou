@@ -5,13 +5,18 @@ See docs/host-io-observer.md for the exact coverage and its limits.
 """
 import argparse
 from collections import Counter
+from concurrent.futures import as_completed, ThreadPoolExecutor
 import json
 import os
 from pathlib import Path
 import platform
+import signal
 import subprocess
 
+from cargo_artifacts import library_test_executable
+
 ROOT = Path(__file__).resolve().parents[2]
+CAPTURE_TIMEOUT = 120
 FIXTURES = (
     "source_network::tests::late_search_results_from_an_earlier_source_are_refused_after_owner_loss",
     "source_network::tests::replaced_generation_requires_a_fresh_engine_and_ipv6_never_falls_back",
@@ -166,12 +171,7 @@ def read_trace(path):
 
 
 def harness(build):
-    candidates = [row["executable"] for row in map(json.loads, build.read_text().splitlines())
-                  if row.get("executable") and row.get("target", {}).get("kind") == ["lib"]
-                  and row.get("profile", {}).get("test")]
-    if len(set(candidates)) != 1:
-        raise ValueError("expected one compiled library test harness")
-    return str(Path(candidates[0]).resolve())
+    return library_test_executable(build)
 
 
 def capture(command, name, library, output, extra_env=None):
@@ -179,11 +179,25 @@ def capture(command, name, library, output, extra_env=None):
     trace.touch(mode=0o600, exist_ok=False)
     env = {**os.environ, "DYLD_INSERT_LIBRARIES": str(library), "MYNOU_HOST_IO_TRACE": str(trace)}
     env.update(extra_env or {})
-    result = subprocess.run(command, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                            timeout=120, check=False)
-    (output / (name + ".log")).write_bytes(result.stdout)
-    if result.returncode:
-        raise ValueError(f"fixture {name} failed ({result.returncode}); see its log")
+    log_path = output / (name + ".log")
+    # Write directly so output survives timeouts, including output from children.
+    with log_path.open("wb") as log:
+        process = subprocess.Popen(command, env=env, stdout=log, stderr=subprocess.STDOUT,
+                                   start_new_session=True)
+        try:
+            returncode = process.wait(timeout=CAPTURE_TIMEOUT)
+        except BaseException as error:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            process.wait()
+            if isinstance(error, subprocess.TimeoutExpired):
+                raise ValueError(f"fixture {name} timed out after {CAPTURE_TIMEOUT}s; "
+                                 f"see {log_path}") from error
+            raise
+    if returncode:
+        raise ValueError(f"fixture {name} failed ({returncode}); see {log_path}")
     return read_trace(trace)
 
 
@@ -205,7 +219,33 @@ int main(void) {
     return {"failed_getaddrinfo": "observed"}
 
 
-def run(build, output):
+def observe_fixtures(executable, library, output, workers):
+    def exercise(index, fixture):
+        try:
+            rows = capture([executable, "--exact", fixture, "--nocapture"],
+                           f"fixture-{index:02d}", library, output)
+            return validate(rows)
+        except Exception as error:
+            raise ValueError(f"fixture {fixture} failed: {error}") from error
+
+    results = [None] * len(FIXTURES)
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {pool.submit(exercise, index, fixture): index
+                   for index, fixture in enumerate(FIXTURES)}
+        try:
+            for future in as_completed(futures):
+                results[futures[future]] = future.result()
+        except BaseException:
+            for future in futures:
+                future.cancel()
+            raise
+    # Completion order must not change the evidence layout.
+    return dict(zip(FIXTURES, results))
+
+
+def run(build, output, workers=3):
+    if workers not in range(1, 5):
+        raise ValueError("workers must be between 1 and 4")
     if (platform.system(), platform.machine()) != ("Darwin", "arm64"):
         raise ValueError("host-I/O observation requires native macOS arm64")
     output.mkdir(parents=True, exist_ok=True)
@@ -235,11 +275,9 @@ def run(build, output):
         raise ValueError("validator accepted the deliberate ordinary-network bypass")
     summary["negative_controls"]["rust_stdlib"] = dict(counts)
     summary["negative_controls"].update(failed_lookup_control(library, output))
-    for index, fixture in enumerate(FIXTURES):
-        rows = capture([executable, "--exact", fixture, "--nocapture"],
-                       f"fixture-{index:02d}", library, output)
-        summary["fixtures"][fixture] = validate(rows)
-        services = summary["fixtures"][fixture].get("service_connect", 0)
+    summary["fixtures"] = observe_fixtures(executable, library, output, workers)
+    for fixture, counts in summary["fixtures"].items():
+        services = counts.get("service_connect", 0)
         print("Observed only authorized outer UDP"
               + (f" and {services} declared ordinary service connections" if services else "")
               + ": " + fixture, flush=True)
@@ -251,8 +289,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--build-json", type=Path, required=True)
     parser.add_argument("--output", type=lambda s: Path(s).resolve(), required=True)
+    parser.add_argument("--workers", type=int, choices=range(1, 5), default=3)
     args = parser.parse_args()
-    run(args.build_json, args.output)
+    run(args.build_json, args.output, args.workers)
 
 
 if __name__ == "__main__":

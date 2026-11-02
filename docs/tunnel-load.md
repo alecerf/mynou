@@ -11,9 +11,19 @@ or activate torrent VPN protection.
 
 ## Reproduce
 
-The `Tunnel load evidence` workflow runs on `macos-26` (arm64) when the tunnel,
-the virtual stack or the harness changes, and can be dispatched manually. It
-uses Rust 1.99.1, a release library test harness and no Cargo dependencies.
+The `tunnel` stage of [Measurement evidence](../.github/workflows/measurements.yml)
+runs on `macos-26` (arm64) when the tunnel, virtual stack or measurement script
+changes. Shared build inputs also select it. Selected measurements compile one
+Rust 1.99.1 release library test harness and run sequentially, with separate
+summaries and artifacts. No Cargo dependencies are needed.
+
+Manual dispatch defaults to torrent and tunnel. To run only tunnel load:
+
+```sh
+gh workflow run measurements.yml -f torrent=false -f tunnel=true \
+  -f growth=false -f representative=false
+```
+
 Locally, compile with:
 
 ```sh

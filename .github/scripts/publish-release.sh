@@ -23,7 +23,8 @@ if existing=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft,
     printf 'Refusing to replace a draft that was not created by Mynou CI.\n' >&2
     exit 1
   fi
-  gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag
+  # Keep the pushed tag: only the unfinished draft is replaced.
+  gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --yes
 fi
 
 notes="$RUNNER_TEMP/mynou-release-notes.md"
@@ -39,7 +40,7 @@ cat >> "$notes" <<EOF
 <!-- mynou-ci-release -->
 Mynou $version uses Rust 1.99.1 and the standard library only: no Cargo dependencies, FFI, or external programs at runtime, and no unsafe code outside the SHA instructions.
 
-This release was built by [GitHub Actions]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID) after dependency, formatting, Clippy, test and native start checks passed on macOS, then signed and published with the release key, which never reaches GitHub.
+This release was built by [GitHub Actions]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID) from a trunk commit that only raised the version of a tree whose dependency, formatting, Clippy, test and native start checks passed on macOS in its pull request, then signed and published with the release key, which never reaches GitHub.
 
 Release assets contain only the native macOS Apple Silicon executable, one \`SHA256SUMS\` manifest and its \`SHA256SUMS.sig\` signature by the release key, made outside GitHub. Verify the signature and the manifest entry before installation; the [verification guide]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$tag/docs/validation.md#verify-release-assets) explains how. GitHub's native source downloads remain available.
 
@@ -50,7 +51,10 @@ Source commit: \`$GITHUB_SHA\`. Release downloads follow repository access setti
 See the [documentation]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$tag/README.md#documentation) for guides, and the [limits]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$tag/docs/limits.md#not-supported) for features Mynou does not provide.
 EOF
 
-gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+# The release names the pushed tag, which must still point at this commit;
+# it is never created or moved here.
+[[ $(gh api "repos/$GITHUB_REPOSITORY/commits/$tag" --jq .sha) == "$GITHUB_SHA" ]]
+gh release create "$tag" --repo "$GITHUB_REPOSITORY" --verify-tag \
   --title "Mynou $version" --notes-file "$notes" --draft
 gh release upload "$tag" ./* --repo "$GITHUB_REPOSITORY"
 expected_files=$(find . -maxdepth 1 -type f | wc -l)

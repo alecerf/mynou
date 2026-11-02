@@ -1,0 +1,63 @@
+name: Warm the build cache
+# Pull requests can restore caches saved on trunk but not each other's, and
+# Mynou CI does not run on trunk. This saves the incremental debug build state
+# of each trunk commit so the next pull request recompiles only what it
+# changed. It builds and lints; it validates nothing and publishes nothing.
+on:
+  push:
+    branches: [trunk]
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'examples/**'
+      - 'build.rs'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+      - '.cargo/**'
+      - '.github/workflows/test-cache.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  # Only the newest trunk commit's state is worth saving.
+  group: test-cache-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  warm:
+    if: github.ref == 'refs/heads/trunk'
+    runs-on: macos-26
+    timeout-minutes: 20
+    env:
+      # Keep equal to the validate job in ci.yml, or nothing is reused.
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Rust 1.99.1
+        run: |
+          rustup toolchain install 1.99.1 --profile minimal --component clippy
+          rustup default 1.99.1
+      - name: Restore the previous trunk state
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: target/debug
+          key: rust-1.99.1-${{ runner.arch }}-debug0-v3-${{ github.sha }}
+          restore-keys: rust-1.99.1-${{ runner.arch }}-debug0-v3-
+      - name: Start over when the state grew past its budget
+        # Superseded artifacts accumulate; a fresh build keeps the cache small.
+        run: |
+          if [ -d target/debug ] && [ "$(du -sk target/debug | cut -f1)" -gt 4194304 ]; then
+            rm -rf target/debug
+          fi
+      - name: Lint and compile every target as validate does
+        run: |
+          cargo clippy --all-targets --offline --locked -- -D warnings
+          cargo test --all-targets --no-run --offline --locked
+      - name: Save this commit's state
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: target/debug
+          key: rust-1.99.1-${{ runner.arch }}-debug0-v3-${{ github.sha }}
