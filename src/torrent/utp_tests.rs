@@ -44,6 +44,68 @@ fn pattern(length: usize, seed: u8) -> Vec<u8> {
         .collect()
 }
 
+fn connection(remote: SocketAddr, recv_id: u16, send_id: u16, now: Instant) -> Arc<Conn> {
+    Arc::new(Conn {
+        remote,
+        recv_id,
+        send_id,
+        state: Mutex::new(State::new(Phase::Connected, 100, 41, now)),
+        changed: Condvar::new(),
+        dropped: AtomicBool::new(false),
+    })
+}
+
+#[test]
+fn duplicate_fin_is_acknowledged_after_eof() {
+    let now = Instant::now();
+    let conn = connection("192.0.2.1:6881".parse().unwrap(), 8, 7, now);
+    let mut st = conn.lock();
+    for fin in [42u16, 0] {
+        st.ack_nr = fin.wrapping_sub(1);
+        st.fin_received = None;
+        st.eof = false;
+        let header = Header {
+            kind: ST_FIN,
+            connection: conn.recv_id,
+            seq: fin,
+            ack: 99,
+            timestamp: 0,
+            difference: 0,
+            window: RECV_WINDOW as u32,
+        };
+        for _ in 0..2 {
+            let out = conn.on_packet(&mut st, header, &[], now);
+            assert!(st.eof);
+            assert_eq!(st.ack_nr, fin);
+            assert_eq!(out.len(), 1);
+            let (ack, _) = parse(&out[0]).unwrap();
+            assert_eq!((ack.kind, ack.ack), (ST_STATE, fin));
+        }
+    }
+}
+
+#[test]
+fn connection_ids_reserve_both_ids_for_each_endpoint() {
+    let now = Instant::now();
+    let address = "192.0.2.1:6881".parse().unwrap();
+    let other = "192.0.2.2:6881".parse().unwrap();
+    for (recv_id, send_id) in [(100, 101), (101, 100), (u16::MAX, 0), (0, u16::MAX)] {
+        let conn = connection(address, recv_id, send_id, now);
+        let conns = BTreeMap::from([((address, recv_id), conn)]);
+        for start in [
+            recv_id,
+            send_id,
+            recv_id.wrapping_sub(1),
+            send_id.wrapping_sub(1),
+        ] {
+            let next = Shared::unused_id(&conns, address, start);
+            assert!(![recv_id, send_id].contains(&next));
+            assert!(![recv_id, send_id].contains(&next.wrapping_add(1)));
+            assert_eq!(Shared::unused_id(&conns, other, start), start);
+        }
+    }
+}
+
 /// Sends `data` one way while the other side reads it all, then closes.
 fn exchange(mut writer: UtpStream, mut reader: UtpStream, data: Vec<u8>) {
     writer
@@ -128,6 +190,69 @@ fn streams_carry_data_both_ways_over_udp_and_end_with_fin() {
 }
 
 type Queue = Arc<(Mutex<VecDeque<(Vec<u8>, SocketAddr)>>, Condvar)>;
+
+#[test]
+fn inbound_syn_rejects_overlapping_ids_and_acknowledges_retries() {
+    let queues = || Arc::new((Mutex::new(VecDeque::new()), Condvar::new()));
+    let (inbox, replies) = (queues(), queues());
+    let address = "192.0.2.1:6881".parse().unwrap();
+    let now = Instant::now();
+    let existing = connection(address, 100, 101, now);
+    let shared = Shared {
+        socket: Box::new(Lossy {
+            address: "192.0.2.2:6881".parse().unwrap(),
+            inbox,
+            peer: replies.clone(),
+            sent: Mutex::new(0),
+            timeout: Mutex::new(None),
+        }),
+        network: super::super::transport::direct(),
+        conns: Mutex::new(BTreeMap::from([((address, 100), existing.clone())])),
+        accepted: Mutex::new(VecDeque::new()),
+        stop: Arc::new(AtomicBool::new(false)),
+        dead: AtomicBool::new(false),
+        routers: Arc::new(Mutex::new(Vec::new())),
+    };
+    let mut header = Header {
+        kind: ST_SYN,
+        connection: 0,
+        timestamp: 0,
+        difference: 0,
+        window: RECV_WINDOW as u32,
+        seq: 42,
+        ack: 0,
+    };
+    for id in [99, 100, 101] {
+        header.connection = id;
+        shared.incoming(&encode(&header, &[]), address, now);
+        assert_eq!(shared.conns().len(), 1);
+        assert!(shared.accepted().is_empty());
+        let (packet, _) = replies.0.lock().unwrap().pop_front().unwrap();
+        let (reply, _) = parse(&packet).unwrap();
+        assert_eq!((reply.kind, reply.connection), (ST_RESET, id));
+    }
+    header.connection = 200;
+    for _ in 0..2 {
+        shared.incoming(&encode(&header, &[]), address, now);
+        assert_eq!(shared.conns().len(), 2);
+        assert_eq!(shared.accepted().len(), 1);
+        let (packet, _) = replies.0.lock().unwrap().pop_front().unwrap();
+        let (reply, _) = parse(&packet).unwrap();
+        assert_eq!(
+            (reply.kind, reply.connection, reply.ack),
+            (ST_STATE, 200, 42)
+        );
+    }
+    // A reset naming the outgoing send id closes only its connection.
+    header.kind = ST_RESET;
+    header.connection = existing.send_id;
+    shared.incoming(&encode(&header, &[]), address, now);
+    assert_eq!(
+        existing.lock().phase,
+        Phase::Closed(Some(ErrorKind::ConnectionReset))
+    );
+    assert_eq!(shared.accepted()[0].lock().phase, Phase::Connected);
+}
 
 /// A link that loses one packet in 13 and swaps some neighbours.
 struct Lossy {

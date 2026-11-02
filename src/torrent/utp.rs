@@ -326,6 +326,10 @@ pub(crate) struct Conn {
 type Out = Vec<Vec<u8>>;
 
 impl Conn {
+    fn uses_id(&self, address: SocketAddr, id: u16) -> bool {
+        self.remote == address && (self.recv_id == id || self.send_id == id)
+    }
+
     fn lock(&self) -> MutexGuard<'_, State> {
         self.state.lock().unwrap_or_else(|e| e.into_inner())
     }
@@ -527,7 +531,9 @@ impl Conn {
             ST_DATA if !payload.is_empty() => self.on_data(st, header.seq, payload, now, &mut out),
             ST_FIN => {
                 st.fin_received.get_or_insert(header.seq);
-                if before(st.ack_nr.wrapping_add(1), header.seq) {
+                if (st.eof && st.ack_nr == header.seq)
+                    || before(st.ack_nr.wrapping_add(1), header.seq)
+                {
                     out.push(self.ack(st, now));
                 }
             }
@@ -621,6 +627,19 @@ impl Shared {
         self.conns.lock().unwrap_or_else(|e| e.into_inner())
     }
 
+    fn unused_id(
+        conns: &BTreeMap<(SocketAddr, u16), Arc<Conn>>,
+        address: SocketAddr,
+        mut recv_id: u16,
+    ) -> u16 {
+        while conns.values().any(|conn| {
+            conn.uses_id(address, recv_id) || conn.uses_id(address, recv_id.wrapping_add(1))
+        }) {
+            recv_id = recv_id.wrapping_add(2);
+        }
+        recv_id
+    }
+
     fn accepted(&self) -> MutexGuard<'_, VecDeque<Arc<Conn>>> {
         self.accepted.lock().unwrap_or_else(|e| e.into_inner())
     }
@@ -644,12 +663,20 @@ impl Shared {
         };
         if header.kind == ST_SYN {
             let key = (from, header.connection.wrapping_add(1));
-            let existing = self.conns().get(&key).cloned();
+            let mut conns = self.conns();
+            let existing = conns
+                .get(&key)
+                .filter(|conn| conn.send_id == header.connection)
+                .cloned();
             let conn = match existing {
                 Some(conn) => conn,
                 None => {
-                    let mut conns = self.conns();
-                    if conns.len() >= MAX_CONNECTIONS || self.accepted().len() >= MAX_ACCEPT_QUEUE {
+                    if conns.len() >= MAX_CONNECTIONS
+                        || self.accepted().len() >= MAX_ACCEPT_QUEUE
+                        || conns.values().any(|conn| {
+                            conn.uses_id(from, header.connection) || conn.uses_id(from, key.1)
+                        })
+                    {
                         drop(conns);
                         self.reset(header.connection, header.seq, from);
                         return;
@@ -666,11 +693,11 @@ impl Shared {
                         dropped: AtomicBool::new(false),
                     });
                     conns.insert(key, conn.clone());
-                    drop(conns);
                     self.accepted().push_back(conn.clone());
                     conn
                 }
             };
+            drop(conns);
             let packet = conn.ack(&mut conn.lock(), now);
             self.send(vec![packet], from);
             return;
@@ -807,10 +834,7 @@ impl Hub {
         if conns.len() >= MAX_CONNECTIONS {
             return Err(ErrorKind::OutOfMemory.into());
         }
-        let mut recv_id = random_u16();
-        while conns.contains_key(&(address, recv_id)) {
-            recv_id = recv_id.wrapping_add(2);
-        }
+        let recv_id = Shared::unused_id(&conns, address, random_u16());
         let conn = Arc::new(Conn {
             remote: address,
             send_id: recv_id.wrapping_add(1),

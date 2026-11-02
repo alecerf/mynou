@@ -728,6 +728,7 @@ fn parse_attributes(
     let mut codecs = BTreeSet::new();
     let mut languages = BTreeSet::new();
     let subtitle_languages = subtitle_language_positions(&suffix);
+    let episode_title = episode_title_positions(&suffix);
     for (index, token) in suffix.iter().enumerate() {
         let next = suffix.get(index + 1).map(String::as_str).unwrap_or("");
         let issues_before = attributes.issues.len();
@@ -754,7 +755,10 @@ fn parse_attributes(
                 || token.starts_with("audio")
                 || token.ends_with("audio");
             let subtitle_context = subtitle_languages[index];
-            if explicitly_audio || !subtitle_context {
+            // A two-letter code is also a word ("It", "de", "en"): in the
+            // words of an episode title, it is no language.
+            let word = token.len() == 2 && episode_title[index];
+            if explicitly_audio || (!subtitle_context && !word) {
                 languages.insert(language);
             }
         }
@@ -877,6 +881,79 @@ fn is_subtitle_marker(token: &str) -> bool {
         "sub" | "subs" | "subtitle" | "subtitles" | "vost" | "sdh" | "cc"
     )
 }
+/// The positions of an episode title's words: after the episode number and
+/// before the first release marker. Only a title with a word that is no
+/// language code counts, so that a release such as
+/// `Show S01E05 DE 1080p` keeps its language; a film has no such title.
+fn episode_title_positions(tokens: &[String]) -> Vec<bool> {
+    let mut positions = vec![false; tokens.len()];
+    let Some(start) = tokens
+        .iter()
+        .position(|token| crate::numbering::episode_marker(token).is_some())
+    else {
+        return positions;
+    };
+    let mut scratch = Vec::new();
+    let end = (start + 1..tokens.len())
+        .find(|&index| {
+            let token = &tokens[index];
+            let next = tokens.get(index + 1).map(String::as_str).unwrap_or("");
+            resolution_marker(token, &mut scratch).is_some()
+                || source_marker(token, next).is_some()
+                || codec_marker(token, next, &mut scratch).is_some()
+                || release_tag(token)
+                || is_subtitle_marker(token)
+        })
+        .unwrap_or(tokens.len());
+    let title = start + 1..end;
+    // A single letter is a piece of a split marker ("E-AC3"), not a word.
+    if tokens[title.clone()].iter().any(|token| {
+        token.len() >= 2
+            && token.bytes().any(|byte| byte.is_ascii_alphabetic())
+            && language_marker(token).is_none()
+    }) {
+        positions[title].fill(true);
+    }
+    positions
+}
+
+/// Release markers other than resolution, source and codec that end an
+/// episode title: audio formats with their channels, and edition, repack,
+/// dynamic range and bit depth tags.
+fn release_tag(token: &str) -> bool {
+    const AUDIO: [&str; 12] = [
+        "aac", "ac3", "eac3", "ddp", "dd", "dts", "truehd", "atmos", "opus", "flac", "pcm", "lpcm",
+    ];
+    // Words that also start episode titles ("Real", "Complete") are left out.
+    const TAGS: [&str; 19] = [
+        "proper",
+        "repack",
+        "rerip",
+        "internal",
+        "multi",
+        "dual",
+        "dl",
+        "hdr",
+        "hdr10",
+        "dv",
+        "dovi",
+        "sdr",
+        "10bit",
+        "8bit",
+        "remastered",
+        "uncut",
+        "imax",
+        "dubbed",
+        "vo",
+    ];
+    TAGS.contains(&token)
+        || AUDIO.iter().any(|codec| {
+            token
+                .strip_prefix(codec)
+                .is_some_and(|rest| rest.bytes().all(|byte| byte.is_ascii_digit()))
+        })
+}
+
 fn subtitle_language_positions(tokens: &[String]) -> Vec<bool> {
     let mut positions = vec![false; tokens.len()];
     for (index, token) in tokens.iter().enumerate() {
@@ -1084,6 +1161,30 @@ mod tests {
                 .accepted
         );
         assert!(!french.assess("Example ENG VOSTFR", "Example").accepted);
+        // A word of an episode title is no language; after the markers it is.
+        let english = parse_profile(r#"{"languages":["en"],"allow_unknown_language":true}"#);
+        assert!(
+            english
+                .assess("Example S01E05 Fake It 1080p WEB-DL", "Example")
+                .accepted
+        );
+        assert!(
+            !english
+                .assess("Example S01E05 1080p WEB-DL IT", "Example")
+                .accepted
+        );
+        // A film has no episode title, and a title of language codes alone
+        // is the release's language.
+        for german in [
+            "Example 2024 DE 1080p WEB-DL",
+            "Example S01E05 DE 1080p",
+            "Example S01E05 DE AAC 1080p WEB-DL",
+            "Example S01E05 DE PROPER 1080p",
+            "Example S01E05 DE DDP5 1 1080p",
+            "Example.S01E05.DE.E-AC3.5.1.1080p.WEB-DL",
+        ] {
+            assert!(!english.assess(german, "Example").accepted, "{german}");
+        }
     }
 
     #[test]

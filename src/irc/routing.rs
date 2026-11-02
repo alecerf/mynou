@@ -545,10 +545,12 @@ pub(crate) fn title_matches(request: &crate::store::Request, label: &str) -> boo
                 season: request.season,
                 episode: request.episode,
             }));
-        suffix.iter().filter(|s| number.matches(s)).count() == 1
-            && !suffix
-                .iter()
-                .any(|s| crate::numbering::conflicting_marker(number, s, request.year))
+        (0..suffix.len())
+            .filter(|&at| number.matches(suffix, at))
+            .count()
+            == 1
+            && !(0..suffix.len())
+                .any(|at| crate::numbering::conflicting_marker(number, suffix, at, request.year))
     }
 }
 

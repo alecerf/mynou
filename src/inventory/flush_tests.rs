@@ -10,7 +10,7 @@
 //! MYNOU_PERF_COMMITS=50 cargo test --release --lib inventory::flush_tests -- --nocapture --test-threads 1
 //! ```
 
-use super::{Change, Index, Key};
+use super::{Change, Index, Key, persistence::Fault};
 use crate::{crypto::random_bytes, store::flushes};
 use std::{fs, path::PathBuf, time::Instant};
 
@@ -183,6 +183,26 @@ fn a_cleaning_commit_adds_one_flush_for_retired_segments() {
     let before = flushes();
     index.checkpoint();
     assert!(flushes() - before <= 6, "{} flushes", flushes() - before);
+}
+
+#[test]
+fn recovery_flushes_existing_segment_directories_before_checkpointing() {
+    let directory = Directory::new();
+    let mut index = Index::create(&directory.0).unwrap();
+    index.inject(Some(Fault::FirstRecord));
+    assert!(
+        index
+            .commit(vec![Change::Put(key(false, 1), vec![1; 600])])
+            .is_err()
+    );
+    drop(index);
+    assert!(directory.0.join("segments/0000000000000000").is_file());
+
+    let before = flushes();
+    let mut index = Index::open(&directory.0, false).unwrap();
+    // The segment, both directories, the tree and the checkpoint slot.
+    assert_eq!(flushes() - before, 5);
+    assert_eq!(index.get(&key(false, 1)).unwrap(), Some(vec![1; 600]));
 }
 
 #[test]

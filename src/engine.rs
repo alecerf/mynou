@@ -95,6 +95,7 @@ pub struct Engine {
     /// Startup validation has not completed: mutations stay refused.
     pub(crate) starting: AtomicBool,
     transfer_sweep: Mutex<Option<String>>,
+    pub(crate) manual_sweep: Mutex<crate::manual::ManualSweep>,
     pub(crate) sync_lock: Mutex<()>,
     pub(crate) requester_store: Mutex<crate::requesters::RequesterStore>,
     pub(crate) irc_store: Mutex<crate::irc::AnnouncementStore>,
@@ -300,6 +301,7 @@ impl Engine {
             startup_runner: Mutex::new(()),
             starting: AtomicBool::new(true),
             transfer_sweep: Mutex::new(None),
+            manual_sweep: Mutex::new(crate::manual::ManualSweep::default()),
             sync_lock: Mutex::new(()),
             requester_store: Mutex::new(requester_store),
             irc_store: Mutex::new(irc_store),
@@ -330,6 +332,7 @@ impl Engine {
         });
         if !defer {
             engine.finish_startup()?;
+            engine.maintain_manual_torrents();
         }
         Ok(engine)
     }
@@ -901,6 +904,7 @@ impl Engine {
                 }
             }
             let mut handles = Vec::new();
+            engine.maintain_manual_torrents();
             engine.spawn_workers(&mut handles);
             for handle in handles {
                 let _ = handle.join();
@@ -915,13 +919,17 @@ impl Engine {
     fn spawn_workers(self: &Arc<Self>, handles: &mut Vec<JoinHandle<()>>) {
         if self.vpn.is_some() {
             let engine = self.clone();
-            handles.push(thread::spawn(move || engine.start_protected_transfers()));
+            handles.push(thread::spawn(move || {
+                engine.start_protected_transfers();
+                engine.maintain_manual_torrents();
+            }));
         }
         {
             let engine = self.clone();
             handles.push(thread::spawn(move || {
                 while !engine.stopped.load(Ordering::Acquire) {
                     engine.refresh_stats();
+                    engine.maintain_manual_torrents();
                     engine.wait(60_000);
                 }
             }));

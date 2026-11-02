@@ -114,12 +114,17 @@ pub(crate) fn earlier_files(
         .collect()
 }
 
-/// Deletes the files `earlier_files` lists, and returns the bytes they held.
+/// Deletes the files `earlier_files` lists, only while every file of
+/// `current` is on disk, and returns the bytes they held.
 pub(crate) fn delete_earlier_files(
     job: &crate::store::Job,
     current: &crate::store::Job,
     config: &crate::config::Config,
 ) -> Result<u64> {
+    // A listing may be stale: never delete what may now be the only copy.
+    if !crate::library::import_exists(current) {
+        return Err("the version that replaced this one is missing from disk".to_owned());
+    }
     let mut freed = 0_u64;
     for (file, length) in earlier_files(job, current, config) {
         fs::remove_file(&file).map_err(|error| format!("cannot delete {file}: {error}"))?;
@@ -302,17 +307,32 @@ fn same_device(file: &File, directory: &Path) -> Result<bool> {
     Ok(file.dev() == directory.dev())
 }
 
-/// Whether the filesystem of `directory` takes hard links, probed with a
-/// link to the import lock that is removed at once.
-fn links_supported(lock: &Path, directory: &Path) -> bool {
-    let probe = directory.join(format!(
-        ".mynou-{}-link-{}.tmp",
-        std::process::id(),
-        TEMPORARY.fetch_add(1, Ordering::Relaxed)
-    ));
-    let linked = fs::hard_link(lock, &probe).is_ok();
-    let _ = fs::remove_file(&probe);
-    linked
+/// Whether `file` lives on an APFS volume, the only one whose copies are
+/// clones. Other volumes that take hard links (HFS+, NFS) have no clones:
+/// `fs::copy` would copy every byte there, without cancellation or a check.
+/// Each APFS mount point listed by `mount` is compared by device, which
+/// also finds the data volume behind firmlinks such as /Users.
+fn on_apfs(file: &File) -> Result<bool> {
+    let device = file.metadata().map_err(|error| error.to_string())?.dev();
+    let Ok(output) = std::process::Command::new("/sbin/mount").output() else {
+        return Ok(false);
+    };
+    if !output.status.success() {
+        return Ok(false);
+    }
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(apfs_mount_point)
+        .any(|point| fs::metadata(point).is_ok_and(|metadata| metadata.dev() == device)))
+}
+
+/// The mount point of a `mount` line such as
+/// `/dev/disk3s5 on /System/Volumes/Data (apfs, local, journaled)`, when the
+/// volume is APFS.
+fn apfs_mount_point(line: &str) -> Option<&str> {
+    let (_, rest) = line.split_once(" on ")?;
+    let (point, options) = rest.rsplit_once(" (")?;
+    (options.split([',', ')']).next()? == "apfs").then_some(point)
 }
 
 /// The length and SHA-256 of a regular file, read without following links.
@@ -568,13 +588,10 @@ fn import_destination(
             TEMPORARY.fetch_add(1, Ordering::Relaxed)
         ));
         let mut owns_temporary = false;
-        // A copy on the source's own volume is a copy-on-write clone where the
-        // filesystem has them (APFS): instant, and sharing the source's blocks
-        // until either file changes. A filesystem without hard links (exFAT,
-        // FAT) has no clones either, and keeps the cancellable copy below.
-        let clone = copy_source
-            && same_device(&input, directory)?
-            && links_supported(&lock_path, directory);
+        // A copy on the source's own APFS volume is a copy-on-write clone:
+        // instant, and sharing the source's blocks until either file changes.
+        // Any other volume keeps the cancellable, verified copy below.
+        let clone = copy_source && same_device(&input, directory)? && on_apfs(&input)?;
         let result = (|| {
             if !copy_source && fs::hard_link(source, &temporary).is_ok() {
                 owns_temporary = true;
@@ -584,8 +601,7 @@ fn import_destination(
             } else if clone {
                 let before = fingerprint(&input)?;
                 owns_temporary = true;
-                // `fs::copy` clones with `fclonefileat` on macOS and falls back
-                // to a kernel copy elsewhere on the same volume.
+                // `fs::copy` clones with `fclonefileat` on macOS.
                 fs::copy(source, &temporary)
                     .map_err(|error| format!("cannot copy media: {error}"))?;
                 fs::set_permissions(&temporary, fs::Permissions::from_mode(0o600))

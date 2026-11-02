@@ -66,10 +66,12 @@ impl SourceNumber {
         result.validate()?;
         Ok(result)
     }
-    pub(crate) fn matches(self, token: &str) -> bool {
+    pub(crate) fn matches(self, labels: &[String], at: usize) -> bool {
         match self {
-            Self::SeasonEpisode(number) => episode_marker(token) == Some(number),
-            Self::Absolute(number) => decimal_token(token) == Some(number),
+            Self::SeasonEpisode(number) => labels
+                .get(at)
+                .is_some_and(|token| episode_marker(token) == Some(number)),
+            Self::Absolute(number) => number_label(labels, at) == Some(number),
         }
     }
     pub(crate) fn matches_file(self, path: &Path, year: u32, title: &str) -> bool {
@@ -89,14 +91,21 @@ impl SourceNumber {
             } else {
                 labels
             };
-        labels.iter().filter(|label| self.matches(label)).count() == 1
-            && !labels
-                .iter()
-                .any(|label| conflicting_marker(self, label, 0))
+        (0..labels.len())
+            .filter(|&at| self.matches(labels, at))
+            .count()
+            == 1
+            && !(0..labels.len()).any(|at| conflicting_marker(self, labels, at, 0))
     }
 }
 
-pub(crate) fn conflicting_marker(expected: SourceNumber, token: &str, year: u32) -> bool {
+pub(crate) fn conflicting_marker(
+    expected: SourceNumber,
+    labels: &[String],
+    at: usize,
+    year: u32,
+) -> bool {
+    let token = &labels[at];
     if let Some(number) = episode_marker(token) {
         return expected != SourceNumber::SeasonEpisode(number);
     }
@@ -116,11 +125,46 @@ pub(crate) fn conflicting_marker(expected: SourceNumber, token: &str, year: u32)
         return true;
     }
     if let SourceNumber::Absolute(number) = expected
-        && let Some(other) = decimal_token(token)
+        && let Some(other) = number_label(labels, at)
     {
         return other != number && other != year;
     }
     false
+}
+
+/// Decimal parts of video codecs and audio channel counts are not episode labels.
+pub(crate) fn number_label(labels: &[String], at: usize) -> Option<u32> {
+    let token = labels.get(at)?;
+    let number = decimal_token(token)?;
+    let before = &labels[..at];
+    let Some(previous) = before.last() else {
+        return Some(number);
+    };
+    if matches!(token.as_str(), "264" | "265") && matches!(previous.as_str(), "h" | "x") {
+        return None;
+    }
+    let audio_codec = |token: &str| {
+        [
+            "aac", "ac3", "eac3", "ddp", "dd", "dts", "truehd", "atmos", "opus", "flac", "pcm",
+            "lpcm",
+        ]
+        .iter()
+        .any(|codec| {
+            token
+                .strip_prefix(codec)
+                .is_some_and(|suffix| suffix.bytes().all(|byte| byte.is_ascii_digit()))
+        })
+    };
+    if token.len() == 1
+        && (audio_codec(previous)
+            || previous.len() == 1
+                && decimal_token(previous).is_some()
+                && before.len() >= 2
+                && audio_codec(&before[before.len() - 2]))
+    {
+        return None;
+    }
+    Some(number)
 }
 
 pub(crate) fn decimal_token(text: &str) -> Option<u32> {
@@ -194,7 +238,14 @@ mod tests {
     fn explicit_absolute_files_reject_ranges_other_numbers_and_numbered_labels() {
         let number = SourceNumber::Absolute(13);
         assert!(number.matches_file(Path::new("The.100.013.1080p.mkv"), 2024, "The 100"));
-        for name in ["013.mp4", "Show.2024.013.1080p.mkv"] {
+        for name in [
+            "013.mp4",
+            "Show.2024.013.1080p.mkv",
+            "Show.013.1080p.WEB.H.264.AAC2.0-GRP.mkv",
+            "Show.013.1080p.DDP5.1.H.265.mkv",
+            "Show.013.1080p.X.265.DD+7.1.mkv",
+            "Show.013.1080p.AAC.2.0.mkv",
+        ] {
             assert!(number.matches_file(Path::new(name), 2024, "Show"), "{name}");
         }
         for name in [
@@ -203,9 +254,25 @@ mod tests {
             "013-E14.mp4",
             "013.013.mp4",
             "0013-2200.mp4",
+            "Show.013.H.264.AAC2.0.014.mkv",
+            "Show.013.H.264.AAC2.0.013.mkv",
+            "Show.013.AAC.2.0.1.mkv",
+            "Show.013.H.263.mkv",
         ] {
             assert!(
                 !number.matches_file(Path::new(name), 2024, "Show"),
+                "{name}"
+            );
+        }
+        // Codec and channel numbers must not supply a missing episode label.
+        for (episode, name) in [
+            (264, "Show.H.264.mkv"),
+            (265, "Show.X.265.mkv"),
+            (1, "Show.DDP5.1.mkv"),
+            (2, "Show.AAC.2.0.mkv"),
+        ] {
+            assert!(
+                !SourceNumber::Absolute(episode).matches_file(Path::new(name), 2024, "Show"),
                 "{name}"
             );
         }

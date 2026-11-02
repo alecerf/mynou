@@ -497,6 +497,7 @@ pub fn confirm(data_dir: &Path) {
 /// After an update this version could not open the storage: restores the
 /// backup and the previous executable, keeping the failed state in the
 /// backup folder. True when the caller should restart on the previous one.
+/// Nothing changes while another instance holds the storage.
 pub fn recover(data_dir: &Path) -> Result<bool> {
     recover_to(data_dir, &executable()?, current())
 }
@@ -507,14 +508,30 @@ fn recover_to(data_dir: &Path, target: &Path, running: Version) -> Result<bool> 
     let Ok(name) = fs::read_to_string(&marker) else {
         return Ok(false);
     };
-    let backup = root.join(name.trim());
-    if !name.trim().ends_with(&format!("-to-{}", display(running)))
-        || !backup.join("mynou").is_file()
+    // The marker names one backup folder under `updates/`, nothing else.
+    let name = name.trim();
+    let mut components = Path::new(name).components();
+    let single = matches!(components.next(), Some(std::path::Component::Normal(_)))
+        && components.next().is_none()
+        && !name.contains('/');
+    let backup = root.join(name);
+    if !single
+        || !name.ends_with(&format!("-to-{}", display(running)))
+        || !fs::symlink_metadata(&backup).is_ok_and(|metadata| metadata.is_dir())
+        || !fs::symlink_metadata(backup.join("mynou")).is_ok_and(|metadata| metadata.is_file())
     {
         let _ = fs::remove_file(&marker);
         return Ok(false);
     }
     let state = data_dir.join("state");
+    // Another instance holding the storage is using this state: leave it,
+    // and the update, alone. The lock is held until the state is restored.
+    let lock = fs::File::open(crate::config::store_dir(data_dir).join(".lock")).ok();
+    if let Some(lock) = &lock
+        && crate::store::try_lock_file(lock).is_err()
+    {
+        return Ok(false);
+    }
     if state.exists() {
         let failed = backup.join("state.failed");
         let _ = fs::remove_dir_all(&failed);
@@ -678,7 +695,20 @@ mod tests {
         // The new version migrated the state, then could not open it.
         fs::write(data.join("state/jobs/log"), b"migrated").unwrap();
         assert!(!recover_to(&data, &target, (1, 2, 0)).unwrap());
+        // A marker naming anything but a backup folder is dropped.
+        fs::create_dir_all(data.join("elsewhere-to-1.1.0")).unwrap();
+        fs::write(data.join("elsewhere-to-1.1.0/mynou"), script("0.0.1")).unwrap();
+        fs::write(data.join("updates/pending"), "../elsewhere-to-1.1.0").unwrap();
+        assert!(!recover_to(&data, &target, (1, 1, 0)).unwrap());
+        assert!(!data.join("updates/pending").exists());
+        // Nothing changes while another instance holds the storage.
         fs::write(data.join("updates/pending"), "1.0.0-to-1.1.0").unwrap();
+        let lock = fs::File::create(data.join("state/jobs/.lock")).unwrap();
+        lock.try_lock().unwrap();
+        assert!(!recover_to(&data, &target, (1, 1, 0)).unwrap());
+        assert!(data.join("updates/pending").exists());
+        assert_eq!(fs::read(&target).unwrap(), bytes);
+        drop(lock);
         assert!(recover_to(&data, &target, (1, 1, 0)).unwrap());
         assert_eq!(fs::read(&target).unwrap(), script("1.0.0"));
         assert_eq!(fs::read(data.join("state/jobs/log")).unwrap(), b"before");

@@ -497,14 +497,14 @@ fn dht_search(
                 (b"t", Value::Bytes(transaction.to_vec())),
                 (b"y", Value::Bytes(b"q".to_vec())),
                 (b"q", Value::Bytes(b"get_peers".to_vec())),
+                // Read-only (BEP 43): this short-lived socket is no node
+                // to keep; the DHT node on the BitTorrent port is.
+                (b"ro", Value::Int(1)),
                 (
                     b"a",
-                    // Read-only (BEP 43): this short-lived socket is no node
-                    // to keep; the DHT node on the BitTorrent port is.
                     dict(&[
                         (b"id", Value::Bytes(id.to_vec())),
                         (b"info_hash", Value::Bytes(hash.to_vec())),
-                        (b"ro", Value::Int(1)),
                     ]),
                 ),
             ]);
@@ -984,6 +984,8 @@ mod tests {
             if value_bytes(field(&query, b"q")) != Some(b"get_peers".as_slice()) {
                 return Vec::new();
             }
+            assert_eq!(field(&query, b"ro"), Some(&Value::Int(1)));
+            assert!(field(field(&query, b"a").unwrap(), b"ro").is_none());
             let t = value_bytes(field(&query, b"t")).unwrap().to_vec();
             if target == second {
                 // A reply for the second node delivered from the first must

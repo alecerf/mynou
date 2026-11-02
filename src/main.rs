@@ -269,8 +269,11 @@ fn execute(args: Args) -> Result<()> {
         mynou::service::preflight(&path, &config)?;
     }
     ensure_data_dir(&path)?;
-    // The listener answers health checks while storage opens.
-    let access = mynou::access::stored(&config.store_dir)?;
+    // The listener answers health checks while storage opens. Reading the
+    // credentials opens the storage too: a version that cannot read it rolls
+    // back here as well.
+    let access = mynou::access::stored(&config.store_dir)
+        .map_err(|error| roll_back(&path, supervised, error))?;
     let startup = mynou::server::Startup::bind(
         &config,
         std::sync::Arc::new(mynou::access::Access::new(access)),
@@ -284,7 +287,8 @@ fn execute(args: Args) -> Result<()> {
             startup.address()?
         );
     }
-    let engine = Engine::open_serving(config)?;
+    let engine =
+        Engine::open_serving(config).map_err(|error| roll_back(&path, supervised, error))?;
     // The storage opened: an update that led here is kept.
     mynou::update::confirm(&path);
     let api = startup.serve(engine)?;
@@ -311,6 +315,22 @@ fn execute(args: Args) -> Result<()> {
     result
 }
 
+/// The version an update just installed could not open the storage, to read
+/// its credentials or to serve: restarts
+/// on the previous version and the state backed up before the update. Any
+/// other failure, such as a port in use, keeps the update. Returns only when
+/// there is nothing to restore or the restart failed.
+fn roll_back(path: &Path, supervised: bool, error: String) -> String {
+    if mynou::update::recover(path) != Ok(true) {
+        return error;
+    }
+    if supervised {
+        let _ = mynou::service::log(path, "update_rolled_back");
+    }
+    eprintln!("mynou: {error}; restoring the previous version");
+    mynou::update::restart()
+}
+
 fn main() {
     let args = Args::parse();
     let service_path = args
@@ -318,23 +338,7 @@ fn main() {
         .ok()
         .filter(|a| a.command == "service-run")
         .and_then(|args| args.data_dir().ok());
-    let serving_path = args
-        .as_ref()
-        .ok()
-        .filter(|a| matches!(a.command.as_str(), "serve" | "service-run"))
-        .and_then(|args| args.data_dir().ok());
-    if let Err(mut error) = args.and_then(execute) {
-        // The version an update just installed could not start: restart on
-        // the previous version and the state backed up before the update.
-        if let Some(path) = &serving_path
-            && mynou::update::recover(path) == Ok(true)
-        {
-            if service_path.is_some() {
-                let _ = mynou::service::log(path, "update_rolled_back");
-            }
-            eprintln!("mynou: {error}; restoring the previous version");
-            error = mynou::update::restart();
-        }
+    if let Err(error) = args.and_then(execute) {
         if let Some(path) = service_path {
             let _ = mynou::service::log(&path, "runtime_failed");
         } else {

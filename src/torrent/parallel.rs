@@ -12,7 +12,7 @@ use std::{
     net::SocketAddr,
     path::Path,
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicBool, Ordering},
         mpsc::{self, Receiver, SyncSender},
     },
@@ -180,8 +180,8 @@ struct Worker {
     commands: SyncSender<Command>,
     stop: Arc<AtomicBool>,
     corrupt: Arc<AtomicBool>,
-    /// The peer fetches from this side: keep it even with nothing to offer.
-    uploading: Arc<AtomicBool>,
+    /// When this peer last received a payload block from this side.
+    last_upload: Arc<Mutex<Option<Instant>>>,
     handle: JoinHandle<()>,
     // None before handshake; Some(None) for unknown availability.
     availability: Option<Option<Vec<u8>>>,
@@ -189,6 +189,16 @@ struct Worker {
     claims: Vec<usize>,
     idle_since: Instant,
     received: u64,
+}
+
+impl Worker {
+    fn idle(&self) -> bool {
+        self.idle_since.elapsed() >= RETRY
+            && !self
+                .last_upload
+                .lock()
+                .is_ok_and(|last| last.is_some_and(|at| at.elapsed() < RETRY))
+    }
 }
 
 struct Group {
@@ -277,7 +287,7 @@ struct PeerTask {
     /// An incoming peer to answer instead of dialing `address`.
     inbound: Option<wire::Inbound>,
     serving: Option<wire::Serving>,
-    uploading: Arc<AtomicBool>,
+    last_upload: Arc<Mutex<Option<Instant>>>,
     /// Pieces verified through any peer.
     done: Arc<wire::Pieces>,
     /// The connectable peers passed on in PEX messages.
@@ -428,6 +438,7 @@ fn peer_worker(mut task: PeerTask) {
             )?,
         };
         peer.watch(task.done.clone());
+        peer.watch_uploads(task.last_upload.clone());
         peer.share_swarm(task.swarm.clone(), task.address);
         peer.prepare_download(&task.meta, &task.stop)?;
         send(EventKind::Connected {
@@ -448,7 +459,6 @@ fn peer_worker(mut task: PeerTask) {
                     Err(mpsc::TryRecvError::Empty) => {
                         peer.send_pex(&task.stop)?;
                         let busy = peer.serve_between_pieces(&task.meta, &task.stop)?;
-                        task.uploading.store(peer.uploading(), Ordering::Release);
                         // HAVEs and unchokes read here reach the coordinator.
                         if peer.take_fresh() {
                             send(EventKind::Connected {
@@ -960,7 +970,7 @@ pub(super) fn download(
                 let (commands, command_receiver) = mpsc::sync_channel(claims);
                 let cancel = Arc::new(AtomicBool::new(false));
                 let corrupt = Arc::new(AtomicBool::new(false));
-                let uploading = Arc::new(AtomicBool::new(false));
+                let last_upload = Arc::new(Mutex::new(None));
                 let task = PeerTask {
                     slot,
                     ticket,
@@ -985,7 +995,7 @@ pub(super) fn download(
                     commands: command_receiver,
                     inbound: accepted,
                     serving: serving.clone(),
-                    uploading: uploading.clone(),
+                    last_upload: last_upload.clone(),
                     done: pieces.clone(),
                     swarm: swarm.clone(),
                     events: events.clone(),
@@ -999,7 +1009,7 @@ pub(super) fn download(
                     stop: cancel,
                     handle: spawn_worker(task),
                     corrupt,
-                    uploading,
+                    last_upload,
                     availability: None,
                     claims: Vec::new(),
                     idle_since: Instant::now(),
@@ -1185,10 +1195,7 @@ pub(super) fn download(
                 let Some(index) = next else {
                     // Recycling an idle peer refreshes HAVE/PEX availability
                     // and allows later candidates to use this bounded slot.
-                    failed = worker.claims.is_empty()
-                        && worker.idle_since.elapsed() >= RETRY
-                        && !worker.uploading.load(Ordering::Acquire)
-                        && !selected.complete(&have);
+                    failed = worker.claims.is_empty() && worker.idle() && !selected.complete(&have);
                     break;
                 };
                 // The channel holds `claims` commands, so this never waits.
@@ -1499,6 +1506,34 @@ mod tests {
     }
 
     #[test]
+    fn an_interested_peer_without_uploads_does_not_keep_an_idle_slot() {
+        let (commands, _receiver) = mpsc::sync_channel(1);
+        let mut worker = Worker {
+            address: "127.0.0.1:1".parse().unwrap(),
+            outbound: true,
+            ticket: 1,
+            commands,
+            stop: Arc::default(),
+            corrupt: Arc::default(),
+            last_upload: Arc::default(),
+            handle: thread::spawn(|| {}),
+            availability: Some(Some(Vec::new())),
+            claims: Vec::new(),
+            idle_since: Instant::now() - RETRY,
+            received: 0,
+        };
+        assert!(worker.idle());
+        let now = Instant::now();
+        *worker.last_upload.lock().unwrap() = Some(now);
+        assert!(!worker.idle(), "Active uploads keep their slot");
+        *worker.last_upload.lock().unwrap() = Some(now - RETRY);
+        assert!(worker.idle(), "An upload only keeps its slot for RETRY");
+        worker.idle_since = now;
+        assert!(!worker.idle(), "Download activity keeps its idle grace");
+        worker.handle.join().unwrap();
+    }
+
+    #[test]
     fn retiring_a_peer_does_not_wait_forever_on_a_full_result_queue() {
         let (events, receiver) = mpsc::sync_channel(1);
         events
@@ -1518,7 +1553,7 @@ mod tests {
             commands,
             stop,
             corrupt: Arc::new(AtomicBool::new(true)),
-            uploading: Arc::default(),
+            last_upload: Arc::default(),
             handle: thread::spawn(move || {
                 assert!(
                     send_event(
