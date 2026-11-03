@@ -264,6 +264,11 @@ fn engine(
     irc_settings.insert("sources", Value::Array(vec![source]));
     irc_settings.insert("rules", Value::Array(vec![rule]));
     settings.insert("irc", irc_settings);
+    // The rule names the permissive `any` profile, which fresh configs no longer ship.
+    settings.insert(
+        "selection",
+        crate::selection::SelectionConfig::default().to_json(),
+    );
     let config = config::from_json(&settings, &directory.0).unwrap();
     let engine = Engine::open_with_network(config, pair.client_network.clone(), false).unwrap();
     let jobs = engine
