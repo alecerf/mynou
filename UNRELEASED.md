@@ -6,16 +6,14 @@ servers your account owns, finds an address of the one you choose that answers
 from this Mac (Plex on the same Mac first, then the local network), and picks
 its film and series libraries, by matching their folders with Mynou's library
 folders. Each library can be changed from a list of names; the server address,
-the token and section numbers are no longer typed. See
-[connect Plex](/docs/macos.md#connect-plex).
+the token and section numbers are no longer typed.
 
 ## Added: No password on the local network
 
 Settings, Network can let computers on your local network use Mynou without
 signing in. Only private and link-local addresses count; any other computer
 still needs the password, and without one it cannot sign in. Network access no
-longer needs a password when this is on. See
-[network access](/docs/macos.md#network-access).
+longer needs a password when this is on.
 
 ## Added: Statistics on the overview
 
@@ -24,8 +22,7 @@ watchlist and how much of it is already in Plex; requests by kind, fetched by
 Mynou or already in Plex; downloads, speeds and share ratio; the health of the
 VPN, the watchlist and the indexers, with recent failures; each followed series
 with its aired episodes and the next one to air; and a chart of what Mynou
-fetched each week. `GET /api/stats` serves the same figures. See
-[everyday use](/docs/macos.md#everyday-use).
+fetched each week. `GET /api/stats` serves the same figures.
 
 ## Changed: Choose what goes through the VPN
 
@@ -36,8 +33,7 @@ profile, or with the VPN off, everything uses your own connection: a new
 installation no longer waits for a VPN choice before it does anything. While the
 VPN connects, only what goes through it waits; the Plex watchlist, TMDB and the
 rest start at once. The per-source `"protection"` setting gives way to the
-Indexers switch, and is no longer read. See
-[protected sources](/docs/protected-sources.md).
+Indexers switch, and is no longer read.
 
 ## Changed: Only the current storage format opens
 
@@ -46,7 +42,7 @@ requests, feeds, source policies, IRC history and transfers open only in their
 current format; anything older, including the journal and snapshot files that
 came before the disk indexes, is refused at startup instead of being migrated.
 To start over, stop Mynou and move the data directory aside. Startup no longer
-reports migration progress. See [inventory storage](/docs/inventory-storage.md).
+reports migration progress.
 
 ## Fixed: IRC downloads respect the maximum size
 
@@ -116,21 +112,18 @@ report it, such as `eng`.
 Analyzing a file no longer walks through its media data. A two-hour MKV went
 from about 3,000 scattered reads (47 MB, half a second on an internal SSD,
 seconds on a hard disk or network share) to one 16 KiB read; an AVI also needs
-one read, and an MP4 a few, with no long table read. See the
-[media benchmark](/docs/media-benchmark.md).
+one read, and an MP4 a few, with no long table read.
 
 ## Changed: Updates must be signed
 
 Mynou now installs an update only when the release key signed the release's
 `SHA256SUMS`. The key never reaches GitHub, so a compromised account or build
-cannot push an update to your Mac. Releases carry `SHA256SUMS.sig`; see
-[verify release assets](/docs/validation.md#verify-release-assets).
+cannot push an update to your Mac. Releases carry `SHA256SUMS.sig`.
 
 ## Added: Sign out everywhere
 
 Settings, Network, on the Mac, can sign out every other computer and phone at
-once, for example after losing one, without changing the password. See
-[network access](/docs/macos.md#network-access).
+once, for example after losing one, without changing the password.
 
 ## Changed: Failed sign-ins no longer lock everyone out
 
@@ -161,29 +154,68 @@ between recording the retry and queuing the request again.
 `offset`; follow `next` as `after`. IRC history no longer repeats `next` as
 `next_cursor`.
 
-## Added: Choose the quality in Settings
+## Added: Quality profiles
 
-Settings has a new **Quality** page. For films and for series, choose a quality
-(4K when available, up to 1080p, up to 720p, or any), an audio language,
-preferred or required, and the smallest and largest size you accept. Words to
-avoid and to prefer in release names apply to both. A film or a series can use
-another quality from its own sheet. See
-[release selection profiles](/docs/selection.md).
+Settings has a new **Quality** page with profiles, as in Radarr and Sonarr but
+in plain words. A profile lists the qualities a release may have, best first,
+the sources it accepts, and where upgrades stop (**Upgrade until**, a quality
+and optionally a source). The audio language can be any, preferred or
+required; when preferred, you choose whether a lower quality in that language
+beats the best quality in another one. Sizes are per hour of video, from the
+length TMDB gives, and a release of unknown size can be skipped. HDR, Dolby
+Vision and 3D are named preferences; words to prefer, avoid or require are
+still there. Proper and repack releases are preferred and taken as upgrades.
+**Try it** searches your indexers with a profile before you save it.
+
+Films and series share the profiles; each kind has a default, and a title can
+use another one, picked when you add or follow it, or later from its sheet. In
+the release list, each release that came after Mynou's pick says why. A fresh
+installation starts with Compact 1080p, Balanced 1080p and Cinema 4K.
+
+## Added: French dubs by their tags
+
+French releases are no longer all "French": Mynou reads **VFF** (France, also
+TRUEFRENCH), **VFQ** (Québec) and **VFI** (international) apart, and **VF2** as
+both VFF and VFQ; FRENCH or VF alone stays French without a dub. A profile's
+**Audio** lists the languages you want, best first, such as VFF, then VFI, then
+French (any French). **Other languages** are accepted after yours or refused;
+**Language before quality** lets a lower quality in your language win; when
+others are refused, **MULTI and untagged** says whether a release that does
+not name its languages may still come. MULTi.VFF counts as VFF, and **MULTI
+first** puts releases that also hold the original audio first. The release
+list shows each release's tags.
+
+## Changed: An upgrade replaces the file
+
+Once an upgrade is in the library (and in Plex, when Plex is on), Mynou deletes
+the file it replaced and asks Plex to look again, instead of keeping both. If
+the deletion fails, the earlier file stays in Storage, where it can be deleted.
+
+## Changed: Quality ranks before preferred words and language
+
+A release's quality and source now decide first, as in Radarr and Sonarr;
+preferred words, the preferred language (unless the profile puts it first),
+proper and repack, then the codec break ties. Before, a preferred word ranked
+above the resolution.
+
+## Fixed: A preferred language no longer rejects the others
+
+With **Only this language** off, a release marked in another language was
+rejected although the setting promised it as a fallback. A preferred language
+now accepts the others and ranks its own first.
 
 ## Added: Sizes and freeleech from indexers
 
 Mynou now reads the size of each release, and whether it is freeleech, from
 the indexers that say so. Profiles can set `min_size_mb`, `max_size_mb` and
-`allow_unknown_size`; search previews show each release's size. See
-[how a candidate is judged](/docs/selection.md#how-a-candidate-is-judged).
+`allow_unknown_size`; search previews show each release's size.
 
 ## Added: Rules for each indexer
 
 Each indexer can have a priority (between equally good releases, the lower
 number wins), its own minimum of seeders, a preference for freeleech releases,
 and its own seeding goal (ratio and time) for what it downloads. Set them under
-**Rules for this indexer** in Settings, Indexers. See
-[sources](/docs/sources.md).
+**Rules for this indexer** in Settings, Indexers.
 
 ## Added: Turn downloads off
 
@@ -197,15 +229,14 @@ are off, and `GET /api/status` reports `downloads_enabled`.
 
 Signing out used to forget the cookie in the browser only; a copy of it kept
 working for 30 days. Mynou now remembers signed-out sessions until they expire
-and refuses them. See [network access](/docs/macos.md#network-access).
+and refuses them.
 
 ## Fixed: A proxy in front of Mynou no longer skips the password
 
 A request forwarded by a reverse proxy (it carries `Forwarded`,
 `X-Forwarded-For`, `X-Forwarded-Host`, `X-Real-IP` or `Via`) is no longer taken
 as coming from this Mac or from the local network, so it needs a session, and
-it cannot change the password. See
-[network access](/docs/macos.md#network-access).
+it cannot change the password.
 
 ## Changed: Imports on the same disk are instant
 
@@ -220,21 +251,20 @@ a second time as well.
 Library, **Free up space** opens Storage: the earlier versions an upgrade
 replaced and the finished downloads, with their size. Mynou still deletes
 nothing by itself; each one goes only when you ask, and Plex is asked to scan
-again. See [free up space](/docs/library.md#free-up-space).
+again.
 
 ## Added: Peer exchange in both directions
 
 Mynou already learned peers from the others through PEX; it now also tells
 them, once a minute, which peers it is connected to, as other clients do.
-Private torrents still never use PEX. See [limits](/docs/limits.md#bittorrent).
+Private torrents still never use PEX.
 
 ## Added: A DHT node on the BitTorrent port
 
 Mynou now answers other DHT nodes on its BitTorrent UDP port (through the
 forwarded VPN port when the VPN is on) and keeps the peers announced to it, so
 it takes part in the DHT instead of only asking it. Its own lookups say they
-are read-only, so other nodes no longer keep their short-lived sockets. See
-[limits](/docs/limits.md#bittorrent).
+are read-only, so other nodes no longer keep their short-lived sockets.
 
 ## Added: uTP peers
 
@@ -242,8 +272,7 @@ Mynou now also talks to peers over uTP, the UDP transport most BitTorrent
 clients offer, on the same port as TCP. It still dials TCP first; when a peer
 is slow to answer or refuses TCP, uTP is tried as well. uTP transfers back off
 when they start to fill the line, so a download disturbs other traffic less.
-Peers that only accept uTP can now be reached. See
-[limits](/docs/limits.md#bittorrent).
+Peers that only accept uTP can now be reached.
 
 ## Changed: Faster peer turnover through the VPN
 
@@ -251,3 +280,41 @@ ProtonVPN's VPN Accelerator accepts every connection itself, so a peer that
 is gone still seems to connect. Mynou now waits 3 seconds instead of 5 for a
 peer's answer while downloading, so such peers are left sooner. Live peers
 answered within 0.8 seconds in measurements.
+
+## Changed: Season packs only for finished seasons
+
+With **Prefer season packs** on, Mynou looks for a pack only once every episode
+of a season has aired, as Sonarr does; a season that is still airing gets its
+new episodes one by one.
+
+## Fixed: Slow season packs no longer block a series
+
+When season packs took too long to resolve, a series with two missing seasons
+or more could get no episode at all, on every check. Pack searches now share
+their time between the seasons and leave some for the episodes; the episodes
+no pack covers are always requested, and a failed pack search shows on the
+series.
+
+## Changed: No limit for peers and downloads at once
+
+**Peers per download** and **Downloads at once** can be left empty for no
+limit. There is no longer a fixed cap of 256 connections: a download takes as
+many peers as its swarm offers and its memory budget allows. The launchd
+service raises its open-file limit to 10,240 so these connections fit;
+reinstall the service to get it.
+
+## Fixed: Downloads queue again with a high limit
+
+With **Downloads at once** above 168, or with no limit, the download queue
+could not be read and queued downloads never started after a restart.
+
+## Changed: The year goes in the search text
+
+The request page no longer has a Year field: type it after the title, as in
+`Dune 2021` or `Dune (2021)`. A title that ends with a number, such as
+`Wonder Woman 1984` or `1917`, is still found.
+
+## Changed: The top bar speaks only when the connection is down
+
+The status at the top right no longer says "All quiet. All connected."; it
+appears while Mynou connects or reconnects.

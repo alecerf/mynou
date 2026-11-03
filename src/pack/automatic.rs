@@ -446,6 +446,10 @@ fn map_metadata(
     Ok(mapped)
 }
 
+/// The search found no pack holding every requested episode in time.
+pub(crate) const NO_PACK: &str =
+    "No pack resolves every requested episode within the metadata limits";
+
 impl Engine {
     /// Maps a season pack added by hand onto the missing aired episodes of the
     /// season, as an automatic pack is. None when no episode is missing.
@@ -486,6 +490,29 @@ impl Engine {
         query: &AutoPackRequest,
         deadline: Instant,
     ) -> Result<Value> {
+        self.search_packs_with_before(id, query, None, deadline)
+    }
+
+    /// Preview packs using a temporary episode profile.
+    pub fn search_packs_with(
+        &self,
+        id: &str,
+        query: &AutoPackRequest,
+        profile: Option<&crate::selection::Profile>,
+    ) -> Result<Value> {
+        self.search_packs_with_before(id, query, profile, Instant::now() + Duration::from_secs(90))
+    }
+
+    fn search_packs_with_before(
+        &self,
+        id: &str,
+        query: &AutoPackRequest,
+        profile: Option<&crate::selection::Profile>,
+        deadline: Instant,
+    ) -> Result<Value> {
+        if profile.is_some() && query.apply {
+            return Err("Temporary pack profiles are preview only".into());
+        }
         query.validate()?;
         if query.apply && self.read_only {
             return Err("Automatic pack acquisition requires writable storage".into());
@@ -508,14 +535,32 @@ impl Engine {
         let mut request = scope.record.plan.request.clone();
         request.season = query.season;
         request.episode = 0;
-        let (mut report, candidates) = if scope.episodes.is_empty() {
+        request.runtime_minutes = scope
+            .record
+            .plan
+            .episodes
+            .iter()
+            .filter(|ep| ep.season == query.season)
+            .try_fold(0_u32, |sum, ep| {
+                sum.checked_add(ep.runtime_minutes.filter(|n| *n > 0)?)
+            })
+            .filter(|n| *n > 0);
+        let mut config = self.configuration_for_request(&request)?;
+        if let Some(profile) = profile {
+            let name = config.selection.episode_profile.clone();
+            config.selection.profiles.insert(
+                name,
+                crate::selection::Profile::from_json(&profile.to_json())?,
+            );
+        }
+        let (mut report, candidates, ranking) = if scope.episodes.is_empty() {
             let mut report = Value::object();
             report.insert("accepted", Value::Array(Vec::new()));
             report.insert("rejected", Value::Array(Vec::new()));
-            (report, Vec::new())
+            (report, Vec::new(), integrations::PackRanking::default())
         } else {
             integrations::search_pack_candidates(
-                &self.configuration_for_request(&request)?,
+                &config,
                 &request,
                 // A season release covers the catalog season, including episodes
                 // already owned, rather than only the missing requested subset.
@@ -531,6 +576,10 @@ impl Engine {
                 deadline,
             )?
         };
+        report.insert(
+            "runtime_minutes",
+            request.runtime_minutes.map_or(Value::Null, Value::from),
+        );
         report.insert("series_id", id.to_owned());
         report.insert("season", query.season);
         report.insert("series_revision", scope.record.revision.to_string());
@@ -542,6 +591,7 @@ impl Engine {
             Value::Array(scope.episodes.iter().map(public_episode).collect()),
         );
         report.insert("selected_candidate_id", Value::Null);
+        ranking.select(&mut report, None);
         let mut decisions = Vec::new();
         let mut selected = None;
         self.torrent_publication()?;
@@ -589,6 +639,7 @@ impl Engine {
                         .iter()
                         .map(|b| format!("{b:02x}"))
                         .collect();
+                    ranking.select(&mut report, Some(&candidate.id));
                     if let Some(Value::Array(accepted)) = report.get_mut("accepted") {
                         for row in accepted.iter_mut().filter(|row| {
                             row.get("id").and_then(Value::as_str) == Some(candidate.id.as_str())
@@ -659,8 +710,7 @@ impl Engine {
             return Err("Pack preview candidate changed; search again before acquiring".into());
         }
         if query.apply && !scope.episodes.is_empty() {
-            let (candidate, metadata, episodes) = selected
-                .ok_or("No pack resolves every requested episode within the metadata limits")?;
+            let (candidate, metadata, episodes) = selected.ok_or(NO_PACK)?;
             let origin = PackOrigin {
                 series_id: id.into(),
                 series_revision: scope.record.revision,
@@ -702,6 +752,7 @@ mod tests {
             year: 2024,
             season: 0,
             episode: 0,
+            runtime_minutes: None,
             source_numbering: None,
             tmdb_id: Some(42),
             source_url: None,
@@ -709,6 +760,7 @@ mod tests {
         };
         let episodes: Vec<_> = (1..=3)
             .map(|number| Episode {
+                runtime_minutes: None,
                 catalog_id: Some(u64::from(number)),
                 season: 1,
                 episode: number,

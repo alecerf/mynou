@@ -26,7 +26,7 @@ def label_names(item):
 PRODUCT_DIRS = ("src/", ".cargo/")
 PRODUCT_FILES = {"build.rs", "rust-toolchain.toml"}
 MANIFESTS = {"Cargo.toml", "Cargo.lock"}
-UNRELEASED = "docs/releases/unreleased.md"
+UNRELEASED = "UNRELEASED.md"
 CATEGORIES = ("Added", "Changed", "Deprecated", "Removed", "Fixed", "Security")
 ENTRY = re.compile("## (" + "|".join(CATEGORIES) + r"): (\S.*)")
 # Under GitHub's release-body limit, leaving room for the link prefixes and the footer, so
@@ -160,13 +160,13 @@ def check(*, base, head, files, labels, latest, shipped_change, tag_exists, now,
         return ["A PR labeled `release` must bump the package version."] if requested else []
     if not requested:
         return ["Only a PR labeled `release` may change the package version. Keep the version, "
-                "and add user-facing notes to docs/releases/unreleased.md instead."]
+                "and add user-facing notes to UNRELEASED.md instead."]
     errors = []
     if new <= old:
         errors.append("The release version must increase.")
     outside = sorted(path for path in files if path not in MANIFESTS and path != UNRELEASED)
     if outside:
-        errors.append("A release PR changes only Cargo.toml, Cargo.lock and docs/releases/unreleased.md; "
+        errors.append("A release PR changes only Cargo.toml, Cargo.lock and UNRELEASED.md; "
                       "move these to their own PRs: " + ", ".join(outside[:20]))
     if unversioned(base) != unversioned(head):
         errors.append("A release PR changes nothing in Cargo.toml but the package version.")

@@ -107,6 +107,7 @@ fn local_request(path: &Path, title: &str) -> Request {
         episode: 0,
         source_path: Some(path.to_str().unwrap().into()),
         source_url: None,
+        runtime_minutes: None,
         source_numbering: None,
         tmdb_id: None,
     }
@@ -192,6 +193,7 @@ fn native_torrent_cancel_and_retry_preserve_identity() {
         episode: 0,
         source_path: None,
         source_url: Some("magnet:?xt=urn:btih:0123456789012345678901234567890123456789".into()),
+        runtime_minutes: None,
         source_numbering: None,
         tmdb_id: None,
     };
@@ -441,6 +443,7 @@ fn cancellation_during_metadata_fetch_pauses_native_transfer_and_survives_restar
         episode: 0,
         source_path: None,
         source_url: Some(metadata.url.clone()),
+        runtime_minutes: None,
         source_numbering: None,
         tmdb_id: None,
     };

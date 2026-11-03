@@ -42,7 +42,9 @@ function setup() {
     pill.dataset.state = detail;
     $('#link-mobile').dataset.state = detail;
     $('#link-pill').dataset.state = detail;
-    $('#link-pill').textContent = { open: 'All quiet. All connected.', connecting: 'Connecting…', closed: 'Offline. Reconnecting…' }[detail];
+    // The top bar speaks up only while the link is down.
+    $('#link-pill').hidden = detail === 'open';
+    $('#link-pill').textContent = { open: '', connecting: 'Connecting…', closed: 'Offline. Reconnecting…' }[detail];
     // The whole page shows a link being sought, on a phone as on a desk.
     document.body.dataset.link = detail;
     if (detail === 'closed' && data.size) lost = true;

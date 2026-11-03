@@ -44,6 +44,7 @@ pub fn request(id: u64) -> Request {
         season: 0,
         episode: 0,
         tmdb_id: Some(id),
+        runtime_minutes: None,
         source_numbering: None,
         source_path: None,
         source_url: None,

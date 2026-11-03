@@ -704,9 +704,9 @@
   .detail-sub[data-tone="bad"] { color: var(--bad); }
 
   /* ------------------------------------------------------------ finder -- */
-  /* One bar: the catalog, the title, an optional year. */
+  /* One bar: the catalog and the title, with its year if known. */
   .finder {
-    display: grid; grid-template-columns: auto minmax(0, 1fr) 6rem auto; align-items: center; gap: 0.75rem;
+    display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 0.75rem;
     max-width: 56rem; padding: 0.5rem; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface);
     transition: border-color 0.2s var(--ease);
   }
@@ -715,7 +715,6 @@
   .finder input { border: 0; background: none; box-shadow: none; outline: none; }
   .finder-field input { width: 100%; padding-inline: 0; font-size: 1rem; color: var(--text); }
   .finder .tabs button { padding-block: 0.45rem; font-size: 0.875rem; }
-  .finder .finder-year { width: 100%; text-align: center; border-inline-start: 1px solid var(--line); border-radius: 0; font-family: var(--mono); font-size: 0.8125rem; }
   .catalog-meta { margin: 2rem 0 1.25rem; font-size: 0.875rem; color: var(--muted); }
   .request-idle { display: grid; justify-items: center; gap: 1rem; padding: 4rem 1rem; text-align: center; }
   .request-idle .logo { width: 3.5rem; height: 3.5rem; margin-bottom: 0.75rem; opacity: 0.7; }
@@ -1007,12 +1006,9 @@
     /* The bottom navigation is fixed: the page ends above it. */
     .workspace { padding-bottom: calc(4.75rem + env(safe-area-inset-bottom)); }
     .page-footer { margin-top: 2rem; }
-    .finder { grid-template-columns: minmax(0, 1fr) 5rem; padding: 0.5rem; }
+    .finder { grid-template-columns: minmax(0, 1fr) auto; padding: 0.5rem; }
     .finder .tabs { grid-column: 1 / -1; justify-self: start; }
-    .finder-field { grid-column: 1 / -1; padding: 0.35rem 0.4rem; border-block: 1px solid var(--line); }
-    .finder .finder-year { border-inline-start: 0; text-align: start; }
-    .finder .primary { grid-column: 2; grid-row: 3; }
-    .finder-year { grid-column: 1; grid-row: 3; }
+    .finder-field { padding: 0.35rem 0.4rem; }
     .request-idle { padding: 2.75rem 0.5rem; }
     .request-steps { flex-direction: column; align-items: center; }
     .catalog-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.4rem 0.75rem; }
@@ -1427,4 +1423,40 @@
     .progress.indeterminate .progress-fill { width: 100%; opacity: 0.4; transform: none !important; }
     body::before { background-size: 100% 100%; }
   }
+}
+
+/* Quality profiles: a card per profile, opened to edit it. */
+@layer components {
+  .quality-defaults > * + * { border-block-start: 1px solid var(--line); }
+  .quality-profile > summary { display: grid; gap: 0.3rem; padding: 1.2rem 1.5rem; cursor: pointer; list-style: none; }
+  .quality-profile > summary::-webkit-details-marker { display: none; }
+  .quality-profile > summary .hint { margin: 0; }
+  .quality-profile-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; font-size: 0.9375rem; }
+  .quality-profile[open] > summary { background: var(--tint); }
+  .quality-profile .setting-list { border: 0; border-radius: 0; border-block-start: 1px solid var(--line); }
+  .quality-profile .actions, .quality-profiles > .actions { display: flex; gap: 0.6rem; padding: 1rem 1.5rem; }
+  .quality-ladder { display: grid; gap: 0.35rem; margin: 0; padding: 0; list-style: none; }
+  .quality-ladder li { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.3rem 0.5rem; border: 1px solid var(--line); border-radius: 6px; color: var(--subtle); }
+  .quality-ladder li.on { color: var(--text); border-color: color-mix(in oklab, var(--accent) 30%, var(--line)); background: var(--accent-soft); }
+  .quality-ladder label { display: flex; align-items: center; gap: 0.5rem; font-size: 0.875rem; }
+  .ladder-moves { display: flex; gap: 0.2rem; }
+  .ladder-moves .icon-button { width: 1.8rem; height: 1.8rem; font-size: 0.875rem; }
+  .choice-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+  .choice-chips .chip { cursor: pointer; color: var(--muted); background: var(--surface); border-color: var(--line); }
+  .choice-chips .chip:has(input:checked) { color: var(--accent); background: var(--accent-soft); border-color: color-mix(in oklab, var(--accent) 22%, var(--line)); }
+  .choice-chips .chip input { margin: 0; }
+  .cutoff-choice { display: grid; gap: 0.4rem; }
+  .audio-choice { display: grid; gap: 0.5rem; }
+  .audio-list { display: grid; gap: 0.35rem; margin: 0; padding: 0; list-style: none; }
+  .audio-list li { display: flex; align-items: center; gap: 0.6rem; padding: 0.4rem 0.5rem; border: 1px solid color-mix(in oklab, var(--accent) 30%, var(--line)); border-radius: 6px; background: var(--accent-soft); }
+  .audio-rank { display: grid; place-items: center; width: 1.4rem; height: 1.4rem; border-radius: 50%; background: var(--surface); color: var(--accent); font-size: 0.75rem; font-weight: 600; flex: none; }
+  .audio-name { display: grid; flex: 1; min-width: 0; font-size: 0.875rem; }
+  .audio-name small { color: var(--muted); font-size: 0.75rem; }
+  .audio-list .ladder-moves .icon-button svg { width: 0.9rem; height: 0.9rem; }
+  .try-row { grid-template-columns: minmax(0, 1fr); }
+  .try-input { display: flex; gap: 0.5rem; }
+  .try-input input { flex: 1; padding-inline-end: 0.75rem; }
+  .try-out:empty { display: none; }
+  .try-out { margin-top: 0.75rem; }
+  .profile-picker { width: auto; min-height: 2.6rem; }
 }

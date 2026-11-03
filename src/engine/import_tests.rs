@@ -41,6 +41,7 @@ fn request(kind: &str, episode: u32) -> Request {
         source_path: None,
         source_url: None,
         tmdb_id: None,
+        runtime_minutes: None,
         source_numbering: None,
     }
 }

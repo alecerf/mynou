@@ -111,10 +111,10 @@ fn bound_movies_use_their_own_upgrade_cutoffs_across_changes_and_restart() {
     let first = import(&engine, &directory.0, "First Movie", 101);
     let second = import(&engine, &directory.0, "Second Movie", 102);
 
-    // Both recorded 1080p releases reach the global cutoff without a search.
+    // Cutoff releases are searched for possible same-group revisions.
     let report = engine.check_upgrades(false).unwrap();
     assert!(actions(&report).values().all(|a| a == "cutoff_reached"));
-    assert_eq!(indexer.calls.load(Ordering::Relaxed), 0);
+    assert_eq!(indexer.calls.load(Ordering::Relaxed), 2);
 
     control(
         &engine,
@@ -331,4 +331,78 @@ fn the_api_reviews_bindings_and_search_previews_select_under_them() {
     assert_eq!(after.get("next"), Some(&Value::Null));
     let (_, listed) = server.call("GET", "/api/title-profiles", None);
     assert_eq!(listed.get("total").and_then(Value::as_u64), Some(1));
+}
+
+#[test]
+fn temporary_engine_profiles_override_bindings_without_changing_them() {
+    let directory = Directory::new();
+    let indexer = Indexer::open(releases());
+    let config = configuration(&directory.0, &indexer);
+    let engine = Engine::open_for_management(config).unwrap();
+    control(
+        &engine,
+        r#"{"action":"set","kind":"movie","tmdb_id":101,"profile":"sd"}"#,
+    );
+    let request = identified("First Movie", 101);
+    let page = mynou::integrations::SearchPage::default();
+    let original = engine.search_preview(&request, &page).unwrap();
+    let profile = mynou::selection::Profile::from_json(&json::parse(UHD).unwrap()).unwrap();
+    let changed = engine
+        .search_preview_with(&request, &page, Some(&profile))
+        .unwrap();
+    let selected_title = |report: &Value| -> String {
+        report.get("accepted").unwrap().as_array().unwrap()[0]
+            .get("title")
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .into()
+    };
+    assert!(selected_title(&original).contains("720p"));
+    assert!(selected_title(&changed).contains("2160p"));
+    assert_eq!(
+        changed.get("title_profile").and_then(Value::as_str),
+        Some("sd")
+    );
+    assert_eq!(
+        engine.search_preview_with(&request, &page, None).unwrap(),
+        original
+    );
+    assert_eq!(engine.search_preview(&request, &page).unwrap(), original);
+    assert!(lock(&engine.store).unwrap().list().unwrap().is_empty());
+}
+
+#[test]
+fn monitoring_upgrades_a_same_group_proper_even_when_quality_cutoff_is_met() {
+    let directory = Directory::new();
+    let indexer = Indexer::open(Value::Array(vec![
+        release(
+            "First.Movie.2024.1080p.WEB-DL.EN.PROPER-GROUP",
+            1,
+            &format!("magnet:?xt=urn:btih:{}", "3".repeat(40)),
+        ),
+        release(
+            "First.Movie.2024.2160p.WEB-DL.EN-OTHER",
+            100,
+            &format!("magnet:?xt=urn:btih:{}", "4".repeat(40)),
+        ),
+    ]));
+    let cfg = configuration(&directory.0, &indexer);
+    let engine = Engine::open(cfg).unwrap();
+    let current = local_import(&engine, &directory.0, "First Movie");
+    engine
+        .set_baseline(&current.id, "First.Movie.2024.1080p.WEB-DL.EN-GROUP")
+        .unwrap();
+    assert_eq!(
+        actions(&engine.check_upgrades(false).unwrap())[&current.id],
+        "upgrade_available"
+    );
+    assert_eq!(
+        engine
+            .check_upgrades(true)
+            .unwrap()
+            .get("queued")
+            .and_then(Value::as_u64),
+        Some(1)
+    );
 }

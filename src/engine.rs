@@ -337,6 +337,20 @@ impl Engine {
         Ok(engine)
     }
 
+    /// Preview a title with a temporary profile, without saving it.
+    pub fn search_preview_with(
+        &self,
+        request: &Request,
+        page: &crate::integrations::SearchPage,
+        profile: Option<&crate::selection::Profile>,
+    ) -> Result<Value> {
+        let binding = self.title_binding(request)?;
+        let config = self.configuration_for_request(request)?;
+        let mut report = integrations::search_report_page_with(&config, request, page, profile)?;
+        report.insert("title_profile", binding.map_or(Value::Null, Value::String));
+        Ok(report)
+    }
+
     pub fn submit(&self, request: Request) -> Result<Vec<Job>> {
         if request.kind == "series" {
             let record = self.track_series(&request, false, false)?;
@@ -1087,6 +1101,12 @@ impl Engine {
             store.release_lease(&job.id, &lease)?;
         }
         drop(store);
+        if job.state == "ready"
+            && job.shared_file.is_none()
+            && let Some(parent) = &job.upgrade_parent
+        {
+            self.replace_earlier(parent);
+        }
         self.requester_reconcile()?;
         Ok(true)
     }

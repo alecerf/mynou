@@ -154,7 +154,9 @@ const EARLIER_BUDGET: Duration = Duration::from_secs(5);
 
 impl Engine {
     /// Earlier versions still on disk: ready imports that a later version of
-    /// the same film or episode replaced. Mynou never deletes them by itself.
+    /// the same film or episode replaced. An upgrade deletes the version it
+    /// replaces; what is left here is a deletion that failed or a version from
+    /// before upgrades replaced files.
     pub fn earlier_versions(&self) -> Result<Value> {
         let started = Instant::now();
         let mut entries = Vec::new();
@@ -249,6 +251,22 @@ impl Engine {
         let mut value = public_job(&job);
         value.insert("freed_bytes", Value::Number(freed as f64));
         Ok(value)
+    }
+
+    /// Deletes the version an upgrade just replaced, now that the upgrade is
+    /// the current version on disk (and in Plex, when Plex is on). A failure
+    /// keeps the upgrade and leaves the earlier version in Storage.
+    pub(crate) fn replace_earlier(&self, parent: &str) {
+        if self.read_only {
+            return;
+        }
+        if let Err(error) = self.delete_earlier_version(parent)
+            && let Ok(mut last) = self.last_upgrade_error.lock()
+        {
+            *last = Some(format!(
+                "The upgrade is in place, but the earlier version was kept: {error}"
+            ));
+        }
     }
 
     /// Returns a page of owned ready versions; an unfinished child cannot
@@ -354,28 +372,31 @@ impl Engine {
             let config = self.configuration_for(&job)?;
             let (_, profile) = config.selection.profile(&job.request.kind)?;
             let recorded = job.release.as_ref().ok_or("Missing release baseline")?;
-            let baseline = profile.assess_with_size(
+            let baseline = profile.assess_with_runtime(
                 &recorded.title,
                 &job.request.title,
                 recorded.size_bytes,
                 Some(1),
+                job.request.runtime_minutes,
             );
-            if profile.cutoff_reached(&baseline) {
-                entries.push(entry(&job, "cutoff_reached"));
-                continue;
-            }
             let mut request = job.request.clone();
             request.source_path = None;
             request.source_url = None;
-            let selected = match integrations::select_release_before(
+            let selected = match integrations::select_upgrade_before(
                 &config,
                 &request,
+                &baseline,
+                &recorded.title,
                 started + Duration::from_secs(90),
             ) {
                 Ok(selected) => selected,
                 Err(_) => {
-                    completed = false;
-                    entries.push(entry(&job, "search_unavailable"));
+                    if profile.cutoff_reached(&baseline) {
+                        entries.push(entry(&job, "cutoff_reached"));
+                    } else {
+                        completed = false;
+                        entries.push(entry(&job, "search_unavailable"));
+                    }
                     continue;
                 }
             };
@@ -385,7 +406,15 @@ impl Engine {
             item.insert("candidate_id", selected.id);
             item.insert("candidate_title", title);
             item.insert("candidate_assessment", selected.assessment.to_json());
-            if baseline.accepted && selected.assessment.rank <= baseline.rank {
+            if !profile.is_upgrade(
+                &selected.assessment,
+                &baseline,
+                &selected.title,
+                &recorded.title,
+            ) {
+                if profile.cutoff_reached(&baseline) {
+                    item.insert("action", "cutoff_reached");
+                }
                 entries.push(item);
                 continue;
             }

@@ -51,6 +51,7 @@ fn a_failed_transfers_stage_leaves_no_native_client_running() {
                 tmdb_id: Some(7),
                 source_path: None,
                 source_url: None,
+                runtime_minutes: None,
                 source_numbering: None,
             })
             .unwrap();

@@ -3,14 +3,16 @@ import { quality, openDetail, act, toast, skeleton } from './components.js';
 import { Motion } from './motion.js';
 import { link } from './link.js';
 import { itemsOf } from './store.js';
+import { lostText, sizeFacts } from './quality.js';
 
 // Manual search: the releases the indexers offer for one film or episode, and
 // the one the operator picks. Mynou would choose the first acceptable release
 // by itself; a rejected one can still be taken after a second click.
 
 /** Searches with a film or episode request, as a job holds it. */
-export const requestSearch = (request) => ({
-  search: (after) => link.call('POST', `/api/search${after ? `?limit=100&after=${encodeURIComponent(after)}` : ''}`, request),
+export const requestSearch = (request, profile = null) => ({
+  // A profile being chosen for a new title ranks the list without being saved.
+  search: (after) => link.call('POST', `/api/search${after ? `?limit=100&after=${encodeURIComponent(after)}` : ''}`, profile ? { ...request, profile } : request),
   grab: (id) => link.call('POST', '/api/grab', { request, candidate_id: id }),
 });
 
@@ -92,8 +94,13 @@ function releaseRow(c, grab, chosen) {
   // The rank holds positions in the profile's lists; the attributes hold what was read from the title.
   const attributes = assessment.attributes ?? {};
   const traits = [Number(attributes.resolution) ? `${attributes.resolution}p` : null, attributes.source, attributes.codec,
-    ...(Array.isArray(attributes.languages) ? attributes.languages : [])].filter((v) => typeof v === 'string' && v);
+    // Languages read as the tags release names carry: VFF, VFQ, EN.
+    ...(Array.isArray(attributes.languages) ? attributes.languages.map((l) => typeof l === 'string' ? l.toUpperCase() : l) : [])]
+    .filter((v) => typeof v === 'string' && v);
   const reasons = Array.isArray(assessment.reasons) ? assessment.reasons.filter((r) => typeof r === 'string') : [];
+  // Why an accepted release comes after Mynou's pick: the first criterion it loses on.
+  const lost = assessment.accepted && !chosen ? lostText(c.lost_on) : null;
+  const size = sizeFacts(c);
   const download = h('button', { type: 'button', class: chosen ? 'primary' : 'secondary' }, icon('down'), 'Download');
   download.addEventListener('click', () => grab(download, c));
   const seeders = Number(c.seeders);
@@ -104,8 +111,10 @@ function releaseRow(c, grab, chosen) {
       h('div', { class: 'release-facts' },
         traits.length ? quality(traits) : null,
         h('span', {}, c.source),
+        size ? h('span', {}, size) : null,
         typeof rank.custom_score === 'number' && rank.custom_score ? h('span', {}, `score ${rank.custom_score}`) : null),
-      reasons.length ? h('div', { class: 'release-why' }, reasons.join(' · ')) : null),
+      reasons.length ? h('div', { class: 'release-why' }, reasons.join(' · ')) : null,
+      lost ? h('div', { class: 'release-why' }, lost) : null),
     h('div', { class: 'release-side' },
       h('span', { class: 'seeders', dataset: { tone: seeders ? '' : 'bad' }, title: 'Seeders' }, h('strong', {}, Number.isFinite(seeders) ? String(seeders) : String(c.seeders ?? '?')), ' seeders'),
       download));

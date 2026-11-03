@@ -81,6 +81,7 @@ fn request(title: &str) -> Request {
         episode: 0,
         source_path: None,
         source_url: None,
+        runtime_minutes: None,
         source_numbering: None,
         tmdb_id: None,
     }
@@ -1184,6 +1185,7 @@ fn shared_requests(file: &crate::pack::SharedFile) -> Vec<Request> {
             episode,
             source_path: None,
             source_url: Some("https://example.invalid/pack.torrent".into()),
+            runtime_minutes: None,
             source_numbering: None,
             tmdb_id: Some(file.tmdb_id),
         })

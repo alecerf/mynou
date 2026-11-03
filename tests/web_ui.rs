@@ -393,6 +393,7 @@ fn jobs_above_the_old_total_cap_reach_http_and_websocket_pages() {
             episode: 0,
             source_path: None,
             source_url: None,
+            runtime_minutes: None,
             source_numbering: None,
             tmdb_id: Some(1),
         })

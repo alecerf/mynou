@@ -21,7 +21,6 @@ const matches = (text, query) => !query || fold(text).includes(query);
 function request(text, kind) {
   const form = $('#request-form');
   form.elements.query.value = '';
-  form.elements.year.value = '';
   $(`#request-kind [data-kind="${kind}"]`)?.click();
   form.elements.query.value = text;
   form.requestSubmit();

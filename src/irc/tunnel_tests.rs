@@ -276,6 +276,7 @@ fn engine(
             source_path: None,
             source_url: None,
             tmdb_id: Some(7),
+            runtime_minutes: None,
             source_numbering: None,
         })
         // Discard the error without any panic or log sink: configuration

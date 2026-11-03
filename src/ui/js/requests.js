@@ -5,6 +5,7 @@ import { link } from './link.js';
 import { views, itemsOf, loadedItems, jobsLoaded, libraryTail, seriesTail } from './store.js';
 import { createMediaCard, paintCover, coverTone } from './library.js';
 import { openReleases, requestSearch } from './releases.js';
+import { profilePicker, pickedProfile, remember, savedProfiles, bindTitle } from './quality.js';
 
 // New request: find the title on TMDB, then add the film or follow the series.
 // Mynou then searches the indexers by itself; a release can also be chosen by hand.
@@ -26,7 +27,6 @@ views.requests = {
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
       const params = new URLSearchParams({ kind, query: form.elements.query.value.trim() });
-      if (Number(form.elements.year.value)) params.set('year', form.elements.year.value);
       const meta = $('#catalog-meta');
       const out = $('#catalog-out');
       // Only the latest search may fill the grid.
@@ -39,7 +39,7 @@ views.requests = {
         const results = itemsOf((await link.call('GET', `/api/catalog?${params}`)).results);
         if (search !== searches) return;
         const noun = kind === 'series' ? 'series' : results.length === 1 ? 'film' : 'films';
-        meta.textContent = results.length ? `${results.length} ${noun} on TMDB` : 'TMDB has nothing by that name. Check the spelling, or leave the year empty.';
+        meta.textContent = results.length ? `${results.length} ${noun} on TMDB` : 'TMDB has nothing by that name. Check the spelling, or leave out the year.';
         out.replaceChildren(...results.map((title, index) => titleCard(title, index)));
         Motion.arrive(out.children);
       });
@@ -130,32 +130,45 @@ async function openTitle(title) {
   if (status) mark(status);
   const marked = (status) => { mark(status); Motion.pop(state); };
   const note = h('p', { class: 'title-note' });
+  // The quality profile a new title uses; the default one unless another is picked.
+  const picker = status ? null : profilePicker(film ? 'movie' : 'series');
   if (film) {
     const add = h('button', { type: 'button', class: 'primary', hidden: Boolean(status) }, icon('requests'), 'Add to the library');
     add.addEventListener('click', () => act(add, async () => {
-      await link.call('POST', '/api/jobs', request);
+      const profile = pickedProfile(picker);
+      await link.call('POST', '/api/jobs', profile ? { ...request, profile } : request);
+      remember('movie', request.tmdb_id, profile);
       add.hidden = true;
+      picker?.remove();
       marked(['Requested', 'accent']);
       note.textContent = 'Mynou is looking for it on your indexers. Follow it in Jobs.';
       for (const card of $('#catalog-out').children) markCard(card);
     }, 'Added: Mynou is searching the indexers'));
     const choose = h('button', { type: 'button', class: 'secondary', hidden: status?.[0] === 'In your library' }, icon('search'), 'Choose a release');
-    choose.addEventListener('click', () => openReleases(label(title), requestSearch(request), back));
-    actions.append(add, choose);
+    choose.addEventListener('click', async () => {
+      // A picked profile ranks the list, and the title keeps it once a release is taken.
+      const profile = pickedProfile(picker);
+      const saved = profile ? (await savedProfiles()).profiles?.[profile] : null;
+      const source = requestSearch(request, saved);
+      openReleases(label(title), profile ? { ...source, grab: async (id) => { await bindTitle('movie', request.tmdb_id, profile); return source.grab(id); } } : source, back);
+    });
+    actions.append(...[picker, add, choose].filter(Boolean));
     note.textContent = status ? '' : 'Mynou picks the best release your profile accepts, or you choose one yourself.';
   } else if (!status) {
     const scope = h('select', { 'aria-label': 'Episodes to get' },
       h('option', { value: 'all' }, 'Every episode'), h('option', { value: 'future' }, 'New episodes only'));
     const follow = h('button', { type: 'button', class: 'primary' }, icon('requests'), 'Follow');
     follow.addEventListener('click', () => act(follow, async () => {
-      await link.call('POST', '/api/series', { request, future_only: scope.value === 'future' });
-      scope.remove(); follow.remove();
+      const profile = pickedProfile(picker);
+      await link.call('POST', '/api/series', { request, future_only: scope.value === 'future', ...(profile ? { profile } : {}) });
+      remember('series', request.tmdb_id, profile);
+      scope.remove(); follow.remove(); picker?.remove();
       marked(['Followed', 'ok']);
       note.textContent = scope.value === 'future' ? 'New episodes will be downloaded as they air.' : 'Mynou is looking for the aired episodes. Episodes are in the Library.';
       for (const card of $('#catalog-out').children) markCard(card);
       toast(`Following ${title.title}`);
     }));
-    actions.append(scope, follow);
+    actions.append(picker, scope, follow);
     note.textContent = 'Mynou downloads each episode once it has aired. Pick a release for one episode from its series in the Library.';
   } else {
     actions.append(h('a', { class: 'secondary', href: '#library', onclick: () => $('#detail').close() }, icon('library'), 'Open the library'));

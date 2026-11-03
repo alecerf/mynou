@@ -131,7 +131,7 @@ pub fn default_json() -> Value {
         ("minimum_seeders", n(1)),
         (
             "selection",
-            crate::selection::SelectionConfig::default().to_json(),
+            crate::selection::SelectionConfig::fresh().to_json(),
         ),
         (
             "monitoring",
@@ -488,10 +488,10 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
     }
     let workers = number(v, "workers", 2, 32)? as usize;
     let max_active = number(d, "max_active", 2, u32::MAX as u64)? as usize;
-    let max_peers = number(d, "max_peers", 50, 256)? as usize;
+    let max_peers = number(d, "max_peers", 50, u32::MAX as u64)? as usize;
     let poll_interval_ms = number(v, "poll_interval_ms", 500, 3600000)?;
     let lease_duration_secs = number(v, "lease_duration_secs", 60, 86400)?;
-    if workers == 0 || max_peers == 0 || poll_interval_ms < 10 || lease_duration_secs < 5 {
+    if workers == 0 || poll_interval_ms < 10 || lease_duration_secs < 5 {
         return Err("Configuration: invalid concurrency or timing settings".into());
     }
     let listen = text(v, "listen", "127.0.0.1:8787")?;

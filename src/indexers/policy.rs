@@ -370,6 +370,7 @@ impl Engine {
                 season: 0,
                 episode: 0,
                 tmdb_id: None,
+                runtime_minutes: None,
                 source_numbering: None,
                 source_path: None,
                 source_url: None,

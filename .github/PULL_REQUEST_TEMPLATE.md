@@ -7,4 +7,4 @@ Explain relevant decisions and limitations.
 Validation: commands, environment, results and any coverage gaps.
 
 Keep version changes in a release PR. Add user-facing changes to
-`docs/releases/unreleased.md` using `## <Category>: <Title>`.
+`UNRELEASED.md` using `## <Category>: <Title>`.

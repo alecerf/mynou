@@ -111,6 +111,7 @@ impl SharedFile {
             source_path: None,
             source_url: Some(source.into()),
             tmdb_id: Some(self.tmdb_id),
+            runtime_minutes: None,
             source_numbering: None,
         }
     }

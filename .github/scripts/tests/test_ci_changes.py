@@ -16,7 +16,7 @@ import ci_changes as ci
 
 class SelectionTests(unittest.TestCase):
     def test_documentation_needs_no_product_or_tooling_tests(self):
-        work = ci.select(["README.md", "docs/a.md", "docs/releases/unreleased.md", "AGENTS.md", "CONTRIBUTING.md"])
+        work = ci.select(["README.md", "docs/a.md", "UNRELEASED.md", "AGENTS.md", "CONTRIBUTING.md"])
         self.assertFalse(any(work[key] for key in ci.KEYS))
         # The branch requires the GitHub CodeQL app, so retain one real scan.
         self.assertEqual(work["languages"], ["actions"])
@@ -140,8 +140,7 @@ class SelectionTests(unittest.TestCase):
             manifest = '[package]\nname = "mynou"\nversion = "0.24.0"\nedition = "2024"\n'
             (root / "Cargo.toml").write_text(manifest)
             (root / "Cargo.lock").write_text('[[package]]\nname = "mynou"\nversion = "0.24.0"\n')
-            (root / "docs/releases").mkdir(parents=True)
-            (root / "docs/releases/unreleased.md").write_text("## Added: thing\n")
+            (root / "UNRELEASED.md").write_text("## Added: thing\n")
             git("add", ".")
             git("commit", "-m", "base")
             base = git("rev-parse", "HEAD")
@@ -150,7 +149,7 @@ class SelectionTests(unittest.TestCase):
                 (root / "Cargo.toml").write_text(manifest_text)
                 (root / "Cargo.lock").write_text(lock_text)
                 if notes:
-                    (root / "docs/releases/unreleased.md").unlink()
+                    (root / "UNRELEASED.md").unlink()
                 git("add", "-A")
                 git("commit", "-q", "-m", "change")
                 return git("rev-parse", "HEAD")
@@ -166,7 +165,7 @@ class SelectionTests(unittest.TestCase):
             edition = commit(manifest.replace("2024", "2021"), '[[package]]\nname = "mynou"\nversion = "0.24.0"\n')
             self.assertFalse(released(edition))
             self.assertFalse(ci.version_only(base, bump, ["Cargo.toml", "src/lib.rs"]))
-            self.assertFalse(ci.version_only(base, bump, ["docs/releases/unreleased.md"]))
+            self.assertFalse(ci.version_only(base, bump, ["UNRELEASED.md"]))
 
     def test_git_diff_keeps_merge_base_renames_and_every_path(self):
         with tempfile.TemporaryDirectory() as directory:

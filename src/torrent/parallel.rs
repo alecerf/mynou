@@ -24,7 +24,6 @@ use std::{
 // canonical metadata, application state, and operating-system socket buffers
 // are separate. A single large metadata object is still permitted at limit one.
 const WORKER_MEMORY_BUDGET: usize = 128 * 1024 * 1024;
-pub(super) const CONNECTION_BUDGET: usize = 256;
 const POLL: Duration = Duration::from_millis(20);
 const RETRY: Duration = Duration::from_secs(2);
 // Incoming peers waiting for a free slot, and how long one waits for it
@@ -105,10 +104,12 @@ fn peer_limit(config: &DownloadConfig, meta: &Meta) -> usize {
     } else {
         WORKER_MEMORY_BUDGET.saturating_sub(metadata)
     };
-    config
-        .max_peers
-        .min((CONNECTION_BUDGET / config.download_slots()).max(1))
-        .min((budget / footprint).max(1))
+    // Zero: no user limit, only the memory one.
+    let wanted = match config.max_peers {
+        0 => usize::MAX,
+        n => n,
+    };
+    wanted.min((budget / footprint).max(1))
 }
 
 fn current_job<'a>(
@@ -321,8 +322,10 @@ impl Drop for WorkerExit {
     }
 }
 
-fn spawn_worker(task: PeerTask) -> JoinHandle<()> {
-    thread::spawn(move || {
+/// One thread per peer. The system can refuse a thread when peers have no
+/// limit; that peer then waits for a retry instead of stopping the download.
+fn spawn_worker(task: PeerTask) -> std::io::Result<JoinHandle<()>> {
+    thread::Builder::new().spawn(move || {
         let _exit = WorkerExit {
             slot: task.slot,
             ticket: task.ticket,
@@ -1001,13 +1004,17 @@ pub(super) fn download(
                     events: events.clone(),
                     corrupt: corrupt.clone(),
                 };
+                let Ok(handle) = spawn_worker(task) else {
+                    retries.insert(address, Instant::now() + RETRY);
+                    break;
+                };
                 group.workers[slot] = Some(Worker {
                     address,
                     outbound,
                     ticket,
                     commands,
                     stop: cancel,
-                    handle: spawn_worker(task),
+                    handle,
                     corrupt,
                     last_upload,
                     availability: None,
@@ -1464,11 +1471,18 @@ mod tests {
     }
 
     #[test]
-    fn connection_allocation_and_large_metadata_reduce_worker_count() {
+    fn user_limit_and_large_metadata_reduce_worker_count() {
         let small = metadata(8);
+        // The user limit holds whatever the number of downloads.
         assert_eq!(peer_limit(&configuration(1), &small), 256);
-        assert_eq!(peer_limit(&configuration(32), &small), 8);
-        assert_eq!(peer_limit(&configuration(256), &small), 1);
+        assert_eq!(peer_limit(&configuration(32), &small), 256);
+        assert_eq!(peer_limit(&configuration(0), &small), 256);
+        // No user limit: only the memory budget applies.
+        let unlimited = DownloadConfig {
+            max_peers: 0,
+            ..configuration(0)
+        };
+        assert_eq!(peer_limit(&unlimited, &small), 507);
         // Bounded messages and the blocks requested ahead: a 4 MiB piece
         // includes two full payloads, even while results wait in the queue.
         let mut wide = metadata(8);

@@ -1,149 +1,487 @@
-import { h } from './dom.js';
-import { toast } from './components.js';
+import { h, icon } from './dom.js';
+import { act, toast } from './components.js';
 import { link } from './link.js';
 
-// Quality is chosen with a few plain choices. Mynou turns them into one
-// selection profile per kind and quality, named `movie-1080p`, `series-2160p`
-// and so on, so that a film or a series can also use another quality than the
-// default one. Profiles written by hand under other names are kept as they are.
-export const PRESETS = [
-  ['2160p', '4K when available', [2160, 1080]],
-  ['1080p', 'Up to 1080p', [1080, 720]],
-  ['720p', 'Up to 720p, smaller files', [720, 576, 480]],
-  ['any', 'Any quality', []],
-];
-const KINDS = [['movie', 'Films', 'movie_profile', 'per film'], ['series', 'Series', 'episode_profile', 'per episode']];
-// Most preferred first. Cam and telesync copies are never wanted.
-const SOURCES = ['bluray', 'web-dl', 'webrip', 'remux', 'hdtv', 'dvd'];
+// Quality profiles, as in Radarr and Sonarr but in plain words: which
+// qualities a release may have, best first, where upgrades stop, the audio
+// language, a size per hour of video, and a few named preferences. Films and
+// series share the profiles; each kind has its default, and each title can
+// use another one, chosen when it is added or later from its sheet.
+
+export const RESOLUTIONS = [[2160, '4K'], [1080, '1080p'], [720, '720p'], [576, '576p'], [480, '480p']];
+// Best first; cam and telesync copies are never offered.
+const SOURCES = [['remux', 'Remux'], ['bluray', 'Blu-ray'], ['web-dl', 'WEB-DL'], ['webrip', 'WEBRip'], ['hdtv', 'HDTV'], ['dvd', 'DVD']];
 const CODECS = ['h265', 'h264', 'av1', 'vp9'];
 export const LANGUAGES = [
-  ['', 'Any language'], ['en', 'English'], ['fr', 'French'], ['de', 'German'], ['es', 'Spanish'], ['it', 'Italian'],
+  ['en', 'English'], ['fr', 'French'], ['de', 'German'], ['es', 'Spanish'], ['it', 'Italian'],
   ['pt', 'Portuguese'], ['ja', 'Japanese'], ['ko', 'Korean'], ['zh', 'Chinese'], ['ru', 'Russian'],
 ];
+// Audio a profile can ask for, as release names tag it. French releases name
+// their dub; "French" alone stands for any of them, or for FRENCH and VF.
+const AUDIO = [
+  ['vff', 'VFF', 'France dub, also TRUEFRENCH'],
+  ['vfq', 'VFQ', 'Québec dub'],
+  ['vfi', 'VFI', 'International dub'],
+  ['fr', 'French', 'Any French, dub named or not'],
+  ...LANGUAGES.filter(([value]) => value !== 'fr').map(([value, label]) => [value, label, null]),
+];
+const FRENCH = new Set(['vff', 'vfq', 'vfi', 'fr']);
+const audioName = (value) => AUDIO.find(([key]) => key === value)?.[1] ?? languageName(value);
+/** What a list of profile languages reads as: "VFF, VFI or French". */
+const languagesName = (languages) => {
+  const names = languages.map(audioName);
+  return names.length > 1 ? `${names.slice(0, -1).join(', ')} or ${names.at(-1)}` : names[0];
+};
+// MULTI holds the original audio too; it is set from the audio rows.
+const MULTI = [['multi']];
+// Named preferences: each one stands for words in release names.
+const EXTRAS = [
+  ['hdr', 'Prefer HDR', 'prefer', [['hdr']]],
+  ['dv', 'Prefer Dolby Vision', 'prefer', [['dv'], ['dovi']]],
+  ['3d', 'Avoid 3D', 'avoid', [['3d']]],
+];
+const EXTRA_TERMS = new Set([...EXTRAS.flatMap(([, , , rules]) => rules.flat()), ...MULTI.flat()]);
 const GB = 1000; // profile sizes are in MB
-const PRESET_NAME = /^(movie|series)-(2160p|1080p|720p|any)$/;
+const PREFER_SCORE = 10;
 
 const words = (text) => [...new Set(String(text).split(',').map((w) => w.trim().toLowerCase()).filter(Boolean))];
+const named = (pairs, value) => pairs.find(([key]) => key === value)?.[1] ?? String(value);
+const resolutionName = (value) => named(RESOLUTIONS, value);
+const sourceName = (value) => named(SOURCES, value);
+const languageName = (value) => named(LANGUAGES, value);
+export const profileLabel = (name, profile) => profile?.label || name;
 
-/** What the Quality page shows for one kind, read from its default profile. */
-function current(selection, kind, key) {
-  const name = selection?.[key];
-  const match = PRESET_NAME.exec(name ?? '');
-  const profile = selection?.profiles?.[name] ?? {};
-  const language = profile.languages?.[0] ?? '';
-  return {
-    preset: match && match[1] === kind ? match[2] : selection ? 'custom' : 'any',
-    language,
-    only: Boolean(language) && profile.allow_unknown_language === false,
-    min: profile.min_size_mb ?? null,
-    max: profile.max_size_mb ?? null,
-  };
+/** The language mode a profile works with, as the server derives it for older profiles. */
+function languageMode(profile) {
+  if (profile.language_mode) return profile.language_mode;
+  if (!profile.languages?.length) return 'any';
+  return profile.allow_unknown_language === false ? 'require' : 'prefer';
 }
 
-function profile([, , resolutions], kind) {
-  const languages = kind.language ? [kind.language] : [];
-  return {
-    resolutions,
-    cutoff_resolution: resolutions[0] ?? null,
-    sources: SOURCES,
-    codecs: CODECS,
-    languages,
-    allow_unknown_resolution: !resolutions.length,
-    allow_unknown_source: true,
-    allow_unknown_codec: true,
-    allow_unknown_language: !kind.only,
-    min_size_mb: kind.min,
-    max_size_mb: kind.max,
-    allow_unknown_size: true,
-    required_terms: [],
-    blocked_terms: kind.avoid,
-    score_rules: kind.prefer.map((term) => ({ terms: [term], score: 10 })),
-    minimum_score: 0,
-  };
+/** One line that says what a profile does, from its real settings. */
+export function profileSummary(profile) {
+  const res = profile.resolutions ?? [];
+  const parts = [];
+  if (!res.length) parts.push('Any quality');
+  else parts.push(res.length === 1 ? `${resolutionName(res[0])} only` : `${resolutionName(res[0])}, ${res.slice(1).map(resolutionName).join(', ')} accepted`);
+  if (profile.cutoff_resolution) {
+    parts.push(`upgrades until ${resolutionName(profile.cutoff_resolution)}${profile.cutoff_source ? ` ${sourceName(profile.cutoff_source)}` : ''}`);
+  }
+  const mode = languageMode(profile);
+  const languages = profile.languages ?? [];
+  if (mode !== 'any' && languages.length) {
+    const name = languagesName(languages);
+    parts.push(mode === 'require' ? `${name} only` : `${name} preferred${profile.language_first ? ', even in a lower quality' : ''}`);
+  }
+  if (hasExtra(profile, 'prefer', MULTI)) parts.push('MULTI first');
+  if (profile.max_mb_per_hour) parts.push(`up to ${Math.round((profile.max_mb_per_hour / GB) * 10) / 10} GB per hour`);
+  // "Prefer HDR" reads "prefer HDR" mid-sentence; acronyms keep their case.
+  for (const [, label, kind, rules] of EXTRAS) if (hasExtra(profile, kind, rules)) parts.push(label[0].toLowerCase() + label.slice(1));
+  return parts.join(' · ');
 }
 
-const sizeText = (mb) => (mb == null ? '' : String(Math.round((mb / GB) * 100) / 100));
+function hasExtra(profile, kind, rules) {
+  if (kind === 'avoid') return rules.every(([term]) => (profile.blocked_terms ?? []).includes(term));
+  return rules.every(([term]) => (profile.score_rules ?? []).some((rule) => rule.terms?.length === 1 && rule.terms[0] === term && rule.score > 0));
+}
+
+function setExtra(profile, kind, rules, on) {
+  if (kind === 'avoid') {
+    const terms = new Set(profile.blocked_terms ?? []);
+    for (const [term] of rules) if (on) terms.add(term); else terms.delete(term);
+    profile.blocked_terms = [...terms];
+    return;
+  }
+  const kept = (profile.score_rules ?? []).filter((rule) => !(rule.terms?.length === 1 && rules.some(([term]) => term === rule.terms[0])));
+  profile.score_rules = on ? [...kept, ...rules.map((terms) => ({ terms, score: PREFER_SCORE }))] : kept;
+}
+
+/** Words the operator typed, apart from the named preferences. */
+const preferWords = (profile) => (profile.score_rules ?? [])
+  .filter((rule) => rule.score > 0 && !(rule.terms?.length === 1 && EXTRA_TERMS.has(rule.terms[0])))
+  .map((rule) => rule.terms.join(' '));
+const avoidWords = (profile) => (profile.blocked_terms ?? []).filter((term) => !EXTRA_TERMS.has(term));
+
+/** A fresh profile, a copy of `from` when given. */
+function newProfile(from) {
+  const profile = structuredClone(from ?? {
+    resolutions: [1080, 720], cutoff_resolution: 1080, cutoff_source: 'bluray',
+    sources: SOURCES.slice(1).map(([key]) => key), codecs: CODECS, languages: [], language_mode: 'any',
+    allow_unknown_resolution: false, allow_unknown_source: true, allow_unknown_codec: true, allow_unknown_language: true,
+    required_terms: [], blocked_terms: ['3d'], score_rules: [], minimum_score: 0, allow_unknown_size: true,
+  });
+  profile.label = from ? `${profileLabel('', from) || 'Profile'} copy` : 'New profile';
+  return profile;
+}
+
+/** A unique profile key from a label: letters, digits and hyphens. */
+function keyFor(label, taken) {
+  const base = (label.toLowerCase().normalize('NFD').replace(/\p{M}/gu, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'profile').slice(0, 56);
+  let key = base;
+  for (let n = 2; taken.has(key); n++) key = `${base}-${n}`;
+  return key;
+}
+
+// The page edits a copy of the saved selection; Save sends it with the other settings.
+let draft = null;
+let saved = '';
 
 /** The Quality page as [title, about, rows] groups; `row` lays out one setting. */
 export function qualityGroups(document, row) {
-  const selection = document.selection;
-  // Words to avoid and prefer are shared: any generated profile holds them.
-  const anyProfile = Object.entries(selection?.profiles ?? {}).find(([name]) => PRESET_NAME.test(name))?.[1];
-  const groups = [];
-  for (const [kind, title, key, per] of KINDS) {
-    const now = current(selection, kind, key);
-    const presets = now.preset === 'custom' ? [['custom', 'Custom, set through the API', []], ...PRESETS] : PRESETS;
-    const id = (field) => `quality-${kind}-${field}`;
-    const field = (name, shown) => ({ quality: kind, field: name, shown: String(shown) });
-    groups.push([title, `The release Mynou picks for ${kind === 'movie' ? 'a film' : 'an episode or a season pack'}.`, [
-      row(id('preset'), 'Quality', 'Mynou picks the best release it finds within this limit.',
-        h('select', { id: id('preset'), dataset: field('preset', now.preset) },
-          presets.map(([value, label]) => h('option', { value, selected: value === now.preset }, label)))),
-      row(id('language'), 'Audio language', 'Releases marked MULTI do not say which languages they hold, so they count as unknown.',
-        h('select', { id: id('language'), dataset: field('language', now.language) },
-          LANGUAGES.map(([value, label]) => h('option', { value, selected: value === now.language }, label)))),
-      row(id('only'), 'Only this language', 'Off: releases in this language come first, others when there is none.',
-        h('input', { id: id('only'), type: 'checkbox', class: 'switch', checked: now.only, dataset: field('only', now.only) }), true),
-      row(id('min'), 'Smallest size', `Skips fakes and poor encodes, ${per}.`,
-        h('span', { class: 'with-unit' }, h('input', { id: id('min'), type: 'text', inputMode: 'decimal', placeholder: 'No minimum', value: sizeText(now.min), dataset: field('min', sizeText(now.min)) }),
-          h('span', { class: 'unit', 'aria-hidden': 'true' }, 'GB'))),
-      row(id('max'), 'Largest size', `Leaves out huge releases, ${per}.`,
-        h('span', { class: 'with-unit' }, h('input', { id: id('max'), type: 'text', inputMode: 'decimal', placeholder: 'No maximum', value: sizeText(now.max), dataset: field('max', sizeText(now.max)) }),
-          h('span', { class: 'unit', 'aria-hidden': 'true' }, 'GB'))),
-    ]]);
-  }
-  const avoid = (anyProfile?.blocked_terms ?? []).join(', ');
-  const prefer = (anyProfile?.score_rules ?? []).flatMap((rule) => rule.terms ?? []).join(', ');
-  groups.push(['Release names', 'Words in release names, for films and series alike.', [
-    row('quality-avoid', 'Avoid', 'Words that rule a release out, separated by commas, for example hdcam, 3d.',
-      h('input', { id: 'quality-avoid', type: 'text', spellcheck: false, placeholder: 'Nothing', value: avoid, dataset: { quality: 'all', field: 'avoid', shown: avoid } })),
-    row('quality-prefer', 'Prefer', 'Words that put a release first, for example proper, repack.',
-      h('input', { id: 'quality-prefer', type: 'text', spellcheck: false, placeholder: 'Nothing', value: prefer, dataset: { quality: 'all', field: 'prefer', shown: prefer } })),
-  ]]);
-  return groups;
+  draft = structuredClone(document.selection ?? { profiles: { any: {} }, movie_profile: 'any', episode_profile: 'any' });
+  draft.profiles ??= {};
+  saved = JSON.stringify(draft);
+  const container = h('div', { class: 'quality-profiles' });
+  const changed = () => container.dispatchEvent(new Event('input', { bubbles: true }));
+  const defaults = h('div', { class: 'quality-defaults' });
+  const paint = (open) => {
+    defaults.replaceChildren(
+      defaultRow(row, 'movie_profile', 'Films', changed, paint),
+      defaultRow(row, 'episode_profile', 'Series', changed, paint));
+    container.replaceChildren(...Object.keys(draft.profiles).map((name) => profileCard(name, row, changed, paint, name === open)),
+      h('div', { class: 'actions' }, h('button', {
+        type: 'button', class: 'secondary',
+        onclick: () => {
+          const name = keyFor('New profile', new Set(Object.keys(draft.profiles)));
+          draft.profiles[name] = newProfile(draft.profiles[draft.movie_profile]);
+          draft.profiles[name].label = 'New profile';
+          changed();
+          paint(name);
+        },
+      }, icon('requests'), 'Create profile')));
+  };
+  paint(null);
+  return [
+    ['Defaults', 'The profile a new film or series uses. You can pick another one when you add a title, or later from its page.', [defaults]],
+    ['Profiles', 'What a release must be, best first. Mynou picks the best release a profile accepts, then upgrades it until the level you set.', [container]],
+  ];
 }
 
-function size(input, label) {
-  const typed = input.value.trim().replace(',', '.');
-  if (!typed) return null;
-  const mb = Math.round(Number(typed) * GB);
-  if (!Number.isFinite(mb) || mb < 1 || mb > 1_000_000) throw new Error(`${label} needs a size from 0.001 to 1000 GB`);
-  return mb;
+function defaultRow(row, key, title, changed, paint) {
+  const select = h('select', { id: `quality-default-${key}` },
+    Object.entries(draft.profiles).map(([name, profile]) => h('option', { value: name, selected: name === draft[key] }, profileLabel(name, profile))));
+  select.addEventListener('change', () => { draft[key] = select.value; changed(); paint(null); });
+  return row(select.id, title, profileSummary(draft.profiles[draft[key]] ?? {}), select);
+}
+
+function profileCard(name, row, changed, paint, open) {
+  const profile = draft.profiles[name];
+  const summary = h('span', { class: 'hint' }, profileSummary(profile));
+  const title = h('strong', {}, profileLabel(name, profile));
+  const tags = [name === draft.movie_profile ? 'Films' : null, name === draft.episode_profile ? 'Series' : null].filter(Boolean);
+  // Controls that show other settings of the card repaint after each change.
+  const hooks = [];
+  const update = () => {
+    summary.textContent = profileSummary(profile);
+    title.textContent = profileLabel(name, profile);
+    for (const hook of hooks) hook();
+    changed();
+  };
+  const id = (field) => `quality-${name}-${field}`;
+  const body = h('div', { class: 'setting-list' },
+    row(id('label'), 'Name', null, textInput(id('label'), profile.label ?? name, 64, (value) => { profile.label = value || undefined; update(); })),
+    row(id('res'), 'Qualities', 'Ticked ones are accepted. The first one Mynou finds in this order wins; a higher source wins within the same quality.', qualityLadder(profile, update)),
+    row(id('src'), 'Sources', 'None ticked: any source.', sourceChoices(profile, update)),
+    row(id('cutoff'), 'Upgrade until', 'Once a file reaches this, Mynou stops looking for better ones.', cutoffChoice(id('cutoff'), profile, update, hooks)),
+    ...audioRows(id, row, profile, update, hooks),
+    row(id('max'), 'Largest size', 'Per hour of video, from the length TMDB gives. Empty: no limit.', sizeInput(id('max'), profile, 'max_mb_per_hour', update)),
+    row(id('min'), 'Smallest size', 'Per hour of video. Skips fakes and poor encodes.', sizeInput(id('min'), profile, 'min_mb_per_hour', update)),
+    row(id('unknown'), 'Unknown sizes', 'Off: a release that does not say its size is skipped when a size limit is set.',
+      check(id('unknown'), profile.allow_unknown_size !== false, (on) => { profile.allow_unknown_size = on; update(); }), true),
+    row(id('extras'), 'Preferences', 'Proper and repack releases are always preferred over the first release of the same quality.', extraChoices(profile, update)),
+    row(id('prefer'), 'Prefer words', 'Words in release names that put a release first within the same quality, separated by commas.',
+      textInput(id('prefer'), preferWords(profile).join(', '), 1024, (value) => { setWords(profile, 'prefer', words(value)); update(); })),
+    row(id('avoid'), 'Avoid words', 'Words that rule a release out, separated by commas.',
+      textInput(id('avoid'), avoidWords(profile).join(', '), 1024, (value) => { setWords(profile, 'avoid', words(value)); update(); })),
+    row(id('require'), 'Required words', 'A release must hold every one of them. Empty: none.',
+      textInput(id('require'), (profile.required_terms ?? []).join(', '), 1024, (value) => { profile.required_terms = words(value); update(); })),
+    tryOut(name, profile),
+    h('div', { class: 'actions' },
+      h('button', {
+        type: 'button', class: 'secondary',
+        onclick: () => { const key = keyFor(`${profileLabel(name, profile)} copy`, new Set(Object.keys(draft.profiles))); draft.profiles[key] = newProfile(profile); changed(); paint(key); },
+      }, 'Duplicate'),
+      h('button', {
+        type: 'button', class: 'ghost danger', disabled: tags.length > 0 || Object.keys(draft.profiles).length < 2,
+        title: tags.length ? 'A default profile cannot be deleted' : undefined,
+        onclick: () => { delete draft.profiles[name]; changed(); paint(null); },
+      }, 'Delete')));
+  return h('details', { class: 'quality-profile', open },
+    h('summary', {}, h('span', { class: 'quality-profile-head' }, title, ...tags.map((tag) => h('span', { class: 'badge', dataset: { tone: 'accent' } }, tag))), summary),
+    body);
+}
+
+function textInput(id, value, max, set) {
+  return h('input', { id, type: 'text', spellcheck: false, maxLength: max, value, oninput: (event) => set(event.target.value.trim()) });
+}
+function check(id, on, set) {
+  return h('input', { id, type: 'checkbox', class: 'switch', checked: on, onchange: (event) => set(event.target.checked) });
+}
+
+/** The accepted qualities, best first, with arrows to reorder them. */
+function qualityLadder(profile, update) {
+  const list = h('ol', { class: 'quality-ladder' });
+  const order = () => [...(profile.resolutions ?? []), ...RESOLUTIONS.map(([value]) => value).filter((value) => !(profile.resolutions ?? []).includes(value))];
+  let shown = order();
+  const paint = () => {
+    list.replaceChildren(...shown.map((value, index) => {
+      const on = (profile.resolutions ?? []).includes(value);
+      const move = (step) => {
+        const to = index + step;
+        if (to < 0 || to >= shown.length) return;
+        [shown[index], shown[to]] = [shown[to], shown[index]];
+        save();
+      };
+      return h('li', { class: on ? 'on' : '' },
+        h('label', {}, h('input', { type: 'checkbox', checked: on, onchange: (event) => { event.stopPropagation(); toggle(value, event.target.checked); } }), resolutionName(value)),
+        h('span', { class: 'ladder-moves' },
+          h('button', { type: 'button', class: 'icon-button', 'aria-label': `Move ${resolutionName(value)} up`, disabled: index === 0, onclick: () => move(-1) }, '↑'),
+          h('button', { type: 'button', class: 'icon-button', 'aria-label': `Move ${resolutionName(value)} down`, disabled: index === shown.length - 1, onclick: () => move(1) }, '↓')));
+    }));
+  };
+  const toggle = (value, on) => {
+    const accepted = new Set(profile.resolutions ?? []);
+    if (on) accepted.add(value); else accepted.delete(value);
+    profile.resolutions = shown.filter((v) => accepted.has(v));
+    save();
+  };
+  const save = () => {
+    profile.resolutions = shown.filter((v) => (profile.resolutions ?? []).includes(v));
+    // An empty list accepts any quality, including releases that do not say theirs.
+    profile.allow_unknown_resolution = !profile.resolutions.length;
+    if (profile.cutoff_resolution && !profile.resolutions.includes(profile.cutoff_resolution)) {
+      profile.cutoff_resolution = profile.resolutions[0] ?? null;
+    }
+    paint();
+    update();
+  };
+  paint();
+  return list;
+}
+
+function sourceChoices(profile, update) {
+  return h('div', { class: 'choice-chips' }, SOURCES.map(([key, label]) => h('label', { class: 'chip' },
+    h('input', {
+      type: 'checkbox', checked: (profile.sources ?? []).includes(key),
+      onchange: (event) => {
+        const chosen = new Set(profile.sources ?? []);
+        if (event.target.checked) chosen.add(key); else chosen.delete(key);
+        profile.sources = SOURCES.map(([k]) => k).filter((k) => chosen.has(k));
+        profile.allow_unknown_source = true;
+        if (profile.cutoff_source && !chosen.has(profile.cutoff_source)) profile.cutoff_source = null;
+        update();
+      },
+    }), label)));
+}
+
+/** Where upgrades stop: a quality and, optionally, a source. */
+function cutoffChoice(id, profile, update, hooks) {
+  const resolution = h('select', { id, 'aria-label': 'Upgrade until quality' });
+  const source = h('select', { 'aria-label': 'Upgrade until source' });
+  const paint = () => {
+    const accepted = profile.resolutions ?? [];
+    resolution.replaceChildren(h('option', { value: '', selected: !profile.cutoff_resolution }, accepted.length ? 'Always look for better' : 'Any quality is final'),
+      ...accepted.map((value) => h('option', { value, selected: value === profile.cutoff_resolution }, resolutionName(value))));
+    resolution.disabled = !accepted.length;
+    const sources = (profile.sources?.length ? profile.sources : SOURCES.map(([key]) => key));
+    source.replaceChildren(h('option', { value: '', selected: !profile.cutoff_source }, 'any source'),
+      ...sources.map((key) => h('option', { value: key, selected: key === profile.cutoff_source }, sourceName(key))));
+    source.hidden = !profile.cutoff_resolution;
+  };
+  resolution.addEventListener('change', () => {
+    profile.cutoff_resolution = Number(resolution.value) || null;
+    if (!profile.cutoff_resolution) profile.cutoff_source = null;
+    update();
+  });
+  source.addEventListener('change', () => { profile.cutoff_source = source.value || null; update(); });
+  // The ladder and the sources change what can be chosen here.
+  hooks.push(paint);
+  paint();
+  return h('span', { class: 'cutoff-choice' }, resolution, source);
+}
+
+/** The audio, in a few plain rows: the languages wanted, best first, then
+    what happens to the others. Rows that do not apply stay hidden. */
+function audioRows(id, row, profile, update, hooks) {
+  const chosen = () => profile.languages ?? [];
+  const list = h('ol', { class: 'audio-list' });
+  const add = h('select', { id: id('lang'), class: 'audio-add', 'aria-label': 'Add a language' });
+  const set = (languages) => {
+    // The first language turns the choice on; none means any language.
+    if (!chosen().length && languages.length) profile.language_mode = 'prefer';
+    profile.languages = languages;
+    if (!languages.length) Object.assign(profile, { language_mode: 'any', language_first: false, allow_unknown_language: true });
+    paint();
+    update();
+  };
+  const paint = () => {
+    const languages = chosen();
+    list.replaceChildren(...languages.map((value, index) => {
+      const detail = AUDIO.find(([key]) => key === value)?.[2];
+      const move = (step) => {
+        const next = [...languages];
+        [next[index], next[index + step]] = [next[index + step], next[index]];
+        set(next);
+      };
+      return h('li', {},
+        h('span', { class: 'audio-rank' }, String(index + 1)),
+        h('span', { class: 'audio-name' }, h('strong', {}, audioName(value)), detail ? h('small', {}, detail) : null),
+        h('span', { class: 'ladder-moves' },
+          h('button', { type: 'button', class: 'icon-button', 'aria-label': `Move ${audioName(value)} up`, disabled: index === 0, onclick: () => move(-1) }, '↑'),
+          h('button', { type: 'button', class: 'icon-button', 'aria-label': `Move ${audioName(value)} down`, disabled: index === languages.length - 1, onclick: () => move(1) }, '↓'),
+          h('button', { type: 'button', class: 'icon-button', 'aria-label': `Remove ${audioName(value)}`, onclick: () => set(languages.filter((v) => v !== value)) }, icon('close'))));
+    }));
+    list.hidden = !languages.length;
+    const left = (french) => AUDIO.filter(([key]) => FRENCH.has(key) === french && !languages.includes(key))
+      .map(([key, label, detail]) => h('option', { value: key }, detail ? `${label} · ${detail}` : label));
+    add.replaceChildren(h('option', { value: '' }, languages.length ? 'Add another…' : 'Any language. Add one…'),
+      h('optgroup', { label: 'French' }, left(true)), h('optgroup', { label: 'Other languages' }, left(false)));
+    add.value = '';
+  };
+  add.addEventListener('change', (event) => { event.stopPropagation(); if (add.value) set([...chosen(), add.value]); });
+  paint();
+
+  const choice = (options, current, pick) => h('div', { class: 'segmented', role: 'group' }, options.map(([value, label]) =>
+    h('button', { type: 'button', 'aria-pressed': String(value === current()), dataset: { value }, onclick: () => pick(value) }, label)));
+  const mode = () => (languageMode(profile) === 'require' ? 'require' : 'prefer');
+  const others = choice([['prefer', 'Accepted, after yours'], ['require', 'Refused']], mode, (value) => {
+    profile.language_mode = value;
+    if (value === 'require') profile.language_first = false;
+    else profile.allow_unknown_language = true;
+    update();
+  });
+  const first = check(id('lang-first'), Boolean(profile.language_first), (on) => { profile.language_first = on; update(); });
+  const unknown = check(id('lang-unknown'), profile.allow_unknown_language !== false, (on) => { profile.allow_unknown_language = on; update(); });
+  const multi = check(id('multi'), hasExtra(profile, 'prefer', MULTI), (on) => { setExtra(profile, 'prefer', MULTI, on); update(); });
+  const rows = [
+    row(id('lang'), 'Audio', 'The languages you want, best first. None: any language.', h('div', { class: 'audio-choice' }, list, add)),
+    row(id('lang-others'), 'Other languages', 'Refused: a release in another language is never downloaded.', others),
+    row(id('lang-first'), 'Language before quality', 'On: a 720p in your language beats a 1080p in another. Off: the better quality wins, and your languages decide between equal ones.', first, true),
+    row(id('lang-unknown'), 'MULTI and untagged', 'A release marked only MULTI, or without a language, does not say what it holds. On: they are accepted anyway.', unknown, true),
+    row(id('multi'), 'MULTI first', 'Releases that also hold the original audio, such as MULTi.VFF, go before VFF alone.', multi, true),
+  ];
+  const [, othersRow, firstRow, unknownRow] = rows;
+  const refresh = () => {
+    const none = !chosen().length;
+    for (const button of others.children) button.setAttribute('aria-pressed', String(button.dataset.value === mode()));
+    first.checked = Boolean(profile.language_first);
+    unknown.checked = profile.allow_unknown_language !== false;
+    othersRow.hidden = none;
+    firstRow.hidden = none || mode() === 'require';
+    unknownRow.hidden = none || mode() !== 'require';
+  };
+  hooks.push(refresh);
+  refresh();
+  return rows;
+}
+
+function sizeInput(id, profile, key, update) {
+  const input = h('input', {
+    id, type: 'text', inputMode: 'decimal', placeholder: 'No limit',
+    value: profile[key] ? String(Math.round((profile[key] / GB) * 100) / 100) : '',
+  });
+  input.addEventListener('input', () => {
+    const typed = input.value.trim().replace(',', '.');
+    const mb = typed ? Math.round(Number(typed) * GB) : null;
+    input.setCustomValidity(typed && (!Number.isFinite(mb) || mb < 1 || mb > 1_000_000) ? 'A size from 0.001 to 1000 GB' : '');
+    if (!input.validationMessage) { profile[key] = mb; update(); }
+  });
+  return h('span', { class: 'with-unit' }, input, h('span', { class: 'unit', 'aria-hidden': 'true' }, 'GB/h'));
+}
+
+function extraChoices(profile, update) {
+  return h('div', { class: 'choice-chips' }, EXTRAS.map(([key, label, kind, rules]) => h('label', { class: 'chip', dataset: { extra: key } },
+    h('input', { type: 'checkbox', checked: hasExtra(profile, kind, rules), onchange: (event) => { setExtra(profile, kind, rules, event.target.checked); update(); } }),
+    label)));
+}
+
+function setWords(profile, kind, list) {
+  if (kind === 'avoid') {
+    profile.blocked_terms = [...(profile.blocked_terms ?? []).filter((term) => EXTRA_TERMS.has(term)), ...list];
+    return;
+  }
+  const extras = (profile.score_rules ?? []).filter((rule) => rule.terms?.length === 1 && EXTRA_TERMS.has(rule.terms[0]));
+  profile.score_rules = [...extras, ...list.map((term) => ({ terms: [term], score: PREFER_SCORE }))];
+}
+
+/** Tries the profile as it is being edited on a real search, saving nothing. */
+function tryOut(name, profile) {
+  const title = h('input', { type: 'text', spellcheck: false, placeholder: 'A film, or a series with its episode: Severance S01E01', 'aria-label': 'Title to try' });
+  const run = h('button', { type: 'button', class: 'secondary' }, icon('search'), 'Try');
+  const out = h('ol', { class: 'release-list try-out' });
+  run.addEventListener('click', () => act(run, async () => {
+    const typed = title.value.trim();
+    if (!typed) throw new Error('Type a title to try the profile on');
+    const episode = /^(.*?)[\s.]+s(\d{1,2})e(\d{1,3})$/i.exec(typed);
+    const request = episode
+      ? { kind: 'episode', title: episode[1].trim(), season: Number(episode[2]), episode: Number(episode[3]) }
+      : { kind: 'movie', title: typed };
+    out.replaceChildren(h('li', { class: 'empty' }, 'Searching the indexers…'));
+    const report = await link.call('POST', '/api/search', { ...request, profile: clean(profile) });
+    out.replaceChildren(...tryRows(report));
+  }));
+  return h('div', { class: 'setting-row try-row' },
+    h('div', { class: 'setting-label' }, h('span', {}, 'Try it'), h('p', { class: 'hint' }, 'Searches your indexers with this profile as it is now, before you save it. Nothing is downloaded.')),
+    h('div', {}, h('span', { class: 'with-unit try-input' }, title, run), out));
+}
+
+/** A profile as the server reads it: the label and unset values left out when empty. */
+function clean(profile) {
+  const copy = structuredClone(profile);
+  for (const [key, value] of Object.entries(copy)) if (value === undefined) delete copy[key];
+  return copy;
+}
+
+/** The pick, the closest contenders and why they lost, then the rejections. */
+function tryRows(report) {
+  const accepted = Array.isArray(report.accepted) ? report.accepted : [];
+  const rejected = Array.isArray(report.rejected) ? report.rejected : [];
+  if (!accepted.length && !rejected.length) return [h('li', { class: 'empty' }, 'The indexers found nothing for this title.')];
+  const pick = report.selected_candidate_id;
+  const rows = accepted.slice(0, 5).map((c) => h('li', { class: `release${c.id === pick ? ' chosen' : ''}` },
+    h('div', { class: 'release-main' },
+      c.id === pick ? h('span', { class: 'badge', dataset: { tone: 'accent' } }, "Mynou's pick") : null,
+      h('div', { class: 'release-title' }, c.title ?? '(untitled)'),
+      h('div', { class: 'release-why' }, c.id === pick ? sizeFacts(c) : [lostText(c.lost_on), sizeFacts(c)].filter(Boolean).join(' · ')))));
+  if (!accepted.length) rows.push(h('li', { class: 'empty' }, 'No release meets this profile.'));
+  if (rejected.length) {
+    const reasons = new Map();
+    for (const c of rejected) for (const reason of c.assessment?.reasons ?? []) reasons.set(reason, (reasons.get(reason) ?? 0) + 1);
+    rows.push(h('li', { class: 'empty' }, `${rejected.length} rejected: ${[...reasons].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([reason, n]) => `${reason} (${n})`).join(' · ')}`));
+  }
+  return rows;
+}
+
+// Why an accepted release came after Mynou's pick: the first criterion where it was worse.
+const LOST_ON = {
+  resolution: 'Lower quality', source: 'Same quality, lower source', language: 'Not in the preferred language',
+  custom_score: 'Fewer preferred words', revision: 'Not a proper or repack', codec: 'Less preferred codec',
+  freeleech: 'Not freeleech', priority: 'Lower indexer priority', seeders: 'Fewer seeders',
+};
+export const lostText = (key) => (key ? LOST_ON[key] ?? `Behind on ${key}` : null);
+
+/** Size and size per hour of a candidate, when known. */
+export function sizeFacts(c) {
+  const size = Number(c.size_bytes);
+  const perHour = Number(c.mb_per_hour);
+  return [size > 0 ? `${Math.round(size / 1e8) / 10} GB` : null, perHour > 0 ? `${Math.round(perHour / 100) / 10} GB/h` : null].filter(Boolean).join(' · ');
 }
 
 /** Folds the Quality page into the settings document, when it changed. */
-export function readQuality(document, form) {
-  const inputs = [...form.querySelectorAll('[data-quality]')];
-  if (!inputs.length) return;
-  const value = (input) => (input.type === 'checkbox' ? String(input.checked) : input.value.trim());
-  if (inputs.every((input) => value(input) === input.dataset.shown)) return;
-  const get = (kind, field) => inputs.find((i) => i.dataset.quality === kind && i.dataset.field === field);
-  const avoid = words(get('all', 'avoid').value);
-  const prefer = words(get('all', 'prefer').value);
-  for (const term of [...avoid, ...prefer]) {
-    if (new TextEncoder().encode(term).length > 128) throw new Error('Each word or phrase holds at most 128 bytes');
+export function readQuality(document) {
+  if (!draft || JSON.stringify(draft) === saved) return;
+  for (const [name, profile] of Object.entries(draft.profiles)) {
+    if (!profile.label?.trim()) delete profile.label;
+    if (profile.min_mb_per_hour && profile.max_mb_per_hour && profile.min_mb_per_hour > profile.max_mb_per_hour) {
+      throw new Error(`${profileLabel(name, profile)}: the smallest size is above the largest`);
+    }
+    const terms = [...(profile.blocked_terms ?? []), ...(profile.required_terms ?? []), ...(profile.score_rules ?? []).flatMap((rule) => rule.terms)];
+    if (terms.some((term) => new TextEncoder().encode(term).length > 128)) throw new Error(`${profileLabel(name, profile)}: each word holds at most 128 bytes`);
   }
-  if (avoid.length > 32 || prefer.length > 32) throw new Error('Up to 32 words to avoid and 32 to prefer');
-  const selection = structuredClone(document.selection ?? { profiles: { any: {} } });
-  selection.profiles ??= {};
-  for (const [kind, title, key] of KINDS) {
-    const choice = {
-      language: get(kind, 'language').value,
-      only: get(kind, 'only').checked,
-      min: size(get(kind, 'min'), `${title}: smallest size`),
-      max: size(get(kind, 'max'), `${title}: largest size`),
-      avoid,
-      prefer,
-    };
-    if (choice.min != null && choice.max != null && choice.min > choice.max) throw new Error(`${title}: the smallest size is above the largest`);
-    for (const preset of PRESETS) selection.profiles[`${kind}-${preset[0]}`] = profile(preset, choice);
-    const preset = get(kind, 'preset').value;
-    if (preset !== 'custom') selection[key] = `${kind}-${preset}`;
-  }
-  document.selection = selection;
+  document.selection = structuredClone(draft);
 }
 
-// A film or a series can use another quality than the default one.
+// A film or a series can use another profile than the default one.
 let bindings = null;
 
 async function binding(kind, tmdbId) {
@@ -158,7 +496,7 @@ async function binding(kind, tmdbId) {
       after = reply.next;
       if (!after) break;
     }
-    if (after) throw new Error('Too many titles have their own quality to show this one');
+    if (after) throw new Error('Too many titles have their own profile to show this one');
     bindings ??= loaded;
   }
   return bindings.get(`${kind}:${tmdbId}`) ?? null;
@@ -171,33 +509,63 @@ async function bind(kind, tmdbId, profile) {
   if (profile) bindings?.set(`${kind}:${tmdbId}`, profile); else bindings?.delete(`${kind}:${tmdbId}`);
 }
 
-/** The quality menu of a film (`movie`) or series (`series`) sheet. */
+/** Gives one title its own profile, or the default one again with null. */
+export const bindTitle = (kind, tmdbId, profile) => bind(kind, Number(tmdbId), profile);
+
+/** Notes a profile chosen when a title was added, so its sheet shows it at once. */
+export function remember(kind, tmdbId, profile) {
+  if (profile) bindings?.set(`${kind}:${tmdbId}`, profile);
+}
+
+/** The saved profiles, read once per page load. */
+let selectionRead = null;
+export const savedProfiles = () => (selectionRead ??= link.call('GET', '/api/profiles').catch((error) => { selectionRead = null; throw error; }));
+export const forgetProfiles = () => { selectionRead = null; };
+
+/** A profile picker for adding a film (`movie`) or series (`series`), set on the default. */
+export function profilePicker(kind) {
+  const select = h('select', { class: 'profile-picker', 'aria-label': 'Quality profile', disabled: true }, h('option', {}, 'Loading…'));
+  savedProfiles().then((selection) => {
+    const fallback = selection[kind === 'movie' ? 'movie_profile' : 'episode_profile'];
+    select.replaceChildren(...Object.entries(selection.profiles ?? {}).map(([name, profile]) =>
+      h('option', { value: name, selected: name === fallback, title: profileSummary(profile) }, profileLabel(name, profile))));
+    select.dataset.fallback = fallback ?? '';
+    select.disabled = false;
+  }).catch(() => select.replaceChildren(h('option', { value: '' }, 'Default profile')));
+  return select;
+}
+
+/** The chosen profile of a picker, or null when it is the default one. */
+export const pickedProfile = (select) => (select && !select.disabled && select.value && select.value !== select.dataset.fallback ? select.value : null);
+
+/** The profile menu of a film (`movie`) or series (`series`) sheet. */
 export function titleQuality(kind, tmdbId) {
   const id = Number(tmdbId);
   if (!Number.isSafeInteger(id) || id < 1) return null;
-  const select = h('select', { 'aria-label': 'Quality for this title', disabled: true }, h('option', {}, 'Loading…'));
+  const select = h('select', { 'aria-label': 'Quality profile for this title', disabled: true }, h('option', {}, 'Loading…'));
   const hint = h('p', { class: 'hint' }, 'Applies to the next searches and upgrade checks; what is already downloaded stays.');
-  Promise.all([link.call('GET', '/api/profiles'), binding(kind, id)]).then(([selection, bound]) => {
-    const names = new Set(Object.keys(selection.profiles ?? {}));
-    const offered = PRESETS.filter(([preset]) => names.has(`${kind}-${preset}`));
-    if (!offered.length) {
-      select.replaceChildren(h('option', {}, 'Default'));
-      hint.textContent = 'Save your choices in Settings, Quality first.';
-      return;
-    }
-    const custom = bound && !PRESET_NAME.test(bound) ? [h('option', { value: bound, selected: true }, `Profile ${bound}`)] : [];
-    select.replaceChildren(h('option', { value: '', selected: !bound }, 'Default, as in Settings'), ...custom,
-      ...offered.map(([preset, label]) => h('option', { value: `${kind}-${preset}`, selected: bound === `${kind}-${preset}` }, label)));
+  const about = h('p', { class: 'hint' });
+  let profiles = {};
+  let fallback = null;
+  const describe = () => { about.textContent = profileSummary(profiles[select.value || fallback] ?? {}); };
+  Promise.all([savedProfiles(), binding(kind, id)]).then(([selection, bound]) => {
+    profiles = selection.profiles ?? {};
+    fallback = selection[kind === 'movie' ? 'movie_profile' : 'episode_profile'];
+    const missing = bound && !profiles[bound] ? [h('option', { value: bound, selected: true }, `${bound} (no longer saved)`)] : [];
+    select.replaceChildren(h('option', { value: '', selected: !bound }, `Default: ${profileLabel(fallback, profiles[fallback])}`), ...missing,
+      ...Object.entries(profiles).map(([name, profile]) => h('option', { value: name, selected: bound === name }, profileLabel(name, profile))));
     select.disabled = false;
     select.dataset.shown = select.value;
+    describe();
   }).catch((error) => { hint.textContent = error.message; hint.classList.add('bad'); });
   select.addEventListener('change', () => {
     select.disabled = true;
+    describe();
     bind(kind, id, select.value || null)
-      .then(() => { select.dataset.shown = select.value; toast('Quality saved for this title'); })
-      .catch((error) => { select.value = select.dataset.shown ?? ''; toast(error.message, 'bad'); })
+      .then(() => { select.dataset.shown = select.value; toast('Profile saved for this title'); })
+      .catch((error) => { select.value = select.dataset.shown ?? ''; describe(); toast(error.message, 'bad'); })
       .finally(() => { select.disabled = false; });
   });
   return h('div', { class: 'setting-list' },
-    h('div', { class: 'setting-row' }, h('div', { class: 'setting-label' }, h('span', {}, 'Quality'), hint), select));
+    h('div', { class: 'setting-row' }, h('div', { class: 'setting-label' }, h('span', {}, 'Quality profile'), about, hint), select));
 }

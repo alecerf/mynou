@@ -200,6 +200,10 @@ impl Accounts {
     }
     pub fn config(&self, root: &Path) -> Config {
         let mut v = config::default_json();
+        v.insert(
+            "selection",
+            mynou::selection::SelectionConfig::default().to_json(),
+        );
         v.insert("listen", "127.0.0.1:0");
         let d = v.get_mut("downloads").unwrap();
         d.insert("enabled", false);
@@ -418,6 +422,7 @@ pub fn request(id: u64, title: &str) -> Request {
         tmdb_id: Some(id),
         source_path: None,
         source_url: None,
+        runtime_minutes: None,
         source_numbering: None,
     }
 }

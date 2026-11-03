@@ -441,8 +441,8 @@ impl Client {
             &meta,
             request.mapping.as_deref(),
         )?;
-        trim_jobs(&self.config, &mut jobs, self.config.download_slots() + 31)?;
-        if jobs.len() >= self.config.download_slots() + 64 {
+        trim_jobs(&self.config, &mut jobs, self.config.resident(31))?;
+        if jobs.len() >= self.config.resident(64) {
             return Err("Native transfer working set is busy; retry later".into());
         }
         let order = self

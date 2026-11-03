@@ -44,6 +44,10 @@ impl Drop for Scratch {
 
 pub fn configuration() -> Value {
     let mut value = config::default_json();
+    value.insert(
+        "selection",
+        mynou::selection::SelectionConfig::default().to_json(),
+    );
     value.insert("listen", "127.0.0.1:0");
     value.insert("workers", 1_u32);
     value.insert("max_attempts", 1_u32);

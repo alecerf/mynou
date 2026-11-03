@@ -66,10 +66,12 @@ pub(crate) fn engine_with(
             source_path: None,
             source_url: None,
             tmdb_id: Some(42),
+            runtime_minutes: None,
             source_numbering: None,
         },
         episodes: (1..=2)
             .map(|episode| Episode {
+                runtime_minutes: None,
                 catalog_id: Some(100 + u64::from(episode)),
                 season: 1,
                 episode,

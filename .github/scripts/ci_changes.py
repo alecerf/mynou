@@ -8,7 +8,7 @@ import subprocess
 KEYS = ("tests", "build", "tooling")
 RUST_CONFIG = {"Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain", "build.rs"}
 CONTROL = {".github/scripts/ci_changes.py", ".github/workflows/changes.yml"}
-RELEASE_FILES = {"Cargo.toml", "Cargo.lock", "docs/releases/unreleased.md"}
+RELEASE_FILES = {"Cargo.toml", "Cargo.lock", "UNRELEASED.md"}
 VERSION_LINE = re.compile(r'[+-]version = "[0-9]+\.[0-9]+\.[0-9]+"')
 
 

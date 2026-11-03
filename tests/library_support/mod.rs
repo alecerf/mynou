@@ -180,6 +180,7 @@ pub fn movie(title: &str) -> Request {
         episode: 0,
         source_path: None,
         source_url: None,
+        runtime_minutes: None,
         source_numbering: None,
         tmdb_id: None,
     }

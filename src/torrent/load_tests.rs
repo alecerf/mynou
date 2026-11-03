@@ -544,9 +544,11 @@ fn torrent_load_report() {
                 .sum::<u64>()
         })
         .sum();
-    let limit = (parallel::CONNECTION_BUDGET / config.download_slots())
-        .max(1)
-        .min(max_peers);
+    let limit = if max_peers == 0 {
+        usize::MAX
+    } else {
+        max_peers
+    };
     let mut completions: Vec<u128> = ready
         .values()
         .map(|at| at.saturating_duration_since(transfers).as_micros())
@@ -620,7 +622,7 @@ fn torrent_load_report() {
     eprintln!("MYNOU_TORRENT_LOAD {}", json::stringify(&report));
     assert_eq!(verified, count);
     assert!(max_running <= config.download_slots());
-    assert!(flows.max_open <= flow_limit.min(config.download_slots() * limit));
+    assert!(flows.max_open <= flow_limit.min(config.download_slots().saturating_mul(limit)));
 }
 
 #[path = "representative_tests.rs"]

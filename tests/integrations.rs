@@ -85,7 +85,12 @@ impl Drop for Fixture {
 }
 
 fn config() -> Config {
-    config::from_json(&config::default_json(), base()).unwrap()
+    let mut value = config::default_json();
+    value.insert(
+        "selection",
+        mynou::selection::SelectionConfig::default().to_json(),
+    );
+    config::from_json(&value, base()).unwrap()
 }
 
 /// Reads a whole watchlist sweep page by page, as the service does in passes.
@@ -144,6 +149,7 @@ fn movie() -> Request {
         episode: 0,
         source_path: None,
         source_url: None,
+        runtime_minutes: None,
         source_numbering: None,
         tmdb_id: Some(42),
     }
@@ -219,7 +225,7 @@ fn tmdb_expands_only_aired_episodes_and_rejects_disabled_catalog() {
                 .any(|h| h.starts_with("Authorization: Bearer "))
         );
         let body = if path.starts_with("/3/tv/42/season/1") {
-            r#"{"episodes":[{"episode_number":1,"air_date":"2020-01-01"},{"episode_number":2,"air_date":"2200-01-01"},
+            r#"{"episodes":[{"episode_number":1,"air_date":"2020-01-01","runtime":47},{"episode_number":2,"air_date":"2200-01-01"},
                 {"episode_number":3,"air_date":null},{"episode_number":4,"air_date":"2020-02-30"}]}"#
         } else if path.starts_with("/3/tv/42") {
             r#"{"first_air_date":"2020-01-01","seasons":[{"season_number":0},{"season_number":1,"air_date":"2020-01-01"},
@@ -243,6 +249,7 @@ fn tmdb_expands_only_aired_episodes_and_rejects_disabled_catalog() {
     assert_eq!(episodes.len(), 1);
     assert_eq!((episodes[0].season, episodes[0].episode), (1, 1));
     assert_eq!(episodes[0].tmdb_id, Some(42));
+    assert_eq!(episodes[0].runtime_minutes, Some(47));
 }
 
 #[test]
@@ -810,4 +817,40 @@ fn catalog_posters_become_data_urls_only_for_jpeg_or_png_images() {
     }
     config.catalog.enabled = false;
     assert!(integrations::catalog_poster_from(&config, &base, "/poster.jpg").is_err());
+}
+
+#[test]
+fn movie_and_direct_episode_requests_keep_catalog_runtime() {
+    let fixture = Fixture::open(|path, _| {
+        let body = if path.starts_with("/3/movie/42") {
+            r#"{"id":42,"title":"Fixture Movie","release_date":"2024-01-01","runtime":123}"#
+        } else if path.starts_with("/3/tv/42/season/1") {
+            r#"{"episodes":[{"id":1002,"episode_number":2,"runtime":48}]}"#
+        } else {
+            panic!("Unexpected path {path}");
+        };
+        (200, body.into())
+    });
+    let mut config = config();
+    config.catalog.enabled = true;
+    config.catalog.url = format!("{}/3", fixture.url);
+    config.catalog.token_env = "MYNOU_TEST_SECRET_A".into();
+    let request = movie();
+    let expanded = integrations::expand(&config, &request).unwrap();
+    assert_eq!(expanded[0].runtime_minutes, Some(123));
+    assert_eq!(
+        Request::from_json(&expanded[0].to_json()).unwrap(),
+        expanded[0]
+    );
+    let mut episode = request.clone();
+    episode.kind = "episode".into();
+    episode.season = 1;
+    episode.episode = 2;
+    let expanded = integrations::expand(&config, &episode).unwrap();
+    assert_eq!(expanded[0].runtime_minutes, Some(48));
+    let mut old = request.to_json();
+    if let mynou::json::Value::Object(fields) = &mut old {
+        fields.remove("runtime_minutes");
+    }
+    assert_eq!(Request::from_json(&old).unwrap().runtime_minutes, None);
 }

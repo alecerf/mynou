@@ -889,7 +889,7 @@ impl Engine {
                     "claim_mismatch"
                 }
                 "IRC: candidate differs from the admitted profile" => "profile_mismatch",
-                "IRC: metadata file exceeds the admitted profile maximum size" => {
+                "IRC: metadata file violates the admitted profile size limits" => {
                     "profile_size_rejected"
                 }
                 "IRC: metadata unavailable or unauthenticated" => "metadata_unavailable",
@@ -989,14 +989,18 @@ impl Engine {
             choose_file(&job, &metadata).map_err(|_| "IRC: metadata file rejected")?;
         let bound = self.title_binding(&job.request)?;
         let (_, profile) = admitted_profile(&self.config, &job, bound.as_deref())?;
-        // Announcement admission cannot establish the selected file's size.
-        // Enforce the decimal-MB per-movie/episode cap on authenticated metadata
-        // before reserving ownership or publishing any acquisition origin.
-        if profile
-            .max_size_mb
-            .is_some_and(|max| file_length > u64::from(max) * 1_000_000)
+        // Check the verified size before reserving ownership.
+        if !profile
+            .assess_with_runtime(
+                &record.announcement.title,
+                &job.request.title,
+                Some(file_length),
+                Some(1),
+                job.request.runtime_minutes,
+            )
+            .accepted
         {
-            return Err("IRC: metadata file exceeds the admitted profile maximum size".into());
+            return Err("IRC: metadata file violates the admitted profile size limits".into());
         }
         let origin = Origin {
             announcement_id: record.id.clone(),
@@ -1112,13 +1116,22 @@ mod tests {
 
     #[test]
     fn routing_rechecks_profile_cap_against_verified_file_length() {
-        for (length, cap, expected) in [
-            (1_000_001, Some(1), "profile_size_rejected"),
-            (1_000_000, Some(1), "routed"),
-            (1_000_001, None, "routed"),
+        for (length, cap, hourly_cap, runtime, expected) in [
+            (1_000_001, Some(1), None, None, "profile_size_rejected"),
+            (1_000_000, Some(1), None, None, "routed"),
+            (1_000_001, None, None, None, "routed"),
+            (1_000_001, None, Some(1), Some(60), "profile_size_rejected"),
+            (1_000_000, None, Some(1), Some(60), "routed"),
+            (2_000_000, None, Some(1), Some(120), "routed"),
+            (2_000_001, None, Some(1), Some(120), "profile_size_rejected"),
+            (2_000_001, None, Some(1), None, "routed"),
         ] {
             let directory = Directory::new();
             let mut settings = config::default_json();
+            settings.insert(
+                "selection",
+                crate::selection::SelectionConfig::default().to_json(),
+            );
             settings.insert("irc", crate::json::parse(r##"{
                 "sources":[{"id":"local","url":"irc://127.0.0.1:1","enabled":true,
                     "channel":"#announces","sender":"bot!user@fixture",
@@ -1138,6 +1151,11 @@ mod tests {
             );
             let mut cfg = config::from_json(&settings, &directory.0).unwrap();
             cfg.selection.profiles.get_mut("any").unwrap().max_size_mb = cap;
+            cfg.selection
+                .profiles
+                .get_mut("any")
+                .unwrap()
+                .max_mb_per_hour = hourly_cap;
             let engine = Engine::open_for_management(cfg).unwrap();
             let job = engine
                 .submit(Request {
@@ -1147,6 +1165,7 @@ mod tests {
                     season: 0,
                     episode: 0,
                     tmdb_id: Some(7),
+                    runtime_minutes: runtime,
                     source_numbering: None,
                     source_path: None,
                     source_url: None,
@@ -1158,7 +1177,15 @@ mod tests {
                 (b"name".to_vec(), B::Bytes(name.as_bytes().to_vec())),
                 (b"length".to_vec(), B::Int(length)),
                 (b"piece length".to_vec(), B::Int(1_048_576)),
-                (b"pieces".to_vec(), B::Bytes(vec![1; 20])),
+                (
+                    b"pieces".to_vec(),
+                    B::Bytes(vec![
+                        1;
+                        usize::try_from((length + 1_048_575) / 1_048_576)
+                            .unwrap()
+                            * 20
+                    ]),
+                ),
             ]));
             let hash: String = crate::crypto::sha1(&bencode::encode(&info))
                 .iter()

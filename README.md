@@ -17,7 +17,6 @@
   <a href="#quick-start">Quick start</a> ·
   <a href="#set-up-your-library">Set up</a> ·
   <a href="#features">Features</a> ·
-  <a href="#documentation">Documentation</a> ·
   <a href="#questions-and-troubleshooting">Help</a>
 </p>
 
@@ -35,8 +34,9 @@
 - **It explains itself.** The release list of a title shows which one Mynou
   would pick and why every other one was rejected; you can also pick one
   yourself.
-- **Careful with your files.** Imports never overwrite, upgrades keep the
-  earlier file, and cancelling a request never deletes anything.
+- **Careful with your files.** Imports never overwrite. An upgrade deletes
+  the file it replaces only once the new one is in place (and in Plex), and
+  cancelling a request never deletes anything.
 
 You bring the network services: Plex, a TMDB account for series, and the
 indexers you want Mynou to search.
@@ -82,9 +82,12 @@ cd "$HOME/Downloads" &&
 ```
 
 Each step runs only if the previous one succeeded, so a failed checksum stops
-before anything is installed. Prefer clicking? Download both files from the
-[Releases page](https://github.com/alecerf/mynou/releases) and follow the
-[macOS guide](docs/macos.md).
+before anything is installed. To also check that the release key signed the
+manifest, download `SHA256SUMS.sig` from the release and
+[`release-key.pub.pem`](release-key.pub.pem) from this repository, then run
+`openssl dgst -sha256 -verify release-key.pub.pem -signature SHA256SUMS.sig SHA256SUMS`.
+Mynou's own updates make both checks. Prefer clicking? Download both files from the
+[Releases page](https://github.com/alecerf/mynou/releases).
 
 **2. Put `mynou` on your `PATH`** (add this line to `~/.zshrc` to keep it):
 
@@ -107,8 +110,8 @@ It keeps its data in `~/Library/Application Support/Mynou` (use `--dir DIR` or
 `MYNOU_HOME` for another place) and creates that folder on first start.
 
 **2. Open <http://127.0.0.1:8787/>**. There is no account or sign-in on your
-Mac. To use Mynou from other computers on your network, see
-[network access](docs/macos.md#network-access).
+Mac. To use Mynou from other computers on your network, open Settings,
+Network.
 
 **3. Open the Settings view** and turn on what you use. Plex and TMDB start
 disabled:
@@ -130,13 +133,11 @@ Saving validates the settings and applies them at once; an invalid change is
 refused and leaves the saved settings untouched. Tokens are kept in Mynou's
 storage and never shown again. Every setting, including release profiles,
 requester accounts and IRC, is also available as JSON in the same view, through
-`GET` and `POST /api/settings`, and `POST /api/secrets`. The [configuration reference](docs/macos.md#configure-mynou)
-lists every setting and the [sources guide](docs/sources.md) shows how to
-describe an indexer.
+`GET` and `POST /api/settings`, and `POST /api/secrets`.
 
 > [!NOTE]
-> For unattended account-login startup, use the
-> [native launchd service](docs/macos-service.md).
+> For unattended account-login startup, install the native launchd service
+> with `mynou service --action install --dir /absolute/data-directory`.
 
 ## Web interface
 
@@ -153,7 +154,7 @@ HTML, CSS and JavaScript embedded in the executable, with no build step.
 By default it listens on a loopback address only and answers pages and
 commands of this Mac, without sign-in, never a page of another site. Settings,
 Network can open it to your local network: other computers then sign in with a
-password ([network access](docs/macos.md#network-access)).
+password.
 
 Everything is also available over HTTP: `/api` routes, and `/healthz` and
 `/readyz` for health.
@@ -181,16 +182,9 @@ Mynou is young and deliberately explicit about its edges:
 - **Every feature has a stated bound**, and exceeding one produces a clear
   error instead of unbounded growth.
 - **Native WireGuard protects the supported torrent paths**, over IPv4 and,
-  when the profile routes it, IPv6. The
-  [macOS installation and migration guide](docs/wireguard-macos-migration.md)
-  explains the traffic boundary, supported NAT-PMP forwarding and preserved
-  state; [controlled evidence and limits](docs/wireguard-acceptance.md) describe
-  what was verified.
+  when the profile routes it, IPv6, with NAT-PMP port forwarding.
 - **The network and cryptographic code is original** and has not had an
   independent review.
-
-The full list lives in [supported formats and limits](docs/limits.md),
-including [what is not supported](docs/limits.md#not-supported).
 
 ## Questions and troubleshooting
 
@@ -215,16 +209,15 @@ enabled.
 <summary><strong>A search finds nothing</strong></summary>
 
 Open **Settings → Indexers** to see the state of each source. Series
-also need the TMDB catalog (enabled in Settings, with its token). The
-[sources guide](docs/sources.md#health-pause-and-probe) explains source health.
+also need the TMDB catalog (enabled in Settings, with its token).
 </details>
 
 <details>
 <summary><strong>Plex does not show an imported title</strong></summary>
 
 Plex and Mynou must see the library at the same paths. If Plex sees it under
-another prefix, add a path mapping as described in
-[Connect Plex](docs/macos.md#connect-plex).
+another prefix, add a path mapping (`plex.path_mappings`) through
+`POST /api/settings`.
 </details>
 
 <details>
@@ -235,35 +228,14 @@ installs it once no request is in progress, after backing up its storage. If
 the new version cannot start, Mynou goes back to the previous version and
 data. `mynou update` installs one now. For your own backups, stop the service
 and copy the data directory (its `state/` and `downloads/` folders, which also
-hold your settings) and your library. The details, including updating by hand,
-are in [Back up and upgrade](docs/macos.md#back-up-and-upgrade).
+hold your settings) and your library.
 </details>
 
 Still stuck? [Open an issue](https://github.com/alecerf/mynou/issues/new/choose),
 without tokens, private paths or media names.
 
-## Documentation
-
-**Using Mynou**
-
-| Guide | What you will find |
-| --- | --- |
-| [Install and configure on macOS](docs/macos.md) | Installation, every setting, Plex, TLS, backups and upgrades |
-| [Sources](docs/sources.md) | Indexers, feed watching and IRC announcements |
-| [Release selection](docs/selection.md) | Profiles that decide which release wins |
-| [Series](docs/series.md) | Following series, the calendar and episode numbering |
-| [Season packs](docs/packs.md) | Packs and videos shared by several episodes |
-| [Library](docs/library.md) | Monitoring and quality upgrades |
-| [Torrent transfers](docs/transfers.md) | Priorities, limits, seeding and cross-seeding |
-| [Plex requester accounts](docs/requesters.md) | Watchlists from several Plex accounts |
-| [Formats and limits](docs/limits.md) | What is supported, bounded and not supported |
-| [Release notes](https://github.com/alecerf/mynou/releases) | What changed in each version |
-
-**Working on Mynou**
-
-- [Architecture](docs/architecture.md): how a request flows through the modules.
-- [CI, releases and download verification](docs/validation.md).
-- [Plex-plus-Mynou cutover qualification](docs/stack-cutover.md).
+What changed in each version is in the
+[release notes](https://github.com/alecerf/mynou/releases).
 
 ## Build from source
 
@@ -281,7 +253,7 @@ Bug reports and feature ideas are welcome through the
 [issue templates](https://github.com/alecerf/mynou/issues/new/choose). Product
 code stays on the Rust standard library: no dependency and no external helper.
 `unsafe` is allowed where the standard library offers no safe way, such as
-processor intrinsics; see [architecture](docs/architecture.md).
+processor intrinsics.
 
 Found a vulnerability? Do not open a public issue; follow
 [SECURITY.md](SECURITY.md).

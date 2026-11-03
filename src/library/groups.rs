@@ -296,24 +296,31 @@ impl Engine {
             title: query.release_title.clone(),
             profile: profile_name.into(),
         };
-        let candidate = profile.assess_with_size(
+        let candidate = profile.assess_with_runtime(
             &release.title,
             &initial[0].request.title,
             release.size_bytes,
             Some(1),
+            initial[0].request.runtime_minutes,
         );
         let current = initial[0].release.as_ref().map(|old| {
-            profile.assess_with_size(
+            profile.assess_with_runtime(
                 &old.title,
                 &initial[0].request.title,
                 old.size_bytes,
                 Some(1),
+                initial[0].request.runtime_minutes,
             )
         });
         if query.action == "replace"
             && (!candidate.accepted
                 || current.as_ref().is_some_and(|old| {
-                    profile.cutoff_reached(old) || old.accepted && candidate.rank <= old.rank
+                    !profile.is_upgrade(
+                        &candidate,
+                        old,
+                        &release.title,
+                        initial[0].release.as_ref().map_or("", |r| r.title.as_str()),
+                    )
                 }))
         {
             return Err("Shared replacement must be an accepted quality improvement below the current cutoff".into());
