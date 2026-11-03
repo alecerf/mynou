@@ -18,8 +18,9 @@ fn old_configuration_uses_fifty_peer_slots_without_changing_transfer_policy() {
 }
 
 #[test]
-fn peer_slots_accept_both_endpoints_and_remain_strict_when_disabled() {
-    for limit in [1_u32, 50, 256] {
+fn peer_slots_accept_no_limit_and_any_count_and_remain_strict_when_disabled() {
+    // Zero means no limit; there is no fixed maximum below the integer range.
+    for limit in [0_u32, 1, 50, 256, 257, 10_000, u32::MAX] {
         let mut value = config::default_json();
         value
             .get_mut("downloads")
@@ -28,7 +29,16 @@ fn peer_slots_accept_both_endpoints_and_remain_strict_when_disabled() {
         let configuration = config::from_json(&value, Path::new(".")).unwrap();
         assert_eq!(configuration.downloads.max_peers, limit as usize);
     }
-    for text in ["0", "257", "-1", "0.5", "null", "true", "[]", "{}", "\"4\""] {
+    for text in [
+        "4294967296",
+        "-1",
+        "0.5",
+        "null",
+        "true",
+        "[]",
+        "{}",
+        "\"4\"",
+    ] {
         let mut value = config::default_json();
         let downloads = value.get_mut("downloads").unwrap();
         downloads.insert("enabled", false);
@@ -41,19 +51,19 @@ fn peer_slots_accept_both_endpoints_and_remain_strict_when_disabled() {
 }
 
 #[test]
-fn native_peer_bounds_are_validated_before_creating_state_or_opening_ports() {
+fn native_peer_limits_have_no_fixed_maximum() {
     let configuration = config::from_json(&config::default_json(), Path::new(".")).unwrap();
     for limit in [0, 257, usize::MAX] {
         let mut downloads = configuration.downloads.clone();
-        // Invalid bounds must fail before inspecting an unavailable state root.
+        // An unavailable state root makes opening fail, but never on the peer limit.
         downloads.state_dir = Path::new("/dev/null/mynou-invalid-peers").to_path_buf();
         downloads.data_dir = downloads.state_dir.join("downloads");
         downloads.max_peers = limit;
         let error = match Client::open(downloads) {
-            Ok(_) => panic!("accepted invalid peer limit {limit}"),
+            Ok(_) => panic!("opened an unavailable state root"),
             Err(error) => error,
         };
-        assert!(error.to_ascii_lowercase().contains("peer"), "{error}");
+        assert!(!error.to_ascii_lowercase().contains("peer"), "{error}");
     }
 }
 
