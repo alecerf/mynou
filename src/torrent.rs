@@ -63,16 +63,21 @@ pub struct DownloadConfig {
     pub max_active: usize,
     /// User seed queue limit; zero imposes no user queue limit.
     pub max_seeding: usize,
+    /// User peer limit per download; zero imposes none, leaving only the
+    /// per-download memory budget.
     pub max_peers: usize,
 }
 impl DownloadConfig {
-    /// Execution remains bounded by the existing global peer resource budget.
-    /// A zero user queue limit does not allocate one thread per retained item.
+    /// Downloads that may run at once: the user limit, or all of them.
     fn download_slots(&self) -> usize {
         match self.max_active {
-            0 => parallel::CONNECTION_BUDGET,
-            n => n.min(parallel::CONNECTION_BUDGET),
+            0 => usize::MAX,
+            n => n,
         }
+    }
+    /// Transfers kept in memory: those that may run, plus a window of `extra`.
+    fn resident(&self, extra: usize) -> usize {
+        self.download_slots().saturating_add(extra)
     }
 }
 #[derive(Clone, Debug)]
@@ -1228,7 +1233,8 @@ fn transfer_value(
     value.insert("seed_queue_limit", config.max_seeding.to_string());
     value.insert(
         "download_execution_slots",
-        config.download_slots().to_string(),
+        // Zero: no limit, as in the settings.
+        config.max_active.to_string(),
     );
     value.insert("failed", job.failed);
     value.insert("queue_position", Json::Number(queue_position as f64));
@@ -1719,9 +1725,6 @@ impl Client {
         policy.validate()?;
         let download = Arc::new(RateGate::new(policy.download_limit_bps)?);
         let upload = Arc::new(RateGate::new(policy.upload_limit_bps)?);
-        if !(1..=256).contains(&config.max_peers) {
-            return Err("Invalid peer connection count".into());
-        }
         mkdir_private(&config.state_dir)?;
         mkdir_private(&config.data_dir)?;
         let listener = network.listen(SocketAddr::from(([0, 0, 0, 0], config.listen_port)))?;
@@ -1945,8 +1948,8 @@ impl Client {
             persist_index(job)?;
             return Ok(job.status.clone());
         }
-        trim_jobs(&self.config, &mut jobs, self.config.download_slots() + 31)?;
-        if jobs.len() >= self.config.download_slots() + 64 {
+        trim_jobs(&self.config, &mut jobs, self.config.resident(31))?;
+        if jobs.len() >= self.config.resident(64) {
             return Err("Native transfer working set is busy; retry later".into());
         }
         let status = DownloadStatus {
@@ -2651,8 +2654,8 @@ impl Client {
     }
     fn load(&self, jobs: &mut BTreeMap<String, Job>, id: &str) -> Result<()> {
         if !jobs.contains_key(id) {
-            trim_jobs(&self.config, jobs, self.config.download_slots() + 31)?;
-            if jobs.len() >= self.config.download_slots() + 64 {
+            trim_jobs(&self.config, jobs, self.config.resident(31))?;
+            if jobs.len() >= self.config.resident(64) {
                 return Err("Native transfer working set is busy; retry later".into());
             }
             let mut job = indexed_job(&self.config, &self.index, id, &self.policy.policy)?;
@@ -3152,12 +3155,12 @@ fn manager_loop(
                     job.seed_queued = queued;
                 }
             }
-            if let Err(error) = trim_jobs(&config, &mut map, config.download_slots() + 32) {
+            if let Err(error) = trim_jobs(&config, &mut map, config.resident(32)) {
                 eprintln!("Could not retire indexed transfer: {error}");
             }
             // Rotation only makes room: when every retained seed fits in the
             // working set, retiring them would only reverify their data.
-            let seeds_waiting = seed_cursor.is_some() || map.len() >= config.download_slots() + 32;
+            let seeds_waiting = seed_cursor.is_some() || map.len() >= config.resident(32);
             if config.seed && seeds_waiting && seed_rotation.elapsed() >= Duration::from_secs(30) {
                 // Retire a bounded seed window. Existing peer/announcement guards
                 // pin jobs until cancellation has drained their activity.
@@ -3210,7 +3213,20 @@ fn manager_loop(
                 .and_then(|mut catalog| {
                     // Refresh the leading window on every scheduling turn so
                     // completed jobs cannot leave holes in priority/FIFO order.
-                    let (mut head, _) = catalog.queue_page(None, config.download_slots() + 32)?;
+                    // Index pages are bounded, so a wide window takes several.
+                    let window = config.resident(32);
+                    let (mut head, mut after) =
+                        catalog.queue_page(None, window.min(crate::inventory::MAX_PAGE_ROWS))?;
+                    while head.len() < window
+                        && let Some(cursor) = after.take()
+                    {
+                        let (page, next) = catalog.queue_page(
+                            Some(&cursor),
+                            (window - head.len()).min(crate::inventory::MAX_PAGE_ROWS),
+                        )?;
+                        head.extend(page);
+                        after = next;
+                    }
                     let (tail, next) = catalog.queue_page(queue_cursor.as_deref(), 32)?;
                     let mut present: BTreeSet<_> = head.iter().cloned().collect();
                     head.extend(tail.into_iter().filter(|id| present.insert(id.clone())));
@@ -3223,7 +3239,7 @@ fn manager_loop(
                 Ok((ids, next)) => {
                     queue_cursor = next;
                     for id in ids {
-                        if map.len() >= config.download_slots() + 64 {
+                        if map.len() >= config.resident(64) {
                             break;
                         }
                         if let std::collections::btree_map::Entry::Vacant(slot) =
@@ -3249,14 +3265,14 @@ fn manager_loop(
                 }
                 Err(error) => eprintln!("Could not read indexed queue: {error}"),
             }
-            if config.seed && map.len() < config.download_slots() + 32 {
+            if config.seed && map.len() < config.resident(32) {
                 let candidates = index
                     .lock()
                     .map_err(|_| "Native transfer index lock is poisoned".to_owned())
                     .and_then(|mut catalog| {
                         catalog.seeds_page(
                             seed_cursor.as_deref(),
-                            (config.download_slots() + 32 - map.len()).min(32),
+                            (config.resident(32) - map.len()).min(32),
                         )
                     });
                 match candidates {
@@ -3342,7 +3358,10 @@ fn manager_loop(
                 let cfg = config.clone();
                 let js = jobs.clone();
                 let policy = policy.clone();
-                workers.push(thread::spawn(move || {
+                let started = id.clone();
+                // With no limit on downloads, the system can refuse a thread:
+                // the download then waits for a later turn.
+                let spawned = thread::Builder::new().spawn(move || {
                     if let Err(error) = download(&cfg, &js, &st, &id, &peer_id, &policy)
                         && let Ok(mut jobs) = js.lock()
                         && let Some(job) = jobs.get_mut(&id)
@@ -3363,7 +3382,17 @@ fn manager_loop(
                     {
                         job.running = false;
                     }
-                }));
+                });
+                match spawned {
+                    Ok(worker) => workers.push(worker),
+                    Err(_) => {
+                        if let Ok(mut jobs) = jobs.lock()
+                            && let Some(job) = jobs.get_mut(&started)
+                        {
+                            job.running = false;
+                        }
+                    }
+                }
             }
         }
         let mut index = 0;
@@ -4363,8 +4392,8 @@ fn serve_peer(
                 .lock()
                 .map_err(|_| "BitTorrent state lock is poisoned")?;
             if !map.contains_key(&id) {
-                trim_jobs(config, &mut map, config.download_slots() + 31)?;
-                if map.len() >= config.download_slots() + 64 {
+                trim_jobs(config, &mut map, config.resident(31))?;
+                if map.len() >= config.resident(64) {
                     return Err("Native transfer working set is busy".into());
                 }
                 let mut job = indexed_job(config, index, &id, &policy.policy)?;
@@ -5347,7 +5376,7 @@ mod control_runtime_tests {
             }
         }
         assert_eq!(seen.len(), RETAINED);
-        assert!(client.jobs.lock().unwrap().len() <= config.download_slots() + 33);
+        assert!(client.jobs.lock().unwrap().len() <= config.resident(33));
         assert_eq!(
             client.aggregate_stats().unwrap(),
             (RETAINED as u64, (RETAINED * (RETAINED + 1) / 2) as u64, 0)

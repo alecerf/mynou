@@ -194,6 +194,7 @@ fn real_magnet_metadata_payload_and_inbound_seeding_use_only_the_native_network(
                 tmdb_id: Some(42),
                 source_url: Some(magnet.clone()),
                 source_path: None,
+                runtime_minutes: None,
                 source_numbering: None,
             })
             .unwrap_or_else(|_| panic!("Synthetic tunnel request submission failed"))

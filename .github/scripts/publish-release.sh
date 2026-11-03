@@ -30,7 +30,7 @@ fi
 notes="$RUNNER_TEMP/mynou-release-notes.md"
 : > "$notes"
 # The release commit deleted the unreleased notes; the changelog is generated from them.
-git -C "$GITHUB_WORKSPACE" show "$GITHUB_SHA^:docs/releases/unreleased.md" \
+git -C "$GITHUB_WORKSPACE" show "$GITHUB_SHA^:UNRELEASED.md" \
   | env -u GH_TOKEN python3 "$GITHUB_WORKSPACE/.github/scripts/releases.py" notes --tag "$tag" >> "$notes"
 if previous=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name 2> /dev/null); then
   printf '\n**Full changelog**: %s/%s/compare/%s...%s\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$previous" "$tag" >> "$notes"
@@ -42,13 +42,11 @@ Mynou $version uses Rust 1.99.1 and the standard library only: no Cargo dependen
 
 This release was built by [GitHub Actions]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID) from a trunk commit that only raised the version of a tree whose dependency, formatting, Clippy, test and native start checks passed on macOS in its pull request, then signed and published with the release key, which never reaches GitHub.
 
-Release assets contain only the native macOS Apple Silicon executable, one \`SHA256SUMS\` manifest and its \`SHA256SUMS.sig\` signature by the release key, made outside GitHub. Verify the signature and the manifest entry before installation; the [verification guide]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$tag/docs/validation.md#verify-release-assets) explains how. GitHub's native source downloads remain available.
+Release assets contain only the native macOS Apple Silicon executable, one \`SHA256SUMS\` manifest and its \`SHA256SUMS.sig\` signature by the release key, made outside GitHub. Verify the signature and the manifest entry before installation; the [quick start]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$tag/README.md#quick-start) explains how. GitHub's native source downloads remain available.
 
-Follow the [macOS guide]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$tag/docs/macos.md). No Apple Developer signature or notarization is supplied. Configure Plex and media sources before synchronization. [Protocol and format limits]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$tag/docs/limits.md) remain explicit.
+Follow the [README]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$tag/README.md). No Apple Developer signature or notarization is supplied. Configure Plex and media sources before synchronization.
 
 Source commit: \`$GITHUB_SHA\`. Release downloads follow repository access settings.
-
-See the [documentation]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$tag/README.md#documentation) for guides, and the [limits]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$tag/docs/limits.md#not-supported) for features Mynou does not provide.
 EOF
 
 # The release names the pushed tag, which must still point at this commit;

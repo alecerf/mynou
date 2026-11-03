@@ -494,14 +494,35 @@ impl Engine {
         control(&self.config, &mut *lock(&self.title_profiles)?, request)
     }
 
+    /// Gives one title its profile, as chosen when it is added: the preview
+    /// and its application happen under one lock, so nothing can change between.
+    pub fn bind_title_profile(&self, title: &Request, profile: &str) -> Result<()> {
+        if self.read_only {
+            return Err("Read-only preview cannot change title profiles".into());
+        }
+        let title = Title::of(title).ok_or("A quality profile needs the title's TMDB identity")?;
+        let mut v = Value::object();
+        v.insert("action", "set");
+        title.insert(&mut v);
+        v.insert("profile", profile);
+        let mut request = ControlRequest::from_json(&v)?;
+        let mut store = lock(&self.title_profiles)?;
+        let plan = control(&self.config, &mut store, &request)?;
+        request.apply = true;
+        request.plan_id = plan
+            .get("plan_id")
+            .and_then(Value::as_str)
+            .map(str::to_owned);
+        control(&self.config, &mut store, &request).map(drop)
+    }
+
     /// Search preview under the title binding of the request, without recording it.
     pub fn search_preview(
         &self,
         request: &Request,
         page: &crate::integrations::SearchPage,
     ) -> Result<Value> {
-        let binding = self.title_binding(request)?;
-        preview(&self.config, request, binding, page)
+        self.search_preview_with(request, page, None)
     }
 }
 

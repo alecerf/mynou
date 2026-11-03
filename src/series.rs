@@ -21,10 +21,14 @@ pub struct Episode {
     pub episode: u32,
     pub title: String,
     pub air_date: Option<String>,
+    pub runtime_minutes: Option<u32>,
 }
 
 impl Episode {
     pub fn validate(&self) -> Result<()> {
+        if self.runtime_minutes == Some(0) {
+            return Err("Invalid episode runtime".into());
+        }
         if self.season > 9999
             || self
                 .catalog_id
@@ -49,6 +53,10 @@ impl Episode {
             self.catalog_id
                 .map_or(Value::Null, |id| Value::Number(id as f64)),
         );
+        value.insert(
+            "runtime_minutes",
+            self.runtime_minutes.map_or(Value::Null, Value::from),
+        );
         value.insert("episode", self.episode);
         value.insert("title", self.title.clone());
         value.insert(
@@ -60,9 +68,26 @@ impl Episode {
     fn from_json(value: &Value) -> Result<Self> {
         fields(
             value,
-            &["catalog_id", "season", "episode", "title", "air_date"],
+            &[
+                "catalog_id",
+                "season",
+                "episode",
+                "title",
+                "air_date",
+                "runtime_minutes",
+            ],
         )?;
         let episode = Self {
+            runtime_minutes: match value.get("runtime_minutes") {
+                None | Some(Value::Null) => None,
+                Some(value) => Some(
+                    value
+                        .as_u64()
+                        .and_then(|n| u32::try_from(n).ok())
+                        .filter(|n| *n > 0)
+                        .ok_or("Invalid episode runtime")?,
+                ),
+            },
             catalog_id: match value.get("catalog_id") {
                 Some(Value::Null) | None => None,
                 Some(value) => Some(value.as_u64().ok_or("Invalid episode catalog identity")?),
@@ -160,6 +185,7 @@ impl Record {
             episode: episode.episode,
             source_path: None,
             source_url: None,
+            runtime_minutes: episode.runtime_minutes,
             source_numbering: episode
                 .catalog_id
                 .and_then(|id| self.numbering.get(&id).map(|choice| choice.source)),

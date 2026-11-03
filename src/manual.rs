@@ -618,6 +618,7 @@ mod tests {
             tmdb_id: None,
             source_path: None,
             source_url: source,
+            runtime_minutes: None,
             source_numbering: None,
         }
     }

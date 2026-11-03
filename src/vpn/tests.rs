@@ -372,6 +372,7 @@ fn real_native_owner_is_used_for_protected_startup_dns_and_revocation() {
             tmdb_id: Some(7),
             source_path: None,
             source_url: None,
+            runtime_minutes: None,
             source_numbering: None,
         },
     );
@@ -424,6 +425,7 @@ fn owner_loss_never_replaces_a_captured_engine_transport_with_direct() {
             tmdb_id: Some(9),
             source_path: None,
             source_url: None,
+            runtime_minutes: None,
             source_numbering: None,
         },
     );
@@ -620,6 +622,7 @@ fn verified_bytes_user_pause_and_priorities_survive_owner_loss_and_a_new_protect
             tmdb_id: Some(13),
             source_path: None,
             source_url: Some(source.to_str().unwrap().into()),
+            runtime_minutes: None,
             source_numbering: None,
         },
     );

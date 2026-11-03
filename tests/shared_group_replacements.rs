@@ -452,6 +452,7 @@ fn exact_range_release_labels_and_a_reached_cutoff_are_enforced_for_the_whole_gr
         .get_mut(&name)
         .unwrap()
         .cutoff_resolution = Some(720);
+    cfg.selection.profiles.get_mut(&name).unwrap().cutoff_source = None;
     let engine = Engine::open_for_management(cfg).unwrap();
     let parents = fixture.parents(&engine);
     baseline(&engine, &parents[0].id);

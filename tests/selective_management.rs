@@ -32,6 +32,7 @@ fn bearer_api_expands_shared_interests_without_undoing_pause_or_modifying_source
         year: 2026,
         season: 1,
         episode: 1,
+        runtime_minutes: None,
         source_numbering: None,
         tmdb_id: Some(42),
         source_path: None,

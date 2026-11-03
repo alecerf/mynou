@@ -786,6 +786,7 @@ mod tests {
             tmdb_id: Some(95480),
             source_path: None,
             source_url: None,
+            runtime_minutes: None,
             source_numbering: None,
         };
         let matches = |t| super::super::routing::title_matches(&request, t);

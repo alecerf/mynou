@@ -65,6 +65,7 @@ fn request(n: u64, season: u32, episode: u32) -> Request {
         source_path: None,
         source_url: None,
         tmdb_id: Some(1000 + n),
+        runtime_minutes: None,
         source_numbering: None,
     }
 }
@@ -73,6 +74,7 @@ fn episode(n: u64, season: u32, number: u32, title_length: usize) -> Episode {
     let base = date::day("2024-01-01").unwrap();
     let offset = i64::from((season * 31 + number * 7) % 300);
     Episode {
+        runtime_minutes: None,
         catalog_id: Some(n * 1_000_000 + u64::from(season) * 1_000 + u64::from(number)),
         season,
         episode: number,
@@ -289,6 +291,7 @@ fn overlapping_scopes_keep_one_identity_per_catalog_episode() {
     moved.plan.request = request(1, 3, 0);
     let shared = *season.anchors.keys().next().unwrap();
     moved.plan.episodes = vec![Episode {
+        runtime_minutes: None,
         catalog_id: Some(shared),
         season: 3,
         episode: 99,
@@ -310,6 +313,7 @@ fn overlapping_scopes_keep_one_identity_per_catalog_episode() {
     let number = *season.anchors.values().next().unwrap();
     taken.plan.request = request(1, number.season, number.episode);
     taken.plan.episodes = vec![Episode {
+        runtime_minutes: None,
         catalog_id: Some(999_999_999),
         season: number.season,
         episode: number.episode,
@@ -1121,4 +1125,22 @@ fn inventory_growth_report() {
         assert_eq!(count, size);
     }
     f.finish();
+}
+
+#[test]
+fn episode_runtime_round_trips_and_old_plans_remain_readable() {
+    let mut ep = episode(1, 1, 1, 0);
+    ep.runtime_minutes = Some(47);
+    assert_eq!(Episode::from_json(&ep.to_json()).unwrap(), ep);
+    let mut old = ep.to_json();
+    if let Value::Object(fields) = &mut old {
+        fields.remove("runtime_minutes");
+    }
+    assert_eq!(Episode::from_json(&old).unwrap().runtime_minutes, None);
+    let mut plan = record(1, 1, 1, 0);
+    plan.plan.episodes[0].runtime_minutes = Some(47);
+    assert_eq!(
+        plan.episode_request(&plan.plan.episodes[0]).runtime_minutes,
+        Some(47)
+    );
 }

@@ -42,6 +42,66 @@ fn unavailable_magnet(suffix: &str) -> String {
 }
 
 #[test]
+fn analysed_french_audio_preserves_recorded_vff_baseline_without_an_upgrade_loop() {
+    for track_language in ["fre", "fra"] {
+        let directory = Directory::new();
+        let title = "Fixture.Movie.2024.1080p.WEB-DL.MULTi.VFF";
+        let indexer = Indexer::open(Value::Array(vec![release(
+            title,
+            100,
+            &unavailable_magnet("same-vff"),
+        )]));
+        let profile = r#"{"resolutions":[2160,1080,720],"cutoff_resolution":1080,"languages":["vff","vfi","fr"],"language_mode":"prefer"}"#;
+        let engine = Engine::open(config(&directory.0, Some(&indexer), profile)).unwrap();
+        let source = directory.0.join("french-audio.mp4");
+        let mut bytes = include_bytes!("fixtures/demo.mp4").to_vec();
+        // The fixed MP4 fixture's last mdhd box belongs to its audio track.
+        let mdhd = bytes.windows(4).rposition(|tag| tag == b"mdhd").unwrap();
+        assert_eq!(bytes[mdhd + 4], 0); // version 0 language offset
+        let language = track_language.bytes().fold(0_u16, |packed, byte| {
+            (packed << 5) | u16::from(byte - b'a' + 1)
+        });
+        bytes[mdhd + 24..mdhd + 26].copy_from_slice(&language.to_be_bytes());
+        fs::write(&source, bytes).unwrap();
+        let mut request = movie("Fixture Movie");
+        request.source_path = Some(source.to_str().unwrap().into());
+        let id = engine.submit(request).unwrap().remove(0).id;
+        let original = run_until(&engine, &id, "ready");
+        let analysed = mynou::media::analyze(Path::new(&original.imports[0])).unwrap();
+        assert_eq!(analysed.audio_streams.len(), 1);
+        assert_eq!(
+            analysed.audio_streams[0].language.as_deref(),
+            Some(track_language)
+        );
+
+        // Imports without a release baseline remain ineligible for upgrades.
+        assert_eq!(queued(&engine.check_upgrades(true).unwrap()), 0);
+        assert_eq!(indexer.calls.load(Ordering::Relaxed), 0);
+        engine.set_baseline(&id, title).unwrap();
+        for tag in ["MULTi.VFF", "FRENCH.VFF", "VF2", "VFI", "VFQ", "FRENCH"] {
+            indexer.replace(Value::Array(vec![release(
+                &format!("Fixture.Movie.2024.1080p.WEB-DL.{tag}"),
+                100,
+                &unavailable_magnet(tag),
+            )]));
+            let report = engine.check_upgrades(true).unwrap();
+            assert_eq!(queued(&report), 0, "{track_language} / {tag}");
+            let entry = &report.get("entries").unwrap().as_array().unwrap()[0];
+            assert_eq!(
+                entry.get("action").and_then(Value::as_str),
+                Some("cutoff_reached")
+            );
+            assert!(children(&engine, &id).is_empty());
+        }
+        let cfg = engine.config.clone();
+        drop(engine);
+        let resumed = Engine::open(cfg).unwrap();
+        assert_eq!(queued(&resumed.check_upgrades(true).unwrap()), 0);
+        assert!(children(&resumed, &id).is_empty());
+    }
+}
+
+#[test]
 fn preview_is_read_only_and_application_is_idempotent_without_hiding_the_import() {
     let directory = Directory::new();
     let candidate_url = format!("http://127.0.0.1:1/upgrade.torrent?token={DOWNLOAD_SECRET}");
@@ -147,7 +207,7 @@ fn seed_count_alone_never_upgrades_and_a_lower_preference_never_replaces_a_bette
 }
 
 #[test]
-fn cutoffs_and_unmonitoring_skip_searches_and_survive_restart() {
+fn cutoffs_allow_revision_searches_and_unmonitoring_survives_restart() {
     let directory = Directory::new();
     let indexer = Indexer::open(Value::Array(vec![release(
         "Fixture.Movie.2024.2160p.WEB-DL.EN",
@@ -160,7 +220,7 @@ fn cutoffs_and_unmonitoring_skip_searches_and_survive_restart() {
     engine.set_baseline(&original.id, BETTER).unwrap();
     let before = indexer.calls.load(Ordering::Relaxed);
     assert_eq!(queued(&engine.check_upgrades(true).unwrap()), 0);
-    assert_eq!(indexer.calls.load(Ordering::Relaxed), before);
+    assert_eq!(indexer.calls.load(Ordering::Relaxed), before + 1);
 
     let second = local_import(&engine, &directory.0, "Another Movie");
     engine
@@ -168,7 +228,7 @@ fn cutoffs_and_unmonitoring_skip_searches_and_survive_restart() {
         .unwrap();
     engine.set_monitored(&second.id, false).unwrap();
     assert_eq!(queued(&engine.check_upgrades(true).unwrap()), 0);
-    assert_eq!(indexer.calls.load(Ordering::Relaxed), before);
+    assert_eq!(indexer.calls.load(Ordering::Relaxed), before + 2);
     let cfg = engine.config.clone();
     drop(engine);
     let resumed = Engine::open(cfg).unwrap();
@@ -180,7 +240,7 @@ fn cutoffs_and_unmonitoring_skip_searches_and_survive_restart() {
     assert!(!second.monitored);
     assert!(second.release.is_some());
     assert_eq!(queued(&resumed.check_upgrades(true).unwrap()), 0);
-    assert_eq!(indexer.calls.load(Ordering::Relaxed), before);
+    assert_eq!(indexer.calls.load(Ordering::Relaxed), before + 3);
 }
 
 #[test]
@@ -548,7 +608,7 @@ fn verified_torrent_with_invalid_media_cannot_replace_the_existing_import() {
 }
 
 #[test]
-fn native_upgrade_imports_a_distinct_version_and_retains_both_files_after_restart() {
+fn native_upgrade_imports_a_distinct_version_and_deletes_the_file_it_replaced() {
     let directory = Directory::new();
     let seeder = Seeder::open(&directory.0);
     let indexer = Indexer::open(Value::Array(vec![release(BETTER, 1, &seeder.magnet)]));
@@ -579,12 +639,12 @@ fn native_upgrade_imports_a_distinct_version_and_retains_both_files_after_restar
         Path::new(&ready.imports[0]).parent(),
         Path::new(&original.imports[0]).parent()
     );
-    for imported in [&original.imports[0], &ready.imports[0]] {
-        assert_eq!(
-            fs::read(imported).unwrap(),
-            include_bytes!("fixtures/demo.mp4")
-        );
-    }
+    // The upgrade replaces the file: the earlier one is gone, not kept beside it.
+    assert!(!Path::new(&original.imports[0]).exists());
+    assert_eq!(
+        fs::read(&ready.imports[0]).unwrap(),
+        include_bytes!("fixtures/demo.mp4")
+    );
     assert_eq!(
         library_ids(&engine).as_slice(),
         std::slice::from_ref(&child.id)
@@ -622,29 +682,7 @@ fn native_upgrade_imports_a_distinct_version_and_retains_both_files_after_restar
             .imports,
         ready.imports
     );
-    // The replaced file is listed as an earlier version, and only it is
-    // deleted; the current version cannot be.
-    let earlier = resumed.earlier_versions().unwrap();
-    let entries = earlier.get("earlier").unwrap().as_array().unwrap();
-    assert_eq!(entries.len(), 1);
-    assert_eq!(
-        entries[0].get("id").and_then(Value::as_str),
-        Some(original.id.as_str())
-    );
-    assert_eq!(
-        entries[0].get("replaced_by").and_then(Value::as_str),
-        Some(ready.id.as_str())
-    );
-    let size = include_bytes!("fixtures/demo.mp4").len() as f64;
-    assert_eq!(earlier.get("bytes").and_then(Value::as_f64), Some(size));
-    assert!(resumed.delete_earlier_version(&ready.id).is_err());
-    let deleted = resumed.delete_earlier_version(&original.id).unwrap();
-    assert_eq!(
-        deleted.get("freed_bytes").and_then(Value::as_f64),
-        Some(size)
-    );
-    assert!(!Path::new(&original.imports[0]).exists());
-    assert!(Path::new(&ready.imports[0]).is_file());
+    // Nothing is left to delete by hand, and the current version cannot be.
     assert!(
         resumed
             .earlier_versions()
@@ -655,6 +693,8 @@ fn native_upgrade_imports_a_distinct_version_and_retains_both_files_after_restar
             .unwrap()
             .is_empty()
     );
+    assert!(resumed.delete_earlier_version(&ready.id).is_err());
+    assert!(Path::new(&ready.imports[0]).is_file());
     assert_eq!(library_ids(&resumed), std::slice::from_ref(&ready.id));
 }
 
@@ -832,6 +872,10 @@ fn plex_must_confirm_the_mapped_new_version_before_an_upgrade_becomes_current() 
         std::slice::from_ref(&original.id)
     );
     assert_eq!(plex.refreshes.load(Ordering::Relaxed), 2);
+    assert!(
+        Path::new(&original.imports[0]).is_file(),
+        "the earlier file stays until Plex has the new one"
+    );
     let relative = Path::new(&imported.imports[0])
         .strip_prefix(&local_root)
         .unwrap();
@@ -840,7 +884,12 @@ fn plex_must_confirm_the_mapped_new_version_before_an_upgrade_becomes_current() 
     plex.paths.lock().unwrap().push(mapped);
     let ready = run_until(&engine, &child.id, "ready");
     assert_eq!(library_ids(&engine), [child.id]);
-    for path in [&original.imports[0], &ready.imports[0]] {
-        assert_eq!(fs::read(path).unwrap(), include_bytes!("fixtures/demo.mp4"));
-    }
+    // Only once Plex has the new version is the earlier file deleted, and
+    // Plex is asked to look again.
+    assert!(!Path::new(&original.imports[0]).exists());
+    assert_eq!(
+        fs::read(&ready.imports[0]).unwrap(),
+        include_bytes!("fixtures/demo.mp4")
+    );
+    assert_eq!(plex.refreshes.load(Ordering::Relaxed), 3);
 }

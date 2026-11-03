@@ -1,7 +1,7 @@
 """Opt-in local torrent comparison. Dependencies, builds and payloads belong in /tmp.
 
 Requires the libtorrent Python binding and optionally an rqbit binary. No public
-swarm, tracker, DHT, UPnP or system VPN is used. See docs/torrent-benchmark.md.
+swarm, tracker, DHT, UPnP or system VPN is used.
 """
 import argparse
 import asyncio

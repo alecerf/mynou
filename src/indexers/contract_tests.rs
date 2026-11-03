@@ -182,6 +182,7 @@ fn movie() -> Request {
         season: 0,
         episode: 0,
         tmdb_id: Some(603),
+        runtime_minutes: None,
         source_numbering: None,
         source_path: None,
         source_url: None,

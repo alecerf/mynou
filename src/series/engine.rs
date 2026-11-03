@@ -21,6 +21,9 @@ const SCAN_PAGE: usize = 50;
 const MAX_SCANNED: usize = 400;
 const MAX_UNREADABLE: usize = 1024;
 const UNREADABLE_RETRY: Duration = Duration::from_secs(3600);
+/// Time kept back from pack searches, so the episodes they do not cover are
+/// still requested in the same pass.
+const PACK_RESERVE: Duration = Duration::from_secs(20);
 
 impl Engine {
     /// One page of summaries ordered by identifier. `next` is the `after`
@@ -326,6 +329,7 @@ impl Engine {
         deadline: Instant,
     ) -> Result<(Record, Vec<Job>)> {
         let mut submitted = Vec::new();
+        let mut pack_errors = Vec::new();
         // A pack search reads indexers and torrent metadata from peers: not
         // while downloads are off.
         let pack_plan = if self.config.series_packs_enabled && self.config.downloads_enabled {
@@ -356,20 +360,48 @@ impl Engine {
                     *seasons.entry(episode.season).or_default() += 1;
                 }
             }
-            for (season, count) in seasons.into_iter().take(4) {
-                if self.stopped.load(Ordering::Acquire) || Instant::now() >= deadline {
+            // As in Sonarr, a pack is for a season that has finished airing: while
+            // a season airs, its new episodes come one by one.
+            seasons.retain(|season, _| {
+                record
+                    .plan
+                    .episodes
+                    .iter()
+                    .filter(|episode| episode.season == *season)
+                    .all(|episode| {
+                        episode
+                            .air_date
+                            .as_deref()
+                            .is_some_and(|day| day <= today.as_str())
+                    })
+            });
+            let packs_until = deadline.checked_sub(PACK_RESERVE).unwrap_or(deadline);
+            let seasons: Vec<_> = seasons.into_iter().take(4).collect();
+            for (index, (season, count)) in seasons.iter().copied().enumerate() {
+                let now = Instant::now();
+                if self.stopped.load(Ordering::Acquire) || now >= packs_until {
                     break;
                 }
                 if count > MAX_SUBMISSIONS.saturating_sub(submitted.len()) {
                     continue;
                 }
+                // Each season left gets its share of the time, so one slow
+                // season leaves the others a chance; unused time carries over.
+                let share = (packs_until - now) / (seasons.len() - index) as u32;
                 let query = crate::pack::AutoPackRequest {
                     season,
                     apply: true,
                     scope_id: None,
                     candidate_id: None,
                 };
-                if let Ok(report) = self.search_packs_before(id, &query, deadline) {
+                let found = self.search_packs_before(id, &query, now + share);
+                if let Err(error) = &found
+                    // No fitting pack is not a problem: the episodes follow.
+                    && error != crate::pack::NO_PACK
+                {
+                    pack_errors.push(format!("Season {season} pack: {error}"));
+                }
+                if let Ok(report) = found {
                     let mut jobs = lock(&self.store)?;
                     if let Some(rows) = report
                         .get("submission")
@@ -391,7 +423,9 @@ impl Engine {
                 }
             }
         }
-        if Instant::now() >= deadline {
+        // Pack searches keep time back, and what follows is local: the
+        // episodes no pack covers are requested even when the packs ran late.
+        if pack_plan.is_none() && Instant::now() >= deadline {
             return Err("Series acquisition exceeded its shared deadline".into());
         }
         // Lock order is series then requests. This bounded commit batch contains no network I/O.
@@ -435,7 +469,18 @@ impl Engine {
             submitted.push(jobs.submit(request)?);
         }
         drop(jobs);
-        if submitted.is_empty() && !schedule {
+        // The catalog refresh cleared the series problem; a failed pack
+        // search is the one left to show, with the episodes requested anyway.
+        if !pack_errors.is_empty() {
+            record.last_error = Some(integrations::report_text(
+                &format!(
+                    "{}; the episodes were requested one by one",
+                    pack_errors.join("; ")
+                ),
+                2048,
+            ));
+        }
+        if submitted.is_empty() && !schedule && pack_errors.is_empty() {
             return Ok((record, submitted));
         }
         let next = store::now().saturating_add(if limited { 60 } else { INTERVAL });

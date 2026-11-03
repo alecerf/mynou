@@ -315,6 +315,7 @@ impl Fixture {
                 episode: if kind == "episode" { 1 } else { 0 },
                 source_path: Some(source_file.to_str().unwrap().into()),
                 source_url: None,
+                runtime_minutes: None,
                 source_numbering: None,
                 tmdb_id: None,
             };
@@ -387,6 +388,7 @@ impl Fixture {
             episode: 0,
             source_path: None,
             source_url: None,
+            runtime_minutes: None,
             source_numbering: None,
             tmdb_id: Some(42),
         };

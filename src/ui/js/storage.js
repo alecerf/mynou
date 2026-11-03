@@ -5,8 +5,8 @@ import { link } from './link.js';
 import { views, itemsOf, titleOf, transferSizes, jobsLoaded } from './store.js';
 import { openRemove } from './transfers.js';
 
-// Storage: what Mynou keeps on disk that the owner may no longer need. Mynou
-// never deletes these by itself; each one goes only when asked here.
+// Storage: what Mynou keeps on disk that the owner may no longer need. An
+// upgrade deletes the version it replaces; what is left goes only when asked here.
 
 const state = { earlier: null, downloads: null, error: null, loading: false, loaded: false };
 

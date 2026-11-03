@@ -6,7 +6,7 @@ import { link } from './link.js';
 import { data, views, itemsOf, currentParam } from './store.js';
 import { INDEXER_ERRORS, plexError, indexerReports } from './sources.js';
 import { signOut } from './session.js';
-import { qualityGroups, readQuality } from './quality.js';
+import { qualityGroups, readQuality, forgetProfiles } from './quality.js';
 
 // The settings document keeps every field; the groups below edit the common
 // ones in place and leave the others untouched. Saving sends the whole document,
@@ -28,8 +28,8 @@ const SETTING_GROUPS = [
   ['downloads', 'Downloads', 'How the built-in client fetches releases.', [
     ['downloads.enabled', 'Download torrents', 'check', { hint: 'Off: nothing downloads or seeds, and requests wait. Titles already in Plex are still found, for example while you move an existing library.' }],
     ['downloads.data_dir', 'Download folder', 'text', { folder: true, hint: 'A full path on the Mac running Mynou.' }],
-    ['downloads.max_active', 'Downloads at once', 'number'],
-    ['downloads.max_peers', 'Peers per download', 'number', { hint: 'More peers, faster downloads. Up to 256, shared between active downloads.' }],
+    ['downloads.max_active', 'Downloads at once', 'number', { zero: 'No limit', hint: 'Empty for no limit: every download runs at once.' }],
+    ['downloads.max_peers', 'Peers per download', 'number', { zero: 'No limit', hint: 'More peers, faster downloads. Empty for no limit: as many as the swarm offers and memory allows.' }],
     ['downloads.download_limit_bps', 'Download speed limit', 'number', { scale: MB, unit: 'MB/s', zero: 'No limit' }],
     ['downloads.upload_limit_bps', 'Upload speed limit', 'number', { scale: MB, unit: 'MB/s', zero: 'No limit' }],
   ]],
@@ -465,6 +465,8 @@ async function applied(reply) {
 async function saveSettings(document) {
   const reply = await link.call('POST', '/api/settings', { settings: document });
   await applied(reply);
+  // Profile pickers elsewhere read the saved profiles again.
+  forgetProfiles();
   await loadSettings();
   toast(reply.restart_required ? 'Settings saved; restart Mynou to apply them' : 'Settings applied');
 }

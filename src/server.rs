@@ -847,13 +847,23 @@ pub(crate) fn route(
         ("POST", "/api/series") => {
             let value = control_body(
                 body,
-                &["request", "include_specials", "future_only", "enabled"],
+                &[
+                    "request",
+                    "include_specials",
+                    "future_only",
+                    "enabled",
+                    "profile",
+                ],
                 false,
             )?;
             let request = Request::from_json(value.get("request").ok_or("request is required")?)?;
             let include_specials = optional_boolean(&value, "include_specials")?.unwrap_or(false);
             let future_only = optional_boolean(&value, "future_only")?.unwrap_or(false);
             let enabled = optional_boolean(&value, "enabled")?.unwrap_or(true);
+            // The quality profile chosen when following, kept before any search.
+            if let Some(profile) = chosen_profile(&value)? {
+                engine.bind_title_profile(&request, profile)?;
+            }
             Ok((
                 201,
                 engine.track_series_with_policy(
@@ -876,11 +886,19 @@ pub(crate) fn route(
             let page = integrations::SearchPage::parse(
                 path.split_once('?').map_or("", |(_, query)| query),
             )?;
-            let value = json::parse(
+            let mut value = json::parse(
                 std::str::from_utf8(body).map_err(|_| "Request body is not valid UTF-8")?,
             )?;
+            // A profile being edited can be tried on real results before it is saved.
+            let draft = match take(&mut value, "profile") {
+                None | Some(Value::Null) => None,
+                Some(profile) => Some(crate::selection::Profile::from_json(&profile)?),
+            };
             let request = Request::from_json(&value)?;
-            Ok((200, engine.search_preview(&request, &page)?))
+            Ok((
+                200,
+                engine.search_preview_with(&request, &page, draft.as_ref())?,
+            ))
         }
         ("GET", path) if path.starts_with("/api/catalog/poster?") => {
             let query = path.split_once('?').map_or("", |(_, query)| query);
@@ -941,10 +959,16 @@ pub(crate) fn route(
             ))
         }
         ("POST", "/api/jobs") => {
-            let v = json::parse(
+            let mut v = json::parse(
                 std::str::from_utf8(body).map_err(|_| "Request body is not valid UTF-8")?,
             )?;
+            let profile = take(&mut v, "profile");
             let request = Request::from_json(&v)?;
+            // The quality profile chosen when adding, kept before the first search.
+            if let Some(profile) = profile {
+                let profile = profile.as_str().ok_or("profile must be a profile name")?;
+                engine.bind_title_profile(&request, profile)?;
+            }
             Ok((
                 201,
                 Value::Array(engine.submit(request)?.iter().map(public_job).collect()),
@@ -1487,6 +1511,23 @@ impl CatalogQuery {
     }
 }
 
+/// Takes one field out of a JSON object, so the rest can be read strictly.
+fn take(value: &mut Value, key: &str) -> Option<Value> {
+    match value {
+        Value::Object(map) => map.remove(key),
+        _ => None,
+    }
+}
+/// The quality profile named when a title is added, if any.
+fn chosen_profile(value: &Value) -> Result<Option<&str>> {
+    match value.get("profile") {
+        None | Some(Value::Null) => Ok(None),
+        Some(profile) => profile
+            .as_str()
+            .map(Some)
+            .ok_or_else(|| "profile must be a profile name".into()),
+    }
+}
 fn optional_boolean(value: &Value, key: &str) -> Result<Option<bool>> {
     value
         .get(key)

@@ -112,6 +112,7 @@ fn movie(title: &str) -> Request {
         episode: 0,
         source_path: None,
         source_url: None,
+        runtime_minutes: None,
         source_numbering: None,
         tmdb_id: None,
     }
@@ -251,7 +252,7 @@ fn score_threshold_and_blocked_terms_reject_high_seed_releases() {
 }
 
 #[test]
-fn custom_score_precedes_resolution_and_seed_preferences() {
+fn resolution_precedes_custom_score_and_seed_preferences() {
     let indexer = Indexer::releases(
         r#"[{"title":"Fixture.Movie.2024.1080p","seeders":500,"url":"magnet:?xt=urn:btih:quality"},
             {"title":"Fixture.Movie.2024.720p.PROPER","seeders":1,"url":"magnet:?xt=urn:btih:chosen"}]"#,
@@ -261,7 +262,7 @@ fn custom_score_precedes_resolution_and_seed_preferences() {
     config.sources.push(indexer.source("fixture"));
     assert_eq!(
         integrations::search(&config, &movie("Fixture Movie")).unwrap(),
-        "magnet:?xt=urn:btih:chosen"
+        "magnet:?xt=urn:btih:quality"
     );
 }
 
@@ -485,7 +486,7 @@ fn malformed_cursors_and_page_limits_are_rejected() {
             "{query} must be refused"
         );
     }
-    let valid = "0".repeat(132);
+    let valid = "0".repeat(140);
     assert_eq!(
         integrations::SearchPage::parse(&format!("after={valid}&limit=200"))
             .unwrap()
@@ -493,15 +494,15 @@ fn malformed_cursors_and_page_limits_are_rejected() {
         200
     );
     assert_eq!(
-        integrations::SearchPage::parse(&format!("after={}", "0".repeat(130))).unwrap_err(),
+        integrations::SearchPage::parse(&format!("after={}", "0".repeat(138))).unwrap_err(),
         "Search: invalid candidate cursor"
     );
     assert_eq!(
-        integrations::SearchPage::parse(&format!("after=02{}", "0".repeat(130))).unwrap_err(),
+        integrations::SearchPage::parse(&format!("after=02{}", "0".repeat(138))).unwrap_err(),
         "Search: invalid candidate cursor"
     );
     assert_eq!(
-        integrations::SearchPage::parse(&format!("after={}", "A".repeat(132))).unwrap_err(),
+        integrations::SearchPage::parse(&format!("after={}", "A".repeat(140))).unwrap_err(),
         "Search: invalid candidate cursor"
     );
     assert_eq!(integrations::SearchPage::parse("").unwrap().limit, 100);
@@ -687,5 +688,62 @@ fn indexer_priority_freeleech_and_seed_overrides_share_search_and_manual_ranking
             .unwrap()
             .len(),
         1
+    );
+}
+
+#[test]
+fn runtime_and_temporary_profile_explain_rank_losses_without_saving() {
+    let indexer = Indexer::releases(
+        r#"[
+        {"title":"Fixture.Movie.2024.1080p.EN","size":4000000000,"seeders":20,"url":"magnet:?xt=urn:btih:en"},
+        {"title":"Fixture.Movie.2024.720p.FR","size":2000000000,"seeders":20,"url":"magnet:?xt=urn:btih:fr"},
+        {"title":"Fixture.Movie.2024.1080p.FR","size":12000000000,"seeders":20,"url":"magnet:?xt=urn:btih:big"}
+    ]"#,
+    );
+    let mut config = configured(
+        r#"{"resolutions":[1080,720],"languages":["fr"],"language_mode":"prefer","max_mb_per_hour":5000}"#,
+    );
+    config.sources.push(indexer.source("fixture"));
+    let mut request = movie("Fixture Movie");
+    request.runtime_minutes = Some(120);
+    let page = integrations::SearchPage::default();
+    let original = integrations::search_report_page(&config, &request, &page).unwrap();
+    assert_eq!(
+        selected_title(&original),
+        Some("Fixture.Movie.2024.1080p.EN")
+    );
+    assert_eq!(
+        original.get("runtime_minutes").and_then(Value::as_u64),
+        Some(120)
+    );
+    let accepted = entries(&original, "accepted");
+    assert_eq!(accepted[0].get("lost_on"), Some(&Value::Null));
+    assert_eq!(
+        accepted[0].get("mb_per_hour").and_then(Value::as_u64),
+        Some(2000)
+    );
+    assert_eq!(
+        accepted[1].get("lost_on").and_then(Value::as_str),
+        Some("resolution")
+    );
+    assert_eq!(
+        entries(&original, "rejected")[0].get("lost_on"),
+        Some(&Value::Null)
+    );
+    let mut profile = config.selection.profile("movie").unwrap().1.clone();
+    profile.language_first = true;
+    let changed =
+        integrations::search_report_page_with(&config, &request, &page, Some(&profile)).unwrap();
+    assert_eq!(selected_title(&changed), Some("Fixture.Movie.2024.720p.FR"));
+    assert_eq!(
+        entries(&changed, "accepted")[1]
+            .get("lost_on")
+            .and_then(Value::as_str),
+        Some("language")
+    );
+    assert!(!config.selection.profile("movie").unwrap().1.language_first);
+    assert_eq!(
+        integrations::search_report_page(&config, &request, &page).unwrap(),
+        original
     );
 }

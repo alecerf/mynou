@@ -40,6 +40,10 @@ pub fn settings(url: &str) -> Value {
 }
 pub fn value(url: &str) -> Value {
     let mut v = config::default_json();
+    v.insert(
+        "selection",
+        mynou::selection::SelectionConfig::default().to_json(),
+    );
     v.insert("listen", "127.0.0.1:0");
     let d = v.get_mut("downloads").unwrap();
     d.insert("enabled", false);

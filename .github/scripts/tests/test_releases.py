@@ -32,7 +32,7 @@ def toml(version="0.22.34", lto="thin"):
 
 
 def release_files(version="0.23.0"):
-    return {"Cargo.toml": "modified", "Cargo.lock": "modified", "docs/releases/unreleased.md": "removed"}
+    return {"Cargo.toml": "modified", "Cargo.lock": "modified", "UNRELEASED.md": "removed"}
 
 
 class ReleasePullRequests(unittest.TestCase):
@@ -52,7 +52,7 @@ class ReleasePullRequests(unittest.TestCase):
         errors = self.check(labels=set(), files={"src/lib.rs": "modified", "Cargo.toml": "modified"})
         self.assertEqual(len(errors), 1)
         self.assertIn("labeled `release`", errors[0])
-        self.assertIn("docs/releases/unreleased.md", errors[0])
+        self.assertIn("UNRELEASED.md", errors[0])
 
     def test_a_release_pr_bumps_the_version(self):
         self.assertEqual(self.check(head=manifest()), ["A PR labeled `release` must bump the package version."])
@@ -62,7 +62,7 @@ class ReleasePullRequests(unittest.TestCase):
     def test_a_release_pr_changes_only_the_version_and_notes(self):
         files = dict(release_files(), **{"src/lib.rs": "modified", ".github/scripts/releases.py": "added"})
         self.assertIn("move these to their own PRs: .github/scripts/releases.py, src/lib.rs", " ".join(self.check(files=files)))
-        # A rename's old path counts: moving product code into docs/releases/ is not a release.
+        # A rename's old path counts: moving product code into the notes is not a release.
         renamed = dict(release_files(), **{"src/old.rs": "removed"})
         self.assertIn("src/old.rs", " ".join(self.check(files=renamed)))
         self.assertIn("nothing in Cargo.toml but the package version",
@@ -70,9 +70,9 @@ class ReleasePullRequests(unittest.TestCase):
 
     def test_a_release_pr_consumes_the_unreleased_notes_in_one_commit_with_a_new_tag(self):
         for files in ({"Cargo.toml": "modified", "Cargo.lock": "modified"},
-                      dict(release_files(), **{"docs/releases/unreleased.md": "modified"}),
-                      dict(release_files(), **{"docs/releases/unreleased.md": "added"})):
-            self.assertIn("deletes docs/releases/unreleased.md", " ".join(self.check(files=files)))
+                      dict(release_files(), **{"UNRELEASED.md": "modified"}),
+                      dict(release_files(), **{"UNRELEASED.md": "added"})):
+            self.assertIn("deletes UNRELEASED.md", " ".join(self.check(files=files)))
         # No per-version notes file may appear: the release ships the deleted notes.
         extra = dict(release_files(), **{"docs/releases/0.23.0.md": "added"})
         self.assertIn("docs/releases/0.23.0.md", " ".join(self.check(files=extra)))
@@ -143,7 +143,7 @@ class FakeAPI:
             return toml()
         if path == "contents/Cargo.toml?ref=" + HEAD:
             return toml(self.head_version)
-        if path in ("contents/docs/releases/unreleased.md?ref=" + BASE, "contents/docs/releases/unreleased.md?ref=" + HEAD):
+        if path in ("contents/UNRELEASED.md?ref=" + BASE, "contents/UNRELEASED.md?ref=" + HEAD):
             return text_file(self.notes)
         if path == "releases/latest":
             return {"tag_name": "v0.22.34", "published_at": releases.stamp(AT - timedelta(days=8))}
@@ -163,13 +163,13 @@ class ReleasePolicyCheck(unittest.TestCase):
     def test_the_check_reads_native_state_and_passes_a_compliant_release(self):
         api = FakeAPI([{"filename": "Cargo.toml", "status": "modified"},
                        {"filename": "Cargo.lock", "status": "modified"},
-                       {"filename": "docs/releases/unreleased.md", "status": "removed"}])
+                       {"filename": "UNRELEASED.md", "status": "removed"}])
         self.assertEqual(releases.check_pr(api, 5, AT), [])
         self.assertIn("git/ref/tags/v0.23.0", api.paths)
 
     def test_renamed_product_code_is_caught_and_work_prs_skip_release_lookups(self):
         api = FakeAPI([{"filename": "Cargo.toml", "status": "modified"},
-                       {"filename": "docs/releases/unreleased.md", "status": "renamed",
+                       {"filename": "UNRELEASED.md", "status": "renamed",
                         "previous_filename": "src/old.rs"}])
         self.assertIn("src/old.rs", " ".join(releases.check_pr(api, 5, AT)))
         work = FakeAPI([{"filename": "src/par2.rs", "status": "modified"}], labels=(), head_version="0.22.34")
@@ -177,14 +177,14 @@ class ReleasePolicyCheck(unittest.TestCase):
         self.assertNotIn("releases/latest", work.paths)
 
     def test_malformed_notes_fail_in_the_work_pr_that_writes_them_and_in_the_release_that_ships_them(self):
-        notes = [{"filename": "docs/releases/unreleased.md", "status": "modified"}]
+        notes = [{"filename": "UNRELEASED.md", "status": "modified"}]
         good = FakeAPI(notes, labels=(), head_version="0.22.34")
         self.assertEqual(releases.check_pr(good, 5, AT), [])
         bad = FakeAPI(notes, labels=(), head_version="0.22.34", notes="## Oops\ntext\n")
-        self.assertIn("docs/releases/unreleased.md: Line 1", " ".join(releases.check_pr(bad, 5, AT)))
+        self.assertIn("UNRELEASED.md: Line 1", " ".join(releases.check_pr(bad, 5, AT)))
         release = FakeAPI([{"filename": "Cargo.toml", "status": "modified"},
                            {"filename": "Cargo.lock", "status": "modified"},
-                           {"filename": "docs/releases/unreleased.md", "status": "removed"}], notes="plain text\n")
+                           {"filename": "UNRELEASED.md", "status": "removed"}], notes="plain text\n")
         self.assertIn("text before the first", " ".join(releases.check_pr(release, 5, AT)))
 
 
@@ -208,7 +208,7 @@ class Changelog(unittest.TestCase):
     def test_a_link_longer_than_the_bound_is_left_alone_and_oversized_notes_are_refused(self):
         far = "/" + "a" * 600
         self.assertIn(f"]({far})", releases.changelog(f"## Added: A\nSee [x]({far}).\n", "alecerf/mynou", "v1.0.0"))
-        big = FakeAPI([{"filename": "docs/releases/unreleased.md", "status": "modified"}], labels=(),
+        big = FakeAPI([{"filename": "UNRELEASED.md", "status": "modified"}], labels=(),
                       head_version="0.22.34", notes="## Added: A\n" + "x" * releases.NOTES_LIMIT)
         self.assertIn("exceeds its bound", " ".join(releases.check_pr(big, 5, AT)))
 
@@ -220,7 +220,7 @@ class Changelog(unittest.TestCase):
         with self.assertRaises(ValueError) as error:
             releases.changelog(notes, "alecerf/mynou", releases.LONGEST_TAG)
         self.assertIn("too many for a release page", str(error.exception))
-        work = FakeAPI([{"filename": "docs/releases/unreleased.md", "status": "modified"}], labels=(),
+        work = FakeAPI([{"filename": "UNRELEASED.md", "status": "modified"}], labels=(),
                        head_version="0.22.34", notes=notes)
         self.assertIn("too many for a release page", " ".join(releases.check_pr(work, 5, AT)))
 
@@ -256,7 +256,7 @@ class TagAPI:
             return toml(self.versions[path.rsplit("=", 1)[1]])
         if path == "git/commits/" + MERGED:
             return {"parents": [{"sha": sha} for sha in self.parents]}
-        if path == "contents/docs/releases/unreleased.md?ref=" + PARENT:
+        if path == "contents/UNRELEASED.md?ref=" + PARENT:
             if self.notes is None:
                 raise APIError(404)
             return text_file(self.notes)

@@ -285,6 +285,7 @@ fn protected_feed_cursors_and_pending_demand_survive_restart_and_loss_without_ho
         source_path: None,
         source_url: None,
         tmdb_id: Some(42),
+        runtime_minutes: None,
         source_numbering: None,
     };
     let id = engine.submit(pending).unwrap()[0].id.clone();
@@ -587,6 +588,7 @@ fn late_search_results_from_an_earlier_source_are_refused_after_owner_loss() {
         source_path: None,
         source_url: None,
         tmdb_id: Some(42),
+        runtime_minutes: None,
         source_numbering: None,
     };
     let search = {

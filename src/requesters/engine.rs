@@ -60,7 +60,7 @@ fn compatible(config: &crate::config::Config, demand: &Demand, job: &Job) -> Res
                 r.profile == capture.profile_name
                     && capture
                         .profile
-                        .assess_with_size(&r.title, &job.request.title, r.size_bytes, Some(1))
+                        .assess_with_runtime(&r.title, &job.request.title, r.size_bytes, Some(1), job.request.runtime_minutes)
                         .accepted
             },
         ))
@@ -1281,11 +1281,13 @@ pub(crate) mod regression_tests {
             tmdb_id: Some(42),
             source_path: None,
             source_url: None,
+            runtime_minutes: None,
             source_numbering: None,
         };
         let episodes = [0, 1]
             .into_iter()
             .map(|season| crate::series::Episode {
+                runtime_minutes: None,
                 catalog_id: Some(10 + u64::from(season)),
                 season,
                 episode: 1,

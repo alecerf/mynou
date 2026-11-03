@@ -443,6 +443,7 @@ fn watchlist_request(item: &Value) -> Result<Option<Request>> {
             .map_err(|_| "Plex: invalid episode")?,
         source_path: None,
         source_url: None,
+        runtime_minutes: None,
         source_numbering: None,
         tmdb_id: if kind == "episode" {
             None
@@ -666,8 +667,32 @@ pub(crate) fn requester_movie_before(
             &fresh_catalog(config, "search/movie", &pairs, deadline)?,
         )?);
     }
+    if request.runtime_minutes.is_none() && config.catalog.enabled {
+        let details = fresh_catalog(
+            config,
+            &format!("movie/{}", request.tmdb_id.ok_or("Missing movie identity")?),
+            &[],
+            deadline,
+        )?;
+        request.runtime_minutes = catalog_runtime(&details);
+    }
     request.validate()?;
     Ok(request)
+}
+
+fn catalog_runtime(value: &Value) -> Option<u32> {
+    integer(value, "runtime")
+        .and_then(|n| u32::try_from(n).ok())
+        .filter(|n| *n > 0)
+}
+
+fn catalog_episode_runtime(value: &Value, episode: u32) -> Option<u32> {
+    value
+        .get("episodes")?
+        .as_array()?
+        .iter()
+        .find(|item| integer(item, "episode_number") == Some(u64::from(episode)))
+        .and_then(catalog_runtime)
 }
 
 fn catalog_json(config: &Config, path: &str, pairs: &[(&str, String)]) -> Result<Value> {
@@ -761,6 +786,9 @@ fn catalog_identity(request: &Request, value: &Value) -> Result<u64> {
 
 /// Titles the TMDB catalog finds for a query: what an operator picks from
 /// before Mynou searches the indexers. `kind` is `movie` or `series`.
+/// Without a `year`, a year typed after the title (`Dune 2021`, `Dune (2021)`)
+/// narrows the search; when nothing matches that, the text is searched as
+/// typed, since some titles end with a number (`Wonder Woman 1984`).
 pub fn catalog_search(config: &Config, kind: &str, text: &str, year: u32) -> Result<Value> {
     let tv = match kind {
         "movie" => false,
@@ -771,6 +799,53 @@ pub fn catalog_search(config: &Config, kind: &str, text: &str, year: u32) -> Res
     if text.is_empty() || text.chars().count() > 128 || text.chars().any(char::is_control) {
         return Err("Catalog: the search text must have 1 to 128 characters".into());
     }
+    let latest = crate::date::today()
+        .get(..4)
+        .and_then(|year| year.parse::<u32>().ok())
+        .map_or(2100, |year| year + 1);
+    let results = match trailing_year(text, latest) {
+        Some((title, typed)) if year == 0 => {
+            let dated = catalog_results(config, kind, tv, title, typed)?;
+            if dated.is_empty() {
+                catalog_results(config, kind, tv, text, 0)?
+            } else {
+                dated
+            }
+        }
+        _ => catalog_results(config, kind, tv, text, year)?,
+    };
+    let mut report = Value::object();
+    report.insert("results", Value::Array(results));
+    Ok(report)
+}
+
+/// The title and year of a search typed as `Dune 2021` or `Dune (2021)`,
+/// when the year is one a title can have (1888 to `latest`). A number alone,
+/// like `1917`, is a title.
+fn trailing_year(text: &str, latest: u32) -> Option<(&str, u32)> {
+    let (title, digits) = match text.strip_suffix(')') {
+        Some(inner) => inner.rsplit_once('(')?,
+        None => text.rsplit_once(char::is_whitespace)?,
+    };
+    let digits = digits.trim();
+    let title = title.trim_end();
+    if title.is_empty() || digits.len() != 4 || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let year = digits
+        .parse()
+        .ok()
+        .filter(|year| (1888..=latest).contains(year))?;
+    Some((title, year))
+}
+
+fn catalog_results(
+    config: &Config,
+    kind: &str,
+    tv: bool,
+    text: &str,
+    year: u32,
+) -> Result<Vec<Value>> {
     let mut pairs = vec![
         ("query", text.to_owned()),
         ("include_adult", "false".to_owned()),
@@ -790,14 +865,11 @@ pub fn catalog_search(config: &Config, kind: &str, text: &str, year: u32) -> Res
         .get("results")
         .and_then(Value::as_array)
         .ok_or("TMDB catalog: missing results")?;
-    let results = items
+    Ok(items
         .iter()
         .take(20)
         .filter_map(|item| catalog_entry(item, kind))
-        .collect();
-    let mut report = Value::object();
-    report.insert("results", Value::Array(results));
-    Ok(report)
+        .collect())
 }
 
 /// The catalog entry of one title by its TMDB identity, in the same shape as
@@ -835,6 +907,14 @@ fn catalog_entry(item: &Value, kind: &str) -> Option<Value> {
     let mut entry = Value::object();
     entry.insert("tmdb_id", Value::Number(id as f64));
     entry.insert("kind", kind);
+    entry.insert(
+        "runtime_minutes",
+        if tv {
+            Value::Null
+        } else {
+            catalog_runtime(item).map_or(Value::Null, Value::from)
+        },
+    );
     entry.insert("title", title);
     if let Some(original) = string(
         item,
@@ -1066,6 +1146,7 @@ fn series_plan_details_before(
                 continue;
             }
             let episode = crate::series::Episode {
+                runtime_minutes: catalog_runtime(item),
                 catalog_id: match item.get("id") {
                     None | Some(Value::Null) => None,
                     Some(value) => Some(
@@ -1142,6 +1223,9 @@ pub(crate) fn irc_catalog_request_before(
     }
     let mut canonical = claim.clone();
     canonical.title = title.into();
+    if movie {
+        canonical.runtime_minutes = catalog_runtime(&details);
+    }
     if !movie {
         let mut scope = retained.map_or_else(|| canonical.clone(), |r| r.plan.request.clone());
         scope.kind = "series".into();
@@ -1162,6 +1246,7 @@ pub(crate) fn irc_catalog_request_before(
                 .iter()
                 .find(|e| e.season == claim.season && e.episode == claim.episode)
                 .ok_or("IRC: claimed episode is absent from the retained canonical scope")?;
+            canonical.runtime_minutes = episode.runtime_minutes;
             if episode.catalog_id.is_none()
                 || episode
                     .air_date
@@ -1179,6 +1264,7 @@ pub(crate) fn irc_catalog_request_before(
                 .iter()
                 .find(|e| e.season == claim.season && e.episode == claim.episode)
                 .ok_or("IRC: claimed episode is absent from the catalog")?;
+            canonical.runtime_minutes = episode.runtime_minutes;
             if episode.catalog_id.is_none()
                 || episode
                     .air_date
@@ -1429,13 +1515,25 @@ pub fn expand(config: &Config, request: &Request) -> Result<Vec<Request>> {
         {
             let id = resolve_catalog(config, request)?;
             expanded.tmdb_id = Some(id);
+            let details = catalog_json(config, &format!("movie/{id}"), &[])?;
+            expanded.runtime_minutes = catalog_runtime(&details);
             if expanded.year == 0 {
-                let details = catalog_json(config, &format!("movie/{id}"), &[])?;
                 expanded.year = string(&details, "release_date")
                     .filter(|s| crate::date::day(s).is_ok())
                     .and_then(|s| s[..4].parse().ok())
                     .unwrap_or(0);
             }
+        }
+        if request.kind == "episode"
+            && config.catalog.enabled
+            && request.source_path.is_none()
+            && request.source_url.is_none()
+            && expanded.runtime_minutes.is_none()
+        {
+            let id = resolve_catalog(config, request)?;
+            expanded.tmdb_id = Some(id);
+            let details = catalog_json(config, &format!("tv/{id}/season/{}", request.season), &[])?;
+            expanded.runtime_minutes = catalog_episode_runtime(&details, request.episode);
         }
         return Ok(vec![expanded]);
     }
@@ -1491,6 +1589,7 @@ pub fn expand(config: &Config, request: &Request) -> Result<Vec<Request>> {
             if date > cutoff.as_str() {
                 continue;
             }
+            let runtime_minutes = catalog_runtime(episode);
             let episode = u32::try_from(
                 integer(episode, "episode_number").ok_or("TMDB catalog: missing episode number")?,
             )
@@ -1509,6 +1608,7 @@ pub fn expand(config: &Config, request: &Request) -> Result<Vec<Request>> {
                 episode,
                 source_path: None,
                 source_url: None,
+                runtime_minutes,
                 source_numbering: None,
                 tmdb_id: Some(id),
             };
@@ -1824,6 +1924,74 @@ impl Candidate {
     }
 }
 
+fn lost_on(
+    candidate: &Candidate,
+    position: &Position,
+    best: &Candidate,
+    best_position: &Position,
+) -> Option<&'static str> {
+    if !candidate.assessment.accepted || candidate.id == best.id {
+        return None;
+    }
+    position_loss(
+        &candidate.assessment.rank,
+        position,
+        &best.assessment.rank,
+        best_position,
+    )
+}
+
+fn position_loss(
+    rank: &crate::selection::Rank,
+    position: &Position,
+    best_rank: &crate::selection::Rank,
+    best_position: &Position,
+) -> Option<&'static str> {
+    for ((key, current), selected) in rank
+        .order()
+        .into_iter()
+        .zip(rank.ordered_values())
+        .zip(best_rank.ordered_values())
+    {
+        if current != selected {
+            return (current < selected).then_some(key);
+        }
+    }
+    for (key, range) in [
+        ("freeleech", 25..26),
+        ("priority", 26..30),
+        ("seeders", 30..38),
+    ] {
+        if position[range.clone()] != best_position[range.clone()] {
+            return (position[range.clone()] > best_position[range]).then_some(key);
+        }
+    }
+    None
+}
+
+/// Rank explanations follow the pack that metadata inspection actually selects.
+#[derive(Default)]
+pub(crate) struct PackRanking(BTreeMap<String, (Position, crate::selection::Rank)>);
+
+impl PackRanking {
+    pub(crate) fn select(&self, report: &mut Value, selected: Option<&str>) {
+        let best = selected.and_then(|id| self.0.get(id));
+        if let Some(Value::Array(rows)) = report.get_mut("accepted") {
+            for row in rows {
+                let loss = best.and_then(|(best_position, best_rank)| {
+                    let id = row.get("id")?.as_str()?;
+                    if Some(id) == selected {
+                        return None;
+                    }
+                    let (position, rank) = self.0.get(id)?;
+                    position_loss(rank, position, best_rank, best_position)
+                });
+                row.insert("lost_on", loss.map_or(Value::Null, Value::from));
+            }
+        }
+    }
+}
+
 pub(crate) fn report_integer(value: u64) -> Value {
     if value <= 9_007_199_254_740_991 {
         Value::Number(value as f64)
@@ -1895,7 +2063,7 @@ fn source_identity(profile_name: &str, source: &Source) -> String {
 /// freeleech, lower indexer priority, more seeders and the candidate ID. Byte order is report order, so a
 /// position doubles as an opaque cursor that reveals no title or URL.
 type Position = [u8; POSITION_BYTES];
-const POSITION_BYTES: usize = 1 + 5 * 4 + 1 + 4 + 8 + 32;
+const POSITION_BYTES: usize = 1 + 6 * 4 + 1 + 4 + 8 + 32;
 const DEFAULT_REPORT_PAGE: usize = 100;
 const MAX_REPORT_PAGE: usize = 200;
 /// Accepted season-pack releases whose metadata a pack search may inspect.
@@ -1912,22 +2080,13 @@ fn position(
     let mut bytes = [0; POSITION_BYTES];
     bytes[0] = u8::from(!assessment.accepted);
     // Descending fields are inverted; the signed score is biased first.
-    for (at, value) in [
-        rank.custom_score.cast_unsigned() ^ 0x8000_0000,
-        rank.resolution,
-        rank.source,
-        rank.codec,
-        rank.language,
-    ]
-    .into_iter()
-    .enumerate()
-    {
+    for (at, value) in rank.ordered_values().into_iter().enumerate() {
         bytes[1 + at * 4..5 + at * 4].copy_from_slice(&(!value).to_be_bytes());
     }
-    bytes[21] = u8::from(!freeleech);
-    bytes[22..26].copy_from_slice(&priority.to_be_bytes());
-    bytes[26..34].copy_from_slice(&(!seeders).to_be_bytes());
-    bytes[34..].copy_from_slice(digest);
+    bytes[25] = u8::from(!freeleech);
+    bytes[26..30].copy_from_slice(&priority.to_be_bytes());
+    bytes[30..38].copy_from_slice(&(!seeders).to_be_bytes());
+    bytes[38..].copy_from_slice(digest);
     bytes
 }
 
@@ -2004,6 +2163,7 @@ impl SearchPage {
 /// accepted pack shortlist are retained, so no total caps the candidates.
 struct SearchResult {
     profile: String,
+    runtime_minutes: Option<u32>,
     total: u64,
     best: Option<(Position, Candidate)>,
     after: Option<Position>,
@@ -2047,11 +2207,30 @@ impl SearchResult {
     fn report(&self) -> Value {
         let mut accepted = Vec::new();
         let mut rejected = Vec::new();
-        for candidate in self.window.values().take(self.limit) {
+        for (position, candidate) in self.window.iter().take(self.limit) {
+            let mut row = candidate.to_json();
+            row.insert(
+                "lost_on",
+                self.best
+                    .as_ref()
+                    .and_then(|(best_position, best)| {
+                        lost_on(candidate, position, best, best_position)
+                    })
+                    .map_or(Value::Null, Value::from),
+            );
+            row.insert(
+                "mb_per_hour",
+                self.runtime_minutes
+                    .filter(|n| *n > 0)
+                    .zip(candidate.release.size)
+                    .map_or(Value::Null, |(minutes, size)| {
+                        Value::Number(size as f64 * 60.0 / (1_000_000.0 * f64::from(minutes)))
+                    }),
+            );
             if candidate.assessment.accepted {
-                accepted.push(candidate.to_json());
+                accepted.push(row);
             } else {
-                rejected.push(candidate.to_json());
+                rejected.push(row);
             }
         }
         let mut indexers = Value::object();
@@ -2063,6 +2242,10 @@ impl SearchResult {
         );
         let mut report = Value::object();
         report.insert("profile", report_text(&self.profile, 128));
+        report.insert(
+            "runtime_minutes",
+            self.runtime_minutes.map_or(Value::Null, Value::from),
+        );
         report.insert("manual_override", false);
         report.insert("indexers", indexers);
         report.insert("accepted", Value::Array(accepted));
@@ -2105,11 +2288,12 @@ fn assess_release(
     options: &crate::indexers::Options,
 ) -> Assessment {
     let pack = pack_episodes.is_some();
-    let mut assessment = profile.assess_with_size(
+    let mut assessment = profile.assess_with_runtime(
         &release.title,
         &request.title,
         release.size,
         pack_episodes.unwrap_or(Some(1)),
+        request.runtime_minutes,
     );
     if (RecordedRelease {
         source_id: None,
@@ -2169,7 +2353,21 @@ fn search_candidates_before(
     request: &Request,
     deadline: Instant,
 ) -> Result<SearchResult> {
-    search_candidates_mode(config, request, deadline, None, None, 0, None)
+    search_candidates_mode(
+        config,
+        request,
+        deadline,
+        None,
+        None,
+        0,
+        SearchChoice::default(),
+    )
+}
+
+#[derive(Default)]
+struct SearchChoice<'a> {
+    candidate: Option<&'a str>,
+    baseline: Option<(&'a Assessment, &'a str)>,
 }
 
 /// A search keeps the selection, at most `limit + 1` report candidates after
@@ -2182,7 +2380,7 @@ fn search_candidates_mode(
     pack_episodes: Option<Option<u32>>,
     after: Option<Position>,
     limit: usize,
-    pick: Option<&str>,
+    choice: SearchChoice<'_>,
 ) -> Result<SearchResult> {
     let pack = pack_episodes.is_some();
     remaining_search_time(deadline)?;
@@ -2204,6 +2402,7 @@ fn search_candidates_mode(
     }
     let mut result = SearchResult {
         profile: profile_name.into(),
+        runtime_minutes: request.runtime_minutes,
         total: 0,
         best: None,
         after,
@@ -2213,7 +2412,7 @@ fn search_candidates_mode(
         packs: BTreeMap::new(),
         configured: config.sources.len(),
         successful: 0,
-        pick: pick.map(str::to_owned),
+        pick: choice.candidate.map(str::to_owned),
         picked: None,
     };
     let mut used_sources = Vec::new();
@@ -2240,14 +2439,21 @@ fn search_candidates_mode(
                     &source.options,
                 );
                 let digest = candidate_digest(profile_name, &source_identity, &release);
+                let mut position = position(
+                    &assessment,
+                    release.seeders,
+                    &digest,
+                    source.options.prefer_freeleech && release.freeleech == Some(true),
+                    source.options.priority,
+                );
+                // Keep a valid revision ahead of qualities the cutoff already excludes.
+                if choice.baseline.is_some_and(|(baseline, title)| {
+                    !profile.is_upgrade(&assessment, baseline, &release.title, title)
+                }) {
+                    position[0] = 1;
+                }
                 result.offer(
-                    position(
-                        &assessment,
-                        release.seeders,
-                        &digest,
-                        source.options.prefer_freeleech && release.freeleech == Some(true),
-                        source.options.priority,
-                    ),
+                    position,
                     Candidate {
                         id: hex(&digest),
                         source: source_label.clone(),
@@ -2306,6 +2512,23 @@ pub fn search_report(config: &Config, request: &Request) -> Result<Value> {
 /// the indexers at that moment; the selection always considers every
 /// candidate, not only those of the page.
 pub fn search_report_page(config: &Config, request: &Request, page: &SearchPage) -> Result<Value> {
+    search_report_page_with(config, request, page, None)
+}
+
+/// A temporary profile affects only this search.
+pub fn search_report_page_with(
+    config: &Config,
+    request: &Request,
+    page: &SearchPage,
+    profile: Option<&Profile>,
+) -> Result<Value> {
+    if let Some(profile) = profile {
+        let profile = Profile::from_json(&profile.to_json())?;
+        let mut config = config.clone();
+        let name = config.selection.profile(&request.kind)?.0.to_owned();
+        config.selection.profiles.insert(name, profile);
+        return search_report_page_with(&config, request, page, None);
+    }
     request.validate()?;
     if page.limit == 0 || page.limit > MAX_REPORT_PAGE {
         return Err("Search: page limit must be 1 to 200".into());
@@ -2318,6 +2541,10 @@ pub fn search_report_page(config: &Config, request: &Request, page: &SearchPage)
         let mut report = Value::object();
         report.insert("profile", Value::Null);
         report.insert("manual_override", true);
+        report.insert(
+            "runtime_minutes",
+            request.runtime_minutes.map_or(Value::Null, Value::from),
+        );
         report.insert("accepted", Value::Array(Vec::new()));
         report.insert("rejected", Value::Array(Vec::new()));
         report.insert("candidate_count", Value::Number(0.0));
@@ -2334,8 +2561,39 @@ pub fn search_report_page(config: &Config, request: &Request, page: &SearchPage)
     let deadline = Instant::now()
         .checked_add(SEARCH_BUDGET)
         .ok_or("Search: invalid search time budget")?;
-    search_candidates_mode(config, request, deadline, None, after, page.limit, None)
-        .map(|result| result.report())
+    let mut request = request.clone();
+    if request.runtime_minutes.is_none()
+        && config.catalog.enabled
+        && let Some(id) = request.tmdb_id
+    {
+        let path = match request.kind.as_str() {
+            "movie" => Some(format!("movie/{id}")),
+            "episode" => Some(format!("tv/{id}/season/{}", request.season)),
+            _ => None,
+        };
+        if let Some(path) = path {
+            request.runtime_minutes = fresh_catalog(config, &path, &[], deadline)
+                .ok()
+                .as_ref()
+                .and_then(|details| {
+                    if request.kind == "episode" {
+                        catalog_episode_runtime(details, request.episode)
+                    } else {
+                        catalog_runtime(details)
+                    }
+                });
+        }
+    }
+    search_candidates_mode(
+        config,
+        &request,
+        deadline,
+        None,
+        after,
+        page.limit,
+        SearchChoice::default(),
+    )
+    .map(|result| result.report())
 }
 
 /// Exact identity and profile preferences precede seed count. A manually
@@ -2383,7 +2641,7 @@ pub(crate) fn search_pack_candidates(
     request: &Request,
     episodes: Option<u32>,
     deadline: Instant,
-) -> Result<(Value, Vec<SelectedRelease>)> {
+) -> Result<(Value, Vec<SelectedRelease>, PackRanking)> {
     let result = search_candidates_mode(
         config,
         request,
@@ -2391,9 +2649,22 @@ pub(crate) fn search_pack_candidates(
         Some(episodes),
         None,
         DEFAULT_REPORT_PAGE,
-        None,
+        SearchChoice::default(),
     )?;
     let report = result.report();
+    let ranking = PackRanking(
+        result
+            .window
+            .iter()
+            .take(result.limit)
+            .map(|(position, candidate)| {
+                (
+                    candidate.id.clone(),
+                    (*position, candidate.assessment.rank.clone()),
+                )
+            })
+            .collect(),
+    );
     let profile = result.profile;
     let candidates = result
         .packs
@@ -2410,7 +2681,7 @@ pub(crate) fn search_pack_candidates(
             id: candidate.id,
         })
         .collect();
-    Ok((report, candidates))
+    Ok((report, candidates, ranking))
 }
 
 /// Selects the same accepted, ranked candidate as search and search_report,
@@ -2442,6 +2713,32 @@ pub fn select_release_before(
     selected_release(search_candidates_before(config, request, deadline)?)
 }
 
+/// Upgrade checks consider every improvement before retaining a diagnostic fallback.
+pub(crate) fn select_upgrade_before(
+    config: &Config,
+    request: &Request,
+    baseline: &Assessment,
+    current_title: &str,
+    deadline: Instant,
+) -> Result<SelectedRelease> {
+    if request.source_path.is_some() || request.source_url.is_some() {
+        return Err("Search: manual sources do not have a verified release assessment".into());
+    }
+    let deadline = deadline.min(Instant::now() + SEARCH_BUDGET);
+    selected_release(search_candidates_mode(
+        config,
+        request,
+        deadline,
+        None,
+        None,
+        0,
+        SearchChoice {
+            baseline: Some((baseline, current_title)),
+            ..SearchChoice::default()
+        },
+    )?)
+}
+
 /// The release an operator chose from a search report, found again by its
 /// candidate ID in a fresh search. A rejected release may be chosen; the
 /// returned flag says whether the profile accepted it.
@@ -2463,7 +2760,18 @@ pub fn pick_release_before(
     if id.len() != 64 || !id.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
         return Err("Search: invalid candidate ID".into());
     }
-    let result = search_candidates_mode(config, request, deadline, None, None, 0, Some(id))?;
+    let result = search_candidates_mode(
+        config,
+        request,
+        deadline,
+        None,
+        None,
+        0,
+        SearchChoice {
+            candidate: Some(id),
+            ..SearchChoice::default()
+        },
+    )?;
     let candidate = result
         .picked
         .ok_or("Search: this release is no longer offered by the indexers; search again")?;
@@ -3278,6 +3586,117 @@ mod tests {
     use super::*;
 
     #[test]
+    fn lost_on_uses_every_rank_key_and_opted_in_tail() {
+        let make = |id: &str| Candidate {
+            release: Release {
+                title: "Example".into(),
+                url: String::new(),
+                seeders: 10,
+                size: None,
+                freeleech: None,
+            },
+            source: String::new(),
+            source_id: String::new(),
+            priority: 25,
+            id: id.into(),
+            assessment: Profile::default().assess("Example", "Example"),
+        };
+        for language_first in [false, true] {
+            for key in [
+                "resolution",
+                "source",
+                "language",
+                "custom_score",
+                "revision",
+                "codec",
+                "freeleech",
+                "priority",
+                "seeders",
+            ] {
+                let mut best = make("best");
+                best.assessment.rank.language_first = language_first;
+                let mut other = best.clone();
+                other.id = "other".into();
+                match key {
+                    "resolution" => best.assessment.rank.resolution = 1,
+                    "source" => best.assessment.rank.source = 1,
+                    "language" => best.assessment.rank.language = 1,
+                    "custom_score" => other.assessment.rank.custom_score = -1,
+                    "revision" => best.assessment.rank.revision = 1,
+                    "codec" => best.assessment.rank.codec = 1,
+                    _ => {}
+                }
+                let best_position =
+                    position(&best.assessment, 10, &[0; 32], key == "freeleech", 25);
+                let other_position = position(
+                    &other.assessment,
+                    if key == "seeders" { 9 } else { 10 },
+                    &[1; 32],
+                    false,
+                    if key == "priority" { 26 } else { 25 },
+                );
+                assert!(best_position < other_position);
+                assert_eq!(
+                    lost_on(&other, &other_position, &best, &best_position),
+                    Some(key)
+                );
+                assert_eq!(lost_on(&best, &best_position, &best, &best_position), None);
+                other.assessment.accepted = false;
+                assert_eq!(
+                    lost_on(&other, &other_position, &best, &best_position),
+                    None
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn cursor_order_matches_rank_comparisons_for_both_orders() {
+        for language_first in [false, true] {
+            let profile = Profile {
+                resolutions: vec![1080, 720],
+                sources: vec!["bluray".into(), "web-dl".into()],
+                languages: vec!["fr".into(), "en".into()],
+                language_mode: Some(crate::selection::LanguageMode::Prefer),
+                language_first,
+                ..Profile::default()
+            };
+            let titles = [
+                "Example 1080p Bluray EN",
+                "Example 720p WEB-DL FR",
+                "Example 1080p WEB-DL FR PROPER",
+                "Example 1080p WEB-DL FR",
+            ];
+            for left in titles {
+                for right in titles {
+                    let a = profile.assess(left, "Example");
+                    let b = profile.assess(right, "Example");
+                    assert_eq!(
+                        a.rank.cmp(&b.rank).reverse(),
+                        position(&a, 1, &[0; 32], false, 25)
+                            .cmp(&position(&b, 1, &[0; 32], false, 25))
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn catalog_search_reads_a_year_after_the_title() {
+        assert_eq!(trailing_year("Dune 2021", 2027), Some(("Dune", 2021)));
+        assert_eq!(trailing_year("Dune (2021)", 2027), Some(("Dune", 2021)));
+        assert_eq!(
+            trailing_year("Le Fabuleux Destin d'Amélie Poulain  2001", 2027),
+            Some(("Le Fabuleux Destin d'Amélie Poulain", 2001))
+        );
+        assert_eq!(trailing_year("1917", 2027), None);
+        assert_eq!(trailing_year("(1917)", 2027), None);
+        assert_eq!(trailing_year("Blade Runner 2049", 2027), None);
+        assert_eq!(trailing_year("Apollo 13", 2027), None);
+        assert_eq!(trailing_year("Dune +202", 2027), None);
+    }
+
+    #[test]
     fn feed_assessment_uses_indexer_seed_gate_and_opt_in_freeleech_preference() {
         let mut config =
             config::from_json(&config::default_json(), std::path::Path::new(".")).unwrap();
@@ -3386,8 +3805,8 @@ mod tests {
         let low = [0; 32];
         let high = [255; 32];
         let ordered = [
-            position(&assessment(true, 7, 0), 0, &low, false, 25),
             position(&assessment(true, -3, 9), u64::MAX, &low, false, 25),
+            position(&assessment(true, 7, 1), 0, &low, false, 25),
             position(&assessment(true, -3, 1), 0, &high, true, 50),
             position(&assessment(true, -3, 1), 0, &high, false, 1),
             position(&assessment(true, -3, 1), 9, &low, false, 25),
@@ -3515,6 +3934,7 @@ mod tests {
             episode: 0,
             source_path: None,
             source_url: None,
+            runtime_minutes: None,
             source_numbering: None,
             tmdb_id: None,
         }

@@ -195,8 +195,7 @@
             <button type="button" data-kind="movie" aria-pressed="true">Films</button>
             <button type="button" data-kind="series" aria-pressed="false">Series</button>
           </div>
-          <label class="finder-field"><svg class="icon" aria-hidden="true"><use href="#i-search"></use></svg><input name="query" type="search" required maxlength="128" placeholder="A title, in any language" aria-label="Title" spellcheck="false"></label>
-          <input name="year" class="finder-year" type="number" inputmode="numeric" min="1888" max="2100" placeholder="Year" aria-label="Year">
+          <label class="finder-field"><svg class="icon" aria-hidden="true"><use href="#i-search"></use></svg><input name="query" type="search" required maxlength="128" placeholder="A title, like Amélie 2001" aria-label="Title" spellcheck="false"></label>
           <button type="submit" class="primary">Search</button>
         </form>
         <p id="catalog-meta" class="catalog-meta" aria-live="polite" hidden></p>
@@ -247,12 +246,12 @@
           <div>
             <p class="eyebrow">Your disk</p>
             <h1 id="t-storage">Make some room.</h1>
-            <p class="intro">Mynou never deletes a file by itself. Here is what it keeps that you may no longer need.</p>
+            <p class="intro">What Mynou keeps on disk that you may no longer need.</p>
           </div>
           <button type="button" id="storage-refresh" class="secondary"><svg class="icon" aria-hidden="true"><use href="#i-sync"></use></svg><span>Look again</span></button>
         </header>
         <dl id="storage-summary" class="summary-strip transfer-tiles storage-tiles"></dl>
-        <div class="section-heading"><div><h2 id="t-earlier">Earlier versions</h2><p>Files an upgrade replaced. The new version stays; Plex is asked to look again.</p></div></div>
+        <div class="section-heading"><div><h2 id="t-earlier">Earlier versions</h2><p>An upgrade deletes the file it replaces once the new one is in place. Files left here were kept: delete them when you want; Plex is asked to look again.</p></div></div>
         <ol id="storage-earlier" class="activity-list" aria-labelledby="t-earlier"></ol>
         <div class="section-heading"><div><h2 id="t-finished">Finished downloads</h2><p>Downloads already in your library, still shared with other people. On the library's own APFS disk, a download and its library copy share their space: removing the download alone frees little.</p></div></div>
         <ol id="storage-downloads" class="activity-list" aria-labelledby="t-finished"></ol>

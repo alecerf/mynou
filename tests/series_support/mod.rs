@@ -182,6 +182,7 @@ pub fn request() -> Request {
         episode: 0,
         source_path: None,
         source_url: None,
+        runtime_minutes: None,
         source_numbering: None,
         tmdb_id: Some(42),
     }
@@ -242,11 +243,13 @@ pub fn synthetic_record(
                 season: 0,
                 episode: 0,
                 tmdb_id: Some(tmdb_id),
+                runtime_minutes: None,
                 source_numbering: None,
                 source_path: None,
                 source_url: None,
             },
             episodes: vec![mynou::series::Episode {
+                runtime_minutes: None,
                 catalog_id: Some(catalog_id),
                 season: 1,
                 episode: 1,

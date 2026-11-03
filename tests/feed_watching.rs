@@ -174,6 +174,7 @@ fn movie(title: &str, id: u64) -> Request {
         season: 0,
         episode: 0,
         tmdb_id: Some(id),
+        runtime_minutes: None,
         source_numbering: None,
         source_path: None,
         source_url: None,
@@ -194,6 +195,10 @@ fn source(id: &str, feed: &Feed, kind: &str) -> Value {
 }
 fn configuration(sources: Vec<Value>) -> Value {
     let mut v = config::default_json();
+    v.insert(
+        "selection",
+        mynou::selection::SelectionConfig::default().to_json(),
+    );
     v.insert("listen", "127.0.0.1:0");
     v.insert("indexers", Value::Array(sources));
     v
@@ -1164,4 +1169,51 @@ fn feed_backlog_uses_source_schedule_and_durable_successful_automatic_passes() {
         "restart resets the volatile polling schedule"
     );
     assert_eq!(value.get("last_completed_pass_at").cloned(), last);
+}
+
+#[test]
+fn cutoff_feed_search_keeps_same_group_revisions_ahead_of_excluded_qualities() {
+    let dir = Directory::new();
+    let feed = Feed::open(rss(&[]));
+    let mut v = library_support::configuration(
+        None,
+        r#"{"resolutions":[2160,1080,720],"cutoff_resolution":1080,"languages":["en"]}"#,
+    );
+    v.insert(
+        "monitoring",
+        json::parse(r#"{"enabled":true,"interval_secs":3600,"max_checks":8}"#).unwrap(),
+    );
+    v.get_mut("downloads").unwrap().insert("enabled", true);
+    v.insert(
+        "indexers",
+        Value::Array(vec![source("feed-a", &feed, "rss")]),
+    );
+    let engine = Engine::open_for_management(config::from_json(&v, &dir.0).unwrap()).unwrap();
+    let original = library_support::local_import(&engine, &dir.0, "Fixture Movie");
+    let original = engine
+        .set_baseline(&original.id, "Fixture.Movie.2024.1080p.WEB-DL.EN-GROUP")
+        .unwrap();
+    engine.feeds_poll(None, true).unwrap();
+    feed.set(rss(&[
+        item("Fixture.Movie.2024.2160p.WEB-DL.EN-OTHER", 2, 100),
+        item("Fixture.Movie.2024.1080p.WEB-DL.EN.REPACK-GROUP", 3, 1),
+    ]));
+    let report = engine.feeds_poll(None, true).unwrap();
+    assert_eq!(num(first(&report), "upgrades_queued"), 1);
+    let children: Vec<_> = lock(&engine.store)
+        .unwrap()
+        .list()
+        .unwrap()
+        .into_iter()
+        .filter(|job| job.upgrade_parent.as_deref() == Some(original.id.as_str()))
+        .collect();
+    assert_eq!(children.len(), 1);
+    assert!(
+        children[0]
+            .release
+            .as_ref()
+            .unwrap()
+            .title
+            .contains("REPACK-GROUP")
+    );
 }

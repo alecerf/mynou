@@ -1,6 +1,6 @@
 """Source-policy inventory of direct torrent networking; Python stdlib only.
 
-A lexical aid to call-graph review, not a proof: see docs/network-inventory.md.
+A lexical aid to call-graph review, not a proof.
 """
 import argparse
 from collections import Counter
@@ -472,7 +472,7 @@ def main(argv=None):
         print(f"{where}{problem}", file=sys.stderr)
     if problems:
         print("Convert the site through the transport context, or update the reviewed "
-              "inventory with --write (docs/network-inventory.md).", file=sys.stderr)
+              "inventory with --write.", file=sys.stderr)
         return 1
     print(f"{sum(counts.values())} inventoried direct sites in {len({k[0] for k in counts})} files match.")
     return 0

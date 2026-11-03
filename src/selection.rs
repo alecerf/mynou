@@ -11,7 +11,9 @@ const MAX_SCORE: i32 = 100_000;
 const RESOLUTIONS: &[u32] = &[480, 576, 720, 1080, 2160];
 const SOURCES: &[&str] = &["cam", "dvd", "hdtv", "webrip", "web-dl", "bluray", "remux"];
 const CODECS: &[&str] = &["h264", "h265", "av1", "vp9"];
-const LANGUAGES: &[&str] = &["en", "fr", "de", "es", "it", "ja", "ko", "zh", "pt", "ru"];
+const LANGUAGES: &[&str] = &[
+    "en", "fr", "vff", "vfq", "vfi", "de", "es", "it", "ja", "ko", "zh", "pt", "ru",
+];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SelectionConfig {
@@ -31,6 +33,73 @@ impl Default for SelectionConfig {
 }
 
 impl SelectionConfig {
+    /// Presets for newly generated configuration files.
+    pub fn fresh() -> Self {
+        let mut profiles = BTreeMap::new();
+        for (name, label, resolutions, cutoff_source, max_mb_per_hour) in [
+            (
+                "compact-1080p",
+                "Compact 1080p",
+                vec![1080, 720],
+                "web-dl",
+                Some(2500),
+            ),
+            (
+                "balanced-1080p",
+                "Balanced 1080p",
+                vec![1080, 720],
+                "bluray",
+                Some(5000),
+            ),
+            ("cinema-4k", "Cinema 4K", vec![2160, 1080], "remux", None),
+        ] {
+            let cinema = name == "cinema-4k";
+            profiles.insert(
+                name.into(),
+                Profile {
+                    label: Some(label.into()),
+                    cutoff_resolution: Some(resolutions[0]),
+                    resolutions,
+                    cutoff_source: Some(cutoff_source.into()),
+                    sources: if cinema {
+                        vec!["remux", "bluray", "web-dl", "webrip", "hdtv", "dvd"]
+                    } else {
+                        vec!["bluray", "web-dl", "webrip", "hdtv", "dvd"]
+                    }
+                    .into_iter()
+                    .map(String::from)
+                    .collect(),
+                    codecs: CODECS.iter().map(|s| (*s).into()).collect(),
+                    language_mode: Some(LanguageMode::Any),
+                    allow_unknown_source: true,
+                    allow_unknown_codec: true,
+                    blocked_terms: vec!["3d".into()],
+                    max_mb_per_hour,
+                    score_rules: if cinema {
+                        vec![
+                            ScoreRule {
+                                terms: vec!["hdr".into()],
+                                score: 10,
+                            },
+                            ScoreRule {
+                                terms: vec!["dolby vision".into()],
+                                score: 10,
+                            },
+                        ]
+                    } else {
+                        Vec::new()
+                    },
+                    ..Profile::default()
+                },
+            );
+        }
+        Self {
+            profiles,
+            movie_profile: "balanced-1080p".into(),
+            episode_profile: "balanced-1080p".into(),
+        }
+    }
+
     pub fn from_json(value: &Value) -> Result<Self> {
         expect_object(value)?;
         let mut config = Self::default();
@@ -85,14 +154,39 @@ impl SelectionConfig {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LanguageMode {
+    Any,
+    Prefer,
+    Require,
+}
+
+impl LanguageMode {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Any => "any",
+            Self::Prefer => "prefer",
+            Self::Require => "require",
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Profile {
+    pub label: Option<String>,
+    pub cutoff_source: Option<String>,
+    /// None derives the mode from the legacy language fields.
+    pub language_mode: Option<LanguageMode>,
+    pub language_first: bool,
+    pub min_mb_per_hour: Option<u32>,
+    pub max_mb_per_hour: Option<u32>,
     /// Ordered from most preferred to least preferred; an empty list is unrestricted.
     pub resolutions: Vec<u32>,
-    /// Reaching this resolution or an earlier preference stops future upgrades.
+    /// The upgrade target also requires the cutoff source and preferred language.
     pub cutoff_resolution: Option<u32>,
     pub sources: Vec<String>,
     pub codecs: Vec<String>,
+    /// Ordered preferences. `fr` matches any French audio; variants match exactly.
     pub languages: Vec<String>,
     pub allow_unknown_resolution: bool,
     pub allow_unknown_source: bool,
@@ -110,6 +204,12 @@ pub struct Profile {
 impl Default for Profile {
     fn default() -> Self {
         Self {
+            label: None,
+            cutoff_source: None,
+            language_mode: None,
+            language_first: false,
+            min_mb_per_hour: None,
+            max_mb_per_hour: None,
             resolutions: Vec::new(),
             cutoff_resolution: None,
             sources: Vec::new(),
@@ -160,6 +260,46 @@ impl Profile {
         {
             return Err("Selection: min_size_mb must not exceed max_size_mb".into());
         }
+        let min_mb_per_hour = size_limit("min_mb_per_hour")?;
+        let max_mb_per_hour = size_limit("max_mb_per_hour")?;
+        if min_mb_per_hour
+            .zip(max_mb_per_hour)
+            .is_some_and(|(min, max)| min > max)
+        {
+            return Err("Selection: min_mb_per_hour must not exceed max_mb_per_hour".into());
+        }
+        let label = match value.get("label") {
+            None => None,
+            Some(Value::String(label))
+                if (1..=64).contains(&label.chars().count())
+                    && !label.trim().is_empty()
+                    && !label.chars().any(char::is_control) =>
+            {
+                Some(label.clone())
+            }
+            _ => {
+                return Err(
+                    "Selection: label must contain 1 to 64 characters without controls".into(),
+                );
+            }
+        };
+        let cutoff_source = match value.get("cutoff_source") {
+            None | Some(Value::Null) => None,
+            Some(Value::String(source)) if SOURCES.contains(&source.as_str()) => {
+                Some(source.clone())
+            }
+            _ => return Err("Selection: unsupported cutoff source".into()),
+        };
+        let language_mode = match value.get("language_mode") {
+            None => None,
+            Some(Value::String(mode)) => Some(match mode.as_str() {
+                "any" => LanguageMode::Any,
+                "prefer" => LanguageMode::Prefer,
+                "require" => LanguageMode::Require,
+                _ => return Err("Selection: unsupported language mode".into()),
+            }),
+            _ => return Err("Selection: language_mode must be any, prefer or require".into()),
+        };
         let mut resolutions = Vec::new();
         for value in list(value, "resolutions")? {
             let resolution = value
@@ -206,6 +346,12 @@ impl Profile {
             score_rules.push(ScoreRule { terms, score });
         }
         Ok(Self {
+            label,
+            cutoff_source,
+            language_mode,
+            language_first: boolean(value, "language_first")?,
+            min_mb_per_hour,
+            max_mb_per_hour,
             resolutions,
             cutoff_resolution,
             min_size_mb,
@@ -231,7 +377,7 @@ impl Profile {
     }
 
     pub fn to_json(&self) -> Value {
-        object([
+        let mut value = object([
             (
                 "resolutions",
                 Value::Array(self.resolutions.iter().copied().map(Value::from).collect()),
@@ -241,6 +387,21 @@ impl Profile {
                 self.cutoff_resolution
                     .map(Value::from)
                     .unwrap_or(Value::Null),
+            ),
+            (
+                "cutoff_source",
+                self.cutoff_source
+                    .clone()
+                    .map_or(Value::Null, Value::String),
+            ),
+            ("language_first", self.language_first.into()),
+            (
+                "min_mb_per_hour",
+                self.min_mb_per_hour.map_or(Value::Null, Value::from),
+            ),
+            (
+                "max_mb_per_hour",
+                self.max_mb_per_hour.map_or(Value::Null, Value::from),
             ),
             ("sources", strings(&self.sources)),
             ("codecs", strings(&self.codecs)),
@@ -278,7 +439,26 @@ impl Profile {
                 self.max_size_mb.map_or(Value::Null, Value::from),
             ),
             ("allow_unknown_size", self.allow_unknown_size.into()),
-        ])
+        ]);
+        if let Some(label) = &self.label {
+            value.insert("label", label.clone());
+        }
+        if let Some(mode) = self.language_mode {
+            value.insert("language_mode", mode.as_str());
+        }
+        value
+    }
+
+    pub fn effective_language_mode(&self) -> LanguageMode {
+        self.language_mode.unwrap_or({
+            if self.languages.is_empty() {
+                LanguageMode::Any
+            } else if self.allow_unknown_language {
+                LanguageMode::Prefer
+            } else {
+                LanguageMode::Require
+            }
+        })
     }
 
     pub fn cutoff_reached(&self, assessment: &Assessment) -> bool {
@@ -293,8 +473,39 @@ impl Profile {
                 .iter()
                 .position(|value| *value == resolution)
         });
+        if self.effective_language_mode() != LanguageMode::Any
+            && self
+                .languages
+                .first()
+                .is_some_and(|target| !matches_language(target, &assessment.attributes.languages))
+        {
+            return false;
+        }
         match (current, cutoff) {
-            (Some(current), Some(cutoff)) => current <= cutoff,
+            (Some(current), Some(cutoff)) => {
+                current < cutoff
+                    || (current == cutoff
+                        && self.cutoff_source.as_ref().is_none_or(|target| {
+                            let Some(source) = assessment.attributes.source.as_ref() else {
+                                return false;
+                            };
+                            if let Some(target) =
+                                self.sources.iter().position(|value| value == target)
+                            {
+                                self.sources
+                                    .iter()
+                                    .position(|value| value == source)
+                                    .is_some_and(|current| current <= target)
+                            } else {
+                                let source_rank = |source: &str| {
+                                    SOURCES.iter().position(|value| *value == source)
+                                };
+                                source_rank(source)
+                                    .zip(source_rank(target))
+                                    .is_some_and(|(current, target)| current >= target)
+                            }
+                        }))
+            }
             _ => false,
         }
     }
@@ -303,8 +514,7 @@ impl Profile {
         self.assess_with_size(release_title, media_title, None, Some(1))
     }
 
-    /// Limits are decimal MB per movie/episode. None means an unknown pack count;
-    /// do not mistake a whole pack for one episode or reject it for missing size.
+    /// Limits are decimal MB per movie or episode.
     pub fn assess_with_size(
         &self,
         release_title: &str,
@@ -312,38 +522,111 @@ impl Profile {
         size: Option<u64>,
         episodes: Option<u32>,
     ) -> Assessment {
+        self.assess_with_runtime(release_title, media_title, size, episodes, None)
+    }
+
+    /// Runtime is the total duration covered by the release.
+    pub fn assess_with_runtime(
+        &self,
+        release_title: &str,
+        media_title: &str,
+        size: Option<u64>,
+        episodes: Option<u32>,
+        runtime_minutes: Option<u32>,
+    ) -> Assessment {
         let mut assessment = self.assess_title(release_title, media_title);
-        let limited =
-            self.min_size_mb.is_some() || self.max_size_mb.is_some() || !self.allow_unknown_size;
-        match episodes.filter(|count| *count > 0) {
-            None if !limited => {}
-            None => assessment
-                .attributes
-                .issues
-                .push("Pack episode count is unknown; size limits were not applied".into()),
-            Some(count) => match size.filter(|size| *size > 0) {
-                None if !self.allow_unknown_size => {
-                    assessment.reasons.push("Release size is unknown".into())
-                }
-                Some(size) => {
-                    let bytes =
-                        |mb: u32| (u64::from(mb) * 1_000_000).saturating_mul(u64::from(count));
-                    if self.min_size_mb.is_some_and(|min| size < bytes(min)) {
-                        assessment
-                            .reasons
-                            .push("Release is smaller than the profile minimum size".into());
+        let hourly = runtime_minutes
+            .filter(|minutes| *minutes > 0)
+            .filter(|_| self.min_mb_per_hour.is_some() || self.max_mb_per_hour.is_some());
+        let (minimum, maximum, units, scale) = if let Some(minutes) = hourly {
+            (
+                self.min_mb_per_hour,
+                self.max_mb_per_hour,
+                Some(minutes),
+                60_u128,
+            )
+        } else {
+            (
+                self.min_size_mb,
+                self.max_size_mb,
+                episodes.filter(|count| *count > 0),
+                1,
+            )
+        };
+        let size = size.filter(|size| *size > 0);
+        if !self.allow_unknown_size && size.is_none() {
+            assessment.reasons.push("Release size is unknown".into());
+        }
+        if episodes.filter(|n| *n > 0).is_none() && maximum.is_some() && !self.allow_unknown_size {
+            assessment
+                .reasons
+                .push("Pack episode count is unknown".into());
+        }
+        match units {
+            None if maximum.is_some() && !self.allow_unknown_size => {}
+            None if minimum.is_some() || maximum.is_some() => {
+                assessment
+                    .attributes
+                    .issues
+                    .push("Pack episode count is unknown; size limits were not applied".into());
+            }
+            Some(units) => {
+                if let Some(size) = size {
+                    let size = u128::from(size) * scale;
+                    let bytes = |mb: u32| u128::from(mb) * 1_000_000 * u128::from(units);
+                    if minimum.is_some_and(|min| size < bytes(min)) {
+                        assessment.reasons.push(
+                            if hourly.is_some() {
+                                "Release is smaller than the profile minimum MB per hour"
+                            } else {
+                                "Release is smaller than the profile minimum size"
+                            }
+                            .into(),
+                        );
                     }
-                    if self.max_size_mb.is_some_and(|max| size > bytes(max)) {
-                        assessment
-                            .reasons
-                            .push("Release is larger than the profile maximum size".into());
+                    if maximum.is_some_and(|max| size > bytes(max)) {
+                        assessment.reasons.push(
+                            if hourly.is_some() {
+                                "Release is larger than the profile maximum MB per hour"
+                            } else {
+                                "Release is larger than the profile maximum size"
+                            }
+                            .into(),
+                        );
                     }
                 }
-                None => {}
-            },
+            }
+            _ => {}
         }
         assessment.accepted = assessment.reasons.is_empty();
         assessment
+    }
+
+    /// Revisions can improve the same group's release even at the cutoff.
+    pub fn is_upgrade(
+        &self,
+        candidate: &Assessment,
+        current: &Assessment,
+        candidate_title: &str,
+        current_title: &str,
+    ) -> bool {
+        if !candidate.accepted {
+            return false;
+        }
+        if !current.accepted {
+            return true;
+        }
+        if !self.cutoff_reached(current) {
+            return candidate.rank > current.rank;
+        }
+        let group = |title: &str| title.rsplit_once('-').map(|(_, group)| tokens(group));
+        candidate.rank.revision > current.rank.revision
+            && candidate.rank > current.rank
+            && candidate.attributes.resolution == current.attributes.resolution
+            && candidate.attributes.source == current.attributes.source
+            && group(candidate_title).is_some_and(|group_name| {
+                !group_name.is_empty() && Some(group_name) == group(current_title)
+            })
     }
 
     fn assess_title(&self, release_title: &str, media_title: &str) -> Assessment {
@@ -409,30 +692,43 @@ impl Profile {
             "codec",
             &mut reasons,
         );
-        let language = if self.languages.is_empty() {
-            0
-        } else if attributes.languages.is_empty() {
-            if !self.allow_unknown_language {
-                reasons.push("Language is unknown".into());
-            }
+        let mode = self.effective_language_mode();
+        let language = if mode == LanguageMode::Any {
             0
         } else {
             let rank = self
                 .languages
                 .iter()
-                .position(|language| attributes.languages.contains(language));
-            if let Some(index) = rank {
-                (self.languages.len() - index) as u32
-            } else {
-                reasons
-                    .push("No explicitly marked audio language is allowed by the profile".into());
-                0
+                .position(|language| matches_language(language, &attributes.languages));
+            if mode == LanguageMode::Require && rank.is_none() {
+                if attributes.languages.is_empty() {
+                    if !self.allow_unknown_language {
+                        reasons.push("Language is unknown".into());
+                    }
+                } else {
+                    reasons.push(
+                        "No explicitly marked audio language is allowed by the profile".into(),
+                    );
+                }
             }
+            rank.map_or(0, |index| (self.languages.len() - index) as u32)
         };
+        let episode_title = episode_title_positions(&suffix);
+        let revision = suffix
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| !episode_title[*index])
+            .map(|(_, token)| match token.as_str() {
+                "proper" | "repack" | "real" => 1,
+                _ => 0,
+            })
+            .sum();
         Assessment {
             accepted: reasons.is_empty(),
             reasons,
             rank: Rank {
+                revision,
+                language_first: self.language_first,
                 custom_score,
                 resolution,
                 source,
@@ -444,18 +740,64 @@ impl Profile {
     }
 }
 
-/// Lexicographic priority: custom score, resolution, source, codec, then language.
-/// Larger values win. Empty preference lists contribute zero, preserving seed ordering.
-#[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+/// Larger values win, using the profile's quality or language order.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Rank {
     pub custom_score: i32,
     pub resolution: u32,
     pub source: u32,
     pub codec: u32,
     pub language: u32,
+    pub revision: u32,
+    pub language_first: bool,
 }
 
 impl Rank {
+    pub fn order(&self) -> [&'static str; 6] {
+        if self.language_first {
+            [
+                "language",
+                "resolution",
+                "source",
+                "custom_score",
+                "revision",
+                "codec",
+            ]
+        } else {
+            [
+                "resolution",
+                "source",
+                "language",
+                "custom_score",
+                "revision",
+                "codec",
+            ]
+        }
+    }
+
+    pub(crate) fn ordered_values(&self) -> [u32; 6] {
+        let score = self.custom_score.cast_unsigned() ^ 0x8000_0000;
+        if self.language_first {
+            [
+                self.language,
+                self.resolution,
+                self.source,
+                score,
+                self.revision,
+                self.codec,
+            ]
+        } else {
+            [
+                self.resolution,
+                self.source,
+                self.language,
+                score,
+                self.revision,
+                self.codec,
+            ]
+        }
+    }
+
     pub fn to_json(&self) -> Value {
         object([
             ("custom_score", number(self.custom_score)),
@@ -463,7 +805,25 @@ impl Rank {
             ("source", self.source.into()),
             ("codec", self.codec.into()),
             ("language", self.language.into()),
+            ("revision", self.revision.into()),
+            (
+                "order",
+                Value::Array(self.order().into_iter().map(Value::from).collect()),
+            ),
         ])
+    }
+}
+
+impl Ord for Rank {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.ordered_values()
+            .cmp(&other.ordered_values())
+            .then(self.language_first.cmp(&other.language_first))
+    }
+}
+impl PartialOrd for Rank {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
     }
 }
 
@@ -667,6 +1027,15 @@ fn capitalize(text: &str) -> String {
         .unwrap_or_default()
 }
 
+/// Scene-language matching is directional: generic French is a profile wildcard,
+/// but a generic French release tag cannot establish a specific dubbing variant.
+fn matches_language(preferred: &str, actual: &[String]) -> bool {
+    actual.iter().any(|language| {
+        language == preferred
+            || (preferred == "fr" && matches!(language.as_str(), "vff" | "vfq" | "vfi"))
+    })
+}
+
 /// Punctuation separates tokens; a phrase never matches part of another word.
 pub(crate) fn tokens(text: &str) -> Vec<String> {
     let mut normalized = String::with_capacity(text.len());
@@ -744,7 +1113,8 @@ fn parse_attributes(
             codecs.insert(codec);
         }
         invalid.codec |= attributes.issues.len() > issues_before;
-        if let Some(language) = language_marker(token) {
+        let marked_languages = language_markers(token);
+        if !marked_languages.is_empty() {
             let previous = index
                 .checked_sub(1)
                 .and_then(|i| suffix.get(i))
@@ -759,7 +1129,7 @@ fn parse_attributes(
             // words of an episode title, it is no language.
             let word = token.len() == 2 && episode_title[index];
             if explicitly_audio || (!subtitle_context && !word) {
-                languages.insert(language);
+                languages.extend(marked_languages.iter().copied());
             }
         }
     }
@@ -773,6 +1143,13 @@ fn parse_attributes(
     attributes.resolution = unique_marker(resolutions, "resolution", &mut attributes.issues);
     attributes.source = unique_marker(sources, "source", &mut attributes.issues).map(str::to_owned);
     attributes.codec = unique_marker(codecs, "codec", &mut attributes.issues).map(str::to_owned);
+    // A generic French tag alongside an explicit dub adds no extra audio track.
+    if languages
+        .iter()
+        .any(|language| matches!(*language, "vff" | "vfq" | "vfi"))
+    {
+        languages.remove("fr");
+    }
     attributes.languages = languages.into_iter().map(str::to_owned).collect();
     (attributes, suffix, invalid)
 }
@@ -910,7 +1287,7 @@ fn episode_title_positions(tokens: &[String]) -> Vec<bool> {
     if tokens[title.clone()].iter().any(|token| {
         token.len() >= 2
             && token.bytes().any(|byte| byte.is_ascii_alphabetic())
-            && language_marker(token).is_none()
+            && language_markers(token).is_empty()
     }) {
         positions[title].fill(true);
     }
@@ -963,13 +1340,13 @@ fn subtitle_language_positions(tokens: &[String]) -> Vec<bool> {
         // Subtitle labels scope a contiguous language list in either direction.
         // Audio and other release markers form boundaries.
         for (next, token) in tokens.iter().enumerate().skip(index + 1) {
-            if language_marker(token).is_none() {
+            if language_markers(token).is_empty() {
                 break;
             }
             positions[next] = true;
         }
         for (previous, token) in tokens[..index].iter().enumerate().rev() {
-            if language_marker(token).is_none() {
+            if language_markers(token).is_empty() {
                 break;
             }
             positions[previous] = true;
@@ -978,31 +1355,35 @@ fn subtitle_language_positions(tokens: &[String]) -> Vec<bool> {
     positions
 }
 
-fn language_marker(token: &str) -> Option<&'static str> {
+fn language_markers(token: &str) -> &'static [&'static str] {
     // VOSTFR, SUBFR, MULTI and DUAL provide no evidence of an audio language.
     if token.starts_with("vost")
         || token.starts_with("sub")
         || token.ends_with("subs")
         || token.ends_with("sdh")
     {
-        return None;
+        return &[];
     }
     let token = token
         .strip_prefix("audio")
         .or_else(|| token.strip_suffix("audio"))
         .unwrap_or(token);
     match token {
-        "en" | "eng" | "english" => Some("en"),
-        "fr" | "fre" | "fra" | "french" | "truefrench" | "vff" | "vfq" | "vfi" => Some("fr"),
-        "de" | "ger" | "deu" | "german" => Some("de"),
-        "es" | "spa" | "esp" | "spanish" => Some("es"),
-        "it" | "ita" | "italian" => Some("it"),
-        "ja" | "jpn" | "jap" | "japanese" => Some("ja"),
-        "ko" | "kor" | "korean" => Some("ko"),
-        "zh" | "chi" | "zho" | "chinese" | "mandarin" | "cantonese" => Some("zh"),
-        "pt" | "por" | "portuguese" => Some("pt"),
-        "ru" | "rus" | "russian" => Some("ru"),
-        _ => None,
+        "en" | "eng" | "english" => &["en"],
+        "fr" | "fre" | "fra" | "french" | "vf" => &["fr"],
+        "vff" | "truefrench" => &["vff"],
+        "vfq" => &["vfq"],
+        "vfi" => &["vfi"],
+        "vf2" => &["vff", "vfq"],
+        "de" | "ger" | "deu" | "german" => &["de"],
+        "es" | "spa" | "esp" | "spanish" => &["es"],
+        "it" | "ita" | "italian" => &["it"],
+        "ja" | "jpn" | "jap" | "japanese" => &["ja"],
+        "ko" | "kor" | "korean" => &["ko"],
+        "zh" | "chi" | "zho" | "chinese" | "mandarin" | "cantonese" => &["zh"],
+        "pt" | "por" | "portuguese" => &["pt"],
+        "ru" | "rus" | "russian" => &["ru"],
+        _ => &[],
     }
 }
 
@@ -1013,6 +1394,317 @@ mod tests {
 
     fn parse_profile(json: &str) -> Profile {
         Profile::from_json(&json::parse(json).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn french_scene_tag_parsing_and_deduplication() {
+        for (tags, expected) in [
+            ("VFF", vec!["vff"]),
+            ("TRUEFRENCH", vec!["vff"]),
+            ("VFQ", vec!["vfq"]),
+            ("VFI", vec!["vfi"]),
+            ("FRENCH", vec!["fr"]),
+            ("FR", vec!["fr"]),
+            ("FRE", vec!["fr"]),
+            ("FRA", vec!["fr"]),
+            ("VF", vec!["fr"]),
+            ("VF2", vec!["vff", "vfq"]),
+            ("MULTi.VFF", vec!["vff"]),
+            ("MULTI.VF2", vec!["vff", "vfq"]),
+            ("MULTi.TRUEFRENCH", vec!["vff"]),
+            ("FRENCH.VFF", vec!["vff"]),
+            ("VFF.TRUEFRENCH.VFF", vec!["vff"]),
+            ("VF2.VFQ.VFF.FRENCH", vec!["vff", "vfq"]),
+            ("VF.VFI", vec!["vfi"]),
+            ("MULTi", vec![]),
+            ("DUAL", vec![]),
+            ("VOSTFR", vec![]),
+            ("VOST.FR", vec![]),
+            ("SUBS.VF2", vec![]),
+            ("VFF.VFQ.SUBS", vec![]),
+            ("VFF.Audio", vec!["vff"]),
+            ("AudioVF2", vec!["vff", "vfq"]),
+            ("VOSTFR.VFF", vec!["vff"]),
+        ] {
+            let assessment = Profile::default().assess(&format!("Example 1080p {tags}"), "Example");
+            assert_eq!(assessment.attributes.languages, expected, "{tags}");
+        }
+    }
+
+    #[test]
+    fn french_profile_matching_is_directional_in_every_mode() {
+        for preferred in ["fr", "vff", "vfq", "vfi"] {
+            for (tag, languages) in [
+                ("FRENCH", vec!["fr"]),
+                ("VFF", vec!["vff"]),
+                ("VFQ", vec!["vfq"]),
+                ("VFI", vec!["vfi"]),
+                ("VF2", vec!["vff", "vfq"]),
+                ("EN", vec!["en"]),
+                ("MULTI", vec![]),
+            ] {
+                let matches = languages.contains(&preferred)
+                    || (preferred == "fr" && !languages.is_empty() && tag != "EN");
+                for mode in ["require", "prefer", "any"] {
+                    let p = parse_profile(&format!(
+                        r#"{{"languages":["{preferred}"],"language_mode":"{mode}"}}"#
+                    ));
+                    let assessment = p.assess(&format!("Example 1080p {tag}"), "Example");
+                    assert_eq!(
+                        assessment.accepted,
+                        mode != "require" || matches,
+                        "{preferred} / {tag} / {mode}"
+                    );
+                    assert_eq!(
+                        assessment.rank.language,
+                        u32::from(mode != "any" && matches),
+                        "{preferred} / {tag} / {mode}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn french_preference_order_cutoff_and_upgrades_share_matching() {
+        let p = parse_profile(
+            r#"{"resolutions":[1080,720],"cutoff_resolution":1080,"languages":["vff","vfi","fr"],"language_mode":"prefer"}"#,
+        );
+        for (tag, rank) in [
+            ("VFF", 3),
+            ("VF2", 3),
+            ("VFI", 2),
+            ("VFQ", 1),
+            ("FR", 1),
+            ("EN", 0),
+        ] {
+            let title = format!("Example 1080p {tag}");
+            let assessment = p.assess(&title, "Example");
+            assert!(assessment.accepted);
+            assert_eq!(assessment.rank.language, rank, "{tag}");
+            assert_eq!(p.cutoff_reached(&assessment), rank == 3, "{tag}");
+            let preferred_title = "Example 1080p VFF";
+            let preferred = p.assess(preferred_title, "Example");
+            assert_eq!(
+                p.is_upgrade(&preferred, &assessment, preferred_title, &title),
+                rank < 3,
+                "{tag}"
+            );
+        }
+        // A wildcard before a variant wins at its earlier position.
+        let wildcard = parse_profile(
+            r#"{"resolutions":[1080],"cutoff_resolution":1080,"languages":["fr","vff"]}"#,
+        );
+        for tag in ["FR", "VFF", "VFQ", "VFI", "VF2"] {
+            let assessment = wildcard.assess(&format!("Example 1080p {tag}"), "Example");
+            assert_eq!(assessment.rank.language, 2, "{tag}");
+            assert!(wildcard.cutoff_reached(&assessment), "{tag}");
+        }
+    }
+
+    #[test]
+    fn french_variant_profiles_round_trip() {
+        let p = parse_profile(
+            r#"{"languages":["vff","vfi","vfq","fr","en","de","es","it","ja","ko","zh","pt","ru"],"language_mode":"require"}"#,
+        );
+        assert_eq!(Profile::from_json(&p.to_json()).unwrap(), p);
+        let config = SelectionConfig {
+            movie_profile: "french".into(),
+            episode_profile: "french".into(),
+            profiles: BTreeMap::from([("french".into(), p)]),
+        };
+        assert_eq!(
+            SelectionConfig::from_json(&config.to_json()).unwrap(),
+            config
+        );
+    }
+
+    #[test]
+    fn language_modes_and_legacy_derivation() {
+        for (mode, unknown, english, french) in [
+            ("any", true, true, true),
+            ("prefer", true, true, true),
+            ("require", false, false, true),
+        ] {
+            let p = parse_profile(&format!(
+                r#"{{"languages":["fr"],"language_mode":"{mode}"}}"#
+            ));
+            assert_eq!(p.assess("Example 1080p", "Example").accepted, unknown);
+            assert_eq!(
+                p.assess("Example 1080p English", "Example").accepted,
+                english
+            );
+            assert_eq!(p.assess("Example 1080p French", "Example").accepted, french);
+            assert_eq!(p.assess("Example English", "Example").rank.language, 0);
+            assert_eq!(Profile::from_json(&p.to_json()).unwrap(), p);
+        }
+        let prefer = parse_profile(r#"{"languages":["fr"],"allow_unknown_language":true}"#);
+        assert_eq!(prefer.effective_language_mode(), LanguageMode::Prefer);
+        assert!(prefer.assess("Example 1080p English", "Example").accepted);
+        assert!(
+            prefer.assess("Example French", "Example").rank
+                > prefer.assess("Example English", "Example").rank
+        );
+        let require = parse_profile(
+            r#"{"languages":["fr"],"language_mode":"require","allow_unknown_language":true}"#,
+        );
+        assert!(require.assess("Example 1080p", "Example").accepted);
+        assert!(!require.assess("Example 1080p English", "Example").accepted);
+        assert_eq!(
+            Profile::default().effective_language_mode(),
+            LanguageMode::Any
+        );
+    }
+
+    #[test]
+    fn rank_orders_quality_language_score_revision_and_codec() {
+        let mut p = parse_profile(
+            r#"{"resolutions":[1080,720],"sources":["bluray","web-dl"],"languages":["fr","en"],"language_mode":"prefer","codecs":["h265","h264"],"score_rules":[{"terms":["bonus"],"score":100}]}"#,
+        );
+        let high = "Example 1080p Bluray EN H264";
+        let french = "Example 720p WEB-DL FR H265 bonus PROPER";
+        assert!(p.assess(high, "Example").rank > p.assess(french, "Example").rank);
+        p.language_first = true;
+        assert!(p.assess(high, "Example").rank < p.assess(french, "Example").rank);
+        assert_eq!(p.assess(high, "Example").rank.order()[0], "language");
+        p.language_mode = Some(LanguageMode::Any);
+        assert!(p.assess(high, "Example").rank > p.assess(french, "Example").rank);
+        let proper = p.assess("Example 1080p Bluray EN H264 PROPER", "Example");
+        let codec = p.assess("Example 1080p Bluray EN H265", "Example");
+        assert!(proper.rank > codec.rank);
+        assert_eq!(
+            proper
+                .rank
+                .to_json()
+                .get("revision")
+                .and_then(Value::as_u64),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn cutoff_source_and_preferred_language_must_be_reached() {
+        let mut p = parse_profile(
+            r#"{"resolutions":[2160,1080,720],"cutoff_resolution":1080,"cutoff_source":"bluray","languages":["fr","en"],"language_mode":"prefer"}"#,
+        );
+        for (title, reached) in [
+            ("Example 720p Remux FR", false),
+            ("Example 1080p WEB-DL FR", false),
+            ("Example 1080p Bluray EN", false),
+            ("Example 1080p Bluray FR", true),
+            ("Example 2160p WEB-DL FR", true),
+            ("Example 1080p FR", false),
+        ] {
+            assert_eq!(
+                p.cutoff_reached(&p.assess(title, "Example")),
+                reached,
+                "{title}"
+            );
+        }
+        p.sources = vec!["web-dl".into(), "bluray".into()];
+        assert!(p.cutoff_reached(&p.assess("Example 1080p WEB-DL FR", "Example")));
+        p.cutoff_source = None;
+        p.sources.clear();
+        assert!(p.cutoff_reached(&p.assess("Example 1080p FR", "Example")));
+        p.language_mode = Some(LanguageMode::Any);
+        assert!(p.cutoff_reached(&p.assess("Example 1080p EN", "Example")));
+    }
+
+    #[test]
+    fn hourly_limits_use_total_runtime_and_fall_back_to_absolute_sizes() {
+        let p = parse_profile(
+            r#"{"min_mb_per_hour":100,"max_mb_per_hour":200,"min_size_mb":10,"max_size_mb":20,"allow_unknown_size":false}"#,
+        );
+        let assess = |size, count, runtime| {
+            p.assess_with_runtime("Example", "Example", size, count, runtime)
+        };
+        assert!(assess(Some(200_000_000), Some(1), Some(120)).accepted);
+        assert!(assess(Some(400_000_000), Some(4), Some(120)).accepted);
+        assert!(!assess(Some(400_000_001), Some(4), Some(120)).accepted);
+        assert!(!assess(Some(199_999_999), Some(4), Some(120)).accepted);
+        assert!(assess(Some(80_000_000), Some(4), None).accepted);
+        assert!(!assess(Some(80_000_001), Some(4), None).accepted);
+        assert!(!assess(None, Some(1), Some(120)).accepted);
+        assert!(!assess(Some(200_000_000), None, Some(120)).accepted);
+        assert!(!assess(Some(u64::MAX), Some(u32::MAX), Some(u32::MAX)).accepted);
+        let permissive = parse_profile(r#"{"max_size_mb":20}"#);
+        assert!(
+            permissive
+                .assess_with_size("Example", "Example", None, None)
+                .accepted
+        );
+    }
+
+    #[test]
+    fn proper_repack_and_real_upgrade_plain_releases_at_cutoff() {
+        let p = parse_profile(r#"{"resolutions":[1080,720],"cutoff_resolution":1080}"#);
+        let plain = "Example 1080p-GROUP";
+        let current = p.assess(plain, "Example");
+        for marker in ["PROPER", "REPACK", "REAL"] {
+            let title = format!("Example 1080p {marker}-GROUP");
+            let revision = p.assess(&title, "Example");
+            assert!(p.is_upgrade(&revision, &current, &title, plain));
+            assert!(!p.is_upgrade(&current, &revision, plain, &title));
+        }
+        let scored = parse_profile(
+            r#"{"resolutions":[1080],"cutoff_resolution":1080,"codecs":["h265","h264"],"score_rules":[{"terms":["proper"],"score":10}]}"#,
+        );
+        let plain_codec = "Example 1080p H265-GROUP";
+        let proper_codec = "Example 1080p H264 PROPER-GROUP";
+        assert!(scored.is_upgrade(
+            &scored.assess(proper_codec, "Example"),
+            &scored.assess(plain_codec, "Example"),
+            proper_codec,
+            plain_codec
+        ));
+        let other = "Example 1080p PROPER-OTHER";
+        assert!(!p.is_upgrade(&p.assess(other, "Example"), &current, other, plain));
+        assert_eq!(
+            p.assess("Example S01E01 Real Life 1080p", "Example")
+                .rank
+                .revision,
+            0
+        );
+        assert_eq!(
+            p.assess("Example 1080p REAL PROPER", "Example")
+                .rank
+                .revision,
+            2
+        );
+    }
+
+    #[test]
+    fn new_profile_fields_are_validated_and_presets_round_trip() {
+        for invalid in [
+            r#"{"label":""}"#,
+            r#"{"label":null}"#,
+            r#"{"cutoff_source":"web"}"#,
+            r#"{"language_mode":"sometimes"}"#,
+            r#"{"language_first":1}"#,
+            r#"{"min_mb_per_hour":0}"#,
+            r#"{"max_mb_per_hour":1000001}"#,
+            r#"{"min_mb_per_hour":20,"max_mb_per_hour":10}"#,
+        ] {
+            assert!(
+                Profile::from_json(&json::parse(invalid).unwrap()).is_err(),
+                "{invalid}"
+            );
+        }
+        assert!(Profile::from_json(&object([("label", "x".repeat(65).into())])).is_err());
+        let fresh = SelectionConfig::fresh();
+        assert_eq!(SelectionConfig::from_json(&fresh.to_json()).unwrap(), fresh);
+        assert_eq!(fresh.movie_profile, "balanced-1080p");
+        assert_eq!(fresh.profiles["compact-1080p"].max_mb_per_hour, Some(2500));
+        assert!(
+            fresh
+                .profiles
+                .values()
+                .all(|p| p.max_size_mb.is_none() && p.blocked_terms == ["3d"])
+        );
+        assert_eq!(
+            SelectionConfig::from_json(&json::parse("{}").unwrap()).unwrap(),
+            SelectionConfig::default()
+        );
     }
 
     #[test]
@@ -1045,15 +1737,14 @@ mod tests {
         assert!(!assess(Some(299_999_999), Some(3)).accepted);
         assert!(!assess(Some(600_000_001), Some(3)).accepted);
         let unknown = assess(None, None);
-        assert!(unknown.accepted);
+        assert!(!unknown.accepted);
         assert!(
             unknown
-                .attributes
-                .issues
+                .reasons
                 .iter()
                 .any(|s| s.contains("episode count is unknown"))
         );
-        assert!(assess(Some(1), None).accepted);
+        assert!(!assess(Some(1), None).accepted);
         assert_eq!(
             assess(Some(150_000_000), Some(1)).rank,
             assess(Some(180_000_000), Some(1)).rank
@@ -1162,7 +1853,9 @@ mod tests {
         );
         assert!(!french.assess("Example ENG VOSTFR", "Example").accepted);
         // A word of an episode title is no language; after the markers it is.
-        let english = parse_profile(r#"{"languages":["en"],"allow_unknown_language":true}"#);
+        let english = parse_profile(
+            r#"{"languages":["en"],"language_mode":"require","allow_unknown_language":true}"#,
+        );
         assert!(
             english
                 .assess("Example S01E05 Fake It 1080p WEB-DL", "Example")
@@ -1225,7 +1918,7 @@ mod tests {
         );
         assert!(profile.assess("Example 2026", "Example").accepted);
         assert!(!profile.assess("Example 720p", "Example").accepted);
-        assert!(!profile.assess("Example 1080p FRE", "Example").accepted);
+        assert!(profile.assess("Example 1080p FRE", "Example").accepted);
         let strict = parse_profile(r#"{"resolutions":[1080]}"#);
         assert!(!strict.assess("Example 2026", "Example").accepted);
     }
@@ -1244,7 +1937,7 @@ mod tests {
             "Example",
         );
         assert_eq!(scored.rank.custom_score, 10);
-        assert!(scored.rank > preferred.rank);
+        assert!(scored.rank < preferred.rank);
         assert_eq!(
             profile
                 .assess(

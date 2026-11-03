@@ -10,7 +10,7 @@ tag="v$version"
 name="mynou-v$version-macos-arm64"
 repo="${MYNOU_RELEASE_REPO:-alecerf/mynou}"
 key="${MYNOU_RELEASE_KEY:-$HOME/.mynou-release/release-key.pem}"
-public="$(cd "$(dirname "$0")/../.." && pwd)/docs/release-key.pub.pem"
+public="$(cd "$(dirname "$0")/../.." && pwd)/release-key.pub.pem"
 test -f "$key"
 
 [[ $(gh release view "$tag" --repo "$repo" --json isDraft --jq .isDraft) == true ]] || {

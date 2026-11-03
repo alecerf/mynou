@@ -48,6 +48,7 @@ fn demand(config: &crate::config::Config, account: &str, number: u64) -> Demand 
         tmdb_id: Some(number + 1),
         source_path: None,
         source_url: None,
+        runtime_minutes: None,
         source_numbering: None,
     };
     Demand {

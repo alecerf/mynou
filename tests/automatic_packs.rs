@@ -599,8 +599,7 @@ fn opt_in_series_monitoring_prefers_a_resolved_pack_and_defaults_keep_individual
 }
 
 #[test]
-fn monitored_pack_preference_acquires_newly_aired_episodes_once_and_falls_back_for_unresolved_packs()
- {
+fn monitored_pack_preference_waits_for_a_finished_season_and_falls_back_for_unresolved_packs() {
     let directory = Directory::new();
     let provider = Provider::open();
     let catalog = Catalog::open(vec![
@@ -625,11 +624,20 @@ fn monitored_pack_preference_acquires_newly_aired_episodes_once_and_falls_back_f
             episode(1, 2, Some("2100-01-02"), "Future second"),
         ],
     );
+    // The season still airs: its first episode comes on its own, without a pack search.
     let refreshed = engine.refresh_series(&series).unwrap();
     assert_eq!(refreshed.get("submitted"), Some(&Value::Number(1.0)));
     let job = lock(&engine.store).unwrap().list().unwrap().remove(0);
     assert_eq!(job.request.episode, 1);
-    assert!(job.pack_origin.is_some());
+    assert!(job.pack_origin.is_none());
+    assert!(
+        !provider
+            .calls
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|call| call.contains("metadata-newly-aired"))
+    );
     let calls = provider.calls.lock().unwrap().len();
     assert_eq!(
         engine.refresh_series(&series).unwrap().get("submitted"),
@@ -643,6 +651,14 @@ fn monitored_pack_preference_acquires_newly_aired_episodes_once_and_falls_back_f
     );
     let bad = provider.metadata_url("absolute", fs::read(&absolute.path).unwrap());
     provider.releases(vec![release("Fixture.Series.S01.1080p", &bad, 1)]);
+    // Once the season has aired, a pack is tried; one that does not resolve falls back.
+    catalog.episodes(
+        1,
+        vec![
+            episode(1, 1, Some("2024-01-01"), "Aired first"),
+            episode(1, 2, Some("2024-01-02"), "Aired second"),
+        ],
+    );
     cfg.store_dir = directory.0.join("fallback");
     let fallback = Engine::open_for_management(cfg).unwrap();
     fallback.track_series(&request(), false, false).unwrap();
@@ -654,7 +670,15 @@ fn monitored_pack_preference_acquires_newly_aired_episodes_once_and_falls_back_f
             .iter()
             .all(|job| job.pack_origin.is_none() && job.request.source_url.is_none())
     );
-    assert_eq!(lock(&fallback.store).unwrap().list().unwrap().len(), 1);
+    assert_eq!(lock(&fallback.store).unwrap().list().unwrap().len(), 2);
+    assert!(
+        provider
+            .calls
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|call| call.contains("metadata-absolute"))
+    );
 }
 
 #[test]
@@ -810,4 +834,111 @@ fn automatic_pack_candidate_cannot_authorize_apply_in_a_replacement_torrent_gene
             .contains("candidate changed")
     );
     assert_eq!(snapshot(&cfg.store_dir), before);
+}
+
+#[test]
+fn unresolvable_packs_leave_time_to_request_every_missing_episode() {
+    let directory = Directory::new();
+    let catalog = Catalog::open(vec![episode(1, 1, Some("2024-01-01"), "One")]);
+    catalog.response("/3/tv/42",200,mynou::json::parse(r#"{"id":42,"name":"Fixture Series","first_air_date":"2024-01-01","seasons":[{"season_number":1},{"season_number":2}]}"#).unwrap());
+    catalog.episodes(2, vec![episode(2, 1, Some("2024-01-01"), "Two")]);
+    let provider = Provider::open();
+    // Peers that accept and never answer: every pack's metadata times out.
+    let silent = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = silent.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        let mut held = Vec::new();
+        for stream in silent.incoming() {
+            held.push(stream);
+        }
+    });
+    provider.releases(
+        (0..8)
+            .flat_map(|n| {
+                [1, 2].map(|season| {
+                    release(
+                        &format!("Fixture.Series.S0{season}.1080p.v{n}"),
+                        &format!("http://127.0.0.1:{port}/s{season}-{n}.torrent"),
+                        1,
+                    )
+                })
+            })
+            .collect(),
+    );
+    let mut cfg = configure(catalog.config(&directory.0.join("engine")), &provider, "{}");
+    cfg.series_packs_enabled = true;
+    cfg.downloads_enabled = true;
+    let engine = Engine::open_for_management(cfg).unwrap();
+    let record = engine.track_series(&request(), false, false).unwrap();
+    assert_eq!(record.get("submitted"), Some(&Value::Number(2.0)));
+    let jobs = lock(&engine.store).unwrap().list().unwrap();
+    assert_eq!(jobs.len(), 2);
+    assert!(jobs.iter().all(|job| job.pack_origin.is_none()));
+}
+
+#[test]
+fn pack_preview_uses_covered_runtime_and_a_temporary_profile() {
+    let directory = Directory::new();
+    let mut episodes: Vec<_> = (1..=2)
+        .map(|n| episode(1, n, Some("2024-01-01"), "Episode"))
+        .collect();
+    for ep in &mut episodes {
+        ep.insert("runtime", 30_u32);
+    }
+    let catalog = Catalog::open(episodes);
+    let provider = Provider::open();
+    let complete = torrent(&directory, "hourly", &[1, 2]);
+    let url = provider.metadata_url("hourly", fs::read(&complete.path).unwrap());
+    let mut row = release("Fixture.Series.S01.1080p", &url, 10);
+    row.insert("size", 1_200_000_000_u32);
+    provider.releases(vec![row]);
+    let cfg = configure(
+        catalog.config(&directory.0.join("engine")),
+        &provider,
+        r#"{"resolutions":[1080],"max_mb_per_hour":1000}"#,
+    );
+    let engine = Engine::open_for_management(cfg).unwrap();
+    let series = tracked(&engine);
+    let original = engine.search_packs(&series, &preview(1)).unwrap();
+    assert_eq!(
+        original.get("runtime_minutes").and_then(Value::as_u64),
+        Some(60)
+    );
+    assert_eq!(original.get("selected_candidate_id"), Some(&Value::Null));
+    let rejected = original.get("rejected").unwrap().as_array().unwrap();
+    assert_eq!(
+        rejected[0].get("mb_per_hour").and_then(Value::as_u64),
+        Some(1200)
+    );
+    assert_eq!(rejected[0].get("lost_on"), Some(&Value::Null));
+    let profile = mynou::selection::Profile::from_json(
+        &mynou::json::parse(r#"{"resolutions":[1080],"max_mb_per_hour":2000}"#).unwrap(),
+    )
+    .unwrap();
+    let changed = engine
+        .search_packs_with(&series, &preview(1), Some(&profile))
+        .unwrap();
+    assert_eq!(selected_title(&changed), "Fixture.Series.S01.1080p");
+    assert_eq!(
+        changed.get("accepted").unwrap().as_array().unwrap()[0].get("lost_on"),
+        Some(&Value::Null)
+    );
+    assert!(lock(&engine.store).unwrap().list().unwrap().is_empty());
+    assert_eq!(
+        engine
+            .config
+            .selection
+            .profile("episode")
+            .unwrap()
+            .1
+            .max_mb_per_hour,
+        Some(1000)
+    );
+    let mut apply = preview(1);
+    apply.apply = true;
+    assert!(
+        engine
+            .search_packs_with(&series, &apply, Some(&profile))
+            .is_err()
+    );
 }

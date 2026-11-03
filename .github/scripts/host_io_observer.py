@@ -1,7 +1,7 @@
 """Observe libc host-I/O attempts in selected native macOS WireGuard fixtures.
 
 Test instrumentation only: never load this dylib into an installed Mynou.
-See docs/host-io-observer.md for the exact coverage and its limits.
+
 """
 import argparse
 from collections import Counter

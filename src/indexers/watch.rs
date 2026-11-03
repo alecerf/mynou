@@ -662,23 +662,32 @@ impl Engine {
         let Ok((_, profile)) = config.selection.profile(&current.request.kind) else {
             return Ok(Attach::Changed);
         };
-        let baseline = profile.assess_with_size(
+        let baseline = profile.assess_with_runtime(
             &recorded.title,
             &current.request.title,
             recorded.size_bytes,
             Some(1),
+            current.request.runtime_minutes,
         );
-        if profile.cutoff_reached(&baseline) {
-            return Ok(Attach::Changed);
-        }
         let mut request = current.request.clone();
         request.source_path = None;
         request.source_url = None;
-        let Some(candidate) = best(&config, &request, fresh, source) else {
+        let Some(candidate) = fresh
+            .iter()
+            .filter_map(|entry| integrations::assess_feed_entry(&config, &request, entry, source))
+            .filter(|candidate| {
+                profile.is_upgrade(
+                    &candidate.assessment,
+                    &baseline,
+                    &candidate.title,
+                    &recorded.title,
+                )
+            })
+            .reduce(|best, next| if next.beats(&best) { next } else { best })
+        else {
             return Ok(Attach::Changed);
         };
-        if (baseline.accepted && candidate.assessment.rank <= baseline.rank)
-            || current.acquisition_url.as_deref() == Some(candidate.url.as_str())
+        if current.acquisition_url.as_deref() == Some(candidate.url.as_str())
             || current.request.source_url.as_deref() == Some(candidate.url.as_str())
         {
             return Ok(Attach::Changed);

@@ -619,6 +619,7 @@ impl Announcement {
                 tmdb_id: Some(integer(v, "tmdb_id")?),
                 source_path: None,
                 source_url: None,
+                runtime_minutes: None,
                 source_numbering: None,
             },
         };

@@ -56,6 +56,7 @@ fn demand(config: &Config, number: u64, origin_bytes: usize) -> Demand {
         tmdb_id: Some(number + 1),
         source_path: None,
         source_url: None,
+        runtime_minutes: None,
         source_numbering: None,
     };
     Demand {

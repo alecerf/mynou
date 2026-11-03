@@ -3,8 +3,7 @@
 The peer runs in its own `--network none` namespace with only NET_ADMIN and the TUN
 device; the test binary, built offline as the unprivileged tester, joins that
 namespace without capabilities. Containers are always removed. The run fails unless
-every required scenario reports a pass. Python std only; see
-docs/wireguard-interop.md for the design and its limits."""
+every required scenario reports a pass. Python std only."""
 import argparse
 import json
 import os

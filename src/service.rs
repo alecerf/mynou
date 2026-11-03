@@ -106,6 +106,7 @@ fn plist(label: &str, binary: &Path, data_dir: &Path, home: &Path) -> Result<Str
         <key>ThrottleInterval</key><integer>60</integer>\n\
         <key>ExitTimeOut</key><integer>120</integer>\n\
         <key>Umask</key><integer>63</integer>\n\
+        <key>SoftResourceLimits</key><dict><key>NumberOfFiles</key><integer>10240</integer></dict>\n\
         <key>StandardOutPath</key><string>/dev/null</string>\n\
         <key>StandardErrorPath</key><string>/dev/null</string>\n\
         </dict></plist>\n",

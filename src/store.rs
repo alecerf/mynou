@@ -46,6 +46,7 @@ pub struct Request {
     pub source_path: Option<String>,
     pub source_url: Option<String>,
     pub tmdb_id: Option<u64>,
+    pub runtime_minutes: Option<u32>,
     pub source_numbering: Option<crate::numbering::SourceNumber>,
 }
 
@@ -296,6 +297,9 @@ impl Request {
         if self.title.trim().is_empty() || self.title.len() > 4096 {
             return Err("title is empty or too long".to_owned());
         }
+        if self.runtime_minutes == Some(0) {
+            return Err("runtime_minutes must be positive".into());
+        }
         if self.year > 9999 || self.season > 9999 || self.episode > 99999 {
             return Err("invalid year, season, or episode".to_owned());
         }
@@ -372,6 +376,10 @@ impl Request {
             ("source_path", optional_string(&self.source_path)),
             ("source_url", optional_string(&self.source_url)),
             ("tmdb_id", self.tmdb_id.map_or(Value::Null, number)),
+            (
+                "runtime_minutes",
+                self.runtime_minutes.map_or(Value::Null, Value::from),
+            ),
         ]);
         if let Some(number) = self.source_numbering {
             value.insert("source_numbering", number.to_json());
@@ -395,6 +403,11 @@ impl Request {
                 .map_or(Ok(0), |_| small_integer(map, "episode"))?,
             source_path: optional(map, "source_path")?,
             source_url: optional(map, "source_url")?,
+            runtime_minutes: optional_u64(map, "runtime_minutes")?
+                .map(|minutes| {
+                    u32::try_from(minutes).map_err(|_| "invalid runtime_minutes".to_owned())
+                })
+                .transpose()?,
             source_numbering: match map.get("source_numbering") {
                 None | Some(Value::Null) => None,
                 Some(value) => Some(crate::numbering::SourceNumber::from_json(value)?),
