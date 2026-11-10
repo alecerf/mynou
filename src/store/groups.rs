@@ -603,6 +603,9 @@ impl Db<'_> {
             jobs.push(Job {
                 irc_origin: None,
                 retiring_transfers: Vec::new(),
+                subtitles: Vec::new(),
+                import_notes: Vec::new(),
+                rejected_releases: Vec::new(),
                 id: random_id()?,
                 key: request.canonical_key(),
                 request,

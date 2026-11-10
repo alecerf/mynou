@@ -2368,6 +2368,16 @@ fn search_candidates_before(
 struct SearchChoice<'a> {
     candidate: Option<&'a str>,
     baseline: Option<(&'a Assessment, &'a str)>,
+    /// Release titles refused for this title once downloaded.
+    refused: &'a [String],
+}
+
+const REFUSED_RELEASE: &str =
+    "Release was refused for this title once downloaded: its file did not match the runtime";
+
+/// Whether `title` is among the releases refused for a title.
+pub(crate) fn refused(refused: &[String], title: &str) -> bool {
+    refused.iter().any(|refused| refused == title)
 }
 
 /// A search keeps the selection, at most `limit + 1` report candidates after
@@ -2429,7 +2439,7 @@ fn search_candidates_mode(
                 if index % 64 == 0 {
                     remaining_search_time(deadline)?;
                 }
-                let assessment = assess_release(
+                let mut assessment = assess_release(
                     config,
                     profile_name,
                     profile,
@@ -2438,6 +2448,10 @@ fn search_candidates_mode(
                     pack_episodes,
                     &source.options,
                 );
+                if refused(choice.refused, &release.title) {
+                    assessment.accepted = false;
+                    assessment.reasons.push(REFUSED_RELEASE.into());
+                }
                 let digest = candidate_digest(profile_name, &source_identity, &release);
                 let mut position = position(
                     &assessment,
@@ -2687,10 +2701,35 @@ pub(crate) fn search_pack_candidates(
 /// Selects the same accepted, ranked candidate as search and search_report,
 /// retaining its assessment for upgrade decisions and durable history.
 pub fn select_release(config: &Config, request: &Request) -> Result<SelectedRelease> {
+    select_release_refusing(config, request, &[])
+}
+
+/// [`select_release`] passing over the releases refused for this title.
+pub(crate) fn select_release_refusing(
+    config: &Config,
+    request: &Request,
+    refused: &[String],
+) -> Result<SelectedRelease> {
     let deadline = Instant::now()
         .checked_add(SEARCH_BUDGET)
         .ok_or("Search: invalid search time budget")?;
-    select_release_before(config, request, deadline)
+    remaining_search_time(deadline)?;
+    request.validate()?;
+    if request.source_path.is_some() || request.source_url.is_some() {
+        return Err("Search: manual sources do not have a verified release assessment".into());
+    }
+    selected_release(search_candidates_mode(
+        config,
+        request,
+        deadline,
+        None,
+        None,
+        0,
+        SearchChoice {
+            refused,
+            ..SearchChoice::default()
+        },
+    )?)
 }
 
 /// Applies an existing monitoring-pass deadline to all indexer requests and
@@ -2719,6 +2758,7 @@ pub(crate) fn select_upgrade_before(
     request: &Request,
     baseline: &Assessment,
     current_title: &str,
+    refused: &[String],
     deadline: Instant,
 ) -> Result<SelectedRelease> {
     if request.source_path.is_some() || request.source_url.is_some() {
@@ -2734,6 +2774,7 @@ pub(crate) fn select_upgrade_before(
         0,
         SearchChoice {
             baseline: Some((baseline, current_title)),
+            refused,
             ..SearchChoice::default()
         },
     )?)
@@ -3055,6 +3096,152 @@ pub fn available_import(config: &Config, request: &Request, imports: &[String]) 
         }
         expected.is_empty()
     })
+}
+
+/// Files Plex lists for one title at most; past it the lookup fails.
+const MAX_TITLE_FILES: usize = 20_000;
+
+/// The files Plex lists for the film or series of `request` (every episode
+/// of a series), at the path Mynou sees each one: a `plex.path_mappings`
+/// prefix is turned back into its local prefix, the longest first. A path no
+/// mapping covers is kept as Plex reports it. The listing is the one that
+/// confirms imports: by title, matched by TMDB identity (or title and year).
+pub(crate) fn plex_title_files(
+    config: &Config,
+    request: &Request,
+) -> Result<Vec<crate::organizer::ListedFile>> {
+    request.validate()?;
+    let episode = matches!(request.kind.as_str(), "episode" | "series");
+    let deadline = Instant::now() + SEARCH_BUDGET;
+    let headers = plex_headers(config)?;
+    let mut mappings = Vec::new();
+    for mapping in &config.plex.path_mappings {
+        let remote = absolute_path_components(&mapping.plex_prefix)
+            .ok_or("Plex: invalid Plex path mapping prefix")?;
+        let local = absolute_path_components(&mapping.mynou_prefix)
+            .ok_or("Plex: invalid local path mapping prefix")?;
+        mappings.push((remote, local));
+    }
+    mappings.sort_by_key(|(remote, _)| std::cmp::Reverse(remote.len()));
+    let local = |path: &str| -> String {
+        let Some(components) = absolute_path_components(path) else {
+            return path.to_owned();
+        };
+        match mappings
+            .iter()
+            .find(|(remote, _)| components.starts_with(remote))
+        {
+            Some((remote, local)) => {
+                let mut mapped = local.clone();
+                mapped.extend_from_slice(&components[remote.len()..]);
+                format!("/{}", mapped.join("/"))
+            }
+            None => path.to_owned(),
+        }
+    };
+    let url = query(
+        &endpoint(
+            &config.plex.url,
+            &format!("library/sections/{}/all", plex_section(config, request)?),
+        )?,
+        &[
+            ("type", if episode { "2" } else { "1" }.into()),
+            ("title", request.title.clone()),
+        ],
+    )?;
+    let mut files = Vec::new();
+    let mut collect = |item: &Value, index: usize, season: Option<u32>| -> Result<()> {
+        for media in item
+            .get("Media")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            for part in media
+                .get("Part")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+            {
+                if let Some(path) = string(part, "file").filter(|path| !path.is_empty()) {
+                    if files.len() >= MAX_TITLE_FILES {
+                        return Err("Plex: too many files listed for this title".into());
+                    }
+                    files.push(crate::organizer::ListedFile {
+                        item: index,
+                        season,
+                        path: local(path),
+                    });
+                }
+            }
+        }
+        Ok(())
+    };
+    let mut items = 0_usize;
+    plex_find_before(&url, &headers, deadline, |item| {
+        if !identity_matches(item, request) {
+            return Ok(false);
+        }
+        remaining_search_time(deadline)?;
+        let index = items;
+        items += 1;
+        if !episode {
+            collect(item, index, None)?;
+            return Ok(false);
+        }
+        let key = string(item, "ratingKey").ok_or("Plex: missing series ratingKey")?;
+        if key.is_empty() || !key.bytes().all(|b| b.is_ascii_digit()) {
+            return Err("Plex: invalid ratingKey".into());
+        }
+        let leaves = endpoint(
+            &config.plex.url,
+            &format!("library/metadata/{key}/allLeaves"),
+        )?;
+        plex_find_before(&leaves, &headers, deadline, |leaf| {
+            remaining_search_time(deadline)?;
+            let season = integer(leaf, "parentIndex").and_then(|n| u32::try_from(n).ok());
+            collect(leaf, index, season)?;
+            Ok(false)
+        })?;
+        Ok(false)
+    })?;
+    Ok(files)
+}
+
+/// The runtime the import check compares a file with: the request's, else
+/// TMDB's for the film or the episode. `Err` says why none is known.
+pub(crate) fn import_runtime(
+    config: &Config,
+    request: &Request,
+) -> std::result::Result<u32, String> {
+    if let Some(minutes) = request.runtime_minutes {
+        return Ok(minutes);
+    }
+    let what = if request.kind == "episode" {
+        "episode"
+    } else {
+        "film"
+    };
+    if !matches!(request.kind.as_str(), "movie" | "episode") || !config.catalog.enabled {
+        return Err(format!("no runtime is known for this {what}"));
+    }
+    let lookup = || -> Result<Option<u32>> {
+        let id = resolve_catalog(config, request)?;
+        Ok(if request.kind == "episode" {
+            let details = catalog_json(config, &format!("tv/{id}/season/{}", request.season), &[])?;
+            catalog_episode_runtime(&details, request.episode)
+        } else {
+            catalog_runtime(&catalog_json(config, &format!("movie/{id}"), &[])?)
+        })
+    };
+    match lookup() {
+        Ok(Some(minutes)) => Ok(minutes),
+        Ok(None) => Err(format!("TMDB gives no runtime for this {what}")),
+        Err(error) => Err(format!(
+            "TMDB could not give this {what}'s runtime: {}",
+            report_text(&error, 512)
+        )),
+    }
 }
 
 fn absolute_path_components(path: &str) -> Option<Vec<&str>> {

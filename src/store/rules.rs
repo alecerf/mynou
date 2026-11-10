@@ -210,6 +210,7 @@ impl Db<'_> {
         if current.state == "ready"
             && (current.files != job.files
                 || current.imports != job.imports
+                || current.subtitles != job.subtitles
                 || current.acquisition_url != job.acquisition_url
                 || current.download_id != job.download_id
                 || current.progress != job.progress)

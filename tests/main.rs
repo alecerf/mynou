@@ -24,6 +24,7 @@ mod cross_seed_discovery;
 mod episode_numbering;
 mod feed_watching;
 mod http_connector;
+mod import_layout;
 mod indexer_authentication;
 mod integrations;
 mod irc_authentication;

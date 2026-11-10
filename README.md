@@ -34,9 +34,11 @@
 - **It explains itself.** The release list of a title shows which one Mynou
   would pick and why every other one was rejected; you can also pick one
   yourself.
-- **Careful with your files.** Imports never overwrite. An upgrade deletes
-  the file it replaces only once the new one is in place (and in Plex), and
-  cancelling a request never deletes anything.
+- **Careful with your files.** Imports never overwrite, a video or a
+  subtitle, and never write outside your library folders. A file far shorter
+  or longer than the title is refused before anything is written. An upgrade
+  deletes the file it replaces only once the new one is in place (and in
+  Plex), and cancelling a request never deletes anything.
 
 You bring the network services: Plex, a TMDB account for series, and the
 indexers you want Mynou to search.
@@ -56,7 +58,7 @@ indexers you want Mynou to search.
 | 3. Select | Picks the best release for your profile and records why the others lost. |
 | 4. Download | Fetches it with the built-in BitTorrent client and verifies every piece. |
 | 5. Analyze | Reads the media file's metadata to check what was downloaded. |
-| 6. Import | Files it in your library without overwriting anything. |
+| 6. Import | Checks its length against the title's, then files it with its subtitles in the folder Plex already uses for the title, without overwriting anything. |
 | 7. Confirm | Asks Plex to scan and waits until Plex lists the title. |
 
 After that, Mynou can keep watching: new episodes of the series you follow are
@@ -168,7 +170,7 @@ Everything is also available over HTTP: `/api` routes, and `/healthz` and
 | **Release selection** | Movie and episode profiles on resolution, source, codec, language, terms and scores, with previews that explain every decision. |
 | **BitTorrent** | v1, v2 and hybrid torrents, magnets, trackers, DHT and PEX, parallel peers, pause and resume, priorities, bandwidth limits and seeding policies. |
 | **Series** | TMDB episode plans, automatic requests for newly aired episodes, an episode calendar, explicit numbering, season packs and multi-episode files. |
-| **Library** | Imports that never overwrite, Plex confirmation, and monitored quality upgrades that keep earlier files. |
+| **Library** | Imports that never overwrite, into the folders Plex already uses, with subtitles and a length check, Plex confirmation, and monitored quality upgrades. |
 | **Media analysis** | Metadata of MP4/MOV, Matroska/WebM, AVI, WAV/RF64, FLAC and MP3 files. |
 
 ## Good to know
@@ -218,6 +220,26 @@ also need the TMDB catalog (enabled in Settings, with its token).
 Plex and Mynou must see the library at the same paths. If Plex sees it under
 another prefix, add a path mapping (`plex.path_mappings`) through
 `POST /api/settings`.
+</details>
+
+<details>
+<summary><strong>Where does an import go, and why was one refused?</strong></summary>
+
+A title Plex already lists goes into its existing folder, and an episode into
+the season folder that already holds its season (`Season 2`, `Specials`). A new
+title gets `Title (Year)` and `Season 02`, with ` - ` in place of a colon.
+When Plex's folder is outside your library folders, goes through a symbolic
+link, or Plex lists the title in several folders, Mynou uses its own layout.
+Subtitles of the release (`.srt`, `.ass`, `.ssa`, `.vtt`, `.idx`/`.sub`) are
+named after the video with their language, such as `Film (2024).fr.srt` or
+`Film (2024).en.forced.srt`; other files, like `.nfo`, are left out.
+
+Before filing, Mynou compares the file's length with the runtime TMDB gives
+and accepts 70% to 160% of it, so extended cuts pass. Outside that range the
+import fails with `runtime_mismatch` and both lengths, nothing is written, and
+the release is not picked again for that title. The job's **Files & quality**
+tab, and `import_notes` in the API, say which folder was used and why, and
+whether the length was checked.
 </details>
 
 <details>

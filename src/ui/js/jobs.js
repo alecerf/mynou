@@ -170,8 +170,22 @@ function overviewTab(job, request, entry) {
   ];
 }
 
+// Import notes are "kind: sentence"; the kind picks the label.
+const NOTE_LABELS = {
+  plex_folder: 'Folder', folder_kept: 'Folder', folder_fallback: 'Folder',
+  runtime_checked: 'Length', runtime_check_skipped: 'Length',
+  subtitle_kept: 'Subtitle', subtitle_skipped: 'Subtitle',
+};
+function importNote(note) {
+  const [kind, ...rest] = String(note).split(': ');
+  const text = rest.join(': ') || kind;
+  return [NOTE_LABELS[kind] ?? 'Note', text.charAt(0).toUpperCase() + text.slice(1)];
+}
+
 function filesTab(job) {
   const imports = itemsOf(job.imports);
+  const subtitles = imports.length ? itemsOf(job.subtitles) : [];
+  const notes = itemsOf(job.import_notes);
   const downloaded = itemsOf(job.files);
   const file = (path, tag, chip) => h('article', { class: 'sheet-file' },
     h('div', { class: 'sheet-file-title' }, h('span', { class: 'badge' }, tag), h('strong', {}, String(path).split('/').at(-1)), chip ? h('span', { class: 'chip' }, chip) : null),
@@ -182,10 +196,12 @@ function filesTab(job) {
     sheetSection('Quality', sheetFacts([...qualityFacts(job.release?.title), ['Release', job.release?.title], ['Profile', job.release?.profile]])
       ?? h('p', { class: 'muted' }, 'No release recorded yet: its quality appears once Mynou picks one.')),
     sheetSection(imports.length ? 'In your library' : 'Files',
-      ...(imports.length ? imports.map((path) => file(path, ext(path), job.imports_present === false ? 'Missing' : 'Current version'))
+      ...(imports.length ? [...imports.map((path) => file(path, ext(path), job.imports_present === false ? 'Missing' : 'Current version')),
+        ...subtitles.map((path) => file(path, ext(path), 'Subtitle'))]
         : downloaded.length ? downloaded.map((path) => file(path, ext(path), 'Downloaded'))
         : [h('p', { class: 'muted' }, 'No file yet. The files appear here once the download is imported.')]),
       job.pack_file ? h('p', { class: 'muted' }, `From the pack file ${job.pack_file}`) : null),
+    notes.length ? sheetSection('How it was filed', sheetFacts(notes.map(importNote))) : null,
   ];
 }
 
@@ -199,7 +215,8 @@ function acquisitionTab(job, request) {
     sheetSection(request.kind === 'episode' ? 'How this episode arrived' : 'How this film arrived', steps),
     sheetSection('Release and selection', sheetFacts([
       ['Release', job.release?.title], ['Profile', job.release?.profile],
-      ['Problem', job.last_error], ['Attempts', Number(job.attempts) ? job.attempts : null],
+      ['Problem', job.last_error], ['Refused releases', itemsOf(job.rejected_releases)],
+      ['Attempts', Number(job.attempts) ? job.attempts : null],
       ['Next attempt', !TERMINAL_STATES.has(job.state) && dateTime(job.next_attempt_at)],
     ]) ?? h('p', { class: 'muted' }, 'Mynou has not picked a release yet.')),
     h('details', { class: 'sheet-diagnostics' }, h('summary', {}, 'Identifiers and diagnostics'), sheetFacts([

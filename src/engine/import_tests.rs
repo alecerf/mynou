@@ -55,7 +55,7 @@ fn a_damaged_extra_does_not_fail_the_import() {
     let notes = directory.file("Movie.nfo", Some(10));
     let files = [damaged.clone(), film.clone(), notes];
     let active = AtomicBool::new(true);
-    let chosen = import_source(&files, &request("movie", 0), false, &active).unwrap();
+    let (chosen, _) = import_source(&files, &request("movie", 0), false, &active).unwrap();
     assert_eq!(chosen.to_str(), Some(film.as_str()));
 
     let error = import_source(&[damaged], &request("movie", 0), false, &active).unwrap_err();
@@ -73,8 +73,10 @@ fn a_pack_analyzes_only_the_episode_named_for_the_request() {
         directory.file("Show.S01E03.mkv", Some(200_000)),
     ];
     let active = AtomicBool::new(true);
-    let chosen = import_source(&files, &request("episode", 2), true, &active).unwrap();
+    let (chosen, duration) = import_source(&files, &request("episode", 2), true, &active).unwrap();
     assert_eq!(chosen.to_str(), Some(wanted.as_str()));
+    // The analyzed duration comes with the file, for the runtime check.
+    assert_eq!(duration, Some(2.0));
 
     let twice = [wanted, directory.file("Show.S01E02.Repack.mp4", None)];
     let error = import_source(&twice, &request("episode", 2), true, &active).unwrap_err();
