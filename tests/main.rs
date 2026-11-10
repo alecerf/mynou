@@ -73,7 +73,7 @@ mod torrent_transfers;
 mod transfer_config;
 mod transfer_inventory_fairness;
 mod transfer_management;
+mod upgrade_imports;
 mod upgrade_integrations;
-mod versioned_imports;
 mod watchlist_cursor;
 mod web_ui;

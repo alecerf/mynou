@@ -142,8 +142,8 @@
     "tests/main.rs::transfer_config": 0.027,
     "tests/main.rs::transfer_inventory_fairness": 1.905,
     "tests/main.rs::transfer_management": 35.998,
+    "tests/main.rs::upgrade_imports": 0.04,
     "tests/main.rs::upgrade_integrations": 1.157,
-    "tests/main.rs::versioned_imports": 0.04,
     "tests/main.rs::watchlist_cursor": 0.465,
     "tests/main.rs::web_ui": 19.367,
     "tests/wireguard_interop.rs": 0.024

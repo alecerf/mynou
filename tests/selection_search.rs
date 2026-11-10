@@ -708,9 +708,10 @@ fn runtime_and_temporary_profile_explain_rank_losses_without_saving() {
     request.runtime_minutes = Some(120);
     let page = integrations::SearchPage::default();
     let original = integrations::search_report_page(&config, &request, &page).unwrap();
+    // The language decides before the quality.
     assert_eq!(
         selected_title(&original),
-        Some("Fixture.Movie.2024.1080p.EN")
+        Some("Fixture.Movie.2024.720p.FR")
     );
     assert_eq!(
         original.get("runtime_minutes").and_then(Value::as_u64),
@@ -720,28 +721,34 @@ fn runtime_and_temporary_profile_explain_rank_losses_without_saving() {
     assert_eq!(accepted[0].get("lost_on"), Some(&Value::Null));
     assert_eq!(
         accepted[0].get("mb_per_hour").and_then(Value::as_u64),
-        Some(2000)
+        Some(1000)
     );
     assert_eq!(
         accepted[1].get("lost_on").and_then(Value::as_str),
-        Some("resolution")
+        Some("language")
     );
     assert_eq!(
         entries(&original, "rejected")[0].get("lost_on"),
         Some(&Value::Null)
     );
     let mut profile = config.selection.profile("movie").unwrap().1.clone();
-    profile.language_first = true;
+    profile.language_mode = Some(mynou::selection::LanguageMode::Any);
     let changed =
         integrations::search_report_page_with(&config, &request, &page, Some(&profile)).unwrap();
-    assert_eq!(selected_title(&changed), Some("Fixture.Movie.2024.720p.FR"));
+    assert_eq!(
+        selected_title(&changed),
+        Some("Fixture.Movie.2024.1080p.EN")
+    );
     assert_eq!(
         entries(&changed, "accepted")[1]
             .get("lost_on")
             .and_then(Value::as_str),
-        Some("language")
+        Some("resolution")
     );
-    assert!(!config.selection.profile("movie").unwrap().1.language_first);
+    assert_eq!(
+        config.selection.profile("movie").unwrap().1.language_mode,
+        Some(mynou::selection::LanguageMode::Prefer)
+    );
     assert_eq!(
         integrations::search_report_page(&config, &request, &page).unwrap(),
         original

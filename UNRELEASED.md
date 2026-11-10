@@ -159,9 +159,8 @@ between recording the retry and queuing the request again.
 Settings has a new **Quality** page with profiles, as in Radarr and Sonarr but
 in plain words. A profile lists the qualities a release may have, best first,
 the sources it accepts, and where upgrades stop (**Upgrade until**, a quality
-and optionally a source). The audio language can be any, preferred or
-required; when preferred, you choose whether a lower quality in that language
-beats the best quality in another one. Sizes are per hour of video, from the
+and optionally a source). **Languages** lists what a release must have, and
+the languages decide before the quality. Sizes are per hour of video, from the
 length TMDB gives, and a release of unknown size can be skipped. HDR, Dolby
 Vision and 3D are named preferences; words to prefer, avoid or require are
 still there. Proper and repack releases are preferred and taken as upgrades.
@@ -176,33 +175,46 @@ installation starts with Compact 1080p, Balanced 1080p and Cinema 4K.
 
 French releases are no longer all "French": Mynou reads **VFF** (France, also
 TRUEFRENCH), **VFQ** (Québec) and **VFI** (international) apart, and **VF2** as
-both VFF and VFQ; FRENCH or VF alone stays French without a dub. A profile's
-**Audio** lists the languages you want, best first, such as VFF, then VFI, then
-French (any French). **Other languages** are accepted after yours or refused;
-**Language before quality** lets a lower quality in your language win; when
-others are refused, **MULTI and untagged** says whether a release that does
-not name its languages may still come. MULTi.VFF counts as VFF, and **MULTI
-first** puts releases that also hold the original audio first. The release
-list shows each release's tags.
+both VFF and VFQ; FRENCH or VF alone stays French without a dub. **VOSTFR**
+is the original audio with French subtitles: VOSTFR, SUBFRENCH or French
+subtitles in the name, and MULTi with a French audio (MULTi.VFF counts as VFF
+and VOSTFR).
+
+A profile's **Languages** are all needed: VFF and VOSTFR take a release with
+both. French (any French) matches every dub. The languages decide before the
+quality: a 1080p MULTi.VFF beats a 4K in VFF alone, and an upgrade never trades
+a language for a better quality. **Missing some** says what happens to a
+release with only some of them: accepted, the most complete one comes first
+(the first languages counting most) and an upgrade replaces it once a release
+has them all; refused, only a complete release is downloaded, and **MULTI and
+untagged** says whether a release that does not name its languages may still
+come. **MULTI first** puts releases that also hold the original audio first.
+The release list shows each release's tags.
 
 ## Changed: An upgrade replaces the file
 
-Once an upgrade is in the library (and in Plex, when Plex is on), Mynou deletes
-the file it replaced and asks Plex to look again, instead of keeping both. If
-the deletion fails, the earlier file stays in Storage, where it can be deleted.
+An upgrade takes the place of the file it replaces, under the usual name
+(`Film (2024).mkv`, `Show - S01E02.mkv`), instead of being added beside it as
+`… [mynou-…].mkv`. The new file replaces the earlier one in one step once it
+is complete and checked. When the extension differs (an `.mp4` upgraded by an
+`.mkv`), the earlier file is deleted once the upgrade is in the library (and
+in Plex, when Plex is on). If that deletion fails, the earlier file stays in
+Storage, where it can be deleted.
 
-## Changed: Quality ranks before preferred words and language
+## Changed: Languages, then quality, then preferred words
 
-A release's quality and source now decide first, as in Radarr and Sonarr;
-preferred words, the preferred language (unless the profile puts it first),
-proper and repack, then the codec break ties. Before, a preferred word ranked
-above the resolution.
+A release's languages decide first, then its quality and source; preferred
+words, proper and repack, then the codec break ties. Before, a preferred word
+ranked above the resolution, and a profile's languages were alternatives
+rather than all needed: a profile that listed several dubs as fallbacks (VFF,
+then VFI, then French) now needs them all, so keep only French for any French
+dub.
 
 ## Fixed: A preferred language no longer rejects the others
 
 With **Only this language** off, a release marked in another language was
-rejected although the setting promised it as a fallback. A preferred language
-now accepts the others and ranks its own first.
+rejected although the setting promised it as a fallback. With **Missing some**
+accepted, such a release now comes after those with your languages.
 
 ## Added: Sizes and freeleech from indexers
 

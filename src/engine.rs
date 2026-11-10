@@ -120,6 +120,9 @@ pub struct Engine {
     pub(crate) last_sync_at: AtomicU64,
     stats: Mutex<stats::Cache>,
     pub last_upgrade_error: Mutex<Option<String>>,
+    /// An upgrade that could not delete the file it replaced: the earlier
+    /// version's id and what to tell. It stays until that version is deleted.
+    pub(crate) earlier_kept: Mutex<Option<(String, String)>>,
     pub last_series_error: Mutex<Option<String>>,
     /// The saved settings document, so that reading it never waits for storage.
     pub(crate) saved_settings: Mutex<Option<crate::json::Value>>,
@@ -324,6 +327,7 @@ impl Engine {
             last_sync_at: AtomicU64::new(0),
             stats: Mutex::new(stats::Cache::default()),
             last_upgrade_error: Mutex::new(None),
+            earlier_kept: Mutex::new(None),
             last_series_error: Mutex::new(None),
             saved_settings: Mutex::new(saved_settings),
             pending_settings: Mutex::new(None),
@@ -849,6 +853,12 @@ impl Engine {
                 .clone()
                 .map_or(Value::Null, Value::String),
         );
+        v.insert(
+            "earlier_kept",
+            lock(&self.earlier_kept)?
+                .as_ref()
+                .map_or(Value::Null, |(_, text)| Value::String(text.clone())),
+        );
         v.insert("storage", self.storage()?);
         if let Some(client) = self.downloads.get() {
             v.insert("peer_port", client.listen_port() as u32);
@@ -1135,21 +1145,26 @@ impl Engine {
     ) -> Result<std::path::PathBuf> {
         if let Some(file) = &job.shared_file {
             organizer::import_shared_file_cancellable(source, root, file, active)
-        } else if job.upgrade_parent.is_some() {
+        } else if let Some(parent) = &job.upgrade_parent {
+            // The upgrade takes the place of the file it replaces.
+            let replaced = lock(&self.store)?
+                .get(parent)?
+                .map(|parent| parent.imports)
+                .unwrap_or_default();
             if job.download_id.is_some() {
-                organizer::import_native_versioned_file_cancellable(
+                organizer::import_native_upgrade_file_cancellable(
                     source,
                     root,
                     &job.request,
-                    &job.id,
+                    &replaced,
                     active,
                 )
             } else {
-                organizer::import_versioned_file_cancellable(
+                organizer::import_upgrade_file_cancellable(
                     source,
                     root,
                     &job.request,
-                    &job.id,
+                    &replaced,
                     active,
                 )
             }

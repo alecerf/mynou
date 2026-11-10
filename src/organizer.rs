@@ -190,19 +190,7 @@ fn create_directory(path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn validate_revision(revision: &str) -> Result<()> {
-    if revision.len() != 32 || !revision.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        return Err("import revision must contain exactly 32 hexadecimal characters".to_owned());
-    }
-    Ok(())
-}
-
-fn target(
-    source: &Path,
-    library: &Path,
-    request: &Request,
-    revision: Option<&str>,
-) -> Result<PathBuf> {
+fn target(source: &Path, library: &Path, request: &Request) -> Result<PathBuf> {
     request.validate()?;
     let title = filename_part(&request.title)?;
     let extension = source
@@ -215,11 +203,10 @@ fn target(
     {
         return Err("invalid media extension".to_owned());
     }
-    let suffix = revision.map_or_else(String::new, |value| format!(" [mynou-{value}]"));
     if request.kind == "episode" || (request.kind == "series" && request.episode > 0) {
         let season = format!("Season {:02}", request.season);
         let filename = format!(
-            "{title} - S{:02}E{:02}{suffix}.{extension}",
+            "{title} - S{:02}E{:02}.{extension}",
             request.season, request.episode
         );
         Ok(library.join(title).join(season).join(filename))
@@ -229,9 +216,7 @@ fn target(
         } else {
             title
         };
-        Ok(library
-            .join(&name)
-            .join(format!("{name}{suffix}.{extension}")))
+        Ok(library.join(&name).join(format!("{name}.{extension}")))
     }
 }
 
@@ -282,7 +267,7 @@ pub(crate) fn import_shared_file_cancellable(
     }
     // Keep the native payload inode private. Only the temporary import and
     // final library name share a link during atomic publication.
-    import_destination(source, library, destination, active, true)
+    import_destination(source, library, destination, &[], active, true)
 }
 
 /// Device, inode, length and modification time of an open file: what tells
@@ -425,7 +410,7 @@ pub fn import_file_cancellable(
     request: &Request,
     active: &AtomicBool,
 ) -> Result<PathBuf> {
-    import_to_target(source, library, request, None, active, false)
+    import_to_target(source, library, request, &[], active, false)
 }
 
 /// Imports a native torrent payload by copy. A hard link would give the payload
@@ -437,55 +422,53 @@ pub(crate) fn import_native_file_cancellable(
     request: &Request,
     active: &AtomicBool,
 ) -> Result<PathBuf> {
-    import_to_target(source, library, request, None, active, true)
+    import_to_target(source, library, request, &[], active, true)
 }
 
-/// Imports an upgrade beside the existing media without changing its title or
-/// directory. The revision must be a 32-character hexadecimal job identifier.
-/// Reusing a revision is safe only when the destination contains identical bytes.
-pub fn import_versioned_file(
+/// Imports an upgrade in place of the version it replaces: the file takes the
+/// usual name, and when one of `replaced` already has that name, the new file
+/// takes its place in one step. A file of another name (another extension) is
+/// left for the caller to delete. No other existing file is ever overwritten.
+pub fn import_upgrade_file(
     source: &Path,
     library: &Path,
     request: &Request,
-    revision: &str,
+    replaced: &[String],
 ) -> Result<PathBuf> {
-    import_versioned_file_cancellable(source, library, request, revision, &AtomicBool::new(true))
+    import_upgrade_file_cancellable(source, library, request, replaced, &AtomicBool::new(true))
 }
 
-pub fn import_versioned_file_cancellable(
+pub fn import_upgrade_file_cancellable(
     source: &Path,
     library: &Path,
     request: &Request,
-    revision: &str,
+    replaced: &[String],
     active: &AtomicBool,
 ) -> Result<PathBuf> {
-    import_to_target(source, library, request, Some(revision), active, false)
+    import_to_target(source, library, request, replaced, active, false)
 }
 
 /// The upgrade counterpart of [`import_native_file_cancellable`].
-pub(crate) fn import_native_versioned_file_cancellable(
+pub(crate) fn import_native_upgrade_file_cancellable(
     source: &Path,
     library: &Path,
     request: &Request,
-    revision: &str,
+    replaced: &[String],
     active: &AtomicBool,
 ) -> Result<PathBuf> {
-    import_to_target(source, library, request, Some(revision), active, true)
+    import_to_target(source, library, request, replaced, active, true)
 }
 
 fn import_to_target(
     source: &Path,
     library: &Path,
     request: &Request,
-    revision: Option<&str>,
+    replaced: &[String],
     active: &AtomicBool,
     copy_source: bool,
 ) -> Result<PathBuf> {
-    if let Some(revision) = revision {
-        validate_revision(revision)?;
-    }
-    let destination = target(source, library, request, revision)?;
-    import_destination(source, library, destination, active, copy_source)
+    let destination = target(source, library, request)?;
+    import_destination(source, library, destination, replaced, active, copy_source)
 }
 
 /// Removes `.mynou-*.tmp` regular files that an interrupted import left in
@@ -515,9 +498,15 @@ fn import_destination(
     source: &Path,
     library: &Path,
     destination: PathBuf,
+    replaced: &[String],
     active: &AtomicBool,
     copy_source: bool,
 ) -> Result<PathBuf> {
+    // Only a regular file the replaced version recorded may be overwritten.
+    let replaceable = |destination: &Path| {
+        replaced.iter().any(|file| Path::new(file) == destination)
+            && fs::symlink_metadata(destination).is_ok_and(|metadata| metadata.is_file())
+    };
     #[cfg(unix)]
     {
         active_import(active)?;
@@ -571,11 +560,12 @@ fn import_destination(
             .try_exists()
             .map_err(|error| error.to_string())?
         {
-            return if same_bytes(&mut input, &destination, active)? {
-                Ok(destination)
-            } else {
-                Err("library already contains a different file".to_owned())
-            };
+            if same_bytes(&mut input, &destination, active)? {
+                return Ok(destination);
+            }
+            if !replaceable(&destination) {
+                return Err("library already contains a different file".to_owned());
+            }
         }
         remove_stale_temporaries(directory);
         let timestamp = SystemTime::now()
@@ -678,7 +668,13 @@ fn import_destination(
                 Ok(()) => {}
                 Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
                     if !same_bytes(&mut input, &destination, active)? {
-                        return Err("library already contains a different file".to_owned());
+                        if !replaceable(&destination) {
+                            return Err("library already contains a different file".to_owned());
+                        }
+                        // The earlier version's file becomes the new one at once.
+                        fs::rename(&temporary, &destination)
+                            .map_err(|error| format!("cannot replace the earlier file: {error}"))?;
+                        owns_temporary = false;
                     }
                 }
                 Err(error) => {
@@ -870,17 +866,20 @@ mod tests {
             import_native_file_cancellable(&source, &library, &request(), &active).unwrap(),
             destination
         );
-        let revision = "a".repeat(32);
-        let upgrade = import_native_versioned_file_cancellable(
-            &source,
+        let better = directory.0.join("better.mkv");
+        fs::write(&better, b"better payload").unwrap();
+        let replaced = [destination.to_string_lossy().into_owned()];
+        let upgrade = import_native_upgrade_file_cancellable(
+            &better,
             &library,
             &request(),
-            &revision,
+            &replaced,
             &active,
         )
         .unwrap();
-        assert_eq!(fs::read(&upgrade).unwrap(), b"payload bytes");
-        assert_eq!(fs::metadata(&source).unwrap().nlink(), 1);
+        assert_eq!(upgrade, destination);
+        assert_eq!(fs::read(&upgrade).unwrap(), b"better payload");
+        assert_eq!(fs::metadata(&better).unwrap().nlink(), 1);
         assert_eq!(fs::metadata(&upgrade).unwrap().nlink(), 1);
     }
 
@@ -891,7 +890,7 @@ mod tests {
         let source = directory.0.join("payload.mkv");
         fs::write(&source, b"payload bytes").unwrap();
         let library = directory.0.join("library");
-        let destination_directory = target(&source, &library, &request(), None)
+        let destination_directory = target(&source, &library, &request())
             .unwrap()
             .parent()
             .unwrap()
