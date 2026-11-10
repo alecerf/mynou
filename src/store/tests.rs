@@ -119,6 +119,9 @@ fn raw_job(number: u64, created_at: u64) -> Job {
         requester: None,
         irc_origin: None,
         retiring_transfers: Vec::new(),
+        subtitles: Vec::new(),
+        import_notes: Vec::new(),
+        rejected_releases: Vec::new(),
     }
 }
 
@@ -186,6 +189,55 @@ fn durable_dedup_and_exclusive_owner() {
     for (path, (_, mode)) in contents(&directory.0) {
         assert_eq!(mode & 0o077, 0, "{} is not private", path.display());
     }
+}
+
+#[test]
+fn subtitles_notes_and_refused_releases_persist_within_bounds() {
+    let mut job = ready_job(7, 1);
+    assert!(!crate::json::stringify(&job.to_json()).contains("subtitles"));
+    job.subtitles = vec!["/library/7.fr.srt".into()];
+    job.import_notes = vec!["runtime_checked: the file lasts 120 min".into()];
+    job.rejected_releases = vec!["Synthetic.Movie.2026.1080p".into()];
+    assert_eq!(Job::from_json(&job.to_json()).unwrap(), job);
+    let mut oversized = job.clone();
+    oversized.import_notes = vec!["note".into(); MAX_JOB_NOTES + 1];
+    assert!(Job::from_json(&oversized.to_json()).is_err());
+    let mut empty = job.clone();
+    empty.subtitles = vec![String::new()];
+    assert!(Job::from_json(&empty.to_json()).is_err());
+
+    let mut refused = Vec::new();
+    for number in 0..=MAX_JOB_NOTES {
+        refuse_release(&mut refused, &format!("Release {number}"));
+    }
+    refuse_release(&mut refused, "Release 3");
+    assert_eq!(refused.len(), MAX_JOB_NOTES);
+    assert_eq!(refused[0], "Release 1");
+
+    // A worker's stale copy cannot forget a refusal; a ready job records one.
+    let directory = Directory::new();
+    let mut store = Store::open(&directory.0).unwrap();
+    let submitted = store.submit(request("Refused")).unwrap();
+    let mut worker = store.claim(now(), 60).unwrap().unwrap();
+    assert_eq!(worker.id, submitted.id);
+    worker.rejected_releases = vec!["First".into()];
+    store.update(worker.clone()).unwrap();
+    worker.rejected_releases.clear();
+    worker.import_notes = vec!["folder_kept: earlier folder".into()];
+    store.update(worker).unwrap();
+    let saved = store.get(&submitted.id).unwrap().unwrap();
+    assert_eq!(saved.rejected_releases, ["First"]);
+    assert_eq!(saved.import_notes, ["folder_kept: earlier folder"]);
+    store
+        .record_refused_release(&submitted.id, "Second")
+        .unwrap();
+    store
+        .record_refused_release(&submitted.id, "Second")
+        .unwrap();
+    assert_eq!(
+        store.get(&submitted.id).unwrap().unwrap().rejected_releases,
+        ["First", "Second"]
+    );
 }
 
 #[test]

@@ -686,6 +686,107 @@ fn native_upgrade_takes_the_place_of_the_file_it_replaced() {
     assert_eq!(library_ids(&resumed), std::slice::from_ref(&ready.id));
 }
 
+fn native_engine(directory: &Path, indexer: &Indexer) -> Arc<Engine> {
+    let mut value = configuration(Some(indexer), HD);
+    let Value::Object(downloads) = value.get_mut("downloads").unwrap() else {
+        panic!("downloads section")
+    };
+    downloads.insert("enabled".into(), true.into());
+    Engine::open(config::from_json(&value, directory).unwrap()).unwrap()
+}
+
+#[test]
+fn a_download_shorter_than_the_film_is_refused_and_its_release_never_picked_again() {
+    let directory = Directory::new();
+    let short = demo_lasting(22);
+    let seeder = Seeder::with_bytes(&directory.0, &short);
+    let indexer = Indexer::open(Value::Array(vec![release(BETTER, 1, &seeder.magnet)]));
+    let engine = native_engine(&directory.0, &indexer);
+    let mut request = movie("Fixture Movie");
+    request.runtime_minutes = Some(120);
+    let id = engine.submit(request).unwrap().remove(0).id;
+    let failed = run_until(&engine, &id, "failed");
+    let error = failed.last_error.as_deref().unwrap();
+    assert!(error.starts_with("runtime_mismatch: "), "{error}");
+    assert!(
+        error.contains("22 min") && error.contains("120 min"),
+        "{error}"
+    );
+    assert!(failed.imports.is_empty());
+    assert_eq!(failed.rejected_releases, [BETTER]);
+    assert!(
+        !engine
+            .config
+            .movies_root
+            .join("Fixture Movie (2024)")
+            .exists()
+    );
+    // The download is left as it was.
+    let payload = engine
+        .config
+        .downloads
+        .data_dir
+        .join(failed.download_id.as_deref().unwrap())
+        .join("Fixture.Movie.2024.mp4");
+    assert_eq!(fs::read(&payload).unwrap(), short);
+
+    // A retry searches again and passes over the refused release.
+    let searches = indexer.calls.load(Ordering::Relaxed);
+    engine.retry(&id).unwrap();
+    let again = run_until(&engine, &id, "failed");
+    assert!(indexer.calls.load(Ordering::Relaxed) > searches);
+    assert!(
+        again
+            .last_error
+            .as_deref()
+            .is_some_and(|error| error.contains("no release satisfies")),
+        "{:?}",
+        again.last_error
+    );
+    assert_eq!(again.rejected_releases, [BETTER]);
+    assert!(again.download_id.is_none());
+}
+
+#[test]
+fn an_upgrade_shorter_than_the_film_is_refused_for_the_title() {
+    let directory = Directory::new();
+    let seeder = Seeder::with_bytes(&directory.0, &demo_lasting(22));
+    let indexer = Indexer::open(Value::Array(vec![release(BETTER, 1, &seeder.magnet)]));
+    let engine = native_engine(&directory.0, &indexer);
+    let full = demo_lasting(120);
+    let source = directory.0.join("full.mp4");
+    fs::write(&source, &full).unwrap();
+    let mut request = movie("Fixture Movie");
+    request.runtime_minutes = Some(120);
+    request.source_path = Some(source.to_str().unwrap().into());
+    let id = engine.submit(request).unwrap().remove(0).id;
+    let original = run_until(&engine, &id, "ready");
+    engine.set_baseline(&original.id, BASELINE).unwrap();
+    assert_eq!(queued(&engine.check_upgrades(true).unwrap()), 1);
+    let child = children(&engine, &original.id).remove(0);
+    let failed = run_until(&engine, &child.id, "failed");
+    assert!(
+        failed
+            .last_error
+            .as_deref()
+            .is_some_and(|error| error.starts_with("runtime_mismatch: ")),
+        "{:?}",
+        failed.last_error
+    );
+    assert_eq!(failed.rejected_releases, [BETTER]);
+    // The current version stays, and its title now refuses the release.
+    assert_eq!(fs::read(&original.imports[0]).unwrap(), full);
+    assert_eq!(library_ids(&engine), std::slice::from_ref(&original.id));
+    let current = lock(&engine.store)
+        .unwrap()
+        .get(&original.id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(current.rejected_releases, [BETTER]);
+    assert_eq!(queued(&engine.check_upgrades(true).unwrap()), 0);
+    assert_eq!(children(&engine, &original.id).len(), 1);
+}
+
 #[test]
 fn initial_automatic_acquisition_records_the_selected_release_for_future_comparisons() {
     let directory = Directory::new();

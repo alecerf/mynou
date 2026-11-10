@@ -125,14 +125,18 @@ fn routable(job: &Job) -> bool {
         && job.irc_origin.is_none()
 }
 
+/// The best fresh entry for `request`, passing over the releases `refused`
+/// for this title once downloaded.
 fn best(
     config: &Config,
     request: &store::Request,
+    refused: &[String],
     fresh: &[&FeedEntry],
     source: &Source,
 ) -> Option<WatchCandidate> {
     fresh
         .iter()
+        .filter(|entry| !integrations::refused(refused, &entry.release.title))
         .filter_map(|entry| integrations::assess_feed_entry(config, request, entry, source))
         .reduce(|best, next| if next.beats(&best) { next } else { best })
 }
@@ -504,7 +508,13 @@ impl Engine {
                 self.attach_upgrade(source, header.policy_revision, job, &fresh)?
             } else if eligible {
                 let config = self.configuration_for(job)?;
-                match best(&config, &job.request, &fresh, source) {
+                match best(
+                    &config,
+                    &job.request,
+                    &job.rejected_releases,
+                    &fresh,
+                    source,
+                ) {
                     Some(candidate) => self.attach_release(
                         source,
                         header.policy_revision,
@@ -674,6 +684,9 @@ impl Engine {
         request.source_url = None;
         let Some(candidate) = fresh
             .iter()
+            .filter(|entry| {
+                !integrations::refused(&current.rejected_releases, &entry.release.title)
+            })
             .filter_map(|entry| integrations::assess_feed_entry(&config, &request, entry, source))
             .filter(|candidate| {
                 profile.is_upgrade(

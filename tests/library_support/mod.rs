@@ -186,6 +186,26 @@ pub fn movie(title: &str) -> Request {
     }
 }
 
+/// The demo MP4 with its movie header saying it lasts `minutes`.
+pub fn demo_lasting(minutes: u32) -> Vec<u8> {
+    let mut bytes = include_bytes!("../fixtures/demo.mp4").to_vec();
+    let at = bytes.windows(4).position(|tag| tag == b"mvhd").unwrap();
+    assert_eq!(bytes[at + 4], 0, "version 0 movie header");
+    let scale = u32::from_be_bytes(bytes[at + 16..at + 20].try_into().unwrap());
+    let duration = u32::try_from(u64::from(minutes) * 60 * u64::from(scale)).unwrap();
+    bytes[at + 20..at + 24].copy_from_slice(&duration.to_be_bytes());
+    let analysed = std::env::temp_dir().join(format!(
+        "mynou-duration-{}-{}.mp4",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    fs::write(&analysed, &bytes).unwrap();
+    let seconds = mynou::media::analyze(&analysed).unwrap().duration_seconds;
+    fs::remove_file(analysed).unwrap();
+    assert_eq!(seconds, Some(f64::from(minutes) * 60.0));
+    bytes
+}
+
 pub fn local_import(engine: &Arc<Engine>, directory: &Path, title: &str) -> Job {
     let source = directory.join(format!("{}.mp4", title.replace(' ', "-")));
     fs::write(&source, include_bytes!("../fixtures/demo.mp4")).unwrap();

@@ -422,6 +422,7 @@ impl Engine {
                 &request,
                 &baseline,
                 &recorded.title,
+                &job.rejected_releases,
                 started + Duration::from_secs(90),
             ) {
                 Ok(selected) => selected,

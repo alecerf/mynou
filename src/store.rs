@@ -91,6 +91,38 @@ pub struct Job {
     /// stays recorded here, in the retry's own transaction, until its pause (or
     /// the decision to keep it for another owner) is itself durable.
     pub retiring_transfers: Vec<String>,
+    /// Subtitle files imported beside the video, under Plex sidecar names.
+    pub subtitles: Vec<String>,
+    /// How the last import went: where it was filed and why, the runtime
+    /// check, skipped subtitles. Each note starts with a code.
+    pub import_notes: Vec<String>,
+    /// Titles of releases refused for this title once downloaded (their file
+    /// did not match its runtime). Searches for it no longer pick them.
+    pub rejected_releases: Vec<String>,
+}
+
+/// Bounds a job's subtitles, import notes and refused releases.
+pub const MAX_JOB_NOTES: usize = 32;
+const MAX_NOTE_BYTES: usize = 2_048;
+
+/// `note` cut to [`MAX_NOTE_BYTES`] at a character boundary.
+pub fn bounded_note(note: &str) -> String {
+    let mut length = note.len().min(MAX_NOTE_BYTES);
+    while !note.is_char_boundary(length) {
+        length -= 1;
+    }
+    note[..length].to_owned()
+}
+
+/// Records a refused release title; the oldest gives way past the bound.
+pub fn refuse_release(refused: &mut Vec<String>, title: &str) {
+    let title = bounded_note(title);
+    if !title.is_empty() && !refused.contains(&title) {
+        if refused.len() >= MAX_JOB_NOTES {
+            refused.remove(0);
+        }
+        refused.push(title);
+    }
 }
 
 /// Bounds the retirements one request can owe at the same time.
@@ -146,6 +178,9 @@ fn fresh_job(
         requester,
         irc_origin: None,
         retiring_transfers: Vec::new(),
+        subtitles: Vec::new(),
+        import_notes: Vec::new(),
+        rejected_releases: Vec::new(),
     })
 }
 
@@ -243,6 +278,14 @@ fn strings(map: &BTreeMap<String, Value>, key: &str) -> Result<Vec<String>> {
             })
             .collect(),
         _ => Err(format!("expected a list: {key}")),
+    }
+}
+
+/// A list of strings that may be absent: absent and null mean empty.
+fn optional_strings(map: &BTreeMap<String, Value>, key: &str) -> Result<Vec<String>> {
+    match map.get(key) {
+        None | Some(Value::Null) => Ok(Vec::new()),
+        Some(_) => strings(map, key),
     }
 }
 
@@ -537,6 +580,15 @@ impl Job {
         if !self.retiring_transfers.is_empty() {
             value.insert("retiring_transfers", list(&self.retiring_transfers));
         }
+        for (name, values) in [
+            ("subtitles", &self.subtitles),
+            ("import_notes", &self.import_notes),
+            ("rejected_releases", &self.rejected_releases),
+        ] {
+            if !values.is_empty() {
+                value.insert(name, list(values));
+            }
+        }
         value
     }
 
@@ -601,7 +653,21 @@ impl Job {
                 None | Some(Value::Null) => Vec::new(),
                 Some(_) => strings(map, "retiring_transfers")?,
             },
+            subtitles: optional_strings(map, "subtitles")?,
+            import_notes: optional_strings(map, "import_notes")?,
+            rejected_releases: optional_strings(map, "rejected_releases")?,
         };
+        if [&job.subtitles, &job.import_notes, &job.rejected_releases]
+            .iter()
+            .any(|values| {
+                values.len() > MAX_JOB_NOTES
+                    || values.iter().any(|value| {
+                        value.is_empty() || value.len() > MAX_NOTE_BYTES || value.contains('\0')
+                    })
+            })
+        {
+            return Err("invalid subtitles, import notes or refused releases".to_owned());
+        }
         if job.retiring_transfers.len() > MAX_RETIRING_TRANSFERS
             || job
                 .retiring_transfers
@@ -2192,6 +2258,10 @@ impl Store {
                 requester: parent.requester.clone(),
                 irc_origin: None,
                 retiring_transfers: Vec::new(),
+                subtitles: Vec::new(),
+                import_notes: Vec::new(),
+                // Releases refused for this title stay refused for its next version.
+                rejected_releases: parent.rejected_releases.clone(),
             };
             db.commit_jobs(vec![job.clone()], "library upgrade recorded")?;
             Ok(job)
@@ -2216,6 +2286,20 @@ impl Store {
             };
             job.updated_at = now();
             db.commit_jobs(vec![job], "library monitor check recorded")
+        })
+    }
+
+    /// Records on `id` a release refused for its title, so that its upgrade
+    /// checks pass over it. Nothing else of the job changes.
+    pub fn record_refused_release(&mut self, id: &str, title: &str) -> Result<()> {
+        self.mutate(|db| {
+            let mut job = db.get(id)?.ok_or_else(|| "unknown job".to_owned())?;
+            if job.rejected_releases.contains(&bounded_note(title)) {
+                return Ok(());
+            }
+            refuse_release(&mut job.rejected_releases, title);
+            job.updated_at = now();
+            db.commit_jobs(vec![job], "release refused for this title")
         })
     }
 
@@ -2542,6 +2626,9 @@ impl Store {
                 requester: None,
                 irc_origin: None,
                 retiring_transfers: Vec::new(),
+                subtitles: Vec::new(),
+                import_notes: Vec::new(),
+                rejected_releases: Vec::new(),
             });
         }
         self.mutate(|db| {
@@ -2598,6 +2685,12 @@ impl Store {
             }
             // Only retry and retirement change the debt; a worker's stale copy cannot.
             job.retiring_transfers = current.retiring_transfers.clone();
+            // Refusals only accumulate: a stale copy cannot forget one.
+            let mut refused = current.rejected_releases.clone();
+            for title in &job.rejected_releases {
+                refuse_release(&mut refused, title);
+            }
+            job.rejected_releases = refused;
             let ready_upgrade = current.state != "ready"
                 && job.state == "ready"
                 && current.upgrade_parent.is_some();

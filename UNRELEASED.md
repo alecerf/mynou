@@ -330,3 +330,40 @@ The request page no longer has a Year field: type it after the title, as in
 
 The status at the top right no longer says "All quiet. All connected."; it
 appears while Mynou connects or reconnects.
+
+## Changed: Imports go into the title's Plex folder
+
+When Plex already lists a film or a series, Mynou files the new file in the
+folder Plex keeps it in, such as `Mission - Impossible (1996)`, and an episode
+in the folder that already holds its season, whether it is called `Season 2`,
+`Season 02` or `Specials`. A new title still gets `Title (Year)` and
+`Season 02` (`Season 00` for specials), but a colon in its name now becomes
+` - `, as Plex names it, instead of `_`; a title Mynou already filed under the
+old name keeps its folder. An upgrade goes where the file it replaces is. A
+folder outside the library folders, one reached through a symbolic link, or a
+title Plex lists in several folders gets Mynou's own layout instead. The job
+says which folder it used and why: in its **Files & quality** tab, and as
+`import_notes` in the API.
+
+## Added: Subtitles come with the video
+
+The subtitles of a release (`.srt`, `.ass`, `.ssa`, `.vtt`, and `.idx` with
+its `.sub`) are imported next to the video under Plex's names, with the
+language and the forced or SDH flags read from their names:
+`Film (2024).fr.srt`, `Film (2024).en.forced.srt`. Other files, such as `.nfo`,
+are left out. A subtitle already in the library is never replaced, by an import
+or by an upgrade, and the job notes the one it kept. The job lists the
+subtitles it imported (`subtitles` in the API).
+
+## Added: Imports check the length of the file
+
+Before filing a file, Mynou compares its length with the runtime TMDB gives for
+the film or the episode, and accepts 70% to 160% of it: an extended cut passes,
+a 22-minute file sold as a two-hour film does not. Outside that range nothing
+is written; the job fails with `runtime_mismatch` and both lengths, and the
+release is not picked again for this title by searches, feed watching or
+upgrade checks (`rejected_releases` in the API, **Refused releases** in the
+job's Acquisition tab). A file given with `source_path` is checked the same
+way. When the runtime or the file's length is unknown, the file is imported
+and the job notes that the check was skipped. A file holding several episodes
+is not checked.

@@ -1096,17 +1096,35 @@ impl Engine {
             store.release_lease(&job.id, &lease)?;
             return Ok(false);
         }
+        let mut refused = None;
         if let Err(error) = result {
             job.attempts = job.attempts.saturating_add(1);
-            job.last_error = Some(error);
             job.state = "failed".into();
             job.next_attempt_at = if job.attempts < self.config.max_attempts {
                 store::now().saturating_add((1_u64 << job.attempts.min(10)).min(900))
             } else {
                 0
             };
+            if error.starts_with(organizer::RUNTIME_MISMATCH) {
+                // The same file would be refused again: no automatic retry.
+                // The release is refused for this title; a retry searches
+                // for another one.
+                job.next_attempt_at = 0;
+                if let Some(release) = &job.release {
+                    store::refuse_release(&mut job.rejected_releases, &release.title);
+                    refused = Some(release.title.clone());
+                }
+            }
+            job.last_error = Some(error);
         }
         store.update(job.clone())?;
+        // An upgrade's title is its parent's: its upgrade checks pass over
+        // the refused release too.
+        if let (Some(title), Some(parent)) = (&refused, &job.upgrade_parent)
+            && job.shared_upgrade.is_none()
+        {
+            store.record_refused_release(parent, title)?;
+        }
         if !matches!(job.state.as_str(), "ready" | "failed" | "cancelled") {
             store.release_lease(&job.id, &lease)?;
         }
@@ -1136,43 +1154,56 @@ impl Engine {
         cancel_orphaned_transfers(client, store, &mut *lock(&self.transfer_sweep)?)
     }
 
+    /// Imports the chosen file of `job` and the subtitles that go with it,
+    /// recording both and how the import went on the job. `available` is
+    /// every verified file of the download, for its subtitles; empty for a
+    /// file imported from a path, whose subtitles are those named after it.
     fn import_version(
         &self,
+        config: &Config,
         source: &Path,
         root: &Path,
-        job: &Job,
+        job: &mut Job,
+        available: &[std::path::PathBuf],
         active: &AtomicBool,
-    ) -> Result<std::path::PathBuf> {
+    ) -> Result<()> {
         if let Some(file) = &job.shared_file {
-            organizer::import_shared_file_cancellable(source, root, file, active)
-        } else if let Some(parent) = &job.upgrade_parent {
-            // The upgrade takes the place of the file it replaces.
-            let replaced = lock(&self.store)?
+            let imported = organizer::import_shared_file_cancellable(source, root, file, active)?;
+            job.imports.push(imported.to_string_lossy().into_owned());
+            return Ok(());
+        }
+        // An upgrade takes the place of the file it replaces.
+        let replaced = match &job.upgrade_parent {
+            Some(parent) => lock(&self.store)?
                 .get(parent)?
                 .map(|parent| parent.imports)
-                .unwrap_or_default();
-            if job.download_id.is_some() {
-                organizer::import_native_upgrade_file_cancellable(
-                    source,
-                    root,
-                    &job.request,
-                    &replaced,
-                    active,
-                )
+                .unwrap_or_default(),
+            None => Vec::new(),
+        };
+        let mut plex = || {
+            if config.plex.enabled {
+                integrations::plex_title_files(config, &job.request).map(Some)
             } else {
-                organizer::import_upgrade_file_cancellable(
-                    source,
-                    root,
-                    &job.request,
-                    &replaced,
-                    active,
-                )
+                Ok(None)
             }
-        } else if job.download_id.is_some() {
-            organizer::import_native_file_cancellable(source, root, &job.request, active)
+        };
+        let placement = organizer::placement(root, &job.request, &replaced, &mut plex)?;
+        add_notes(&mut job.import_notes, &placement.notes);
+        // A native payload is copied: a second link would stop its seeding.
+        let copy = job.download_id.is_some();
+        let imported = organizer::import_placed(source, root, &placement, &replaced, active, copy)?;
+        let (candidates, whole_release) = if available.is_empty() {
+            (organizer::neighbours(source), false)
         } else {
-            organizer::import_file_cancellable(source, root, &job.request, active)
-        }
+            (available.to_vec(), true)
+        };
+        let subtitles = organizer::release_subtitles(source, &candidates, whole_release);
+        let (subtitles, notes) =
+            organizer::import_subtitles(&imported, root, &subtitles, active, copy)?;
+        add_notes(&mut job.import_notes, &notes);
+        job.imports.push(imported.to_string_lossy().into_owned());
+        job.subtitles = subtitles;
+        Ok(())
     }
 
     fn advance(&self, job: &mut Job, active: &AtomicBool) -> Result<()> {
@@ -1255,6 +1286,8 @@ impl Engine {
             job.next_attempt_at = 0;
             return Ok(());
         }
+        // Every verified file of the download, where its subtitles are found.
+        let mut available = Vec::new();
         if job.imports.is_empty() && !job.files.is_empty() && job.download_id.is_some() {
             let client = self.downloads.get().ok_or("Downloads are disabled")?;
             let id = job.download_id.as_deref().ok_or("Missing download")?;
@@ -1285,6 +1318,7 @@ impl Engine {
                 job.next_attempt_at = store::now().saturating_add(1);
                 return Ok(());
             }
+            available = status.available_files;
         }
         if job.files.is_empty() {
             if let Some(path) = &job.request.source_path {
@@ -1295,7 +1329,11 @@ impl Engine {
                     let (url, release) = match &job.request.source_url {
                         Some(url) => (url.clone(), None),
                         None => {
-                            let selected = integrations::select_release(&config, &job.request)?;
+                            let selected = integrations::select_release_refusing(
+                                &config,
+                                &job.request,
+                                &job.rejected_releases,
+                            )?;
                             (
                                 selected.url,
                                 Some(RecordedRelease {
@@ -1438,6 +1476,7 @@ impl Engine {
                     .filter(|path| mapped.as_ref().is_none_or(|expected| *path == expected))
                     .map(|p| p.to_string_lossy().into_owned())
                     .collect();
+                available = status.available_files;
                 if mapped.is_some() && job.files.len() != 1 {
                     return Err(
                         "Mapped torrent file is absent or ambiguous in the verified payload".into(),
@@ -1464,19 +1503,27 @@ impl Engine {
         job.state = "importing".into();
         lock(&self.store)?.update(job.clone())?;
         let pack = job.request.kind == "episode" && job.pack_file.is_none() && job.files.len() > 1;
-        let source = import_source(&job.files, &job.request, pack, active)?;
-        if pack {
-            let imported = self.import_version(source, &config.series_root, job, active)?;
-            job.imports.push(imported.to_string_lossy().into_owned());
+        let files = job.files.clone();
+        let (source, duration) = import_source(&files, &job.request, pack, active)?;
+        job.import_notes.clear();
+        // The file must be able to be the requested title before anything is
+        // written. A file shared by several episodes has no single runtime.
+        let runtime = if job.shared_file.is_some() {
+            "runtime_check_skipped: the file holds several episodes".to_owned()
         } else {
-            let root = if job.request.kind == "episode" {
-                &config.series_root
-            } else {
-                &config.movies_root
-            };
-            let imported = self.import_version(source, root, job, active)?;
-            job.imports.push(imported.to_string_lossy().into_owned());
-        }
+            organizer::check_runtime(
+                &job.request,
+                duration,
+                integrations::import_runtime(&config, &job.request),
+            )?
+        };
+        add_notes(&mut job.import_notes, &[runtime]);
+        let root = if pack || job.request.kind == "episode" {
+            &config.series_root
+        } else {
+            &config.movies_root
+        };
+        self.import_version(&config, source, root, job, &available, active)?;
         job.progress = 1.0;
         job.state = "imported".into();
         job.next_attempt_at = 0;
@@ -1495,14 +1542,25 @@ impl Engine {
     }
 }
 
+/// Adds `added` to a job's import notes, within their bounds.
+fn add_notes(notes: &mut Vec<String>, added: &[String]) {
+    for note in added {
+        if notes.len() >= store::MAX_JOB_NOTES {
+            break;
+        }
+        notes.push(store::bounded_note(note));
+    }
+}
+
 /// The file of a download to import: the largest supported media file with
-/// video, or for an episode in a pack the single file named for it.
+/// video, or for an episode in a pack the single file named for it, with its
+/// analyzed duration in seconds when the container gives one.
 fn import_source<'a>(
     files: &'a [String],
     request: &Request,
     pack: bool,
     active: &AtomicBool,
-) -> Result<&'a Path> {
+) -> Result<(&'a Path, Option<f64>)> {
     // Supported media files, largest first, sized without opening them.
     let mut supported = Vec::new();
     for file in files {
@@ -1558,7 +1616,7 @@ fn import_source<'a>(
         if video_only && !video {
             continue;
         }
-        candidates.push((video, p));
+        candidates.push((video, p, analysis.duration_seconds));
         // Each request represents one movie or episode: the largest file with
         // video wins, which avoids importing samples. A pack needs every match
         // to prove that only one file holds the episode.
@@ -1569,15 +1627,15 @@ fn import_source<'a>(
     if pack && candidates.len() != 1 {
         return Err("Ambiguous pack: exactly one file matching the episode is required".into());
     }
-    let (_, source) = *candidates
+    let (_, source, duration) = *candidates
         .iter()
-        .find(|(video, _)| *video)
+        .find(|(video, _, _)| *video)
         .or(candidates.first())
         .ok_or_else(|| match &failure {
             Some(failure) => format!("No supported media found for this request ({failure})"),
             None => "No supported media found for this request".into(),
         })?;
-    Ok(source)
+    Ok((source, duration))
 }
 
 pub struct Workers {
