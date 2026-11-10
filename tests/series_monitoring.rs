@@ -1,6 +1,6 @@
 //! Durable series monitoring, bounded acquisition and mapping safety. CI only.
-mod library_support;
-mod series_support;
+use crate::library_support;
+use crate::series_support;
 use library_support::Directory;
 use mynou::{
     date,

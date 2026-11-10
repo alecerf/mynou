@@ -1,7 +1,7 @@
 //! The embedded web interface and its WebSocket transport, over loopback only.
-mod api_support;
-mod jobs_state;
-mod series_support;
+use crate::api_support;
+use crate::jobs_state;
+use crate::series_support;
 
 use api_support::{Server, TOKEN};
 use mynou::{config, json};

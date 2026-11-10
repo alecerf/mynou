@@ -1,7 +1,7 @@
 //! Bracketed announcements resolved through loopback Torznab and catalog fixtures.
 //! Sanitized synthetic lines only; no tracker, channel or credential is real.
-mod irc_support;
-mod library_support;
+use crate::irc_support;
+use crate::library_support;
 use library_support::Directory;
 use mynou::{
     config::{self, Config},

@@ -1,6 +1,6 @@
 //! CI-only bounded, resumable requester watchlist sweeps on synthetic accounts.
-mod library_support;
-mod requester_support;
+use crate::library_support;
+use crate::requester_support;
 use library_support::Directory;
 use mynou::{engine::Engine, json::Value};
 use requester_support::*;

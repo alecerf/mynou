@@ -1,5 +1,5 @@
 //! Durable transfer controls use native local peers and synthetic payloads only.
-mod transfer_support;
+use crate::transfer_support;
 
 use mynou::engine::{Engine, lock};
 use mynou::json::{self, Value};

@@ -1,7 +1,7 @@
 //! CI-only loopback scenarios: a retry that starts a new search must retire the
 //! previous native transfer once, durably, and only when nobody else needs it.
-mod library_support;
-mod requester_support;
+use crate::library_support;
+use crate::requester_support;
 use library_support::Directory;
 use mynou::{
     config::Config,

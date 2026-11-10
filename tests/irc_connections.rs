@@ -1,6 +1,6 @@
 //! Native loopback IRC journeys, bounded reconnect and interruptible reads.
-mod irc_support;
-mod library_support;
+use crate::irc_support;
+use crate::library_support;
 use irc_support::*;
 use library_support::Directory;
 use mynou::{config, engine::Engine, json::Value};

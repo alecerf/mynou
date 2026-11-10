@@ -1,8 +1,8 @@
 //! CI-only multiple-account ownership, policy fencing and restart scenarios.
-mod jobs_state;
-mod library_support;
-mod requester_support;
-mod series_support;
+use crate::jobs_state;
+use crate::library_support;
+use crate::requester_support;
+use crate::series_support;
 use library_support::Directory;
 use mynou::{
     config,

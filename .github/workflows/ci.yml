@@ -126,8 +126,8 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: target/debug
-          key: rust-1.99.1-${{ runner.arch }}-debug0-v3-${{ github.sha }}
-          restore-keys: rust-1.99.1-${{ runner.arch }}-debug0-v3-
+          key: rust-1.99.1-${{ runner.arch }}-debug0-v4-${{ github.sha }}
+          restore-keys: rust-1.99.1-${{ runner.arch }}-debug0-v4-
       - name: Verify the dependency graph
         id: metadata
         run: |

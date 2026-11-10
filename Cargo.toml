@@ -5,6 +5,9 @@ edition = "2024"
 rust-version = "1.99"
 description = "Media library automation in Rust, using the standard library only"
 publish = false
+# tests/*.rs are modules of one integration binary (tests/main.rs): linking
+# each as its own crate dominated the test build. New files must be declared there.
+autotests = false
 
 [lib]
 name = "mynou"
@@ -14,11 +17,29 @@ path = "src/lib.rs"
 name = "mynou"
 path = "src/main.rs"
 
+[[test]]
+name = "integration"
+path = "tests/main.rs"
+
+# Built and run on its own, inside the WireGuard peer's network namespace.
+[[test]]
+name = "wireguard_interop"
+path = "tests/wireguard_interop.rs"
+
 [profile.release]
 lto = "thin"
 codegen-units = 1
 panic = "abort"
 strip = "symbols"
+
+# The parser fuzzer only: release settings (a panic still aborts) without
+# whole-crate LTO, which is most of the fuzzer's build (2.4x faster locally)
+# for a run about 4% slower. Load measurements keep `release`, the shipped
+# binary their baselines were taken from.
+[profile.fuzz]
+inherits = "release"
+lto = "off"
+codegen-units = 16
 
 [lints.rust]
 # Denied everywhere; src/crypto/sha_arm.rs is the one allowed exception.

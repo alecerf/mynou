@@ -1,10 +1,9 @@
 //! Protected automatic pack previews and acquisition through native HTTP/forms/CLI.
-mod api_support;
-mod automatic_pack_support;
-mod library_support;
-mod series_support;
-#[allow(dead_code)]
-mod transfer_support;
+use crate::api_support;
+use crate::automatic_pack_support;
+use crate::library_support;
+use crate::series_support;
+use crate::transfer_support;
 use api_support::{Server, TOKEN};
 use automatic_pack_support::*;
 use library_support::Directory;

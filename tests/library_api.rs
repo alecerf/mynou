@@ -1,6 +1,5 @@
 //! Authenticated library controls and CLI routing; all services are synthetic and local.
-mod jobs_state;
-mod library_support;
+use crate::library_support;
 
 use library_support::*;
 use mynou::config;

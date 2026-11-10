@@ -1,11 +1,10 @@
 //! Original local requester-selective IRC routing and immutable demand fixtures.
-mod api_support;
-mod irc_routing_support;
-mod irc_support;
-mod library_support;
-mod requester_support;
-#[allow(dead_code)]
-mod transfer_support;
+use crate::api_support;
+use crate::irc_routing_support;
+use crate::irc_support;
+use crate::library_support;
+use crate::requester_support;
+use crate::transfer_support;
 use api_support::{Server, TOKEN};
 use irc_routing_support::*;
 use library_support::{Directory, run_until};

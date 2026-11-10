@@ -1,5 +1,4 @@
-#[allow(dead_code)]
-mod transfer_support;
+use crate::transfer_support;
 use mynou::{
     bencode::{Value, encode},
     crypto::sha1,

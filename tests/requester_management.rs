@@ -1,7 +1,7 @@
 //! Original Bearer API and CLI requester scenarios.
-mod api_support;
-mod library_support;
-mod requester_support;
+use crate::api_support;
+use crate::library_support;
+use crate::requester_support;
 use api_support::{Server, TOKEN};
 use library_support::Directory;
 use mynou::json::{self, Value};

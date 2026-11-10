@@ -1,11 +1,9 @@
 //! Original shared-file lifecycle scenarios. Executed by GitHub Actions only.
-mod automatic_pack_support;
-mod jobs_state;
-mod library_support;
-mod series_support;
-mod torrent_network_support;
-#[allow(dead_code)]
-mod transfer_support;
+use crate::automatic_pack_support;
+use crate::library_support;
+use crate::series_support;
+use crate::torrent_network_support;
+use crate::transfer_support;
 use automatic_pack_support::{Provider, no_sources, snapshot};
 use library_support::{Directory, run_until};
 use mynou::{

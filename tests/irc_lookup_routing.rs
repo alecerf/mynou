@@ -1,9 +1,8 @@
 //! A resolved bracketed announcement acquired from a private tracker through the
 //! authenticated indexer's `.torrent`. Loopback fixtures only; no real tracker.
-mod irc_support;
-mod library_support;
-#[allow(dead_code)]
-mod transfer_support;
+use crate::irc_support;
+use crate::library_support;
+use crate::transfer_support;
 use library_support::{Directory, run_until};
 use mynou::{
     bencode::{self, Value as Bencode},

@@ -1,7 +1,7 @@
 //! Original explicit numbering, identity retention and restart scenarios. CI only.
-mod jobs_state;
-mod library_support;
-mod series_support;
+use crate::jobs_state;
+use crate::library_support;
+use crate::series_support;
 use library_support::{Directory, Indexer};
 use mynou::{
     engine::{Engine, lock},

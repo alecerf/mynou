@@ -1,5 +1,5 @@
 //! Synthetic local swarms exercise exclusive work, cancellation and throughput.
-mod parallel_support;
+use crate::parallel_support;
 
 use mynou::json::Value;
 use mynou::torrent::{Client, TransferPolicy};

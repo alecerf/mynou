@@ -1,9 +1,8 @@
 //! CI-only real local native peers, captured routes and exact Plex confirmation.
-mod automatic_pack_support;
-mod library_support;
-mod requester_support;
-#[allow(dead_code)]
-mod transfer_support;
+use crate::automatic_pack_support;
+use crate::library_support;
+use crate::requester_support;
+use crate::transfer_support;
 use automatic_pack_support::{Provider, release};
 use library_support::{Directory, run_until};
 use mynou::{

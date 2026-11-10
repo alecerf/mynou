@@ -19,6 +19,10 @@ MAX_MANIFEST_BYTES = 32 * 1024 * 1024
 MAX_LOG_BYTES = 16 * 1024 * 1024
 # Keep growing-inventory cases from accumulating past a group's fixed deadline.
 MAX_LIBRARY_GROUP_TESTS = 16
+# Harnesses run one process per top-level module, with at most this many tests
+# per process (None: the whole module). Each integration module was once its
+# own test crate, so it keeps a process of its own.
+SHARDED = {"src/lib.rs": MAX_LIBRARY_GROUP_TESTS, "tests/main.rs": None}
 RESULT = re.compile(
     r"test result: (ok|FAILED)\. (\d+) passed; (\d+) failed; (\d+) ignored; "
     r"\d+ measured; (\d+) filtered out; finished in ([0-9.]+)s"
@@ -41,13 +45,14 @@ class Target:
         return label + (f":{self.batch}" if self.batch else "")
 
 
-def library_shards(targets, root):
-    """Discover every library test; exact-name filters partition it once."""
+def module_shards(targets, root):
+    """Discover every test of a sharded harness; exact-name filters partition it once."""
     planned = []
     for target in targets:
-        if target.source != "src/lib.rs":
+        if target.source not in SHARDED:
             planned.append(target)
             continue
+        limit = SHARDED[target.source]
         with tempfile.TemporaryFile() as listing:
             process = subprocess.Popen(
                 [str(target.executable), "--list", "--format", "terse"],
@@ -58,33 +63,34 @@ def library_shards(targets, root):
                 code = process.wait(timeout=15)
             except subprocess.TimeoutExpired:
                 terminate(process)
-                raise ValueError("Library test discovery timed out") from None
+                raise ValueError(f"{target.source} test discovery timed out") from None
             listing.seek(0)
             data = listing.read(MAX_LOG_BYTES + 1)
         if code != 0 or len(data) > MAX_LOG_BYTES:
-            raise ValueError("Library test discovery failed or exceeded its log budget")
+            raise ValueError(f"{target.source} test discovery failed or exceeded its log budget")
         names = []
         for line in data.decode("utf-8").splitlines():
             match = re.fullmatch(r"([A-Za-z_][\w]*(?:::[A-Za-z_][\w]*)*): test", line)
             if not match:
-                raise ValueError("Malformed library test listing")
+                raise ValueError(f"Malformed {target.source} test listing")
             names.append(match[1])
         if not names or len(names) > 10_000 or len(names) != len(set(names)):
-            raise ValueError("Library discovery must contain 1–10000 unique tests")
+            raise ValueError(f"{target.source} discovery must contain 1–10000 unique tests")
         groups = {}
         for name in names:
             groups.setdefault(name.split("::")[0], []).append(name)
         if len(groups) > 128:
-            raise ValueError("Library discovery exceeds 128 module groups")
+            raise ValueError(f"{target.source} discovery exceeds 128 module groups")
         for group in sorted(groups):
             tests = sorted(groups[group])
             # Growing storage coverage must not accumulate in one timed harness.
             # Keep the same deadline and execute every exact name once.
-            for start in range(0, len(tests), MAX_LIBRARY_GROUP_TESTS):
-                batch = start // MAX_LIBRARY_GROUP_TESTS + 1 if len(tests) > MAX_LIBRARY_GROUP_TESTS else 0
+            size = limit or len(tests)
+            for start in range(0, len(tests), size):
+                batch = start // size + 1 if len(tests) > size else 0
                 planned.append(Target(
                     target.source, target.executable,
-                    tuple(tests[start:start + MAX_LIBRARY_GROUP_TESTS]), len(names), batch,
+                    tuple(tests[start:start + size]), len(names), batch,
                 ))
     return planned
 
@@ -128,8 +134,8 @@ def discover(manifest, root, expected=None):
             raise ValueError("Cargo reported conflicting executables for one test target")
     if not successful or not targets or len(targets) > 128:
         raise ValueError("A successful Cargo test build with 1–128 harnesses is required")
-    if not {"src/lib.rs", "src/main.rs"}.issubset(targets):
-        raise ValueError("Cargo test manifest is missing the library or binary harness")
+    if not {"src/lib.rs", "src/main.rs", "tests/main.rs"}.issubset(targets):
+        raise ValueError("Cargo test manifest is missing the library, binary or integration harness")
     if expected is not None and set(targets) != expected:
         raise ValueError("Compiled test harnesses do not match the current Cargo target graph")
     return list(targets.values())
@@ -242,12 +248,15 @@ def execute(target, root, log, threads, timeout):
 def schedule(targets, root, output, workers, threads, timeout, history):
     if len({target.label for target in targets}) != len(targets):
         raise ValueError("Duplicate scheduled target")
-    libraries = [target for target in targets if target.tests]
-    if libraries:
-        names = [name for target in libraries for name in target.tests]
-        totals = {target.total_tests for target in libraries}
+    sharded = {}
+    for target in targets:
+        if target.tests:
+            sharded.setdefault(target.source, []).append(target)
+    for source, groups in sharded.items():
+        names = [name for target in groups for name in target.tests]
+        totals = {target.total_tests for target in groups}
         if len(totals) != 1 or len(names) != next(iter(totals)) or len(names) != len(set(names)):
-            raise ValueError("Library groups must cover every discovered test exactly once")
+            raise ValueError(f"{source} groups must cover every discovered test exactly once")
     output.mkdir(parents=True, exist_ok=False)
     ordered = sorted(targets, key=lambda target: (-history.get(target.label, history.get(target.source, 0)), target.label))
     started = time.monotonic()
@@ -297,7 +306,7 @@ def main():
     history = weights([root / ".github/scripts/test_durations.json"])
     targets = discover(args.manifest, root, expected_sources(args.metadata, root))
     harnesses = len(targets)
-    targets = library_shards(targets, root)
+    targets = module_shards(targets, root)
     print(f"Running all {harnesses} Cargo test harnesses in {len(targets)} groups: {args.workers} processes, {args.threads} threads per group", flush=True)
     report = schedule(targets, root, args.output, args.workers, args.threads, args.timeout, history)
     encoded = json.dumps(report, indent=2) + "\n"

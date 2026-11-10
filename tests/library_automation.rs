@@ -1,6 +1,6 @@
 //! Library upgrades use synthetic releases, media and native local torrent peers.
-mod home_support;
-mod library_support;
+use crate::home_support;
+use crate::library_support;
 
 use library_support::*;
 use mynou::bencode::{self, Value as Bencode};
