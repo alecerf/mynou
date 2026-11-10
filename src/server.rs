@@ -813,6 +813,23 @@ pub(crate) fn route(
         )),
         ("GET", "/api/plex/sections") => Ok((200, engine.plex_sections()?)),
         ("POST", "/api/plex/disconnect") => Ok((200, engine.plex_disconnect()?)),
+        // The owner's Plex friends: read the list again, or turn one on or off.
+        ("POST", "/api/plex/friends") => {
+            control_body(body, &[], true)?;
+            Ok((200, engine.refresh_plex_friends()?))
+        }
+        ("POST", path) if path.starts_with("/api/plex/friends/") => {
+            let id = &path["/api/plex/friends/".len()..];
+            if crate::requesters::plex_user(id).is_none() {
+                return Ok((404, error("Unknown Plex friend")));
+            }
+            let value = control_body(body, &["enabled"], false)?;
+            let enabled = value
+                .get("enabled")
+                .and_then(Value::as_bool)
+                .ok_or("enabled must be true or false")?;
+            Ok((200, engine.plex_friend(id, enabled)?))
+        }
         ("GET", "/api/secrets") => Ok((200, engine.secrets()?)),
         ("POST", "/api/secrets") => {
             if body.len() > 16_384 {

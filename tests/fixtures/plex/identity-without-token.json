@@ -1,0 +1,14 @@
+{
+  "provenance": "Real response, recorded 2026-11-10: GET https://plex.tv/api/v2/user with Accept: application/json and no token. With the owner's token this answers who the connected account is; its id field is what token accounts already compare with expected_user_id.",
+  "status": 401,
+  "content_type": "application/json; charset=utf-8",
+  "body": {
+    "errors": [
+      {
+        "code": 1001,
+        "message": "User could not be authenticated",
+        "status": 401
+      }
+    ]
+  }
+}

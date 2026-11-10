@@ -1,4 +1,4 @@
-import { sentence } from './format.js';
+import { sentence, relativeTime } from './format.js';
 import { $, h, icon } from './dom.js';
 import { toast, act, skeleton } from './components.js';
 import { Motion } from './motion.js';
@@ -549,6 +549,109 @@ function paintVpn() {
   hint.classList.toggle('bad', vpn?.forwarding === 'unavailable');
 }
 
+// Plex friends: each switch applies at once, outside the settings document
+// and Save. New friends are off.
+const FRIEND_STATES = {
+  on: ['Following', 'ok'], reading: ['Reading', 'warn'], off: ['Off', ''], error: ['Error', 'bad'],
+  left: ['No longer a friend', 'warn'], duplicate: ['Already a requester', 'warn'],
+};
+// Plex is asked for the list when the page opens, at most this often.
+const FRIENDS_STALE_MS = 10 * 60_000;
+const friends = { askedAt: 0, asking: false };
+
+async function refreshRequesters() {
+  const body = await link.call('GET', '/api/requesters');
+  data.set('requesters', { status: 200, data: body, at: Date.now() });
+  paintFriends();
+}
+
+async function checkFriends() {
+  friends.asking = true;
+  friends.askedAt = Date.now();
+  try {
+    await link.call('POST', '/api/plex/friends', {});
+  } finally {
+    friends.asking = false;
+    await refreshRequesters().catch(() => {});
+  }
+}
+
+function friendRow(friend) {
+  const id = `friend-${friend.id}`;
+  const [state, tone] = FRIEND_STATES[friend.state] ?? [sentence(friend.state), 'warn'];
+  const titles = Number(friend.titles) || 0;
+  const name = friend.name || friend.username || 'Plex friend';
+  const hint = friend.state === 'left' ? 'Their watchlist is no longer read; what was requested stays.'
+    : friend.error ? plexError(friend.error)
+    : friend.state === 'on' ? `${titles.toLocaleString()} ${titles === 1 ? 'title' : 'titles'} on the watchlist.`
+    : friend.state === 'reading' ? 'Reading the watchlist for the first time.'
+    : friend.username && friend.username !== name ? friend.username : '';
+  // A friend who left, or who already has a requester account, cannot be
+  // turned on; one still on can be turned off.
+  const locked = !friend.enabled && (friend.state === 'left' || friend.state === 'duplicate');
+  return h('div', { class: 'setting-row toggle', dataset: { friend: friend.id } },
+    h('div', { class: 'setting-label' },
+      h('label', { htmlFor: id }, name, h('span', { class: 'badge', dataset: { tone } }, state)),
+      hint ? h('p', { class: `hint${friend.state === 'error' ? ' bad' : ''}` }, hint) : null),
+    h('input', { id, type: 'checkbox', class: 'switch', checked: Boolean(friend.enabled), disabled: locked, dataset: { friendSwitch: friend.id } }));
+}
+
+/** A requester account with its own Plex token, shown beside the friends. */
+function accountRow(account) {
+  const on = Boolean(account.policy?.enabled);
+  const error = account.last_error;
+  return h('div', { class: 'setting-row toggle' },
+    h('div', { class: 'setting-label' },
+      h('span', {}, account.id, h('span', { class: 'badge', dataset: { tone: error ? 'bad' : on ? 'ok' : '' } }, error ? 'Error' : on ? 'Following' : 'Off')),
+      h('p', { class: `hint${error ? ' bad' : ''}` }, error ? plexError(error) : 'A requester account with its own Plex token.')));
+}
+
+/** The friend list as the last requesters push reports it. */
+function paintFriends() {
+  const list = $('#settings-friends');
+  if (!list) return;
+  const requesters = data.get('requesters')?.data;
+  const plex = requesters?.plex;
+  const listed = itemsOf(plex?.friends);
+  const accounts = itemsOf(requesters?.accounts).filter((a) => !a.plex && !a.id.startsWith('plex-'));
+  const checked = Number(plex?.checked_at) || 0;
+  const count = listed.filter((f) => f.state !== 'left').length;
+  const hint = !requesters ? '…'
+    : !plex?.connected ? 'Connect Plex above, then your friends show here.'
+    : plex.error ? plexError(plex.error)
+    : friends.asking && !checked ? 'Asking Plex…'
+    : checked ? `${count ? `${count.toLocaleString()} ${count === 1 ? 'friend' : 'friends'}` : 'No friends'} on Plex, checked ${relativeTime(checked)}.`
+    : 'Not checked yet.';
+  // A switch waiting for its answer is repainted once the answer is in.
+  if (list.querySelector('[data-friend-switch][data-busy]')) return;
+  const head = h('div', { class: 'setting-row toggle' },
+    h('div', { class: 'setting-label' }, h('span', {}, 'Plex friends'), h('p', { class: `hint${plex?.error ? ' bad' : ''}` }, hint)),
+    h('button', { type: 'button', class: 'secondary', disabled: !plex?.connected || friends.asking, dataset: { friendsAct: 'check' } }, icon('sync'), 'Check now'));
+  list.replaceChildren(head, ...listed.map(friendRow), ...accounts.map(accountRow));
+  // Opening the page asks Plex for the list when it is old.
+  if (currentParam() === 'services' && plex?.connected && !friends.asking
+    && Date.now() - checked * 1000 > FRIENDS_STALE_MS && Date.now() - friends.askedAt > FRIENDS_STALE_MS) {
+    checkFriends().catch(() => {});
+  }
+}
+
+async function switchFriend(input) {
+  const on = input.checked;
+  input.disabled = true;
+  input.dataset.busy = '1';
+  try {
+    const friend = await link.call('POST', `/api/plex/friends/${encodeURIComponent(input.dataset.friendSwitch)}`, { enabled: on });
+    toast(on ? `Following ${friend.name}’s watchlist` : `${friend.name}’s watchlist is no longer read; what was requested stays`);
+  } catch (e) {
+    input.checked = !on;
+    toast(e.message, 'bad');
+  } finally {
+    delete input.dataset.busy;
+    input.disabled = false;
+    await refreshRequesters().catch(() => {});
+  }
+}
+
 /** Shows the groups of the page in the hash; the first page by default. */
 function showPage() {
   const wanted = currentParam();
@@ -629,6 +732,17 @@ views.settings = {
           .finally(() => { input.disabled = false; });
       }
     });
+    const friendList = $('#settings-friends');
+    // Friend switches apply at once: they never mark the settings unsaved.
+    friendList.addEventListener('input', (event) => event.stopPropagation());
+    friendList.addEventListener('change', (event) => {
+      event.stopPropagation();
+      if (event.target.dataset.friendSwitch) switchFriend(event.target);
+    });
+    friendList.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-friends-act="check"]');
+      if (button) act(button, checkFriends);
+    });
     $('#indexer-add').addEventListener('click', () => {
       const row = indexerRow({ kind: 'torznab', enabled: true });
       $('#settings-indexers').append(row);
@@ -691,6 +805,7 @@ views.settings = {
   /** States that change while the page is open; inputs are never touched. */
   paintLive() {
     paintVpn();
+    paintFriends();
     const reports = indexerReports();
     for (const row of $('#settings-indexers').children) {
       const state = $('[data-live="indexer"]', row);
@@ -711,7 +826,7 @@ views.settings = {
     if (!hint || !status) return;
     const accounts = data.get('requesters')?.data?.accounts?.length ?? 0;
     hint.textContent = status.last_sync_error ? `Last sync failed: ${plexError(status.last_sync_error)}`
-      : `${accounts ? `${accounts} accounts' watchlists` : 'Your watchlist'} is read every minute.`;
+      : accounts ? `${accounts} ${accounts === 1 ? 'watchlist is' : 'watchlists are'} read every minute.` : 'Your watchlist is read every minute.';
     hint.classList.toggle('bad', Boolean(status.last_sync_error));
   },
 };

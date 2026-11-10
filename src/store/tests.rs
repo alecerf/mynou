@@ -21,6 +21,7 @@ fn watchlist_cursor_is_durable_before_the_first_job() {
         total: Some(1_700),
         anchor: Some([7; 32]),
         consistent: true,
+        page: None,
     };
     store.save_watchlist_cursor(&cursor).unwrap();
     assert_eq!(store.counts().unwrap().jobs, 0);

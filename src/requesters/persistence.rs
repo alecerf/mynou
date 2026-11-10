@@ -1,5 +1,5 @@
 //! Indexed demand storage (`requesters.idx`).
-use super::{Demand, LedgerRead, Policy, Record, State, index};
+use super::{Demand, LedgerRead, PlexRegistry, Policy, Record, State, index};
 use crate::{
     Result,
     config::Config,
@@ -25,6 +25,8 @@ enum Backend {
 pub(crate) struct RequesterStore {
     /// Bounded account metadata only. Demands/operator interests live on disk.
     pub state: State,
+    /// The owner and friends Plex lists; their switch is the account policy.
+    pub plex: PlexRegistry,
     directory: PathBuf,
     backend: RefCell<Backend>,
     read_only: bool,
@@ -81,7 +83,7 @@ impl RequesterStore {
     pub(crate) fn open(directory: &Path, config: &Config, read_only: bool) -> Result<Self> {
         let path = directory.join(INDEX);
         reject_symlinks(&path)?;
-        let (backend, mut state) = if exists(&path)? {
+        let (mut backend, mut state) = if exists(&path)? {
             let mut index = Index::open(&path, read_only)?;
             let value = index
                 .get(&index::HEADER)?
@@ -98,6 +100,23 @@ impl RequesterStore {
             crate::store::refuse_older_format(directory, &["requesters.bin"], "Requester")?;
             (Backend::Absent, State::empty())
         };
+        let plex = match &mut backend {
+            Backend::Ready(index) => match index.get(&index::PLEX_ACCOUNTS)? {
+                Some(bytes) => PlexRegistry::from_json(&json::parse(
+                    std::str::from_utf8(&bytes)
+                        .map_err(|_| "Requester: invalid Plex accounts text")?,
+                )?)?,
+                None => PlexRegistry::default(),
+            },
+            Backend::Absent => PlexRegistry::default(),
+        };
+        for record in state.accounts.values() {
+            if let Some(user) = super::plex_user(&record.id)
+                && record.binding != super::plex_binding(user)
+            {
+                return Err("Requester: a Plex account's binding changed".into());
+            }
+        }
         let original = state.clone();
         for account in &config.requesters.accounts {
             if let Some(record) = state.accounts.get(&account.id) {
@@ -125,6 +144,7 @@ impl RequesterStore {
         let (admission_state, admission_cursor, outcome_cursor) = (0, None, None);
         let mut store = Self {
             state,
+            plex,
             directory: directory.to_owned(),
             backend: RefCell::new(backend),
             read_only,
@@ -280,6 +300,19 @@ impl RequesterStore {
         self.admission_cursor = after;
         Ok(())
     }
+    /// Records the Plex accounts read with the owner's connection. A patch
+    /// that adds the requester of one comes after it, so a stored Plex
+    /// requester always has its account here.
+    pub(crate) fn save_plex(&mut self, registry: PlexRegistry) -> Result<()> {
+        if registry == self.plex {
+            return Ok(());
+        }
+        let value = registry.to_json();
+        PlexRegistry::from_json(&value)?;
+        self.persist_cursor(index::PLEX_ACCOUNTS, json::stringify(&value).into_bytes())?;
+        self.plex = registry;
+        Ok(())
+    }
     pub(crate) fn save_outcome_cursor(&mut self, after: Option<Key>) -> Result<()> {
         self.persist_cursor(
             index::OUTCOME_CURSOR,
@@ -411,6 +444,9 @@ impl RequesterStore {
 impl LedgerRead for RequesterStore {
     fn accounts(&self) -> &BTreeMap<String, Record> {
         &self.state.accounts
+    }
+    fn plex(&self) -> &PlexRegistry {
+        &self.plex
     }
     fn demand(&self, id: &str) -> Result<Option<Demand>> {
         self.available()?;

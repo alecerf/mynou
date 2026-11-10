@@ -44,7 +44,21 @@ pub struct Plex {
     pub series_section: String,
     pub token_override: Option<String>,
     pub path_mappings: Vec<PathMapping>,
+    /// Plex services the connection's token also reads: the account, the
+    /// community API (friends and their watchlists) and the metadata of a
+    /// watchlist item. Not settings: Plex's own origins, which only tests
+    /// replace.
+    pub identity_url: String,
+    pub community_url: String,
+    pub metadata_url: String,
 }
+
+/// The account behind the Plex connection's token.
+pub const PLEX_IDENTITY_URL: &str = "https://plex.tv/api/v2/user";
+/// Plex's community API, which lists friends and their watchlists.
+pub const PLEX_COMMUNITY_URL: &str = "https://community.plex.tv/api";
+/// Where an item of a watchlist is described, with its TMDB identity.
+pub const PLEX_METADATA_URL: &str = "https://discover.provider.plex.tv/library/metadata/";
 #[derive(Clone)]
 pub struct Catalog {
     pub enabled: bool,
@@ -550,10 +564,13 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
     for source in &mut irc.sources {
         source.protection = protection;
     }
+    // A rule names a token account, or a Plex friend (or the owner), whose
+    // requester is `plex-<Plex user ID>`.
     if irc.rules.iter().any(|r| {
-        r.requester
-            .as_ref()
-            .is_some_and(|id| !requesters.accounts.iter().any(|a| &a.id == id))
+        r.requester.as_ref().is_some_and(|id| {
+            crate::requesters::plex_user(id).is_none()
+                && !requesters.accounts.iter().any(|a| &a.id == id)
+        })
     }) {
         return Err("IRC: rule requester is not configured".into());
     }
@@ -615,6 +632,9 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
             series_section: text(p, "series_section", "2")?,
             token_override: None,
             path_mappings: path_mappings(p)?,
+            identity_url: PLEX_IDENTITY_URL.into(),
+            community_url: PLEX_COMMUNITY_URL.into(),
+            metadata_url: PLEX_METADATA_URL.into(),
         },
         catalog: Catalog {
             enabled: boolean(c, "enabled", false)?,

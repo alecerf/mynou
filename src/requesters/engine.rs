@@ -78,14 +78,11 @@ pub(crate) fn interest(
         .as_ref()
         .ok_or("Requester: missing provenance")?
         .capture;
-    for account in &config.requesters.accounts {
-        let Some(record) = ledger.accounts().get(&account.id) else {
-            continue;
-        };
-        if account.binding() != record.binding {
+    for record in ledger.accounts().values() {
+        if !super::bound(config, record) {
             continue;
         }
-        let id = Demand::identity(&account.id, &job.request);
+        let id = Demand::identity(&record.id, &job.request);
         if let Some(demand) = ledger.demand(&id)?
             && matches!(demand.state.as_str(), "reserved" | "active" | "ready")
             && &demand.capture == capture
@@ -104,13 +101,36 @@ fn public_account(
     if let Value::Object(fields) = &mut value {
         fields.remove("binding");
     }
+    // A Plex account needs no settings: its ID is who it is.
     value.insert(
         "configured",
-        config
-            .requesters
+        match super::plex_user(&record.id) {
+            Some(_) => super::bound(config, record),
+            None => config
+                .requesters
+                .accounts
+                .iter()
+                .any(|account| account.id == record.id),
+        },
+    );
+    // Who a Plex account is, and Plex's reason when its watchlist failed.
+    value.insert(
+        "plex",
+        ledger
+            .plex
             .accounts
-            .iter()
-            .any(|account| account.id == record.id),
+            .get(&record.id)
+            .map_or(Value::Null, |account| {
+                let mut v = Value::object();
+                v.insert("name", account.name());
+                v.insert("owner", account.owner);
+                v.insert("friend", !account.owner && account.present);
+                v.insert(
+                    "error",
+                    account.error.clone().map_or(Value::Null, Value::String),
+                );
+                v
+            }),
     );
     value.insert(
         "pending",
@@ -203,6 +223,7 @@ impl Engine {
                     .collect(),
             ),
         );
+        v.insert("plex", self.plex_value(&ledger)?);
         Ok(v)
     }
     pub fn requester(&self, id: &str, after: Option<&str>, limit: usize) -> Result<Value> {
@@ -219,13 +240,11 @@ impl Engine {
         if !valid_id(id) {
             return Err("Requester: invalid account ID".into());
         }
-        let configured = self
-            .config
-            .requesters
-            .accounts
-            .iter()
-            .find(|a| a.id == id)
-            .ok_or("Requester: account is not configured")?;
+        if super::plex_user(id).is_none()
+            && !self.config.requesters.accounts.iter().any(|a| a.id == id)
+        {
+            return Err("Requester: account is not configured".into());
+        }
         let mut ledger = lock(&self.requester_store)?;
         let mut jobs = lock(&self.store)?;
         let record = ledger
@@ -234,7 +253,7 @@ impl Engine {
             .get(id)
             .ok_or("Requester: unknown account")?
             .clone();
-        if configured.binding() != record.binding {
+        if !super::bound(&self.config, &record) {
             return Err("Requester: account identity changed".into());
         }
         if let Some(policy) = &query.policy {
@@ -411,14 +430,7 @@ impl Engine {
                     .accounts
                     .get(&demand.account_id)
                     .ok_or("Requester: missing demand account")?;
-                if !record.policy.enabled
-                    || !self
-                        .config
-                        .requesters
-                        .accounts
-                        .iter()
-                        .any(|a| a.id == demand.account_id && a.binding() == record.binding)
-                {
+                if !record.policy.enabled || !super::admits(&self.config, &*ledger, record) {
                     continue;
                 }
                 if demand.revision != record.revision && demand.admitted_at.is_none() {
@@ -640,25 +652,33 @@ impl Engine {
         let _sync = lock(&self.sync_lock)?;
         let deadline = Instant::now() + Duration::from_secs(90);
         let mut reports = Vec::new();
+        // The friend list first: who left, who was renamed, and the owner
+        // once a friend is on. Stored friends are read even if this fails.
+        let plex_error = self.refresh_plex(false, deadline).err();
         let attempted = lock(&self.requester_store)?.state.accounts.clone();
-        let mut accounts: Vec<_> = self.config.requesters.accounts.iter().collect();
-        accounts.sort_by_key(|a| (attempted[&a.id].polled_at, a.id.clone()));
-        for account in accounts {
+        let mut accounts = self.watchers()?;
+        accounts.sort_by_key(|a| {
+            (
+                attempted.get(a.id()).map_or(0, |r| r.polled_at),
+                a.id().to_owned(),
+            )
+        });
+        for account in &accounts {
             let account_deadline = deadline.min(Instant::now() + Duration::from_secs(10));
             {
                 // Retiring the origins a published sweep did not see shares the
                 // account's time budget, one bounded page per lock.
                 for _ in 0..CLEANUP_PAGES {
                     let mut ledger = lock(&self.requester_store)?;
-                    if ledger.poll_ready(&account.id)? || Instant::now() >= account_deadline {
+                    if ledger.poll_ready(account.id())? || Instant::now() >= account_deadline {
                         break;
                     }
-                    ledger.reconcile_origins(&account.id)?;
+                    ledger.reconcile_origins(account.id())?;
                 }
                 let ledger = lock(&self.requester_store)?;
-                if !ledger.poll_ready(&account.id)? {
+                if !ledger.poll_ready(account.id())? {
                     let mut report = Value::object();
-                    report.insert("account_id", account.id.clone());
+                    report.insert("account_id", account.id());
                     report.insert("success", false);
                     report.insert("error", "Previous complete poll origin cleanup is pending");
                     reports.push(report);
@@ -684,58 +704,88 @@ impl Engine {
                 }
             };
             let mut report = Value::object();
-            report.insert("account_id", account.id.clone());
+            report.insert("account_id", account.id());
+            // Plex's reason stays with a Plex account until a read succeeds;
+            // running out of time is not one.
+            match &result {
+                _ if !account.plex() => {}
+                Ok(()) => self.record_plex_error(account.id(), None)?,
+                Err(error) if error != integrations::PLEX_POLL_DEADLINE => {
+                    self.record_plex_error(account.id(), Some(error))?
+                }
+                Err(_) => {}
+            }
             let mut ledger = lock(&self.requester_store)?;
             match result {
                 Ok(()) => {
                     let record = ledger
                         .state
                         .accounts
-                        .get(&account.id)
+                        .get(account.id())
                         .ok_or("Requester: missing account")?;
                     report.insert("cursor", record.cursor.to_string());
                     report.insert("success", true);
                     // Published: this poll read the whole watchlist.
-                    report.insert("complete", record.cursor != attempted[&account.id].cursor);
+                    report.insert(
+                        "complete",
+                        attempted
+                            .get(account.id())
+                            .is_none_or(|before| record.cursor != before.cursor),
+                    );
                 }
                 Err(error) => {
-                    let error = if [
+                    let summary = if [
                         "Plex account identity changed",
                         "Plex account policy changed during poll",
                         integrations::PLEX_POLL_DEADLINE,
                     ]
                     .contains(&error.as_str())
                     {
-                        error
+                        error.clone()
                     } else {
                         "Plex account poll failed".into()
                     };
                     let mut next = ledger.state.clone();
                     let current = next
                         .accounts
-                        .get_mut(&account.id)
+                        .get_mut(account.id())
                         .ok_or("Requester: missing account")?;
-                    if error != integrations::PLEX_POLL_DEADLINE {
+                    if summary != integrations::PLEX_POLL_DEADLINE {
                         current.polled_at = store::now();
                     }
-                    current.last_error = Some(error.clone());
+                    current.last_error = Some(summary.clone());
                     // Committed batches stay; the sweep resumes from its cursor.
                     ledger.save_patch(next)?;
-                    report.insert("error", error);
+                    // A Plex account shows Plex's own reason; it never holds
+                    // the token.
+                    report.insert("error", if account.plex() { error } else { summary });
                     report.insert("success", false);
                     report.insert("complete", false);
                 }
             }
             report.insert(
                 "sweep",
-                progress.to_json(ledger.sweep(&account.id)?.as_ref()),
+                progress.to_json(ledger.sweep(account.id())?.as_ref()),
             );
             let mut jobs = lock(&self.store)?;
             self.admit_requester_demand(&mut ledger, &mut jobs)?;
             reports.push(report);
         }
+        // Plex accounts that are on but were not read say why.
+        let idle = self
+            .idle_friends()?
+            .into_iter()
+            .map(|(id, why)| {
+                let mut report = Value::object();
+                report.insert("account_id", id);
+                report.insert("error", why);
+                report
+            })
+            .collect();
         let mut v = Value::object();
         v.insert("accounts", Value::Array(reports));
+        v.insert("idle", Value::Array(idle));
+        v.insert("plex_error", plex_error.map_or(Value::Null, Value::String));
         Ok(v)
     }
     /// Reads, expands and commits one watchlist page of an account's sweep.
@@ -743,7 +793,7 @@ impl Engine {
     /// listing changed while it was read.
     fn sweep_requester_page(
         &self,
-        account: &crate::requesters::Account,
+        account: &super::friends::Watcher,
         deadline: Instant,
         progress: &mut SweepReport,
     ) -> Result<bool> {
@@ -752,12 +802,12 @@ impl Engine {
             let previous = ledger
                 .state
                 .accounts
-                .get(&account.id)
+                .get(account.id())
                 .ok_or("Requester: missing account")?
                 .clone();
             // A sweep at or below the published generation is left over from
             // a binary that polled without sweeps; it cannot be resumed.
-            let sweep = match ledger.sweep(&account.id)? {
+            let sweep = match ledger.sweep(account.id())? {
                 Some(sweep) if sweep.epoch > previous.cursor => sweep,
                 _ => Sweep::new(
                     previous
@@ -772,8 +822,7 @@ impl Engine {
         if progress.pages == 0 && sweep.cursor.position > 0 {
             sweep.multipass = true;
         }
-        let page =
-            integrations::requester_watchlist_page(&self.config, account, &sweep.cursor, deadline)?;
+        let page = account.page(&self.config, &sweep.cursor, deadline)?;
         progress.pages += 1;
         progress.requests += u64::from(page.requests);
         previous.policy.validate_config(&self.config)?;
@@ -873,7 +922,7 @@ impl Engine {
     /// Commits one bounded batch of demands together with the sweep progress.
     fn commit_sweep_batch(
         &self,
-        account: &crate::requesters::Account,
+        account: &super::friends::Watcher,
         previous: &Record,
         batch: Vec<(String, Request)>,
         stage: Progress,
@@ -883,7 +932,7 @@ impl Engine {
         let mut next = ledger.state.clone();
         let current = next
             .accounts
-            .get(&account.id)
+            .get(account.id())
             .ok_or("Requester: missing account")?;
         if current.revision != previous.revision || current.binding != previous.binding {
             return Err("Plex account policy changed during poll".into());
@@ -892,7 +941,7 @@ impl Engine {
         let mut origins = BTreeSet::new();
         progress.rows += batch.len() as u64;
         for (origin, request) in batch {
-            let id = Demand::identity(&account.id, &request);
+            let id = Demand::identity(account.id(), &request);
             let mut demand = if let Some(known) = next.demands.remove(&id) {
                 known
             } else if let Some(known) = ledger.demand(&id)? {
@@ -900,7 +949,7 @@ impl Engine {
             } else {
                 Demand {
                     id: id.clone(),
-                    account_id: account.id.clone(),
+                    account_id: account.id().to_owned(),
                     origins: BTreeSet::new(),
                     request: request.clone(),
                     revision: previous.revision,
@@ -928,7 +977,7 @@ impl Engine {
         }
         let current = next
             .accounts
-            .get_mut(&account.id)
+            .get_mut(account.id())
             .ok_or("Requester: missing account")?;
         current.polled_at = store::now();
         current.last_error = None;
@@ -945,7 +994,7 @@ impl Engine {
         ledger.save_poll_patch(
             next,
             Some(Stage {
-                account: &account.id,
+                account: account.id(),
                 origins: &origins,
                 progress: stage,
             }),

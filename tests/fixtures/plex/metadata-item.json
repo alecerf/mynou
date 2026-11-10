@@ -1,0 +1,39 @@
+{
+  "provenance": "Real response, recorded 2026-11-10: GET https://metadata.provider.plex.tv/library/metadata/5d7768ba96b655001fdc0408?includeGuids=1 with Accept: application/json and no token. Trimmed to the fields Mynou reads and a few it ignores; a public film, no account data. The same request for other items was refused without a token (metadata-without-token.json), so Mynou sends the owner's token to the discover provider, where Plex Web opens an item's /library/metadata key. That provider's 200 answer is taken to have this shape: to check with a live account.",
+  "status": 200,
+  "content_type": "application/json; charset=utf-8",
+  "body": {
+    "MediaContainer": {
+      "librarySectionID": "home",
+      "librarySectionTitle": "Metadata",
+      "offset": 0,
+      "totalSize": 1,
+      "identifier": "tv.plex.provider.metadata",
+      "size": 1,
+      "Metadata": [
+        {
+          "type": "movie",
+          "title": "Avatar: The Way of Water",
+          "year": 2022,
+          "guid": "plex://movie/5d7768ba96b655001fdc0408",
+          "key": "/library/metadata/5d7768ba96b655001fdc0408",
+          "ratingKey": "5d7768ba96b655001fdc0408",
+          "slug": "avatar-the-way-of-water-2022",
+          "studio": "20th Century Studios",
+          "originallyAvailableAt": "2022-12-14",
+          "Guid": [
+            {
+              "id": "imdb://tt1630029"
+            },
+            {
+              "id": "tmdb://76600"
+            },
+            {
+              "id": "tvdb://5483"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

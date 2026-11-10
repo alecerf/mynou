@@ -1,0 +1,12 @@
+{
+  "provenance": "Real response, recorded 2026-11-10: GET https://discover.provider.plex.tv/library/metadata/5d7768ba96b655001fdc0408?includeGuids=1 without a token. metadata.provider.plex.tv answered the same for other items and for a comma-separated list of IDs, so an item's metadata is read one item at a time, with the owner's token.",
+  "status": 401,
+  "content_type": "application/json; charset=utf-8",
+  "body": {
+    "Error": {
+      "error": "Unauthorized",
+      "message": "You must provide a token!",
+      "statusCode": 401
+    }
+  }
+}

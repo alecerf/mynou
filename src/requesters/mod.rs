@@ -1,5 +1,8 @@
 //! Durable per-account demand and explicit acquisition policies.
 pub(crate) mod engine;
+pub(crate) mod friends;
+#[cfg(test)]
+mod friends_tests;
 mod index;
 #[cfg(test)]
 mod index_tests;
@@ -7,10 +10,15 @@ mod index_tests;
 mod ownership_tests;
 mod persistence;
 
+pub use friends::{PlexAccount, PlexRegistry};
+
 /// Authoritative fallible reads of the requester index. A bounded patch is
 /// never used as a complete read view.
 pub(crate) trait LedgerRead {
     fn accounts(&self) -> &BTreeMap<String, Record>;
+    /// The Plex accounts read with the owner's connection: the owner and
+    /// the friends Plex lists.
+    fn plex(&self) -> &PlexRegistry;
     fn demand(&self, id: &str) -> Result<Option<Demand>>;
     fn demands_page(
         &self,
@@ -94,6 +102,69 @@ pub fn cursor_page(query: &str) -> Result<(Option<String>, usize)> {
 
 pub(crate) fn digest(bytes: &[u8]) -> String {
     sha256(bytes).iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// Requesters read with the owner's Plex connection are `plex-<Plex user
+/// ID>`: a friend renamed in Plex keeps the same requester. Token accounts
+/// cannot take this prefix.
+pub const PLEX_PREFIX: &str = "plex-";
+pub fn plex_id(user_id: u64) -> String {
+    format!("{PLEX_PREFIX}{user_id}")
+}
+/// The Plex user ID of a `plex-` requester.
+pub fn plex_user(id: &str) -> Option<u64> {
+    id.strip_prefix(PLEX_PREFIX)?
+        .parse()
+        .ok()
+        .filter(|n| *n != 0 && plex_id(*n) == id)
+}
+pub(crate) fn plex_binding(user_id: u64) -> String {
+    digest(
+        json::stringify(&Value::Array(vec![
+            "plex".into(),
+            user_id.to_string().into(),
+        ]))
+        .as_bytes(),
+    )
+}
+/// The token account of the settings that reads this Plex user, if any.
+pub(crate) fn token_account(config: &Config, user_id: u64) -> Option<&Account> {
+    let user = user_id.to_string();
+    config
+        .requesters
+        .accounts
+        .iter()
+        .find(|a| a.expected_user_id == user)
+}
+/// Whether an account's record still stands for whom it was made for: a
+/// token account of the settings with the same binding, or a Plex account,
+/// whose identity is its ID. Work admitted for a bound account is kept.
+pub(crate) fn bound(config: &Config, record: &Record) -> bool {
+    match plex_user(&record.id) {
+        Some(user) => record.binding == plex_binding(user),
+        None => config
+            .requesters
+            .accounts
+            .iter()
+            .any(|a| a.id == record.id && a.binding() == record.binding),
+    }
+}
+/// Whether an account's demands may become new requests: bound and, for a
+/// Plex account, still listed by Plex (a friend, or the connected account)
+/// and not also set up as a token account.
+pub(crate) fn admits(config: &Config, ledger: &impl LedgerRead, record: &Record) -> bool {
+    if !bound(config, record) {
+        return false;
+    }
+    let Some(user) = plex_user(&record.id) else {
+        return true;
+    };
+    ledger
+        .plex()
+        .accounts
+        .get(&record.id)
+        .is_some_and(|account| account.present)
+        && token_account(config, user).is_none()
 }
 pub fn valid_id(id: &str) -> bool {
     !id.is_empty()
@@ -230,6 +301,11 @@ impl Settings {
                     |_| text(v, "watchlist_url"),
                 )?,
             };
+            if account.id.starts_with(PLEX_PREFIX) {
+                return Err(format!(
+                    "Requester configuration: account IDs starting with {PLEX_PREFIX} are kept for Plex friends"
+                ));
+            }
             if accounts.len() >= MAX_ACCOUNTS
                 || !valid_id(&account.id)
                 || !ids.insert(account.id.clone())

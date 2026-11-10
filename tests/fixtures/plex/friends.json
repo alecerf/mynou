@@ -1,0 +1,52 @@
+{
+  "provenance": "Synthetic, not recorded from a live account: an allFriendsV2 answer in the shape of the fields Plex Web 4.163.0 asks for (plex-web-contract.json), with made-up people and IDs. createdAt, avatar and friendStatus stand for fields Mynou ignores. Ben has no display name. To check against a live account: the type of idRaw (a number here) and whether displayName may be null.",
+  "status": 200,
+  "content_type": "application/json",
+  "body": {
+    "data": {
+      "allFriendsV2": [
+        {
+          "user": {
+            "avatar": "https://example.invalid/avatar/ana.png",
+            "displayName": "Ana",
+            "id": "0000000000000a01",
+            "username": "ana.synthetic",
+            "idRaw": 7001,
+            "friendStatus": "FRIENDS"
+          },
+          "createdAt": "2025-03-14T10:00:00.000Z"
+        },
+        {
+          "user": {
+            "avatar": "https://example.invalid/avatar/ben.png",
+            "displayName": null,
+            "id": "0000000000000b02",
+            "username": "ben.synthetic",
+            "idRaw": 7002
+          },
+          "createdAt": "2025-05-02T18:30:00.000Z"
+        },
+        {
+          "user": {
+            "avatar": "https://example.invalid/avatar/cleo.png",
+            "displayName": "Cleo",
+            "id": "0000000000000c03",
+            "username": "cleo.synthetic",
+            "idRaw": 7003
+          },
+          "createdAt": "2025-07-21T08:15:00.000Z"
+        },
+        {
+          "user": {
+            "avatar": "https://example.invalid/avatar/dan.png",
+            "displayName": "Dan",
+            "id": "0000000000000d04",
+            "username": "dan.synthetic",
+            "idRaw": 7004
+          },
+          "createdAt": "2025-09-09T21:45:00.000Z"
+        }
+      ]
+    }
+  }
+}

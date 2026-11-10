@@ -1,0 +1,46 @@
+{
+  "provenance": "Synthetic, not recorded from a live account: one page of a friend's watchlist, the answer to user(id:) { watchlist(first: 100, after: null) } in the shape of the fields Plex Web 4.163.0 asks for (plex-web-contract.json). Titles and IDs are made up; images, userState and publicPagesURL stand for fields Mynou ignores. The season is skipped: Mynou asks for films and series. To check against a live account: the cursor format (opaque here) and whether type is the upper-case enum.",
+  "status": 200,
+  "content_type": "application/json",
+  "body": {
+    "data": {
+      "user": {
+        "watchlist": {
+          "nodes": [
+            {
+              "id": "000000000000000000000101",
+              "key": "/library/metadata/000000000000000000000101",
+              "type": "MOVIE",
+              "title": "Synthetic Harbour",
+              "year": 2021,
+              "images": { "coverPoster": "https://example.invalid/poster/101.jpg" },
+              "userState": { "viewCount": 0, "watchlistedAt": 1760000000 },
+              "publicPagesURL": "https://example.invalid/movie/synthetic-harbour"
+            },
+            {
+              "id": "000000000000000000000102",
+              "key": "/library/metadata/000000000000000000000102",
+              "type": "SHOW",
+              "title": "Fixture Series",
+              "year": 2024,
+              "childCount": 3
+            },
+            {
+              "id": "000000000000000000000103",
+              "key": "/library/metadata/000000000000000000000103",
+              "type": "SEASON",
+              "title": "Season 2",
+              "year": 2020,
+              "index": 2
+            }
+          ],
+          "pageInfo": {
+            "hasNextPage": false,
+            "hasPreviousPage": false,
+            "endCursor": "c3ludGhldGljLWN1cnNvci0z"
+          }
+        }
+      }
+    }
+  }
+}

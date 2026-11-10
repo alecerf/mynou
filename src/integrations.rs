@@ -21,7 +21,7 @@ const MAX_ITEMS: usize = 100_000;
 /// Items requested per Plex page, at most what the watchlist service accepts:
 /// it refuses 200. Listings are read page by page under a deadline, so no
 /// total item or page count applies.
-const PAGE_SIZE: usize = 100;
+pub(crate) const PAGE_SIZE: usize = 100;
 const SEARCH_BUDGET: Duration = Duration::from_secs(90);
 const SEARCH_EXPIRED: &str = "Search: indexer search exceeded its time budget";
 /// The outcome of a requester account poll that ran out of time, before or
@@ -117,7 +117,7 @@ fn catalog_cache_key(url: &str, headers: &[(String, String)]) -> [u8; 32] {
     hash.finalize()
 }
 
-fn client() -> HttpClient {
+pub(crate) fn client() -> HttpClient {
     HttpClient::new()
         .with_timeout(Duration::from_secs(20))
         .with_max_body(MAX_XML)
@@ -196,16 +196,16 @@ fn fetch_json_sized(
     Ok((value, response.body.len()))
 }
 
-fn string<'a>(v: &'a Value, key: &str) -> Option<&'a str> {
+pub(crate) fn string<'a>(v: &'a Value, key: &str) -> Option<&'a str> {
     v.get(key)?.as_str()
 }
 
-fn integer(v: &Value, key: &str) -> Option<u64> {
+pub(crate) fn integer(v: &Value, key: &str) -> Option<u64> {
     let value = v.get(key)?;
     value.as_u64().or_else(|| value.as_str()?.parse().ok())
 }
 
-fn plex_headers(config: &Config) -> Result<Vec<(String, String)>> {
+pub(crate) fn plex_headers(config: &Config) -> Result<Vec<(String, String)>> {
     Ok(vec![
         ("Accept".into(), "application/json".into()),
         (
@@ -325,6 +325,55 @@ pub struct SweepCursor {
     pub total: Option<u64>,
     pub anchor: Option<[u8; 32]>,
     pub consistent: bool,
+    /// For a listing paged by opaque cursors (a friend's watchlist), the page
+    /// that holds `position`. Offset listings have none; `encode` leaves it
+    /// out, and a requester sweep stores it after the cursor.
+    pub page: Option<PageMark>,
+}
+
+/// A page of a cursor-paged listing: the cursor Plex returned for it, and the
+/// position of its first item.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PageMark {
+    pub start: u64,
+    pub after: String,
+}
+
+impl PageMark {
+    /// Plex's page cursors are opaque; this bounds what is stored.
+    pub const MAX_CURSOR: usize = 1024;
+
+    pub fn encode(&self) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(10 + self.after.len());
+        bytes.extend_from_slice(&self.start.to_be_bytes());
+        bytes.extend_from_slice(&(self.after.len() as u16).to_be_bytes());
+        bytes.extend_from_slice(self.after.as_bytes());
+        bytes
+    }
+
+    pub fn decode(bytes: &[u8]) -> Result<Self> {
+        let invalid = || "Watchlist: invalid page cursor".to_owned();
+        if bytes.len() < 10 {
+            return Err(invalid());
+        }
+        let length = u16::from_be_bytes([bytes[8], bytes[9]]) as usize;
+        if bytes.len() != 10 + length {
+            return Err(invalid());
+        }
+        let after = std::str::from_utf8(&bytes[10..]).map_err(|_| invalid())?;
+        if !valid_page_cursor(after) {
+            return Err(invalid());
+        }
+        Ok(Self {
+            start: u64::from_be_bytes(bytes[..8].try_into().map_err(|_| invalid())?),
+            after: after.to_owned(),
+        })
+    }
+}
+
+/// A page cursor Mynou keeps: printable and bounded.
+pub(crate) fn valid_page_cursor(text: &str) -> bool {
+    !text.is_empty() && text.len() <= PageMark::MAX_CURSOR && !text.chars().any(char::is_control)
 }
 
 impl SweepCursor {
@@ -375,6 +424,7 @@ impl SweepCursor {
                 .transpose()
                 .map_err(|_| invalid())?,
             consistent: bytes[50] == 1,
+            page: None,
         };
         // An anchor names the item before a nonzero position.
         if cursor.anchor.is_some() != (cursor.position > 0) {
@@ -409,7 +459,7 @@ fn item_anchor(item: &Value) -> [u8; 32] {
 }
 
 /// A watchlist item as a request identity; other item types are skipped.
-fn watchlist_request(item: &Value) -> Result<Option<Request>> {
+pub(crate) fn watchlist_request(item: &Value) -> Result<Option<Request>> {
     let kind = match string(item, "type") {
         Some("movie") => "movie",
         Some("show") => "series",
@@ -535,6 +585,7 @@ pub(crate) fn watchlist_page_before(
         total: sweep_total,
         anchor: cursor.anchor,
         consistent,
+        page: None,
     };
     for (index, item) in items.iter().enumerate().skip(skip) {
         after = SweepCursor {
@@ -542,6 +593,7 @@ pub(crate) fn watchlist_page_before(
             total: sweep_total,
             anchor: Some(item_anchor(item)),
             consistent,
+            page: None,
         };
         if let Some(request) = watchlist_request(item)?
             && seen.insert(request.canonical_key())
@@ -560,7 +612,7 @@ pub(crate) fn watchlist_page_before(
 /// One Plex JSON request bounded by `deadline`. A request that cannot start,
 /// or fails once the deadline has passed (its timeout is the time left), ends
 /// with `expired` rather than as a network failure.
-fn fetch_json_before(
+pub(crate) fn fetch_json_before(
     url: &str,
     headers: &[(String, String)],
     deadline: Instant,
@@ -592,7 +644,7 @@ fn fetch_json_before(
 
 /// The reason Plex gives with a refusal, `{"Error":{"message"}}` or
 /// `{"errors":[{"message"}]}`, shortened to one printable line.
-fn plex_refusal(body: &[u8]) -> Option<String> {
+pub(crate) fn plex_refusal(body: &[u8]) -> Option<String> {
     let value = json::parse(std::str::from_utf8(body).ok()?).ok()?;
     let message = value
         .get("Error")

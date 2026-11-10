@@ -129,10 +129,16 @@ function paintHealth(stats, status) {
   const indexers = !enabled.length ? ['None set up', 'warn']
     : broken.length ? [`${broken.length} of ${enabled.length} failing: ${INDEXER_ERRORS[broken[0].last_error] ?? sentence(broken[0].last_error)}`, 'bad']
     : [`${enabled.length} working`, 'ok'];
+  // Friends followed on Plex, once there are any: the first failing one says why.
+  const followed = itemsOf(data.get('requesters')?.data?.plex?.friends).filter((f) => f.enabled);
+  const failing = followed.filter((f) => f.error);
+  const friends = !followed.length ? null
+    : failing.length ? [`${failing.length} of ${followed.length} failing: ${failing[0].name}, ${plexError(failing[0].error)}`, 'bad']
+    : [`${followed.length} followed`, 'ok'];
   const failures = itemsOf(stats?.health?.failures);
-  paintOnce(el, [vpnText, sync, indexers, failures.map((f) => f.id), relativeTime(syncedAt)], () => [
+  paintOnce(el, [vpnText, sync, indexers, friends, failures.map((f) => f.id), relativeTime(syncedAt)], () => [
     h('ul', { class: 'health' },
-      [['VPN', vpnText, vpn.state === 'protected' ? 'ok' : vpnTone], ['Plex watchlist', ...sync], ['Indexers', ...indexers]].map(([name, text, tone]) =>
+      [['VPN', vpnText, vpn.state === 'protected' ? 'ok' : vpnTone], ['Plex watchlist', ...sync], friends && ['Friends’ watchlists', ...friends], ['Indexers', ...indexers]].filter(Boolean).map(([name, text, tone]) =>
         h('li', {}, h('span', {}, name), h('span', { class: 'badge', dataset: { tone } }, text)))),
     failures.length
       ? [h('h3', {}, 'Recent failures'), h('ol', { class: 'failures' }, failures.map((f) =>
