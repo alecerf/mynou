@@ -53,7 +53,7 @@ class EvidenceTests(unittest.TestCase):
 
     def test_pin_removal_is_rejected(self):
         dockerfile = interop.DOCKERFILE.read_text()
-        self.assertIn('h1:whnFRl', interop.pins(dockerfile)['modules'][0])
+        self.assertIn('h1:hByBPN', interop.pins(dockerfile)['modules'][0])
         with self.assertRaises(ValueError):
             interop.pins(dockerfile.replace('@sha256:', ':'))
 
