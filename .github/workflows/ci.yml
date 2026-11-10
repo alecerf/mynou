@@ -338,6 +338,9 @@ jobs:
     if: ${{ !cancelled() && needs.package.result == 'success' && github.event_name == 'push' && github.ref_type == 'tag' && needs.package.outputs.publish == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # The release key is a secret of this environment, which GitHub opens only
+    # to version tags (v*): no branch or pull request can sign.
+    environment: release
     permissions:
       contents: write
     steps:
@@ -349,8 +352,9 @@ jobs:
         with:
           name: mynou-release-${{ github.sha }}
           path: ${{ runner.temp }}/mynou-release
-      - name: Publish the validated version
+      - name: Sign and publish the validated version
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MYNOU_RELEASE_KEY: ${{ secrets.MYNOU_RELEASE_KEY }}
           VERSION: ${{ needs.package.outputs.version }}
         run: bash .github/scripts/publish-release.sh "$RUNNER_TEMP/mynou-release" "$VERSION"

@@ -12,6 +12,8 @@ scheduled Actions-log scanners have been removed.
 Check repository-native secret protections in GitHub Settings/Security; do not
 assume they are enabled. Keep credentials outside the checkout and logs.
 The release workflow publishes only validated tagged source with a scoped token.
+It signs `SHA256SUMS` with the release key, a secret of the `release` environment
+that only version tags (`v*`) can use; Mynou installs only updates signed by it.
 
 Only synthetic fixtures are used for runtime verification. Keep production values
 in secret bindings, never command text or diagnostic payloads.
