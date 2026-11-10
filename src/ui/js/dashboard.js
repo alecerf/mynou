@@ -86,7 +86,7 @@ views.dashboard = {
       $('#now-count').textContent = active ? `${active} on ${active === 1 ? 'its' : 'their'} way` : 'All quiet';
       $('#now-count').dataset.tone = active ? 'accent' : '';
       const alerts = [status.maintenance_error && `Maintenance: ${status.maintenance_error}`,
-        status.last_sync_error && `Plex watchlist: ${plexError(status.last_sync_error)}`, ...sourceProblems(), status.stopped && 'The service is stopping.'].filter(Boolean);
+        status.last_sync_error && `Plex watchlist: ${plexError(status.last_sync_error)}`, status.earlier_kept, ...sourceProblems(), status.stopped && 'The service is stopping.'].filter(Boolean);
       const paused = status.downloads_enabled === false && h('p', { class: 'notice', role: 'status' },
         'Downloads are off: requests wait until you turn them on in ', h('a', { href: '#settings/downloads' }, 'Settings, Downloads'), '.');
       const update = status.update?.staged && h('p', { class: 'notice', role: 'status' },

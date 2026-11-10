@@ -11,8 +11,9 @@ const MAX_SCORE: i32 = 100_000;
 const RESOLUTIONS: &[u32] = &[480, 576, 720, 1080, 2160];
 const SOURCES: &[&str] = &["cam", "dvd", "hdtv", "webrip", "web-dl", "bluray", "remux"];
 const CODECS: &[&str] = &["h264", "h265", "av1", "vp9"];
+/// `vostfr` is the original audio with French subtitles.
 const LANGUAGES: &[&str] = &[
-    "en", "fr", "vff", "vfq", "vfi", "de", "es", "it", "ja", "ko", "zh", "pt", "ru",
+    "en", "fr", "vff", "vfq", "vfi", "vostfr", "de", "es", "it", "ja", "ko", "zh", "pt", "ru",
 ];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -177,7 +178,6 @@ pub struct Profile {
     pub cutoff_source: Option<String>,
     /// None derives the mode from the legacy language fields.
     pub language_mode: Option<LanguageMode>,
-    pub language_first: bool,
     pub min_mb_per_hour: Option<u32>,
     pub max_mb_per_hour: Option<u32>,
     /// Ordered from most preferred to least preferred; an empty list is unrestricted.
@@ -186,7 +186,9 @@ pub struct Profile {
     pub cutoff_resolution: Option<u32>,
     pub sources: Vec<String>,
     pub codecs: Vec<String>,
-    /// Ordered preferences. `fr` matches any French audio; variants match exactly.
+    /// Every language a release must have; the first ones count most when a
+    /// release has only some of them. `fr` matches any French audio; variants
+    /// match exactly. The language decides before the quality.
     pub languages: Vec<String>,
     pub allow_unknown_resolution: bool,
     pub allow_unknown_source: bool,
@@ -207,7 +209,6 @@ impl Default for Profile {
             label: None,
             cutoff_source: None,
             language_mode: None,
-            language_first: false,
             min_mb_per_hour: None,
             max_mb_per_hour: None,
             resolutions: Vec::new(),
@@ -349,7 +350,6 @@ impl Profile {
             label,
             cutoff_source,
             language_mode,
-            language_first: boolean(value, "language_first")?,
             min_mb_per_hour,
             max_mb_per_hour,
             resolutions,
@@ -394,7 +394,6 @@ impl Profile {
                     .clone()
                     .map_or(Value::Null, Value::String),
             ),
-            ("language_first", self.language_first.into()),
             (
                 "min_mb_per_hour",
                 self.min_mb_per_hour.map_or(Value::Null, Value::from),
@@ -473,11 +472,12 @@ impl Profile {
                 .iter()
                 .position(|value| *value == resolution)
         });
+        // Upgrades go on until a release has every language of the profile.
         if self.effective_language_mode() != LanguageMode::Any
-            && self
+            && !self
                 .languages
-                .first()
-                .is_some_and(|target| !matches_language(target, &assessment.attributes.languages))
+                .iter()
+                .all(|target| matches_language(target, &assessment.attributes.languages))
         {
             return false;
         }
@@ -696,22 +696,24 @@ impl Profile {
         let language = if mode == LanguageMode::Any {
             0
         } else {
-            let rank = self
+            let matched: Vec<bool> = self
                 .languages
                 .iter()
-                .position(|language| matches_language(language, &attributes.languages));
-            if mode == LanguageMode::Require && rank.is_none() {
+                .map(|language| matches_language(language, &attributes.languages))
+                .collect();
+            let count = matched.iter().filter(|matched| **matched).count();
+            if mode == LanguageMode::Require && count < matched.len() {
                 if attributes.languages.is_empty() {
                     if !self.allow_unknown_language {
                         reasons.push("Language is unknown".into());
                     }
+                } else if count == 0 {
+                    reasons.push("No explicitly marked language is allowed by the profile".into());
                 } else {
-                    reasons.push(
-                        "No explicitly marked audio language is allowed by the profile".into(),
-                    );
+                    reasons.push("The release lacks some of the profile's languages".into());
                 }
             }
-            rank.map_or(0, |index| (self.languages.len() - index) as u32)
+            language_rank(&matched)
         };
         let episode_title = episode_title_positions(&suffix);
         let revision = suffix
@@ -728,7 +730,6 @@ impl Profile {
             reasons,
             rank: Rank {
                 revision,
-                language_first: self.language_first,
                 custom_score,
                 resolution,
                 source,
@@ -740,7 +741,7 @@ impl Profile {
     }
 }
 
-/// Larger values win, using the profile's quality or language order.
+/// Larger values win: the language first, then the quality, then the rest.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Rank {
     pub custom_score: i32,
@@ -749,53 +750,30 @@ pub struct Rank {
     pub codec: u32,
     pub language: u32,
     pub revision: u32,
-    pub language_first: bool,
 }
 
 impl Rank {
     pub fn order(&self) -> [&'static str; 6] {
-        if self.language_first {
-            [
-                "language",
-                "resolution",
-                "source",
-                "custom_score",
-                "revision",
-                "codec",
-            ]
-        } else {
-            [
-                "resolution",
-                "source",
-                "language",
-                "custom_score",
-                "revision",
-                "codec",
-            ]
-        }
+        [
+            "language",
+            "resolution",
+            "source",
+            "custom_score",
+            "revision",
+            "codec",
+        ]
     }
 
     pub(crate) fn ordered_values(&self) -> [u32; 6] {
         let score = self.custom_score.cast_unsigned() ^ 0x8000_0000;
-        if self.language_first {
-            [
-                self.language,
-                self.resolution,
-                self.source,
-                score,
-                self.revision,
-                self.codec,
-            ]
-        } else {
-            [
-                self.resolution,
-                self.source,
-                self.language,
-                score,
-                self.revision,
-                self.codec,
-            ]
-        }
+        [
+            self.language,
+            self.resolution,
+            self.source,
+            score,
+            self.revision,
+            self.codec,
+        ]
     }
 
     pub fn to_json(&self) -> Value {
@@ -816,9 +794,7 @@ impl Rank {
 
 impl Ord for Rank {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.ordered_values()
-            .cmp(&other.ordered_values())
-            .then(self.language_first.cmp(&other.language_first))
+        self.ordered_values().cmp(&other.ordered_values())
     }
 }
 impl PartialOrd for Rank {
@@ -1027,6 +1003,16 @@ fn capitalize(text: &str) -> String {
         .unwrap_or_default()
 }
 
+/// How well a release covers the profile's languages: how many it has, then
+/// which, the first ones counting most.
+fn language_rank(matched: &[bool]) -> u32 {
+    let count = matched.iter().filter(|matched| **matched).count() as u32;
+    let which = matched
+        .iter()
+        .fold(0_u32, |bits, matched| (bits << 1) | u32::from(*matched));
+    (count << 16) | which
+}
+
 /// Scene-language matching is directional: generic French is a profile wildcard,
 /// but a generic French release tag cannot establish a specific dubbing variant.
 fn matches_language(preferred: &str, actual: &[String]) -> bool {
@@ -1113,6 +1099,16 @@ fn parse_attributes(
             codecs.insert(codec);
         }
         invalid.codec |= attributes.issues.len() > issues_before;
+        // VOSTFR, SUBFRENCH or French subtitles: the original audio with
+        // French subtitles.
+        if !episode_title[index]
+            && (matches!(
+                token.as_str(),
+                "vostfr" | "vostfre" | "subfrench" | "subfr" | "subfre" | "stfr"
+            ) || (subtitle_languages[index] && language_markers(token) == ["fr"]))
+        {
+            languages.insert("vostfr");
+        }
         let marked_languages = language_markers(token);
         if !marked_languages.is_empty() {
             let previous = index
@@ -1149,6 +1145,18 @@ fn parse_attributes(
         .any(|language| matches!(*language, "vff" | "vfq" | "vfi"))
     {
         languages.remove("fr");
+    }
+    // MULTi holds the original audio beside the French one, with French
+    // subtitles in practice: it counts as VOSTFR too.
+    if suffix
+        .iter()
+        .enumerate()
+        .any(|(index, token)| token == "multi" && !episode_title[index])
+        && languages
+            .iter()
+            .any(|language| matches!(*language, "fr" | "vff" | "vfq" | "vfi"))
+    {
+        languages.insert("vostfr");
     }
     attributes.languages = languages.into_iter().map(str::to_owned).collect();
     (attributes, suffix, invalid)
@@ -1409,22 +1417,23 @@ mod tests {
             ("FRA", vec!["fr"]),
             ("VF", vec!["fr"]),
             ("VF2", vec!["vff", "vfq"]),
-            ("MULTi.VFF", vec!["vff"]),
-            ("MULTI.VF2", vec!["vff", "vfq"]),
-            ("MULTi.TRUEFRENCH", vec!["vff"]),
+            ("MULTi.VFF", vec!["vff", "vostfr"]),
+            ("MULTI.VF2", vec!["vff", "vfq", "vostfr"]),
+            ("MULTi.TRUEFRENCH", vec!["vff", "vostfr"]),
             ("FRENCH.VFF", vec!["vff"]),
             ("VFF.TRUEFRENCH.VFF", vec!["vff"]),
             ("VF2.VFQ.VFF.FRENCH", vec!["vff", "vfq"]),
             ("VF.VFI", vec!["vfi"]),
             ("MULTi", vec![]),
             ("DUAL", vec![]),
-            ("VOSTFR", vec![]),
-            ("VOST.FR", vec![]),
+            ("VOSTFR", vec!["vostfr"]),
+            ("VOST.FR", vec!["vostfr"]),
+            ("SUBFRENCH", vec!["vostfr"]),
             ("SUBS.VF2", vec![]),
             ("VFF.VFQ.SUBS", vec![]),
             ("VFF.Audio", vec!["vff"]),
             ("AudioVF2", vec!["vff", "vfq"]),
-            ("VOSTFR.VFF", vec!["vff"]),
+            ("VOSTFR.VFF", vec!["vff", "vostfr"]),
         ] {
             let assessment = Profile::default().assess(&format!("Example 1080p {tags}"), "Example");
             assert_eq!(assessment.attributes.languages, expected, "{tags}");
@@ -1457,7 +1466,11 @@ mod tests {
                     );
                     assert_eq!(
                         assessment.rank.language,
-                        u32::from(mode != "any" && matches),
+                        if mode != "any" && matches {
+                            language_rank(&[true])
+                        } else {
+                            0
+                        },
                         "{preferred} / {tag} / {mode}"
                     );
                 }
@@ -1466,46 +1479,63 @@ mod tests {
     }
 
     #[test]
-    fn french_preference_order_cutoff_and_upgrades_share_matching() {
+    fn every_language_is_needed_and_decides_before_the_quality() {
         let p = parse_profile(
-            r#"{"resolutions":[1080,720],"cutoff_resolution":1080,"languages":["vff","vfi","fr"],"language_mode":"prefer"}"#,
+            r#"{"resolutions":[2160,1080,720],"cutoff_resolution":1080,"languages":["vff","vostfr"],"language_mode":"prefer"}"#,
         );
-        for (tag, rank) in [
-            ("VFF", 3),
-            ("VF2", 3),
-            ("VFI", 2),
-            ("VFQ", 1),
-            ("FR", 1),
-            ("EN", 0),
-        ] {
-            let title = format!("Example 1080p {tag}");
-            let assessment = p.assess(&title, "Example");
-            assert!(assessment.accepted);
-            assert_eq!(assessment.rank.language, rank, "{tag}");
-            assert_eq!(p.cutoff_reached(&assessment), rank == 3, "{tag}");
-            let preferred_title = "Example 1080p VFF";
-            let preferred = p.assess(preferred_title, "Example");
+        let assess = |title: &str| p.assess(title, "Example");
+        // MULTi.VFF holds both; a 4K in VFF alone loses to it.
+        let both = "Example 1080p MULTi VFF";
+        let uhd = "Example 2160p VFF";
+        assert!(assess(both).rank > assess(uhd).rank);
+        assert!(p.cutoff_reached(&assess(both)));
+        assert!(!p.cutoff_reached(&assess(uhd)));
+        assert!(p.is_upgrade(&assess(both), &assess(uhd), both, uhd));
+        assert!(!p.is_upgrade(&assess(uhd), &assess(both), uhd, both));
+        let uhd_both = "Example 2160p MULTi VFF";
+        assert!(assess(uhd_both).rank > assess(both).rank);
+        for title in ["Example 1080p VFF VOSTFR", "Example 720p VF2 VOSTFR"] {
             assert_eq!(
-                p.is_upgrade(&preferred, &assessment, preferred_title, &title),
-                rank < 3,
-                "{tag}"
+                assess(title).rank.language,
+                assess(both).rank.language,
+                "{title}"
             );
         }
-        // A wildcard before a variant wins at its earlier position.
+        // With only some of them, the first ones count most.
+        assert!(assess("Example 720p VFF").rank > assess("Example 2160p VOSTFR").rank);
+        assert!(assess("Example 720p VOSTFR").rank > assess("Example 2160p EN").rank);
+        assert!(assess("Example 2160p EN").accepted);
+
+        let mut strict = p.clone();
+        strict.language_mode = Some(LanguageMode::Require);
+        assert!(strict.assess(both, "Example").accepted);
+        let partial = strict.assess(uhd, "Example");
+        assert!(!partial.accepted);
+        assert_eq!(
+            partial.reasons,
+            ["The release lacks some of the profile's languages"]
+        );
+
+        // French matches every dub; a variant needs its own tag.
         let wildcard = parse_profile(
             r#"{"resolutions":[1080],"cutoff_resolution":1080,"languages":["fr","vff"]}"#,
         );
-        for tag in ["FR", "VFF", "VFQ", "VFI", "VF2"] {
+        for (tag, complete) in [
+            ("FR", false),
+            ("VFF", true),
+            ("VFQ", false),
+            ("VFI", false),
+            ("VF2", true),
+        ] {
             let assessment = wildcard.assess(&format!("Example 1080p {tag}"), "Example");
-            assert_eq!(assessment.rank.language, 2, "{tag}");
-            assert!(wildcard.cutoff_reached(&assessment), "{tag}");
+            assert_eq!(wildcard.cutoff_reached(&assessment), complete, "{tag}");
         }
     }
 
     #[test]
     fn french_variant_profiles_round_trip() {
         let p = parse_profile(
-            r#"{"languages":["vff","vfi","vfq","fr","en","de","es","it","ja","ko","zh","pt","ru"],"language_mode":"require"}"#,
+            r#"{"languages":["vff","vfi","vfq","vostfr","fr","en","de","es","it","ja","ko","zh","pt","ru"],"language_mode":"require"}"#,
         );
         assert_eq!(Profile::from_json(&p.to_json()).unwrap(), p);
         let config = SelectionConfig {
@@ -1557,14 +1587,13 @@ mod tests {
     }
 
     #[test]
-    fn rank_orders_quality_language_score_revision_and_codec() {
+    fn rank_orders_language_quality_score_revision_and_codec() {
         let mut p = parse_profile(
             r#"{"resolutions":[1080,720],"sources":["bluray","web-dl"],"languages":["fr","en"],"language_mode":"prefer","codecs":["h265","h264"],"score_rules":[{"terms":["bonus"],"score":100}]}"#,
         );
         let high = "Example 1080p Bluray EN H264";
         let french = "Example 720p WEB-DL FR H265 bonus PROPER";
-        assert!(p.assess(high, "Example").rank > p.assess(french, "Example").rank);
-        p.language_first = true;
+        // The French release has the language, which comes before quality.
         assert!(p.assess(high, "Example").rank < p.assess(french, "Example").rank);
         assert_eq!(p.assess(high, "Example").rank.order()[0], "language");
         p.language_mode = Some(LanguageMode::Any);
@@ -1583,9 +1612,9 @@ mod tests {
     }
 
     #[test]
-    fn cutoff_source_and_preferred_language_must_be_reached() {
+    fn cutoff_source_and_every_language_must_be_reached() {
         let mut p = parse_profile(
-            r#"{"resolutions":[2160,1080,720],"cutoff_resolution":1080,"cutoff_source":"bluray","languages":["fr","en"],"language_mode":"prefer"}"#,
+            r#"{"resolutions":[2160,1080,720],"cutoff_resolution":1080,"cutoff_source":"bluray","languages":["fr"],"language_mode":"prefer"}"#,
         );
         for (title, reached) in [
             ("Example 720p Remux FR", false),
@@ -1680,7 +1709,6 @@ mod tests {
             r#"{"label":null}"#,
             r#"{"cutoff_source":"web"}"#,
             r#"{"language_mode":"sometimes"}"#,
-            r#"{"language_first":1}"#,
             r#"{"min_mb_per_hour":0}"#,
             r#"{"max_mb_per_hour":1000001}"#,
             r#"{"min_mb_per_hour":20,"max_mb_per_hour":10}"#,
@@ -1838,7 +1866,15 @@ mod tests {
         ] {
             let assessment = french.assess(&format!("Example 1080p {marker}"), "Example");
             assert!(!assessment.accepted, "{marker}");
-            assert!(assessment.attributes.languages.is_empty(), "{marker}");
+            // French subtitles are VOSTFR, never French audio.
+            assert!(
+                assessment
+                    .attributes
+                    .languages
+                    .iter()
+                    .all(|language| language == "vostfr"),
+                "{marker}"
+            );
         }
         assert!(
             french
@@ -1926,7 +1962,7 @@ mod tests {
     #[test]
     fn ordered_preferences_and_custom_scores_have_explicit_priority() {
         let profile = parse_profile(
-            r#"{"resolutions":[1080,2160],"sources":["web-dl","bluray"],"codecs":["h265","h264"],"languages":["en","fr"],"score_rules":[{"terms":["proper","release group"],"score":10}]}"#,
+            r#"{"resolutions":[1080,2160],"sources":["web-dl","bluray"],"codecs":["h265","h264"],"score_rules":[{"terms":["proper","release group"],"score":10}]}"#,
         );
         let preferred = profile.assess("Example 1080p WEB-DL HEVC ENG", "Example");
         let other = profile.assess("Example 2160p BluRay AVC FRE", "Example");

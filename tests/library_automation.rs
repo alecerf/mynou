@@ -51,7 +51,7 @@ fn analysed_french_audio_preserves_recorded_vff_baseline_without_an_upgrade_loop
             100,
             &unavailable_magnet("same-vff"),
         )]));
-        let profile = r#"{"resolutions":[2160,1080,720],"cutoff_resolution":1080,"languages":["vff","vfi","fr"],"language_mode":"prefer"}"#;
+        let profile = r#"{"resolutions":[2160,1080,720],"cutoff_resolution":1080,"languages":["vff","vostfr"],"language_mode":"prefer"}"#;
         let engine = Engine::open(config(&directory.0, Some(&indexer), profile)).unwrap();
         let source = directory.0.join("french-audio.mp4");
         let mut bytes = include_bytes!("fixtures/demo.mp4").to_vec();
@@ -608,7 +608,7 @@ fn verified_torrent_with_invalid_media_cannot_replace_the_existing_import() {
 }
 
 #[test]
-fn native_upgrade_imports_a_distinct_version_and_deletes_the_file_it_replaced() {
+fn native_upgrade_takes_the_place_of_the_file_it_replaced() {
     let directory = Directory::new();
     let seeder = Seeder::open(&directory.0);
     let indexer = Indexer::open(Value::Array(vec![release(BETTER, 1, &seeder.magnet)]));
@@ -625,22 +625,10 @@ fn native_upgrade_imports_a_distinct_version_and_deletes_the_file_it_replaced() 
     let ready = run_until(&engine, &child.id, "ready");
     assert_eq!(ready.release.as_ref().unwrap().title, BETTER);
     assert_eq!(ready.upgrade_parent.as_deref(), Some(original.id.as_str()));
-    assert_eq!(ready.imports.len(), 1);
-    assert_ne!(ready.imports, original.imports);
-    assert!(
-        Path::new(&ready.imports[0])
-            .file_name()
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .contains(&child.id)
-    );
-    assert_eq!(
-        Path::new(&ready.imports[0]).parent(),
-        Path::new(&original.imports[0]).parent()
-    );
-    // The upgrade replaces the file: the earlier one is gone, not kept beside it.
-    assert!(!Path::new(&original.imports[0]).exists());
+    // The upgrade takes the earlier file's name; nothing is added beside it.
+    assert_eq!(ready.imports, original.imports);
+    let folder = Path::new(&ready.imports[0]).parent().unwrap();
+    assert_eq!(fs::read_dir(folder).unwrap().count(), 1);
     assert_eq!(
         fs::read(&ready.imports[0]).unwrap(),
         include_bytes!("fixtures/demo.mp4")
@@ -721,7 +709,6 @@ fn initial_automatic_acquisition_records_the_selected_release_for_future_compari
 
 struct Plex {
     url: String,
-    paths: Arc<Mutex<Vec<String>>>,
     refreshes: Arc<AtomicUsize>,
     stopped: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
@@ -732,8 +719,7 @@ impl Plex {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         listener.set_nonblocking(true).unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
-        let paths = Arc::new(Mutex::new(vec![original_path]));
-        let thread_paths = paths.clone();
+        let thread_paths = Arc::new(Mutex::new(vec![original_path]));
         let refreshes = Arc::new(AtomicUsize::new(0));
         let thread_refreshes = refreshes.clone();
         let stopped = Arc::new(AtomicBool::new(false));
@@ -799,7 +785,6 @@ impl Plex {
         });
         Self {
             url,
-            paths,
             refreshes,
             stopped,
             thread: Some(thread),
@@ -820,7 +805,7 @@ impl Drop for Plex {
 }
 
 #[test]
-fn plex_must_confirm_the_mapped_new_version_before_an_upgrade_becomes_current() {
+fn plex_scans_the_replaced_file_before_an_upgrade_becomes_current() {
     let directory = Directory::new();
     let nested = directory.0.join("nested");
     fs::create_dir(&nested).unwrap();
@@ -857,36 +842,13 @@ fn plex_must_confirm_the_mapped_new_version_before_an_upgrade_becomes_current() 
     assert_eq!(queued(&engine.check_upgrades(true).unwrap()), 1);
     let child = children(&engine, &original.id).remove(0);
     let imported = run_until(&engine, &child.id, "imported");
-    assert!(engine.tick().unwrap());
-    let scanning = lock(&engine.store)
-        .unwrap()
-        .get(&child.id)
-        .unwrap()
-        .unwrap();
-    assert_eq!(
-        scanning.state, "scanning",
-        "Plex reporting only the old file must not confirm the upgrade"
-    );
-    assert_eq!(
-        library_ids(&engine).as_slice(),
-        std::slice::from_ref(&original.id)
-    );
-    assert_eq!(plex.refreshes.load(Ordering::Relaxed), 2);
-    assert!(
-        Path::new(&original.imports[0]).is_file(),
-        "the earlier file stays until Plex has the new one"
-    );
-    let relative = Path::new(&imported.imports[0])
-        .strip_prefix(&local_root)
-        .unwrap();
-    let mapped = format!("/plex/movies/{}", relative.to_str().unwrap());
-    assert!(mapped.contains(&child.id));
-    plex.paths.lock().unwrap().push(mapped);
+    // The upgrade has the earlier file's path, which Plex already lists: once
+    // Plex is asked to scan it again, the upgrade is current.
+    assert_eq!(imported.imports, original.imports);
     let ready = run_until(&engine, &child.id, "ready");
     assert_eq!(library_ids(&engine), [child.id]);
-    // Only once Plex has the new version is the earlier file deleted, and
-    // Plex is asked to look again.
-    assert!(!Path::new(&original.imports[0]).exists());
+    let folder = Path::new(&ready.imports[0]).parent().unwrap();
+    assert_eq!(fs::read_dir(folder).unwrap().count(), 1);
     assert_eq!(
         fs::read(&ready.imports[0]).unwrap(),
         include_bytes!("fixtures/demo.mp4")

@@ -148,6 +148,22 @@ pub fn validate_baseline(
     })
 }
 
+/// A film or episode as people name it: `Film (2024)`, `Show S01E02`.
+fn media_label(request: &store::Request) -> String {
+    if request.kind == "movie" {
+        if request.year > 0 {
+            format!("{} ({})", request.title, request.year)
+        } else {
+            request.title.clone()
+        }
+    } else {
+        format!(
+            "{} S{:02}E{:02}",
+            request.title, request.season, request.episode
+        )
+    }
+}
+
 /// Earlier versions one listing returns at most, and the time it may spend.
 const MAX_EARLIER: usize = 500;
 const EARLIER_BUDGET: Duration = Duration::from_secs(5);
@@ -248,24 +264,43 @@ impl Engine {
             // Plex marks the file unavailable until it scans the folder again.
             let _ = integrations::refresh(&self.configuration_for(&job)?, &job.request);
         }
+        // The overview stops telling about a kept file once it is gone.
+        if let Ok(mut kept) = self.earlier_kept.lock()
+            && kept.as_ref().is_some_and(|(kept, _)| kept == id)
+        {
+            *kept = None;
+        }
         let mut value = public_job(&job);
         value.insert("freed_bytes", Value::Number(freed as f64));
         Ok(value)
     }
 
-    /// Deletes the version an upgrade just replaced, now that the upgrade is
-    /// the current version on disk (and in Plex, when Plex is on). A failure
+    /// Deletes what is left of the version an upgrade just replaced, now that
+    /// the upgrade is the current version on disk (and in Plex, when Plex is
+    /// on): the upgrade took the place of a file of the same name, so only a
+    /// file of another name, such as another extension, remains. A failure
     /// keeps the upgrade and leaves the earlier version in Storage.
     pub(crate) fn replace_earlier(&self, parent: &str) {
         if self.read_only {
             return;
         }
-        if let Err(error) = self.delete_earlier_version(parent)
-            && let Ok(mut last) = self.last_upgrade_error.lock()
-        {
-            *last = Some(format!(
-                "The upgrade is in place, but the earlier version was kept: {error}"
-            ));
+        if let Err(error) = self.delete_earlier_version(parent) {
+            let title = lock(&self.store)
+                .ok()
+                .and_then(|mut store| store.get(parent).ok().flatten())
+                .map(|job| media_label(&job.request))
+                .unwrap_or_else(|| "a title".into());
+            if let Ok(mut kept) = self.earlier_kept.lock() {
+                *kept = Some((
+                    parent.to_owned(),
+                    integrations::report_text(
+                        &format!(
+                            "The upgrade of {title} is in place, but its earlier file was kept ({error}). Storage can delete it."
+                        ),
+                        1024,
+                    ),
+                ));
+            }
         }
     }
 

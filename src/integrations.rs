@@ -3601,82 +3601,74 @@ mod tests {
             id: id.into(),
             assessment: Profile::default().assess("Example", "Example"),
         };
-        for language_first in [false, true] {
-            for key in [
-                "resolution",
-                "source",
-                "language",
-                "custom_score",
-                "revision",
-                "codec",
-                "freeleech",
-                "priority",
-                "seeders",
-            ] {
-                let mut best = make("best");
-                best.assessment.rank.language_first = language_first;
-                let mut other = best.clone();
-                other.id = "other".into();
-                match key {
-                    "resolution" => best.assessment.rank.resolution = 1,
-                    "source" => best.assessment.rank.source = 1,
-                    "language" => best.assessment.rank.language = 1,
-                    "custom_score" => other.assessment.rank.custom_score = -1,
-                    "revision" => best.assessment.rank.revision = 1,
-                    "codec" => best.assessment.rank.codec = 1,
-                    _ => {}
-                }
-                let best_position =
-                    position(&best.assessment, 10, &[0; 32], key == "freeleech", 25);
-                let other_position = position(
-                    &other.assessment,
-                    if key == "seeders" { 9 } else { 10 },
-                    &[1; 32],
-                    false,
-                    if key == "priority" { 26 } else { 25 },
-                );
-                assert!(best_position < other_position);
-                assert_eq!(
-                    lost_on(&other, &other_position, &best, &best_position),
-                    Some(key)
-                );
-                assert_eq!(lost_on(&best, &best_position, &best, &best_position), None);
-                other.assessment.accepted = false;
-                assert_eq!(
-                    lost_on(&other, &other_position, &best, &best_position),
-                    None
-                );
+        for key in [
+            "resolution",
+            "source",
+            "language",
+            "custom_score",
+            "revision",
+            "codec",
+            "freeleech",
+            "priority",
+            "seeders",
+        ] {
+            let mut best = make("best");
+            let mut other = best.clone();
+            other.id = "other".into();
+            match key {
+                "resolution" => best.assessment.rank.resolution = 1,
+                "source" => best.assessment.rank.source = 1,
+                "language" => best.assessment.rank.language = 1,
+                "custom_score" => other.assessment.rank.custom_score = -1,
+                "revision" => best.assessment.rank.revision = 1,
+                "codec" => best.assessment.rank.codec = 1,
+                _ => {}
             }
+            let best_position = position(&best.assessment, 10, &[0; 32], key == "freeleech", 25);
+            let other_position = position(
+                &other.assessment,
+                if key == "seeders" { 9 } else { 10 },
+                &[1; 32],
+                false,
+                if key == "priority" { 26 } else { 25 },
+            );
+            assert!(best_position < other_position);
+            assert_eq!(
+                lost_on(&other, &other_position, &best, &best_position),
+                Some(key)
+            );
+            assert_eq!(lost_on(&best, &best_position, &best, &best_position), None);
+            other.assessment.accepted = false;
+            assert_eq!(
+                lost_on(&other, &other_position, &best, &best_position),
+                None
+            );
         }
     }
 
     #[test]
-    fn cursor_order_matches_rank_comparisons_for_both_orders() {
-        for language_first in [false, true] {
-            let profile = Profile {
-                resolutions: vec![1080, 720],
-                sources: vec!["bluray".into(), "web-dl".into()],
-                languages: vec!["fr".into(), "en".into()],
-                language_mode: Some(crate::selection::LanguageMode::Prefer),
-                language_first,
-                ..Profile::default()
-            };
-            let titles = [
-                "Example 1080p Bluray EN",
-                "Example 720p WEB-DL FR",
-                "Example 1080p WEB-DL FR PROPER",
-                "Example 1080p WEB-DL FR",
-            ];
-            for left in titles {
-                for right in titles {
-                    let a = profile.assess(left, "Example");
-                    let b = profile.assess(right, "Example");
-                    assert_eq!(
-                        a.rank.cmp(&b.rank).reverse(),
-                        position(&a, 1, &[0; 32], false, 25)
-                            .cmp(&position(&b, 1, &[0; 32], false, 25))
-                    );
-                }
+    fn cursor_order_matches_rank_comparisons() {
+        let profile = Profile {
+            resolutions: vec![1080, 720],
+            sources: vec!["bluray".into(), "web-dl".into()],
+            languages: vec!["fr".into(), "en".into()],
+            language_mode: Some(crate::selection::LanguageMode::Prefer),
+            ..Profile::default()
+        };
+        let titles = [
+            "Example 1080p Bluray EN",
+            "Example 720p WEB-DL FR",
+            "Example 1080p WEB-DL FR PROPER",
+            "Example 1080p WEB-DL FR",
+        ];
+        for left in titles {
+            for right in titles {
+                let a = profile.assess(left, "Example");
+                let b = profile.assess(right, "Example");
+                assert_eq!(
+                    a.rank.cmp(&b.rank).reverse(),
+                    position(&a, 1, &[0; 32], false, 25).cmp(&position(&b, 1, &[0; 32], false, 25))
+                );
             }
         }
     }

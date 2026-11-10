@@ -3,8 +3,8 @@ import { act, toast } from './components.js';
 import { link } from './link.js';
 
 // Quality profiles, as in Radarr and Sonarr but in plain words: which
-// qualities a release may have, best first, where upgrades stop, the audio
-// language, a size per hour of video, and a few named preferences. Films and
+// qualities a release may have, best first, where upgrades stop, the
+// languages, a size per hour of video, and a few named preferences. Films and
 // series share the profiles; each kind has its default, and each title can
 // use another one, chosen when it is added or later from its sheet.
 
@@ -16,21 +16,22 @@ export const LANGUAGES = [
   ['en', 'English'], ['fr', 'French'], ['de', 'German'], ['es', 'Spanish'], ['it', 'Italian'],
   ['pt', 'Portuguese'], ['ja', 'Japanese'], ['ko', 'Korean'], ['zh', 'Chinese'], ['ru', 'Russian'],
 ];
-// Audio a profile can ask for, as release names tag it. French releases name
-// their dub; "French" alone stands for any of them, or for FRENCH and VF.
+// Languages a profile can ask for, as release names tag them. French releases
+// name their dub; "French" alone stands for any of them, or for FRENCH and VF.
 const AUDIO = [
   ['vff', 'VFF', 'France dub, also TRUEFRENCH'],
   ['vfq', 'VFQ', 'Québec dub'],
   ['vfi', 'VFI', 'International dub'],
   ['fr', 'French', 'Any French, dub named or not'],
+  ['vostfr', 'VOSTFR', 'Original audio, French subtitles; MULTi with French counts'],
   ...LANGUAGES.filter(([value]) => value !== 'fr').map(([value, label]) => [value, label, null]),
 ];
-const FRENCH = new Set(['vff', 'vfq', 'vfi', 'fr']);
+const FRENCH = new Set(['vff', 'vfq', 'vfi', 'fr', 'vostfr']);
 const audioName = (value) => AUDIO.find(([key]) => key === value)?.[1] ?? languageName(value);
-/** What a list of profile languages reads as: "VFF, VFI or French". */
+/** What a list of profile languages reads as: "VFF and VOSTFR", all of them needed. */
 const languagesName = (languages) => {
   const names = languages.map(audioName);
-  return names.length > 1 ? `${names.slice(0, -1).join(', ')} or ${names.at(-1)}` : names[0];
+  return names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names[0];
 };
 // MULTI holds the original audio too; it is set from the audio rows.
 const MULTI = [['multi']];
@@ -71,7 +72,7 @@ export function profileSummary(profile) {
   const languages = profile.languages ?? [];
   if (mode !== 'any' && languages.length) {
     const name = languagesName(languages);
-    parts.push(mode === 'require' ? `${name} only` : `${name} preferred${profile.language_first ? ', even in a lower quality' : ''}`);
+    parts.push(mode === 'require' ? `${name} required` : `${name} first`);
   }
   if (hasExtra(profile, 'prefer', MULTI)) parts.push('MULTI first');
   if (profile.max_mb_per_hour) parts.push(`up to ${Math.round((profile.max_mb_per_hour / GB) * 10) / 10} GB per hour`);
@@ -300,8 +301,8 @@ function cutoffChoice(id, profile, update, hooks) {
   return h('span', { class: 'cutoff-choice' }, resolution, source);
 }
 
-/** The audio, in a few plain rows: the languages wanted, best first, then
-    what happens to the others. Rows that do not apply stay hidden. */
+/** The languages, in a few plain rows: those a release must have, then what
+    happens to a release missing some. Rows that do not apply stay hidden. */
 function audioRows(id, row, profile, update, hooks) {
   const chosen = () => profile.languages ?? [];
   const list = h('ol', { class: 'audio-list' });
@@ -310,7 +311,7 @@ function audioRows(id, row, profile, update, hooks) {
     // The first language turns the choice on; none means any language.
     if (!chosen().length && languages.length) profile.language_mode = 'prefer';
     profile.languages = languages;
-    if (!languages.length) Object.assign(profile, { language_mode: 'any', language_first: false, allow_unknown_language: true });
+    if (!languages.length) Object.assign(profile, { language_mode: 'any', allow_unknown_language: true });
     paint();
     update();
   };
@@ -334,7 +335,7 @@ function audioRows(id, row, profile, update, hooks) {
     list.hidden = !languages.length;
     const left = (french) => AUDIO.filter(([key]) => FRENCH.has(key) === french && !languages.includes(key))
       .map(([key, label, detail]) => h('option', { value: key }, detail ? `${label} · ${detail}` : label));
-    add.replaceChildren(h('option', { value: '' }, languages.length ? 'Add another…' : 'Any language. Add one…'),
+    add.replaceChildren(h('option', { value: '' }, languages.length ? 'Also needed…' : 'Any language. Add one…'),
       h('optgroup', { label: 'French' }, left(true)), h('optgroup', { label: 'Other languages' }, left(false)));
     add.value = '';
   };
@@ -344,30 +345,25 @@ function audioRows(id, row, profile, update, hooks) {
   const choice = (options, current, pick) => h('div', { class: 'segmented', role: 'group' }, options.map(([value, label]) =>
     h('button', { type: 'button', 'aria-pressed': String(value === current()), dataset: { value }, onclick: () => pick(value) }, label)));
   const mode = () => (languageMode(profile) === 'require' ? 'require' : 'prefer');
-  const others = choice([['prefer', 'Accepted, after yours'], ['require', 'Refused']], mode, (value) => {
+  const others = choice([['prefer', 'Accepted until a complete one'], ['require', 'Refused']], mode, (value) => {
     profile.language_mode = value;
-    if (value === 'require') profile.language_first = false;
-    else profile.allow_unknown_language = true;
+    if (value === 'prefer') profile.allow_unknown_language = true;
     update();
   });
-  const first = check(id('lang-first'), Boolean(profile.language_first), (on) => { profile.language_first = on; update(); });
   const unknown = check(id('lang-unknown'), profile.allow_unknown_language !== false, (on) => { profile.allow_unknown_language = on; update(); });
   const multi = check(id('multi'), hasExtra(profile, 'prefer', MULTI), (on) => { setExtra(profile, 'prefer', MULTI, on); update(); });
   const rows = [
-    row(id('lang'), 'Audio', 'The languages you want, best first. None: any language.', h('div', { class: 'audio-choice' }, list, add)),
-    row(id('lang-others'), 'Other languages', 'Refused: a release in another language is never downloaded.', others),
-    row(id('lang-first'), 'Language before quality', 'On: a 720p in your language beats a 1080p in another. Off: the better quality wins, and your languages decide between equal ones.', first, true),
+    row(id('lang'), 'Languages', 'A release needs every one: VFF and VOSTFR take a release with both, such as MULTi.VFF. They decide before the quality: a 1080p with both beats a 4K with VFF alone. None: any language.', h('div', { class: 'audio-choice' }, list, add)),
+    row(id('lang-others'), 'Missing some', 'Accepted: the release with most of them comes first, the first ones counting most, and an upgrade replaces it once a release has them all. Refused: only a release with every one is downloaded.', others),
     row(id('lang-unknown'), 'MULTI and untagged', 'A release marked only MULTI, or without a language, does not say what it holds. On: they are accepted anyway.', unknown, true),
     row(id('multi'), 'MULTI first', 'Releases that also hold the original audio, such as MULTi.VFF, go before VFF alone.', multi, true),
   ];
-  const [, othersRow, firstRow, unknownRow] = rows;
+  const [, othersRow, unknownRow] = rows;
   const refresh = () => {
     const none = !chosen().length;
     for (const button of others.children) button.setAttribute('aria-pressed', String(button.dataset.value === mode()));
-    first.checked = Boolean(profile.language_first);
     unknown.checked = profile.allow_unknown_language !== false;
     othersRow.hidden = none;
-    firstRow.hidden = none || mode() === 'require';
     unknownRow.hidden = none || mode() !== 'require';
   };
   hooks.push(refresh);
@@ -454,7 +450,7 @@ function tryRows(report) {
 
 // Why an accepted release came after Mynou's pick: the first criterion where it was worse.
 const LOST_ON = {
-  resolution: 'Lower quality', source: 'Same quality, lower source', language: 'Not in the preferred language',
+  resolution: 'Lower quality', source: 'Same quality, lower source', language: 'Fewer of your languages',
   custom_score: 'Fewer preferred words', revision: 'Not a proper or repack', codec: 'Less preferred codec',
   freeleech: 'Not freeleech', priority: 'Lower indexer priority', seeders: 'Fewer seeders',
 };
