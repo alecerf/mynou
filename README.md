@@ -123,6 +123,7 @@ disabled:
 | Library folders | Library | |
 | Downloads | Downloads (folders, port 6881, limits, seeding) | |
 | Plex server and watchlist | Plex: **Connect to Plex**, then choose the server | |
+| Your Plex friends' watchlists | Friends: a switch for each friend | |
 | TMDB catalog, to find titles and follow series | TMDB catalog | TMDB token |
 | Sources to search | Indexers | API key of each source |
 | What goes through a VPN | VPN: a WireGuard profile, then torrents, indexers, TMDB | |
@@ -165,7 +166,7 @@ Everything is also available over HTTP: `/api` routes, and `/healthz` and
 
 | | |
 | --- | --- |
-| **Requests** | Plex watchlists from one or several accounts, the web interface and an HTTP API. |
+| **Requests** | Plex watchlists, yours and your Plex friends' through your own Plex connection, or other accounts with their own token; the web interface and an HTTP API. |
 | **Sources** | RSS, JSON and Torznab indexers with optional authentication, opt-in feed watching for new releases, and opt-in IRC announcement channels. |
 | **Release selection** | Movie and episode profiles on resolution, source, codec, language, terms and scores, with previews that explain every decision. |
 | **BitTorrent** | v1, v2 and hybrid torrents, magnets, trackers, DHT and PEX, parallel peers, pause and resume, priorities, bandwidth limits and seeding policies. |
@@ -240,6 +241,16 @@ import fails with `runtime_mismatch` and both lengths, nothing is written, and
 the release is not picked again for that title. The job's **Files & quality**
 tab, and `import_notes` in the API, say which folder was used and why, and
 whether the length was checked.
+</details>
+
+<details>
+<summary><strong>A friend's watchlist is not read</strong></summary>
+
+Open **Settings → Plex & TMDB → Friends**. Friends are off until you turn
+them on, and the reason Plex gave shows under a friend whose watchlist cannot
+be read, for example a private one. **Check now** reads your friend list
+again; a friend who left it stops being read, and what was already requested
+stays.
 </details>
 
 <details>

@@ -1,0 +1,19 @@
+{
+  "provenance": "Synthetic, not recorded from a live account: how a friend's private watchlist is assumed to answer, as a GraphQL partial error with the watchlist null. The message is made up. Mynou reports Plex's message when there is one, and \"this watchlist is not shared with you\" when the watchlist is null without one; either way it is an error, never an empty list. To check against a live account: the real message and whether the user or only the watchlist is null.",
+  "status": 200,
+  "content_type": "application/json",
+  "body": {
+    "data": {
+      "user": {
+        "watchlist": null
+      }
+    },
+    "errors": [
+      {
+        "message": "This user's watchlist is private",
+        "path": ["user", "watchlist"],
+        "extensions": { "code": "FORBIDDEN" }
+      }
+    ]
+  }
+}

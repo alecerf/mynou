@@ -469,12 +469,7 @@ fn selected_interest(
     let Some(record) = state.accounts().get(id) else {
         return Ok(false);
     };
-    if !config
-        .requesters
-        .accounts
-        .iter()
-        .any(|a| &a.id == id && a.binding() == record.binding)
-    {
+    if !crate::requesters::bound(config, record) {
         return Ok(false);
     }
     let Some(provenance) = &job.requester else {

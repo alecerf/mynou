@@ -443,7 +443,14 @@ impl Engine {
     /// One bounded sync pass: the requests it added, and whether it read
     /// every watchlist whole, which is what `last_sync_at` reports.
     fn sweep_watchlists(&self) -> Result<(usize, bool)> {
-        if !self.config.requesters.accounts.is_empty() {
+        // Once a Plex friend was turned on, Plex accounts are requesters, the
+        // owner's own watchlist included, like token accounts.
+        let plex_requesters = lock(&self.requester_store)?
+            .state
+            .accounts
+            .keys()
+            .any(|id| crate::requesters::plex_user(id).is_some());
+        if !self.config.requesters.accounts.is_empty() || plex_requesters {
             let before = lock(&self.store)?.counts()?.jobs;
             let report = self.sync_requesters()?;
             let complete = report

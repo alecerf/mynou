@@ -49,6 +49,7 @@ mod pack_acquisition;
 mod pack_management;
 mod parallel_config;
 mod parallel_transfers;
+mod plex_friends;
 mod requester_acquisition;
 mod requester_management;
 mod requester_policies;

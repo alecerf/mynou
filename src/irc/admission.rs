@@ -311,15 +311,33 @@ impl Engine {
             return Err("IRC: retained series identity is ambiguous".into());
         }
         let deadline = Instant::now() + Duration::from_secs(10);
-        let configured_account = self
-            .config
-            .requesters
-            .accounts
-            .iter()
-            .find(|a| rule.requester.as_deref() == Some(a.id.as_str()))
-            .ok_or("IRC: requester account is unavailable")?;
-        integrations::requester_identity_before(&self.config, configured_account, deadline)
-            .map_err(|_| "IRC: requester identity could not be verified".to_owned())?;
+        let requester = rule
+            .requester
+            .as_deref()
+            .ok_or("IRC: missing requester selector")?;
+        if crate::requesters::plex_user(requester).is_some() {
+            // A Plex friend's identity is the one Plex lists with the owner's
+            // connection; it needs no token of its own.
+            let ledger = lock(&self.requester_store)?;
+            let record = ledger
+                .state
+                .accounts
+                .get(requester)
+                .ok_or("IRC: requester account is unavailable")?;
+            if !crate::requesters::admits(&self.config, &*ledger, record) {
+                return Err("IRC: requester identity could not be verified".into());
+            }
+        } else {
+            let configured_account = self
+                .config
+                .requesters
+                .accounts
+                .iter()
+                .find(|a| a.id == requester)
+                .ok_or("IRC: requester account is unavailable")?;
+            integrations::requester_identity_before(&self.config, configured_account, deadline)
+                .map_err(|_| "IRC: requester identity could not be verified".to_owned())?;
+        }
         let canonical = integrations::irc_catalog_request_before(
             &self.config,
             &record.announcement.request,
@@ -359,13 +377,7 @@ impl Engine {
             .get(account_id)
             .ok_or("IRC: requester account is unavailable")?
             .clone();
-        if !self
-            .config
-            .requesters
-            .accounts
-            .iter()
-            .any(|a| a.id == account_id && a.binding() == account.binding)
-        {
+        if !crate::requesters::bound(&self.config, &account) {
             return Err("IRC: requester binding changed".into());
         }
         let demand_id = Demand::identity(account_id, &canonical);

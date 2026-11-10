@@ -1,0 +1,26 @@
+{
+  "provenance": "Notes, not a response: what Plex Web 4.163.0 (app.plex.tv, read 2026-11-10) asks the community API, summarized field by field. Plex Web sends these queries with the signed-in user's X-Plex-Token as POST {query, variables} to https://community.plex.tv/api. They tell which fields exist and which types the variables take; they do not show a successful answer, which needs an account.",
+  "endpoint": "https://community.plex.tv/api",
+  "friends": {
+    "field": "allFriendsV2",
+    "arguments": "none",
+    "returns": "a list of { user, createdAt }",
+    "user_fields_read_by_plex_web": ["avatar", "displayName", "id", "username", "idRaw"],
+    "notes": "id is the community ID that user(id:) takes. idRaw is the plex.tv account number: Plex Web puts it in /api/v2/sharings/<idRaw> and uses -1 when it is missing, so it is a number. Mynou reads id, idRaw, username and displayName."
+  },
+  "watchlist": {
+    "operation": "query with variables $uuid: ID (default \"\"), $first: PaginationInt!, $after: String",
+    "path": "user(id: $uuid) { watchlist(first: $first, after: $after) { nodes { ... } pageInfo { ... } } }",
+    "notes": "Plex Web reads both its own watchlist (empty uuid) and a friend's (the friend's community id) through user(id:). The issue named userV2(user:); Plex Web 4.163.0 only reads userV2 as a field of activity items, never as a query root, so Mynou follows user(id:).",
+    "page_info_fields": ["hasNextPage", "hasPreviousPage", "endCursor"],
+    "node_fields_read_by_plex_web": [
+      "id", "images", "userState", "title", "key", "type", "index", "publicPagesURL",
+      "parent", "grandparent", "publishedAt", "leafCount", "year", "originallyAvailableAt", "childCount"
+    ],
+    "node_type_values": ["EPISODE", "MOVIE", "SEASON", "SHOW"],
+    "mynou_reads": "nodes { id key type title year } pageInfo { hasNextPage endCursor }"
+  },
+  "item": {
+    "notes": "A node's key is /library/metadata/<id>, which Plex Web opens on the metadata provider. A node carries no TMDB ID, so Mynou reads each new item once with includeGuids=1 (see metadata-item.json) and keeps the answer for a day."
+  }
+}

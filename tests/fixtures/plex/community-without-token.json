@@ -1,0 +1,6 @@
+{
+  "provenance": "Real response, recorded 2026-11-10: POST https://community.plex.tv/api with Content-Type: application/json, Accept: application/json, a GraphQL body and no X-Plex-Token. The same answer came for an introspection query and for an allFriendsV2 query: the token is checked before the query is read, so no schema or validation error is visible without an account. Headers trimmed; nothing identifies the sender.",
+  "status": 401,
+  "content_type": "text/html; charset=utf-8",
+  "body": "You must provide a token!"
+}

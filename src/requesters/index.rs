@@ -29,6 +29,8 @@ pub(super) const ADMISSION_CURSOR: Key = key_const(17);
 pub(super) const OUTCOME_CURSOR: Key = key_const(18);
 const SWEEP: u8 = 19;
 const COLLECT: u8 = 20;
+/// The Plex accounts read with the owner's connection, as JSON.
+pub(super) const PLEX_ACCOUNTS: Key = key_const(21);
 const SWEEP_FORMAT: &[u8; 8] = b"MYNOUS01";
 const SWEEP_LEN: usize = 8 + 8 + SweepCursor::ENCODED_LEN + 32 + 8;
 /// Index rows of stale origin generations examined per staged commit.
@@ -165,13 +167,24 @@ impl Sweep {
         bytes.push(u8::from(self.multipass));
         bytes.push(u8::from(self.verification.is_some()));
         bytes.extend_from_slice(&self.verification.unwrap_or([0; 32]));
+        // A friend's watchlist pages by Plex's own cursors: the page in
+        // progress follows. Offset sweeps keep their exact earlier bytes.
+        if let Some(page) = &self.cursor.page {
+            bytes.extend_from_slice(&page.encode());
+        }
         bytes
     }
     fn decode(bytes: &[u8]) -> Result<Self> {
         let invalid = || "Requester: invalid watchlist sweep".to_owned();
-        if bytes.len() != SWEEP_LEN + 34 || &bytes[..8] != SWEEP_FORMAT {
+        if bytes.len() < SWEEP_LEN + 34 || &bytes[..8] != SWEEP_FORMAT {
             return Err(invalid());
         }
+        let (bytes, page) = bytes.split_at(SWEEP_LEN + 34);
+        let page = if page.is_empty() {
+            None
+        } else {
+            Some(crate::integrations::PageMark::decode(page)?)
+        };
         let extra = &bytes[SWEEP_LEN..];
         if extra[0] > 1
             || extra[1] > 1
@@ -183,9 +196,18 @@ impl Sweep {
         let verification =
             (extra[1] == 1).then(|| extra[2..].try_into().expect("fixed digest width"));
         let cursor_end = 16 + SweepCursor::ENCODED_LEN;
+        let mut cursor = SweepCursor::decode(&bytes[16..cursor_end])?;
+        if let Some(page) = &page
+            && (page.start > cursor.position
+                || cursor.position - page.start > crate::integrations::PAGE_SIZE as u64
+                || cursor.total.is_some())
+        {
+            return Err(invalid());
+        }
+        cursor.page = page;
         let sweep = Self {
             epoch: u64::from_be_bytes(bytes[8..16].try_into().map_err(|_| invalid())?),
-            cursor: SweepCursor::decode(&bytes[16..cursor_end])?,
+            cursor,
             digest: bytes[cursor_end..cursor_end + 32]
                 .try_into()
                 .map_err(|_| invalid())?,
@@ -771,6 +793,29 @@ mod sweep_tests {
         sweep.multipass = true;
         sweep.verification = Some([8; 32]);
         assert_eq!(Sweep::decode(&sweep.encode()).unwrap(), sweep);
+    }
+
+    #[test]
+    fn a_page_cursor_round_trips_and_offset_sweeps_keep_their_bytes() {
+        let mut sweep = Sweep::new(3, 42);
+        sweep.cursor.position = 130;
+        sweep.cursor.anchor = Some([5; 32]);
+        let offset = sweep.encode();
+        assert_eq!(offset.len(), SWEEP_LEN + 34);
+        sweep.cursor.page = Some(crate::integrations::PageMark {
+            start: 100,
+            after: "opaque-cursor".into(),
+        });
+        let paged = sweep.encode();
+        assert_eq!(&paged[..offset.len()], &offset[..]);
+        assert_eq!(Sweep::decode(&paged).unwrap(), sweep);
+        // A truncated cursor, or a position outside the page, is refused.
+        assert!(Sweep::decode(&paged[..paged.len() - 1]).is_err());
+        for start in [131, 29] {
+            let mut far = sweep.clone();
+            far.cursor.page.as_mut().unwrap().start = start;
+            assert!(Sweep::decode(&far.encode()).is_err(), "{start}");
+        }
     }
 
     #[test]

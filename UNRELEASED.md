@@ -367,3 +367,21 @@ job's Acquisition tab). A file given with `source_path` is checked the same
 way. When the runtime or the file's length is unknown, the file is imported
 and the job notes that the check was skipped. A file holding several episodes
 is not checked.
+
+## Added: Your Plex friends' watchlists
+
+Settings, Plex & TMDB lists your Plex friends, read with your own Plex
+connection: friends have nothing to set up and share no token. Each friend has
+a switch, off for new friends; once on, the films and series on their
+watchlist become requests, with the friend as requester. Their state shows next
+to the switch, with Plex's reason when a watchlist cannot be read, for example
+a private one. A title on several watchlists, yours included, is one request
+that stays while anyone still wants it. Once a friend is on, your own watchlist
+is read as a requester too, as `plex-<your Plex account number>`, unless a
+requester account already reads it. Turning a friend off, or a friend leaving
+your friends on Plex, stops reading their list and keeps what was already
+requested; a renamed friend stays the same requester. Friends are requesters
+named `plex-<Plex account number>` in `GET /api/requesters`, which also lists
+them with their state; `POST /api/plex/friends` reads the list again and
+`POST /api/plex/friends/<id>` with `{"enabled": true}` turns one on. Requester
+accounts of the settings can no longer have an ID starting with `plex-`.
