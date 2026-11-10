@@ -1,7 +1,7 @@
 //! Bearer pack journeys; original local catalog fixtures, CI only.
-mod api_support;
-mod library_support;
-mod series_support;
+use crate::api_support;
+use crate::library_support;
+use crate::series_support;
 use api_support::{Server, TOKEN};
 use library_support::Directory;
 use mynou::{

@@ -1,6 +1,5 @@
 //! Selective acquisition uses synthetic local peers; execution belongs in CI.
-#[allow(dead_code)]
-mod transfer_support;
+use crate::transfer_support;
 use mynou::{
     bencode::{self, Value as Bencode},
     crypto::{sha1, sha256},

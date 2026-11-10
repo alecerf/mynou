@@ -1,10 +1,9 @@
 //! Automatic pack acquisition uses synthetic catalog/indexer metadata and local peers.
-mod automatic_pack_support;
-mod library_support;
-mod series_support;
-mod torrent_network_support;
-#[allow(dead_code)]
-mod transfer_support;
+use crate::automatic_pack_support;
+use crate::library_support;
+use crate::series_support;
+use crate::torrent_network_support;
+use crate::transfer_support;
 use automatic_pack_support::*;
 use library_support::{Directory, run_until};
 use mynou::{

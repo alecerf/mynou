@@ -1,7 +1,7 @@
 //! Original local SASL journeys; credentials never authorize unauthenticated work.
-mod home_support;
-mod irc_support;
-mod library_support;
+use crate::home_support;
+use crate::irc_support;
+use crate::library_support;
 use irc_support::*;
 use library_support::Directory;
 use mynou::{

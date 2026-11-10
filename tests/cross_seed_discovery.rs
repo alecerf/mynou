@@ -1,7 +1,6 @@
 //! Automatic cross-seed discovery against a synthetic loopback Torznab source.
 //! No real indexer, tracker or media is contacted.
-#[allow(dead_code)]
-mod transfer_support;
+use crate::transfer_support;
 use mynou::{
     bencode::{self, Value as Bencode},
     config,

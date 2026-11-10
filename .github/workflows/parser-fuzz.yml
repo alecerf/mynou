@@ -4,6 +4,7 @@ on:
     paths:
       - '.github/workflows/parser-fuzz.yml'
       - 'examples/parser_fuzz.rs'
+      - 'Cargo.toml'
       - 'src/bencode.rs'
       - 'src/json.rs'
       - 'src/xml.rs'
@@ -44,13 +45,14 @@ jobs:
       - name: Install Rust 1.99.1
         run: rustup toolchain install 1.99.1 --profile minimal
       - name: Build the fuzzer with release settings, which abort on a panic
-        run: cargo +1.99.1 build --release --offline --locked --example parser_fuzz
+        # The fuzz profile is release without LTO: a quicker build, nearly as fast a run.
+        run: cargo +1.99.1 build --profile fuzz --offline --locked --example parser_fuzz
       - name: Mutate every parser's inputs
         env:
           INPUTS: ${{ github.event.inputs.inputs_per_target || '1000000' }}
           SEED: ${{ github.run_id }}
           TMPDIR: ${{ runner.temp }}
-        run: ./target/release/examples/parser_fuzz "$INPUTS"
+        run: ./target/fuzz/examples/parser_fuzz "$INPUTS"
       - name: Keep the input that made a parser panic
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

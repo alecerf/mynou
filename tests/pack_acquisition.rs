@@ -1,8 +1,7 @@
 //! Explicit pack mappings through catalog, durable jobs and verified local peers. CI only.
-mod library_support;
-mod series_support;
-#[allow(dead_code)]
-mod transfer_support;
+use crate::library_support;
+use crate::series_support;
+use crate::transfer_support;
 use library_support::{Directory, run_until};
 use mynou::{
     engine::{Engine, lock},

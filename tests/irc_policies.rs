@@ -1,7 +1,7 @@
 //! Original configuration, admission-free review and persistence scenarios.
-mod irc_support;
-mod jobs_state;
-mod library_support;
+use crate::irc_support;
+use crate::jobs_state;
+use crate::library_support;
 use irc_support::*;
 use library_support::Directory;
 use mynou::{

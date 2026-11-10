@@ -1,4 +1,4 @@
-"""Exercise local/CI scheduling and complete library-module coverage."""
+"""Exercise local/CI scheduling and complete per-module coverage."""
 
 import json
 from pathlib import Path
@@ -18,12 +18,13 @@ class SchedulerTests(unittest.TestCase):
         # behind a symbolic link, so the fixture root must be the physical path.
         self.root = Path(self.temporary.name).resolve()
         (self.root / "src").mkdir()
+        (self.root / "tests").mkdir()
         (self.root / "target/debug").mkdir(parents=True)
         self.targets = []
         self.messages = []
 
-    def target(self, name, body):
-        source = self.root / f"src/{name}.rs"
+    def target(self, name, body, source=None):
+        source = self.root / (source or f"src/{name}.rs")
         source.write_text("// CI scheduler fixture.\n")
         executable = self.root / f"target/debug/{name}"
         executable.write_text("#!/usr/bin/env python3\n" + body)
@@ -42,7 +43,7 @@ class SchedulerTests(unittest.TestCase):
     def test_cargo_discovery_retains_every_harness_and_rejects_incomplete_builds(self):
         self.target("lib", "pass\n")
         self.target("main", "pass\n")
-        self.target("integration", "pass\n")
+        self.target("integration", "pass\n", "tests/main.rs")
         normal = dict(self.messages[-1], profile={"test": False})
         self.messages.append(normal)
         self.assertEqual(runner.discover(self.manifest(), self.root), self.targets)
@@ -112,8 +113,8 @@ class SchedulerTests(unittest.TestCase):
         self.assertFalse(result["success"])
         self.assertIsNotNone(result["exit_code"])
 
-    def library(self, names, tweak=""):
-        return self.target("lib", (
+    def library(self, names, tweak="", name="lib", source=None):
+        return self.target(name, (
             "import sys\n"
             f"names = {names!r}\n"
             "if '--list' in sys.argv:\n"
@@ -124,11 +125,11 @@ class SchedulerTests(unittest.TestCase):
             + tweak + "\n"
             "for name in selected: print('test ' + name + ' ... ok')\n"
             "print(f'test result: ok. {len(selected)} passed; 0 failed; 0 ignored; 0 measured; {len(names)-len(selected)} filtered out; finished in 0.00s')\n"
-        ))
+        ), source)
 
     def test_library_groups_execute_all_exact_names_once_even_with_overlapping_substrings(self):
         target = self.library(["store::tests::one", "store::tests::two", "other::store::tests::one"])
-        shards = runner.library_shards([target], self.root)
+        shards = runner.module_shards([target], self.root)
         self.assertEqual(len(shards), 2)
         self.assertEqual({s.label for s in shards}, {"src/lib.rs::store", "src/lib.rs::other"})
         self.assertEqual(sorted(name for s in shards for name in s.tests),
@@ -142,7 +143,7 @@ class SchedulerTests(unittest.TestCase):
             with self.subTest(size=size):
                 names = [f"store::tests::case_{n:03d}" for n in range(size)]
                 target = self.library(list(reversed(names)))
-                shards = runner.library_shards([target], self.root)
+                shards = runner.module_shards([target], self.root)
                 self.assertEqual(len(shards), (size + 15) // 16)
                 self.assertEqual(len({s.label for s in shards}), len(shards))
                 self.assertTrue(all(1 <= len(s.tests) <= 16 for s in shards))
@@ -156,6 +157,24 @@ class SchedulerTests(unittest.TestCase):
                             runner.schedule(plan, self.root, self.root / "invalid", 2, 1, 3, {})
                 self.assertFalse((self.root / "invalid").exists())
 
+    def test_integration_modules_keep_one_process_each_and_their_own_coverage(self):
+        names = [f"store::case_{n:03d}" for n in range(40)] + ["web_ui::pages"]
+        integration = self.library(names, name="integration", source="tests/main.rs")
+        library = self.library(["a::one", "b::two"])
+        shards = runner.module_shards([integration, library], self.root)
+        self.assertEqual({s.label for s in shards},
+                         {"tests/main.rs::store", "tests/main.rs::web_ui", "src/lib.rs::a", "src/lib.rs::b"})
+        self.assertEqual(len(next(s for s in shards if s.label == "tests/main.rs::store").tests), 40)
+        report = runner.schedule(shards, self.root, self.root / "logs", 2, 1, 3, {})
+        self.assertTrue(report["success"])
+        self.assertEqual(report["counts"], {"passed": 43, "failed": 0, "ignored": 0, "filtered": 0})
+        # A missing module of either harness fails before anything runs.
+        for missing in ("tests/main.rs::web_ui", "src/lib.rs::b"):
+            plan = [s for s in shards if s.label != missing]
+            with self.subTest(missing=missing), self.assertRaises(ValueError):
+                runner.schedule(plan, self.root, self.root / "invalid", 2, 1, 3, {})
+        self.assertFalse((self.root / "invalid").exists())
+
     def test_library_discovery_rejects_empty_duplicate_malformed_or_failed_lists(self):
         bodies = ["pass", "print('a: test\\na: test')", "print('a: benchmark')",
                   "print('not a listing')", "print('a: test'); raise SystemExit(1)"]
@@ -163,11 +182,11 @@ class SchedulerTests(unittest.TestCase):
             target = self.target(f"bad{index}", body + "\n")
             library = runner.Target("src/lib.rs", target.executable)
             with self.subTest(body=body), self.assertRaises(ValueError):
-                runner.library_shards([library], self.root)
+                runner.module_shards([library], self.root)
 
     def test_missing_or_duplicate_library_groups_are_rejected_before_execution(self):
         target = self.library(["a::one", "b::two"])
-        shards = runner.library_shards([target], self.root)
+        shards = runner.module_shards([target], self.root)
         for plan in [shards[:1], shards + shards[:1]]:
             with self.subTest(plan=plan), self.assertRaises(ValueError):
                 runner.schedule(plan, self.root, self.root / "logs", 2, 1, 3, {})
@@ -176,7 +195,7 @@ class SchedulerTests(unittest.TestCase):
     def test_incomplete_or_wrong_test_execution_cannot_pass_a_library_group(self):
         for index, tweak in enumerate(["selected = selected[:-1]", "selected = ['fake::one', 'fake::two']"]):
             target = self.library(["a::one", "a::two"], tweak)
-            shard = runner.library_shards([target], self.root)[0]
+            shard = runner.module_shards([target], self.root)[0]
             result = runner.execute(shard, self.root, self.root / f"bad{index}.log", 1, 3)
             self.assertFalse(result["success"])
 
@@ -186,7 +205,7 @@ class SchedulerTests(unittest.TestCase):
             "print('test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s')\n"
             "raise SystemExit()"
         ))
-        shard = runner.library_shards([target], self.root)[0]
+        shard = runner.module_shards([target], self.root)[0]
         result = runner.execute(shard, self.root, self.root / "ignored.log", 1, 3)
         self.assertFalse(result["success"])
 

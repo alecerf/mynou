@@ -1,6 +1,6 @@
 //! A watchlist with no supported entries still advances durably.
-mod library_support;
-mod requester_support;
+use crate::library_support;
+use crate::requester_support;
 
 use library_support::Directory;
 use mynou::{engine::Engine, json::Value};

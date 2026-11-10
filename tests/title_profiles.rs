@@ -1,5 +1,5 @@
 //! Per-title profiles through the engine, API, upgrades and restart (#338).
-mod library_support;
+use crate::library_support;
 
 use library_support::*;
 use mynou::engine::{Engine, lock};

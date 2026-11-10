@@ -1,7 +1,7 @@
 //! Original protected API and pure/offline CLI reviews.
-mod api_support;
-mod irc_support;
-mod library_support;
+use crate::api_support;
+use crate::irc_support;
+use crate::library_support;
 use api_support::{Server, TOKEN};
 use irc_support::*;
 use library_support::Directory;

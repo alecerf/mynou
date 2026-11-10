@@ -1,5 +1,5 @@
 //! A declarative `mapping` reads any JSON indexer. Synthetic loopback fixtures only.
-mod library_support;
+use crate::library_support;
 use library_support::Directory;
 use mynou::{
     config, integrations,

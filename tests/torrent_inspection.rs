@@ -1,7 +1,6 @@
 //! Metadata-only source inspection with original synthetic peers and trackers.
-mod automatic_pack_support;
-#[allow(dead_code)]
-mod transfer_support;
+use crate::automatic_pack_support;
+use crate::transfer_support;
 use automatic_pack_support::Provider;
 use mynou::{
     bencode::{self, Value as Bencode},

@@ -1,7 +1,6 @@
 //! Native selection expansion is protected by the established API guards.
-mod api_support;
-#[allow(dead_code)]
-mod transfer_support;
+use crate::api_support;
+use crate::transfer_support;
 use api_support::{Server, TOKEN};
 use mynou::{
     engine::lock,

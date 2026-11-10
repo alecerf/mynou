@@ -1,7 +1,7 @@
 //! Original protected API and CLI numbering workflows. CI only.
-mod api_support;
-mod library_support;
-mod series_support;
+use crate::api_support;
+use crate::library_support;
+use crate::series_support;
 use api_support::{Reply, Server, TOKEN};
 use library_support::Directory;
 use mynou::json::{self, Value};

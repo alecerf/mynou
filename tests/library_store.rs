@@ -1,5 +1,5 @@
 //! Durable library identity, upgrade provenance and monitoring transactions.
-mod jobs_state;
+use crate::jobs_state;
 use mynou::json::Value;
 use mynou::store::{self, Job, RecordedRelease, Request, Store};
 use std::fs;

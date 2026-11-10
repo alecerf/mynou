@@ -1,11 +1,8 @@
 //! CI-only protected whole-group JSON, form and CLI controls.
-mod api_support;
-mod automatic_pack_support;
-mod library_support;
-mod series_support;
-mod shared_group_support;
-#[allow(dead_code)]
-mod transfer_support;
+use crate::api_support;
+use crate::automatic_pack_support;
+use crate::library_support;
+use crate::shared_group_support;
 use api_support::{Server, TOKEN};
 use automatic_pack_support::{Provider, SECRET, no_sources, snapshot};
 use library_support::Directory;

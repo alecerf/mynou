@@ -1,6 +1,5 @@
 //! Synthetic loopback proofs for manual seed-only reuse; no public media.
-#[allow(dead_code)]
-mod transfer_support;
+use crate::transfer_support;
 use mynou::{
     bencode, config,
     engine::Engine,

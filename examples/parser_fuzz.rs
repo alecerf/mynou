@@ -2,14 +2,14 @@
 //! standard library only.
 //!
 //! ```sh
-//! cargo run --release --example parser_fuzz -- 200000
-//! cargo run --release --example parser_fuzz -- 1000000 tls packets
+//! cargo run --profile fuzz --example parser_fuzz -- 200000
+//! cargo run --profile fuzz --example parser_fuzz -- 1000000 tls packets
 //! ```
 //!
 //! The first argument is the number of inputs per target (default 100,000;
 //! media targets run a fiftieth of it, since each input is written to a file).
 //! Further arguments keep only the targets they name. `SEED` changes the
-//! deterministic input sequence. Release builds abort on a panic, which
+//! deterministic input sequence. Release and fuzz builds abort on a panic, which
 //! would stop the whole service: before aborting, the panic hook writes the
 //! input to `target/parser-fuzz/crash-TARGET.bin` and prints how to replay it
 //! (`REPLAY=path`, with that target named).

@@ -1,6 +1,6 @@
 //! Original native HTTP source protocol fixtures. Never public trackers or torrents.
-mod api_support;
-mod library_support;
+use crate::api_support;
+use crate::library_support;
 use api_support::{Server, TOKEN};
 use library_support::Directory;
 use mynou::{

@@ -1,6 +1,6 @@
 //! Runtime availability transitions, validated only by GitHub Actions.
-mod library_support;
-mod requester_support;
+use crate::library_support;
+use crate::requester_support;
 
 use library_support::{Directory, Indexer, library_ids, local_import, release};
 use mynou::{

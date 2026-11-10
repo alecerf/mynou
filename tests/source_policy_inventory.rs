@@ -1,6 +1,6 @@
 //! Large retained policy fixture is a separate harness so it does not extend
 //! the existing library harness's finite growing-inventory test budget.
-mod library_support;
+use crate::library_support;
 use library_support::Directory;
 use mynou::{
     config,
