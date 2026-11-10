@@ -30,15 +30,16 @@ const FIRST_CHECK: Duration = Duration::from_secs(300);
 const MAX_EXECUTABLE: usize = 256 * 1024 * 1024;
 const KEPT_BACKUPS: usize = 2;
 const NOT_RELEASE: &str = "Only published release executables update themselves";
-/// The public half of the release key (P-256, uncompressed point). The
-/// private half never reaches GitHub: the maintainer signs `SHA256SUMS` on
-/// their own Mac, so a compromised account or workflow cannot ship an update.
+/// The public half of the release key (P-256, uncompressed point), the same
+/// key as `release-key.pub.pem`. The private half is a secret of the GitHub
+/// `release` environment, which only version tags can use: the release job
+/// signs `SHA256SUMS` with it, so a pull request or another branch cannot.
 const RELEASE_KEY: [u8; 65] = [
-    0x04, 0x72, 0xc8, 0x58, 0x94, 0x03, 0xe1, 0xf0, 0x79, 0x81, 0x27, 0x34, 0x71, 0x0b, 0xb3, 0x53,
-    0x0d, 0x36, 0x28, 0x7a, 0xfb, 0xba, 0xfa, 0x29, 0x1f, 0x21, 0x9d, 0x95, 0x4f, 0x54, 0x25, 0x33,
-    0x5b, 0x15, 0xe5, 0x00, 0xbb, 0xad, 0x6f, 0xde, 0xa5, 0xcd, 0x90, 0x7a, 0x6f, 0x55, 0x21, 0xe6,
-    0x6c, 0x8c, 0xd7, 0xa3, 0xc8, 0xb0, 0x49, 0x40, 0xc3, 0x63, 0x0f, 0x41, 0x55, 0x50, 0xbf, 0x7c,
-    0xf3,
+    0x04, 0xe4, 0xd8, 0x37, 0x97, 0x87, 0x53, 0x9b, 0x9d, 0x94, 0x90, 0x2f, 0xdf, 0x6f, 0x8c, 0x9b,
+    0x97, 0x4d, 0xc0, 0x7c, 0x15, 0xba, 0x8c, 0xdd, 0x52, 0x77, 0x98, 0xfb, 0x97, 0x1f, 0x97, 0xc0,
+    0xd8, 0x55, 0xc7, 0x28, 0xd5, 0xf9, 0x08, 0x03, 0x0f, 0xf9, 0x56, 0x42, 0x7d, 0x27, 0x3a, 0x85,
+    0x9a, 0x65, 0x44, 0xf7, 0x21, 0x4b, 0x7b, 0xad, 0x27, 0x5b, 0x57, 0x33, 0x7a, 0x3a, 0x43, 0x84,
+    0x54,
 ];
 
 pub type Version = (u32, u32, u32);
@@ -564,6 +565,23 @@ mod tests {
     use super::*;
     use std::os::unix::fs::PermissionsExt;
 
+    #[test]
+    fn release_key_is_the_published_key() {
+        // DER prefix of a P-256 SubjectPublicKeyInfo, before the 65-byte point.
+        const P256_SPKI: [u8; 26] = [
+            0x30, 0x59, 0x30, 0x13, 0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01, 0x06,
+            0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07, 0x03, 0x42, 0x00,
+        ];
+        let pem: String = include_str!("../release-key.pub.pem")
+            .lines()
+            .filter(|line| !line.starts_with("-----"))
+            .collect();
+        assert_eq!(
+            crate::ws::base64(&[&P256_SPKI[..], &RELEASE_KEY].concat()),
+            pem
+        );
+    }
+
     fn directory(name: &str) -> PathBuf {
         let path = std::env::temp_dir().join(format!("mynou-update-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&path);
@@ -626,7 +644,7 @@ mod tests {
         assert!(verify_sums(sums.as_bytes(), &signature[1..]).is_err());
         assert!(verify_sums(sums.as_bytes(), &[]).is_err());
     }
-    const SIGNATURE: &str = "3045022100d9e4f7f352dd137de791ad6655a4c01a2917ec384552bc99287fd9e7ff9a7e9e02202b8b9189fb31ffbb38590ab4a2d2630b5a226416475a0a995386496f93950901";
+    const SIGNATURE: &str = "3046022100b15ab77d2f7b48081553a82fbf7e1474643cfb9915dfea56bc62f78a4240df9502210097787d6c6c329d253aefb6a07acc207b6f19ee0c0429a39296da5393e2956f84";
 
     #[test]
     fn checksums_are_read_for_the_named_file_only() {

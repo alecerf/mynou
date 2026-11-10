@@ -117,8 +117,9 @@ one read, and an MP4 a few, with no long table read.
 ## Changed: Updates must be signed
 
 Mynou now installs an update only when the release key signed the release's
-`SHA256SUMS`. The key never reaches GitHub, so a compromised account or build
-cannot push an update to your Mac. Releases carry `SHA256SUMS.sig`.
+`SHA256SUMS`. Only the release job of a version tag can use the key, so a pull
+request or another branch cannot sign an update. Releases carry
+`SHA256SUMS.sig`.
 
 ## Added: Sign out everywhere
 
