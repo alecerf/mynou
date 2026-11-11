@@ -30,6 +30,7 @@ mod integrations;
 mod irc_authentication;
 mod irc_connections;
 mod irc_formats;
+mod irc_invite;
 mod irc_lookup;
 mod irc_lookup_routing;
 mod irc_management;

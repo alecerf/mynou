@@ -306,6 +306,11 @@ impl TlsStream {
         self.stream.set_deadline(deadline);
     }
 
+    /// Whether decrypted bytes are waiting, so a read returns without input.
+    pub(crate) fn buffered(&self) -> bool {
+        self.offset < self.pending.len()
+    }
+
     pub fn connect(stream: TcpStream, hostname: &str) -> Result<Self> {
         let timeout = stream
             .read_timeout()

@@ -132,6 +132,10 @@ pub enum Event {
     Reply(String),
     Authenticate,
     Identify,
+    /// Send the invite command, then wait for the bot's INVITE or the timeout.
+    Invite,
+    /// The channel refused the join as invite-only: ask again after this many seconds.
+    Retry(u64),
     Join,
     Joined,
     Announcement(String),
@@ -142,18 +146,28 @@ pub struct Protocol {
     joined: bool,
     authentication: super::sasl::Negotiation,
     identification: super::nickserv::Negotiation,
+    invitation: super::invite::Negotiation,
 }
 impl Protocol {
     pub fn new(source: super::Source) -> Self {
         let authentication = super::sasl::Negotiation::new(source.sasl.is_some());
         let identification = super::nickserv::Negotiation::new(source.nickserv.clone());
+        let invitation = super::invite::Negotiation::new(&source);
         Self {
             source,
             registered: false,
             joined: false,
             authentication,
             identification,
+            invitation,
         }
+    }
+    /// The wait for an invitation, or the delay before asking again, is over.
+    pub fn elapsed(&mut self) -> Event {
+        if self.joined {
+            return Event::Ignore;
+        }
+        self.invitation.elapsed()
     }
     pub fn receive(&mut self, m: &Message) -> Result<Event> {
         let result = self.receive_inner(m);
@@ -164,7 +178,7 @@ impl Protocol {
     }
     fn receive_inner(&mut self, m: &Message) -> Result<Event> {
         if let Some(event) = self.identification.receive(m, &self.source.nickname)? {
-            return Ok(event);
+            return Ok(self.invitation.identified(event));
         }
         if let Some(event) = self.authentication.receive(m, &self.source.nickname)? {
             return Ok(event);
@@ -182,7 +196,8 @@ impl Protocol {
                         .is_some_and(|p| p.eq_ignore_ascii_case(&self.source.nickname)) =>
             {
                 self.registered = true;
-                self.identification.begin()
+                let event = self.identification.begin()?;
+                Ok(self.invitation.identified(event))
             }
             "366"
                 if self.registered
@@ -205,6 +220,27 @@ impl Protocol {
             {
                 self.joined = true;
                 Ok(Event::Joined)
+            }
+            "INVITE"
+                if self.registered
+                    && self.identification.ready()
+                    && !self.joined
+                    && super::invite::invitation(
+                        m,
+                        &self.source.nickname,
+                        &self.source.channel,
+                    ) =>
+            {
+                Ok(self.invitation.invited())
+            }
+            "473"
+                if !self.joined
+                    && m.prefix.as_ref().is_some_and(|p| !p.contains(['!', '@']))
+                    && m.params.len() >= 2
+                    && m.params[0].eq_ignore_ascii_case(&self.source.nickname)
+                    && m.params[1].eq_ignore_ascii_case(&self.source.channel) =>
+            {
+                self.invitation.refused()
             }
             "KICK"
                 if m.params.len() >= 2
