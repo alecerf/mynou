@@ -730,10 +730,11 @@ fn a_download_shorter_than_the_film_is_refused_and_its_release_never_picked_agai
         .join("Fixture.Movie.2024.mp4");
     assert_eq!(fs::read(&payload).unwrap(), short);
 
-    // A retry searches again and passes over the refused release.
+    // A retry searches again and passes over the refused release: with
+    // nothing else to take, the film is wanted.
     let searches = indexer.calls.load(Ordering::Relaxed);
     engine.retry(&id).unwrap();
-    let again = run_until(&engine, &id, "failed");
+    let again = run_until(&engine, &id, "wanted");
     assert!(indexer.calls.load(Ordering::Relaxed) > searches);
     assert!(
         again

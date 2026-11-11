@@ -80,5 +80,6 @@ mod transfer_inventory_fairness;
 mod transfer_management;
 mod upgrade_imports;
 mod upgrade_integrations;
+mod wanted_titles;
 mod watchlist_cursor;
 mod web_ui;

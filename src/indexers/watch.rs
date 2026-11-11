@@ -104,9 +104,12 @@ enum Attach {
 }
 
 /// Work that no one has started and that no other path has selected yet. Such
-/// a job would otherwise search the indexers on its own.
+/// a job would otherwise search the indexers on its own. A wanted title is
+/// routable as long as it waits, unless it is a film that is not out yet.
 fn routable(job: &Job) -> bool {
-    (job.state == "queued" || (job.state == "failed" && job.next_attempt_at != 0))
+    (job.state == "queued"
+        || (job.state == "failed" && job.next_attempt_at != 0)
+        || crate::wanted::routable(job, store::now()))
         && job.lease_id.is_none()
         && job.lease_until == 0
         && matches!(job.request.kind.as_str(), "movie" | "episode")

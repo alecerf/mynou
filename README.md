@@ -80,6 +80,12 @@ Then it keeps watching: new episodes of the series you follow are requested
 when they air and, if you turn it on, better releases replace the ones you
 have.
 
+A title with no acceptable release yet is **wanted**, not failed: feeds and IRC
+announcements take a release for it as soon as one appears, and Mynou searches
+for it again every few hours. A film is searched only once it can be found:
+out digitally, on disc or on TV, or some time after its cinema release. Until
+then it is **not yet available**.
+
 ### Why Mynou
 
 - **One program, not a stack.** The BitTorrent client, the release search, the
@@ -119,7 +125,7 @@ Mac.
 | To set up | Settings page | You need |
 | --- | --- | --- |
 | Movies and series folders | Library | |
-| Downloads | Downloads: folder, downloads at once, peers, speed limits (BitTorrent port 6881 by default) | |
+| Downloads | Downloads: folder, downloads at once, peers, speed limits, wanted titles (BitTorrent port 6881 by default) | |
 | What a good release is | Quality: profiles with qualities, sources, languages and sizes | |
 | Plex server and watchlist | Plex & TMDB: **Connect to Plex**, then choose the server | A Plex account |
 | Your Plex friends' watchlists | Plex & TMDB: Friends, a switch for each friend | |
@@ -208,6 +214,25 @@ Or call `~/.local/bin/mynou` directly.
 
 Open **Settings → Indexers** to see the state of each source. Series also need
 the TMDB catalog (turned on in **Settings → Plex & TMDB**, with its token).
+
+A title that no indexer offers in an acceptable release yet, or that no indexer
+could be asked about, stays **wanted**: it keeps its place, spends none of its
+attempts, and survives restarts. Feeds and IRC announcements take a release for
+it whenever one appears. Mynou also searches for it again, slowly, while
+downloads are on: each title at most once per interval (6 hours by default,
+from 1 hour to 30 days), at most 20 titles an hour (up to 120), spread evenly
+over the hour so no indexer sees a burst, and the title waiting longest first.
+A search that reached no indexer is tried again within the hour. Set these in
+**Settings → Downloads → Wanted titles**; **Search now** on a wanted title
+searches it at once.
+
+A film is **not yet available** before its release: TMDB's earliest digital,
+physical or TV release in any country, or its first cinema release plus a delay
+(90 days by default, up to 730). Mynou neither searches for it nor takes a
+release for it until then, and reads its dates again each week. Without TMDB,
+or when TMDB has no dates, nothing holds a film back. Episodes are searched once
+they air, as before. Errors after a release was found, such as a refused import
+or `runtime_mismatch`, still fail and follow the usual retries.
 </details>
 
 <details>

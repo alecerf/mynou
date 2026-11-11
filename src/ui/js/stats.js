@@ -49,6 +49,7 @@ function paintRequests(stats) {
       h('table', { class: 'figure-table' },
         h('thead', {}, h('tr', {}, h('td'), h('th', { scope: 'col' }, 'Films'), h('th', { scope: 'col' }, 'Episodes'))),
         h('tbody', {}, row('Fetched by Mynou', 'fetched'), row('Already in Plex', 'in_plex'), row('In progress', 'in_progress'),
+          row('Wanted, no release yet', 'wanted'), row('Not yet available', 'not_yet_available'),
           row('Failed', 'failed', 'bad'), row('Cancelled', 'cancelled'))),
       stats.partial ? note('Counted from the newest 200,000 jobs.') : null,
     ];
@@ -72,6 +73,8 @@ function paintWatchlist(stats) {
         ['Films already in Plex', count(films.in_plex)],
         ['Films fetched by Mynou', count(films.fetched)],
         ['Films in progress', count(films.in_progress)],
+        Number(films.wanted) ? ['Films wanted, no release yet', count(films.wanted)] : null,
+        Number(films.not_yet_available) ? ['Films not yet available', count(films.not_yet_available)] : null,
         Number(films.failed) ? ['Films that failed', count(films.failed), 'bad'] : null,
         waiting ? ['Films not requested yet', count(waiting), 'warn'] : null,
         ['Series followed', `${count(watchlist.series?.followed)} of ${count(watchlist.series?.total)}`],

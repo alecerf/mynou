@@ -209,7 +209,8 @@ fn unrequested_claims_never_create_demand_and_review_rules_never_hold_jobs() {
     let engine = Engine::open(cfg).unwrap();
     let admitted = engine.submit(request(7)).unwrap().remove(0);
     assert!(engine.tick().unwrap());
-    assert_eq!(job(&engine, &admitted.id).state, "failed");
+    // Without an indexer to ask, the request waits for a release.
+    assert_eq!(job(&engine, &admitted.id).state, "wanted");
     assert!(job(&engine, &admitted.id).irc_origin.is_none());
 }
 

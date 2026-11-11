@@ -1,4 +1,4 @@
-import { TERMINAL_STATES, WORKING, label, formatBytes, timeOf, relativeTime, dateTime, duration, JOB_ICONS, jobTone, toneOf, qualityOf, qualityFacts, episodeCode, mediaLabel, fractionOf } from './format.js';
+import { TERMINAL_STATES, WORKING, label, jobLabel, notYetAvailable, availableOn, wantedNote, formatBytes, timeOf, relativeTime, dateTime, duration, JOB_ICONS, jobTone, toneOf, qualityOf, qualityFacts, episodeCode, mediaLabel, fractionOf } from './format.js';
 import { $, h, icon, reconcile } from './dom.js';
 import { Motion, progressBar, setProgress, setWorking } from './motion.js';
 import { quality, toast, openDetail, act, skeleton, sheetPoster, sheetTabs, sheetSection, sheetFacts, copyButton, catalogEntry, artFor } from './components.js';
@@ -34,7 +34,8 @@ export function updateJobRow(el, job) {
   $('.title', el).textContent = request.title ? mediaLabel(request) : titleOf(job);
   const sub = $('.sub', el);
   const progress = job.state === 'downloading' ? ` · ${Math.round(fractionOf(job.progress) * 100)}%` : '';
-  sub.textContent = job.last_error ? `${label('job', job.state)} · ${job.last_error}` : `${label('job', job.state)}${progress}`;
+  sub.textContent = job.state === 'wanted' ? `${jobLabel(job)} · ${wantedNote(job)}`
+    : job.last_error ? `${label('job', job.state)} · ${job.last_error}` : `${label('job', job.state)}${progress}`;
   sub.dataset.tone = job.state === 'failed' ? 'bad' : '';
   const time = $('.row-time', el);
   time.textContent = relativeTime(job.updated_at);
@@ -44,7 +45,10 @@ export function updateJobRow(el, job) {
   bar.hidden = job.state !== 'downloading' && !WORKING.has(job.state);
   if (job.state === 'downloading') setProgress(bar, `job:${job.id}`, fractionOf(job.progress));
   else if (!bar.hidden) setWorking(bar);
-  $('[data-act="retry"]', el).hidden = !(job.state === 'failed' || job.state === 'cancelled');
+  const retry = $('[data-act="retry"]', el);
+  retry.hidden = !['failed', 'cancelled', 'wanted'].includes(job.state);
+  const verb = retryVerb(job);
+  if (retry.title !== verb) { retry.title = verb; retry.setAttribute('aria-label', verb); }
   $('[data-act="cancel"]', el).hidden = TERMINAL_STATES.has(job.state);
   el._job = job;
 }
@@ -57,7 +61,7 @@ export function wireJobRows(list) {
     const job = row._job;
     if (button?.dataset.act) {
       await act(button, () => link.call('POST', `/api/jobs/${encodeURIComponent(job.id)}/${button.dataset.act}`, {}),
-        button.dataset.act === 'retry' ? 'Retry queued' : 'Cancelled');
+        button.dataset.act === 'retry' ? (job.state === 'wanted' ? 'Search queued' : 'Retry queued') : 'Cancelled');
     } else if (button) {
       openJob(job);
     }
@@ -78,7 +82,19 @@ function jobStatus(job) {
     const [text, tone] = libraryState(job);
     return [text || 'In your library', tone];
   }
-  return [label('job', job.state), job.state === 'failed' ? 'bad' : jobTone(job.state)];
+  return [jobLabel(job), job.state === 'failed' ? 'bad' : jobTone(job.state)];
+}
+
+/** What the retry action does: a wanted title is searched now, or its release date read again. */
+function retryVerb(job) {
+  if (job.state !== 'wanted') return 'Retry';
+  return notYetAvailable(job) ? 'Check again' : 'Search now';
+}
+
+/** Why a wanted title waits, in a sentence. */
+function wantedStatus(job) {
+  if (notYetAvailable(job)) return `Not out yet. Mynou starts looking for it on ${availableOn(job)}.`;
+  return `No acceptable release yet: it is ${wantedNote(job)}, and a release your feeds or IRC announce is taken at once.`;
 }
 
 /** The steps a film or an episode goes through, from what its events recorded. */
@@ -116,7 +132,7 @@ export async function openJob(job, back) {
   // A film or an episode Mynou searches for itself can also take a release chosen by hand.
   const searchable = ['movie', 'episode'].includes(request.kind) && !request.source_url && !request.source_path
     && !job.pack_file && !job.imports?.length && !ready;
-  const retry = job.state === 'failed' || job.state === 'cancelled';
+  const retry = ['failed', 'cancelled', 'wanted'].includes(job.state);
   const again = { label: episode ? mediaLabel(request) : title, run: () => openJob(job, back) };
   const tabs = sheetTabs([
     ['overview', 'Overview', overviewTab(job, request, entry)],
@@ -126,8 +142,8 @@ export async function openJob(job, back) {
   const actions = h('div', { class: 'sheet-actions' },
     searchable ? h('button', { type: 'button', class: 'primary', onclick: () => openReleases(mediaLabel(request), requestSearch(request), again) },
       icon('search'), 'Choose a release') : null,
-    retry ? h('button', { type: 'button', class: searchable ? 'secondary' : 'primary', onclick: (e) => act(e.currentTarget, () => link.call('POST', `/api/jobs/${encodeURIComponent(job.id)}/retry`, {}), 'Retry queued') },
-      icon('retry'), 'Search again') : null,
+    retry ? h('button', { type: 'button', class: searchable ? 'secondary' : 'primary', onclick: (e) => act(e.currentTarget, () => link.call('POST', `/api/jobs/${encodeURIComponent(job.id)}/retry`, {}), 'Search queued') },
+      icon('retry'), job.state === 'wanted' ? retryVerb(job) : 'Search again') : null,
     h('button', { type: 'button', class: 'secondary', onclick: () => tabs.show('acquisition') }, icon('jobs'), 'See the acquisition'));
   const downloading = job.state === 'downloading';
   const progress = downloading ? h('div', { class: 'sheet-progress' },
@@ -144,8 +160,9 @@ export async function openJob(job, back) {
   openDetail({ title, tone, side, crumb: [ready ? 'Your collection' : 'Activity', kind], eyebrow: [kind, episode ? episodeCode(request) : null].filter(Boolean).join(' · ') },
     back ? h('button', { type: 'button', class: 'text-link back', onclick: back.run }, `← ${back.label}`) : null,
     h('p', { class: 'detail-sub' }, [episode ? null : Number(request.year) ? request.year : null, ...traits].filter(Boolean).join(' · ')),
-    // The chip beside the poster gives the state; only a failure needs words here.
-    job.last_error ? h('p', { class: 'sheet-status', dataset: { tone: 'bad' } }, job.last_error) : null,
+    // The chip beside the poster gives the state; a failure, or a title that waits, needs words here.
+    job.state === 'wanted' ? h('p', { class: 'sheet-status' }, wantedStatus(job))
+      : job.last_error ? h('p', { class: 'sheet-status', dataset: { tone: 'bad' } }, job.last_error) : null,
     progress,
     actions,
     tabs);
@@ -206,6 +223,7 @@ function filesTab(job) {
 }
 
 function acquisitionTab(job, request) {
+  const wanted = job.state === 'wanted';
   const steps = h('div', {}, skeleton('lines', 3));
   link.call('GET', `/api/jobs/${encodeURIComponent(job.id)}/events`).then((answer) => {
     const events = itemsOf(answer);
@@ -215,9 +233,11 @@ function acquisitionTab(job, request) {
     sheetSection(request.kind === 'episode' ? 'How this episode arrived' : 'How this film arrived', steps),
     sheetSection('Release and selection', sheetFacts([
       ['Release', job.release?.title], ['Profile', job.release?.profile],
-      ['Problem', job.last_error], ['Refused releases', itemsOf(job.rejected_releases)],
+      [wanted ? 'Last search' : 'Problem', job.last_error], ['Refused releases', itemsOf(job.rejected_releases)],
       ['Attempts', Number(job.attempts) ? job.attempts : null],
-      ['Next attempt', !TERMINAL_STATES.has(job.state) && dateTime(job.next_attempt_at)],
+      ['Searched', wanted && dateTime(job.searched_at)],
+      ['Out', notYetAvailable(job) && availableOn(job)],
+      [!wanted ? 'Next attempt' : notYetAvailable(job) ? 'Next date check' : 'Next search', (wanted || !TERMINAL_STATES.has(job.state)) && dateTime(job.next_attempt_at)],
     ]) ?? h('p', { class: 'muted' }, 'Mynou has not picked a release yet.')),
     h('details', { class: 'sheet-diagnostics' }, h('summary', {}, 'Identifiers and diagnostics'), sheetFacts([
       ['Job ID', job.id], ['TMDB ID', request.tmdb_id], ['Transfer', job.download_id], ['Upgrade job', job.pending_upgrade_id],
@@ -233,7 +253,7 @@ let jobStates = new Set();   // active state filters
 // few windows at once and "Search further" continues from its cursor. A live
 // change can move any job into or out of the search, so the part already
 // searched is read again, at most once per second, and replaces the results.
-const JOB_STATES = ['queued', 'processing', 'downloading', 'importing', 'ready', 'failed', 'cancelled'];
+const JOB_STATES = ['queued', 'processing', 'downloading', 'importing', 'ready', 'wanted', 'failed', 'cancelled'];
 const SEARCH_WINDOWS = 4;
 const jobSearch = {
   query: '', items: [], next: null, scanned: 0, total: null, requests: 0,

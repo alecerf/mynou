@@ -34,6 +34,11 @@ const SETTING_GROUPS = [
     ['downloads.upload_limit_bps', 'Upload speed limit', 'number', { scale: MB, unit: 'MB/s', zero: 'No limit' }],
     ['downloads.cross_seed_missing_bytes', 'Cross-seed extras', 'number', { scale: MB, unit: 'MB', zero: 'None', hint: 'A cross-seed may download the small files it lacks, such as an .nfo or a sample, up to this much. Video is never downloaded.' }],
   ]],
+  ['downloads', 'Wanted titles', 'Films and episodes without an acceptable release yet. Feeds and IRC take one as soon as it appears; Mynou also searches for them again, slowly.', [
+    ['wanted.interval_secs', 'Search each title every', 'number', { scale: 3600, unit: 'h', hint: 'From 1 hour to 30 days.' }],
+    ['wanted.titles_per_pass', 'Titles searched per hour', 'number', { hint: 'From 1 to 120, spread evenly over the hour so indexers never see a burst.' }],
+    ['wanted.theatrical_delay_days', 'Wait after a cinema release', 'number', { unit: 'days', hint: 'A film is searched once it is out digitally, on disc or on TV, or this long after its first cinema release, up to 730 days.' }],
+  ]],
   ['services', 'Plex', 'Your server and its watchlist.', [
     ['plex.server', 'Server', 'plex'],
     ['plex.movies_section', 'Films go to', 'section', { kind: 'movie' }],

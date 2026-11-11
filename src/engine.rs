@@ -183,6 +183,12 @@ fn log_step(previous: &str, job: &Job) {
             job.last_error.as_deref().unwrap_or("unknown error"),
             job.id
         ),
+        "wanted" => crate::info!(
+            "{title}: wanted, {}; next search in {} min [job {}]",
+            job.last_error.as_deref().unwrap_or("no release yet"),
+            job.next_attempt_at.saturating_sub(store::now()) / 60,
+            job.id
+        ),
         _ => {}
     }
 }
@@ -1027,6 +1033,7 @@ impl Engine {
         crate::irc::lookup::start(self, handles);
         crate::indexers::watch::start(self, handles);
         crate::indexers::cross_seed::start(self, handles);
+        crate::wanted::start(self, handles);
         if self.config.updates_automatic && crate::update::executable().is_ok() {
             let engine = self.clone();
             handles.push(thread::spawn(move || {
@@ -1115,7 +1122,7 @@ impl Engine {
 
     /// A network this engine's work needs is retired or not connected yet:
     /// torrents, or protected indexers while torrents bypass the VPN.
-    fn network_waiting(&self) -> bool {
+    pub(crate) fn network_waiting(&self) -> bool {
         self.torrent_network.generation().is_err()
             || (self.sources_protected && !matches!(self.source_network.generation(), Ok(Some(_))))
     }
@@ -1155,7 +1162,15 @@ impl Engine {
             return Ok(false);
         }
         let mut refused = None;
-        if let Err(error) = result {
+        let wanted = result.as_ref().err().and_then(|error| {
+            crate::wanted::unfulfilled(error).filter(|_| crate::wanted::searchable(&job))
+        });
+        if let (Err(error), Some(reason)) = (&result, wanted) {
+            // No release yet, or no indexer to ask: wanted, not failed, and
+            // no attempt spent. The wanted search tries again later.
+            crate::wanted::settle(&mut job, reason, &self.config.wanted, store::now());
+            job.last_error = Some(error.clone());
+        } else if let Err(error) = result {
             job.attempts = job.attempts.saturating_add(1);
             job.state = "failed".into();
             job.next_attempt_at = if job.attempts < self.config.max_attempts {
@@ -1183,7 +1198,10 @@ impl Engine {
         {
             store.record_refused_release(parent, title)?;
         }
-        if !matches!(job.state.as_str(), "ready" | "failed" | "cancelled") {
+        if !matches!(
+            job.state.as_str(),
+            "ready" | "failed" | "cancelled" | "wanted"
+        ) {
             store.release_lease(&job.id, &lease)?;
         }
         drop(store);
@@ -1385,6 +1403,10 @@ impl Engine {
             } else {
                 let client = self.downloads.get().ok_or("Downloads are disabled")?;
                 if job.acquisition_url.is_none() {
+                    // A film is not searched before it can be found.
+                    if job.request.source_url.is_none() && self.film_waits(&config, job) {
+                        return Ok(());
+                    }
                     let (url, release) = match &job.request.source_url {
                         Some(url) => (url.clone(), None),
                         None => {

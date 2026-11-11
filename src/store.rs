@@ -30,7 +30,9 @@ mod ops;
 mod rules;
 #[cfg(test)]
 mod tests;
+mod wanted;
 pub use groups::SharedUpgrade;
+pub(crate) use wanted::adoptable;
 
 /// Events kept per job (a per-record bound); the total is not limited.
 pub const MAX_JOB_EVENTS: usize = 1_000;
@@ -115,6 +117,10 @@ pub struct Job {
     /// Titles of releases refused for this title once downloaded (their file
     /// did not match its runtime). Searches for it no longer pick them.
     pub rejected_releases: Vec<String>,
+    /// When the last search that left this request wanted ran; 0 before.
+    pub searched_at: u64,
+    /// When a film can be found, read from TMDB before its first search.
+    pub availability: Option<crate::wanted::Availability>,
 }
 
 /// Bounds a job's subtitles, import notes and refused releases.
@@ -197,6 +203,8 @@ fn fresh_job(
         subtitles: Vec::new(),
         import_notes: Vec::new(),
         rejected_releases: Vec::new(),
+        searched_at: 0,
+        availability: None,
     })
 }
 
@@ -616,6 +624,12 @@ impl Job {
                 value.insert(name, list(values));
             }
         }
+        if self.searched_at != 0 {
+            value.insert("searched_at", number(self.searched_at));
+        }
+        if let Some(availability) = &self.availability {
+            value.insert("availability", availability.to_json());
+        }
         value
     }
 
@@ -683,6 +697,11 @@ impl Job {
             subtitles: optional_strings(map, "subtitles")?,
             import_notes: optional_strings(map, "import_notes")?,
             rejected_releases: optional_strings(map, "rejected_releases")?,
+            searched_at: optional_u64(map, "searched_at")?.unwrap_or(0),
+            availability: match map.get("availability") {
+                None | Some(Value::Null) => None,
+                Some(value) => Some(crate::wanted::Availability::from_json(value)?),
+            },
         };
         if [&job.subtitles, &job.import_notes, &job.rejected_releases]
             .iter()
@@ -1268,12 +1287,13 @@ impl PageQuery {
 }
 
 /// Job states a filter may name.
-pub const JOB_STATES: [&str; 7] = [
+pub const JOB_STATES: [&str; 8] = [
     "queued",
     "processing",
     "downloading",
     "importing",
     "ready",
+    "wanted",
     "failed",
     "cancelled",
 ];
@@ -2289,6 +2309,8 @@ impl Store {
                 import_notes: Vec::new(),
                 // Releases refused for this title stay refused for its next version.
                 rejected_releases: parent.rejected_releases.clone(),
+                searched_at: 0,
+                availability: None,
             };
             db.commit_jobs(vec![job.clone()], "library upgrade recorded")?;
             Ok(job)
@@ -2671,6 +2693,8 @@ impl Store {
                 subtitles: Vec::new(),
                 import_notes: Vec::new(),
                 rejected_releases: Vec::new(),
+                searched_at: 0,
+                availability: None,
             });
         }
         self.mutate(|db| {
@@ -2776,7 +2800,10 @@ impl Store {
                 return Err("invalid state or progress".to_owned());
             }
             job.updated_at = now();
-            if matches!(job.state.as_str(), "ready" | "failed" | "cancelled") {
+            if matches!(
+                job.state.as_str(),
+                "ready" | "failed" | "cancelled" | "wanted"
+            ) {
                 job.lease_id = None;
                 job.lease_until = 0;
             }
@@ -2939,8 +2966,8 @@ impl Store {
             if job.shared_upgrade.is_some() {
                 return db.retry_group(id);
             }
-            if !matches!(job.state.as_str(), "failed" | "cancelled") {
-                return Err("only a failed or cancelled job can be retried".to_owned());
+            if !matches!(job.state.as_str(), "failed" | "cancelled" | "wanted") {
+                return Err("only a failed, cancelled or wanted job can be retried".to_owned());
             }
             if job.upgrade_parent.is_some() {
                 if !db.upgrade_eligible(&job)? {
@@ -2949,6 +2976,10 @@ impl Store {
                 if db.other_pending(&job.request.media_key(), Some(&job.id))? {
                     return Err("another upgrade for this media is already pending".to_owned());
                 }
+            }
+            // A wanted film not out yet has its dates read again first.
+            if let Some(availability) = &mut job.availability {
+                availability.checked_at = 0;
             }
             job.state = "queued".to_owned();
             job.lease_id = None;

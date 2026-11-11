@@ -5,6 +5,14 @@ use super::{
 };
 use crate::irc::Origin;
 
+/// A wanted request an announcement fulfils is queued again to download it.
+fn fulfil(job: &mut Job) {
+    if job.state == "wanted" {
+        job.state = "queued".into();
+        job.last_error = None;
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct Candidates {
     pub job: Option<Job>,
@@ -67,6 +75,7 @@ impl Db<'_> {
             return Err("IRC: admitted job is no longer eligible".into());
         }
         let mut routed = job;
+        fulfil(&mut routed);
         routed.acquisition_url = Some(origin.magnet.clone());
         routed.release = Some(origin.release.clone());
         routed.irc_origin = Some(origin.clone());
@@ -79,6 +88,7 @@ impl Db<'_> {
         let mut job = self
             .get(&origin.job_id)?
             .ok_or("IRC: admitted job is missing")?;
+        fulfil(&mut job);
         job.acquisition_url = Some(origin.magnet.clone());
         job.release = Some(origin.release.clone());
         job.irc_origin = Some(origin);

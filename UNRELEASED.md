@@ -1,3 +1,34 @@
+## Changed: A title without a release stays wanted
+
+A film or an episode that no indexer offers in an acceptable release yet is now
+**wanted** instead of failed. It keeps its place across restarts and spends none
+of its attempts, and feeds and IRC announcements take a release for it whenever
+one appears, days or weeks later. Mynou also searches for wanted titles again,
+slowly, while downloads are on: each at most once every 6 hours, at most 20 an
+hour, spread evenly so no indexer sees a burst, the one waiting longest first.
+A search that reached no indexer leaves the title wanted too, and is tried again
+within the hour. Settings, Downloads has a **Wanted titles** group for the
+interval and the number of titles an hour. **Search now** on a wanted title
+searches it at once. Requests that had failed for good because nothing was
+found become wanted when Mynou starts. Other errors, such as a refused import,
+keep their retries.
+
+## Added: Films wait for their release
+
+A film is no longer searched before it can be found. Mynou reads its release
+dates from TMDB: the earliest digital, physical or TV release in any country,
+or the first cinema release plus 90 days, which **Wanted titles** can change.
+Until then the film is **not yet available**, and neither searches nor feeds
+take a release for it; its dates are read again each week. Without TMDB, or
+without dates, nothing holds a film back. Episodes still wait for their air
+date.
+
+## Added: Wanted titles on the overview
+
+Jobs can be filtered on **Wanted**, and the overview and `GET /api/stats` count
+wanted and not yet available titles apart from failed ones, among requests and
+in your watchlist.
+
 ## Added: Invite-only IRC announce channels
 
 An IRC source can now have an invite command, for private trackers whose
@@ -12,11 +43,26 @@ without an invite command now says that the channel needs one. The key is never
 shown, logged or recorded. The command is set on the source (`"invite"`)
 through `POST /api/settings`; IRC sources have no settings page yet.
 
-## Fixed: IRC problems show on the overview
+## Added: Several VPN profiles that take over from one another
 
-The overview looked for IRC errors where the service does not put them, so a
-failing IRC source never showed there. It now does, with its reason when Mynou
-knows it.
+Settings, VPN now keeps a list of up to 16 WireGuard profiles, such as several
+servers of your provider: **Add a .conf** imports one more, named after its
+file, and each can be moved up or down or removed. When the server in use stops
+answering for a few minutes, Mynou moves to the next profile, wrapping around
+the list, and asks the new server for a forwarded port, which peers and trackers
+then learn. While it switches, torrents, and whatever else goes through the VPN,
+wait; nothing falls back to your own connection. The page and the overview show
+the profile in use, and **Recent switches** lists the last changes with their
+time and reason. `GET /api/vpn` and `GET /api/stats` report the same. The
+profile you had keeps working as a list of one.
+
+## Changed: The VPN keeps trying after it gives up
+
+Once every profile has failed in a row, or the only one has, Mynou no longer
+waits for you to press **Try again**: it tries again after five minutes, then
+waits twice as long each time, up to an hour, and starts over at five minutes
+once the VPN works again. **Try again** still starts at once. Importing a
+profile now adds it to the list instead of replacing the one you had.
 
 ## Added: Cross-seed single episodes and releases with extras
 
@@ -56,42 +102,6 @@ original audio and why, and the Quality page's **Try it** can take a title's
 original language to show the decision. Search reports carry
 `original_language`, and each assessment its `original` decision.
 
-## Added: Install with one command
-
-Mynou now installs with one line in Terminal, which also upgrades an existing
-installation:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/alecerf/mynou/trunk/install.sh | sh
-```
-
-It downloads the latest release, or the version you name, checks that the
-release key signed its `SHA256SUMS` and that the executable matches it, and
-only then installs `mynou` into `~/.local/bin` (or `MYNOU_INSTALL_DIR`), with
-no sudo. It refuses any Mac without Apple Silicon, and when that folder is not
-on your `PATH`, it gives you the line to add to `~/.zshrc`.
-
-## Added: Several VPN profiles that take over from one another
-
-Settings, VPN now keeps a list of up to 16 WireGuard profiles, such as several
-servers of your provider: **Add a .conf** imports one more, named after its
-file, and each can be moved up or down or removed. When the server in use stops
-answering for a few minutes, Mynou moves to the next profile, wrapping around
-the list, and asks the new server for a forwarded port, which peers and trackers
-then learn. While it switches, torrents, and whatever else goes through the VPN,
-wait; nothing falls back to your own connection. The page and the overview show
-the profile in use, and **Recent switches** lists the last changes with their
-time and reason. `GET /api/vpn` and `GET /api/stats` report the same. The
-profile you had keeps working as a list of one.
-
-## Changed: The VPN keeps trying after it gives up
-
-Once every profile has failed in a row, or the only one has, Mynou no longer
-waits for you to press **Try again**: it tries again after five minutes, then
-waits twice as long each time, up to an hour, and starts over at five minutes
-once the VPN works again. **Try again** still starts at once. Importing a
-profile now adds it to the list instead of replacing the one you had.
-
 ## Added: Logs
 
 Mynou now keeps a log in the data directory, under `logs/`: one line per
@@ -109,3 +119,24 @@ installed by an earlier version is switched over at its next start.
 The overview's Services panel has **Read the logs**: the newest records first,
 filtered by level, with **Download** to save them all. `GET /api/logs` and
 `GET /api/logs/download` serve the same.
+
+## Added: Install with one command
+
+Mynou now installs with one line in Terminal, which also upgrades an existing
+installation:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/alecerf/mynou/trunk/install.sh | sh
+```
+
+It downloads the latest release, or the version you name, checks that the
+release key signed its `SHA256SUMS` and that the executable matches it, and
+only then installs `mynou` into `~/.local/bin` (or `MYNOU_INSTALL_DIR`), with
+no sudo. It refuses any Mac without Apple Silicon, and when that folder is not
+on your `PATH`, it gives you the line to add to `~/.zshrc`.
+
+## Fixed: IRC problems show on the overview
+
+The overview looked for IRC errors where the service does not put them, so a
+failing IRC source never showed there. It now does, with its reason when Mynou
+knows it.

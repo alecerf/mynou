@@ -38,6 +38,7 @@ pub mod tunnel_http;
 pub mod ui;
 pub mod update;
 pub mod vpn;
+pub mod wanted;
 pub mod wireguard;
 pub mod ws;
 mod xml;
