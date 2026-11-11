@@ -1198,7 +1198,7 @@ fn extras() -> Extras {
     let scratch = scratch();
     let video = fixture_bytes(3 * BLOCK + 100);
     let nfo: Vec<u8> = (0..BLOCK + 500).map(|i| (i % 7) as u8 + b'a').collect();
-    let sample = payload(2_000, 3);
+    let sample: Vec<u8> = (0..2_000).map(|i| (i % 13) as u8 + b'A').collect();
     let source = Torrent::multiple(
         &scratch.0,
         "Movie.2020.1080p.WEB-GRP",
