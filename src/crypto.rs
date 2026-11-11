@@ -138,6 +138,44 @@ pub fn hkdf_expand(prk: &[u8], info: &[u8], length: usize) -> Result<Vec<u8>> {
     Ok(output)
 }
 
+/// The independent reference vectors the tests compare against, written by
+/// Python's standard library: the file CI generates (`MYNOU_CRYPTO_FIXTURES`),
+/// or else the same script run once for this test process.
+#[cfg(test)]
+pub(crate) fn reference_vectors() -> &'static std::path::Path {
+    use std::{path::PathBuf, process::Command, sync::OnceLock};
+    static PATH: OnceLock<PathBuf> = OnceLock::new();
+    PATH.get_or_init(|| {
+        if let Some(path) = std::env::var_os("MYNOU_CRYPTO_FIXTURES") {
+            return path.into();
+        }
+        let script = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/.github/scripts/crypto_fixtures.py"
+        );
+        let path =
+            std::env::temp_dir().join(format!("mynou-crypto-vectors-{}.json", std::process::id()));
+        let generated = {
+            let _spawning = crate::store::SPAWNING
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            Command::new("python3")
+                .arg(script)
+                .arg(&path)
+                .stdout(std::process::Stdio::null())
+                .status()
+        };
+        assert!(
+            generated.is_ok_and(|status| status.success()),
+            "python3 must generate the independent reference vectors (or set MYNOU_CRYPTO_FIXTURES)"
+        );
+        // Every test process writes its own file; the latest one stays behind.
+        let shared = std::env::temp_dir().join("mynou-crypto-vectors.json");
+        std::fs::rename(&path, &shared).unwrap();
+        shared
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

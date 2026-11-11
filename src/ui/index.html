@@ -17,7 +17,7 @@
   <link rel="modulepreload" href="/js/dom.js">
   <link rel="modulepreload" href="/js/format.js">
   <link rel="modulepreload" href="/js/motion.js">
-  <link rel="modulepreload" href="/js/palette.js">
+  <link rel="modulepreload" href="/js/cat.js">
   <link rel="modulepreload" href="/js/components.js">
   <link rel="modulepreload" href="/js/link.js">
   <link rel="modulepreload" href="/js/store.js">
@@ -38,7 +38,6 @@
 </head>
 <body>
   <svg class="sprite" aria-hidden="true"><defs>
-    <symbol id="i-logo" viewBox="0 0 28 28"><g class="cat-tail"><path class="cat-fur" d="M20 11h5v13h-6v-3h3v-7h-2Z"/></g><path class="cat-fur" d="M4 2h4v3h6V2h4v5h2v8h-3v3h2v6H4v-3h2v-6H3V7h1Z"/><g class="cat-eyes"><path class="cat-face" d="M6 9h4v2H6zm8-1h2v4h-2Z"/></g><path class="cat-face" d="M10 13h3v2h-3zm-3 9h3v2H7zm8 0h3v2h-3Z"/></symbol>
     <symbol id="i-dashboard" viewBox="0 0 24 24"><path d="m3 10 9-7 9 7v10H3Z"/><path d="M9 20v-7h6v7"/></symbol>
     <symbol id="i-library" viewBox="0 0 24 24"><rect x="3" y="4" width="7" height="16" rx="1.5"/><path d="M14 4h6v16h-6zM6 8h1M16 8h2"/></symbol>
     <symbol id="i-series" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="14" rx="3"/><path d="m8 2 4 4 4-4M10 11v5l4-2.5Z"/></symbol>
@@ -52,8 +51,8 @@
     <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 19 19 5M5 5h14v14"/></symbol>
     <symbol id="i-next" viewBox="0 0 24 24"><path d="M4 12h16m-6-6 6 6-6 6"/></symbol>
     <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
-    <symbol id="i-server" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="7" rx="2"/><path d="M7 6.5h.01M7 17.5h.01"/></symbol>
     <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></symbol>
+    <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 20V4m-6 6 6-6 6 6"/></symbol>
     <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 3v14m-5-5 5 5 5-5M4 21h16"/></symbol>
     <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
     <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
@@ -70,38 +69,31 @@
     <symbol id="i-light" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
     <symbol id="i-spinner" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" opacity=".25"/><path d="M12 3a9 9 0 0 1 9 9"/></symbol>
     <symbol id="i-dark" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"/></symbol>
+    <symbol id="i-quality" viewBox="0 0 24 24"><path d="m12 3 2.6 5.6 6.1.7-4.5 4.2 1.2 6L12 16.5 6.6 19.5l1.2-6-4.5-4.2 6.1-.7Z"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 4.5 6v5.5c0 4.6 3.1 8 7.5 9.5 4.4-1.5 7.5-4.9 7.5-9.5V6Z"/><path d="m9 12 2 2 4-4"/></symbol>
+    <symbol id="i-network" viewBox="0 0 24 24"><path d="M2.5 9a14 14 0 0 1 19 0M5.5 12.5a9.5 9.5 0 0 1 13 0M8.6 16a5 5 0 0 1 6.8 0"/><path d="M12 19.5h.01"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.5h.01"/></symbol>
   </defs></svg>
   <template id="icon-template"><svg class="icon" aria-hidden="true"><use href="#i-arrow"></use></svg></template>
+  <!-- js/cat.js draws the cat into every svg.logo from these paths. -->
+  <template id="cat-template"><svg><g class="cat-sprite"><path class="cat-fur"/><path class="cat-eye"/></g></svg></template>
 
   <a class="skip" href="#main">Skip to content</a>
 
   <aside class="sidebar">
-    <a class="brand" href="#dashboard" aria-label="Mynou home"><svg class="logo" aria-hidden="true"><use href="#i-logo"></use></svg><span>mynou<span class="brand-dot">.</span></span></a>
-    <p class="nav-label">Your space</p>
-    <nav id="nav" aria-label="Views"><span id="nav-indicator" class="nav-indicator" aria-hidden="true"></span></nav>
+    <a class="brand" href="#dashboard" aria-label="Mynou home"><svg class="logo" aria-hidden="true"></svg><span>mynou<span class="brand-dot">.</span></span></a>
     <a class="request-button rail-add primary" href="#requests" data-view="requests"><svg class="icon" aria-hidden="true"><use href="#i-requests"></use></svg><span>New request</span></a>
+    <nav id="nav" aria-label="Views"><span id="nav-indicator" class="nav-indicator" aria-hidden="true"></span></nav>
     <div class="sidebar-bottom">
-      <div class="server-card">
-        <svg class="icon" aria-hidden="true"><use href="#i-server"></use></svg>
-        <div><strong id="footer-version">Mynou</strong><output id="link" class="link-state" data-state="connecting" role="status">Connecting</output></div>
-      </div>
+      <a class="nav-link" href="#logs" data-view="logs"><svg class="icon" aria-hidden="true"><use href="#i-logs"></use></svg><span>Logs</span></a>
       <a class="nav-link" href="#settings" data-view="settings"><svg class="icon" aria-hidden="true"><use href="#i-settings"></use></svg><span>Settings</span></a>
-      <div id="theme" class="theme-switch" role="group" aria-label="Theme">
-        <button type="button" data-choice="auto" aria-pressed="true" aria-label="Match the system" title="Match the system"><svg class="icon" aria-hidden="true"><use href="#i-auto"></use></svg></button>
-        <button type="button" data-choice="light" aria-pressed="false" aria-label="Light" title="Light"><svg class="icon" aria-hidden="true"><use href="#i-light"></use></svg></button>
-        <button type="button" data-choice="dark" aria-pressed="false" aria-label="Dark" title="Dark"><svg class="icon" aria-hidden="true"><use href="#i-dark"></use></svg></button>
-      </div>
-      <p class="tagline">Your cinema, simply.</p>
     </div>
   </aside>
 
   <div class="workspace">
     <header class="topbar">
-      <a class="mobile-brand" href="#dashboard" aria-label="Mynou home"><svg class="logo" aria-hidden="true"><use href="#i-logo"></use></svg><span>mynou<span class="brand-dot">.</span></span></a>
-      <button type="button" class="global-search" data-palette aria-label="Search: a title, a page or an action" aria-keyshortcuts="Meta+K Control+K /"><svg class="icon" aria-hidden="true"><use href="#i-search"></use></svg><span>A film, a series, a page…</span><kbd class="shortcut-hint">⌘K</kbd></button>
+      <a class="mobile-brand" href="#dashboard" aria-label="Mynou home"><svg class="logo" aria-hidden="true"></svg><span>mynou<span class="brand-dot">.</span></span></a>
       <div class="tools">
-        <button type="button" class="icon-button search-button" data-palette aria-label="Search"><svg class="icon" aria-hidden="true"><use href="#i-search"></use></svg></button>
-        <output id="link-pill" class="link-pill" data-state="connecting" aria-hidden="true">Connecting…</output>
         <output id="link-mobile" class="link-dot" data-state="connecting" aria-hidden="true"></output>
         <a class="request-button primary" href="#requests" data-view="requests"><svg class="icon" aria-hidden="true"><use href="#i-requests"></use></svg><span>New request</span></a>
       </div>
@@ -115,7 +107,6 @@
             <h1 id="t-dashboard">Your cinema, simply<span class="brand-dot">.</span></h1>
             <p class="intro">To discover, to follow, to find again.</p>
           </div>
-          <a class="secondary" href="#library">Explore the collection <svg class="icon" aria-hidden="true"><use href="#i-next"></use></svg></a>
         </header>
         <div id="alerts" class="alerts"></div>
         <div class="feature-layout">
@@ -127,7 +118,6 @@
               <span id="now-count" class="live-count"></span>
             </header>
             <div id="in-motion" class="in-motion"></div>
-            <a class="text-link" href="#jobs">All activity <svg class="icon" aria-hidden="true"><use href="#i-next"></use></svg></a>
           </aside>
         </div>
         <dl id="stats" class="summary-strip"></dl>
@@ -136,7 +126,7 @@
           <button type="button" data-panel="stats" aria-pressed="false">Tracking &amp; statistics</button>
         </div>
         <div id="overview-collection" class="overview-panel">
-          <div class="section-heading"><div><h2 id="t-fresh">Latest additions</h2><p>The newest titles in your collection.</p></div><a class="text-link" href="#library">See all <svg class="icon" aria-hidden="true"><use href="#i-next"></use></svg></a></div>
+          <div class="section-heading"><div><h2 id="t-fresh">Latest additions</h2><p>The newest titles in your collection.</p></div></div>
           <div id="fresh" class="picks"></div>
         </div>
         <div id="overview-stats" class="overview-panel" hidden>
@@ -144,7 +134,7 @@
             <section class="panel" aria-labelledby="t-requests"><p class="eyebrow">Requests</p><h2 id="t-requests">Every title, one journey.</h2><div id="panel-requests"></div></section>
             <section class="panel" aria-labelledby="t-watchlist"><p class="eyebrow">Plex watchlist</p><h2 id="t-watchlist">What you want next.</h2><div id="panel-watchlist"></div></section>
             <section class="panel" aria-labelledby="t-downloads"><p class="eyebrow">Transfers &amp; sharing</p><h2 id="t-downloads">Both ways.</h2><div id="panel-downloads"></div></section>
-            <section class="panel" aria-labelledby="t-health"><p class="eyebrow">Services</p><h2 id="t-health">An eye behind the scenes.</h2><div id="panel-health"></div><a class="text-link" href="#logs">Read the logs <svg class="icon" aria-hidden="true"><use href="#i-next"></use></svg></a></section>
+            <section class="panel" aria-labelledby="t-health"><p class="eyebrow">Services</p><h2 id="t-health">An eye behind the scenes.</h2><div id="panel-health"></div></section>
           </div>
           <div class="section-heading"><div><h2 id="t-series-stats">The stories go on.</h2><p>Aired episodes, what you have and what airs next.</p></div></div>
           <div id="series-stats" class="series-stats" aria-labelledby="t-series-stats"></div>
@@ -156,8 +146,7 @@
       <section id="view-library" class="view" aria-labelledby="t-library" hidden>
         <header class="page-heading">
           <div>
-            <p class="eyebrow">Your collection</p>
-            <h1 id="t-library">Good stories stay.</h1>
+            <h1 id="t-library">Library</h1>
             <p class="intro">The films and series Mynou keeps for you.</p>
           </div>
           <div class="heading-actions">
@@ -180,15 +169,14 @@
           </div>
         </div>
         <p id="library-meta" class="collection-meta" role="status"></p>
-        <div id="library" class="collection-grid"></div>
+        <div id="library-items" class="collection-grid"></div>
         <div class="actions"><button type="button" id="library-more" hidden>Load more</button></div>
       </section>
 
       <section id="view-requests" class="view" aria-labelledby="t-request" hidden>
         <header class="page-heading">
           <div>
-            <p class="eyebrow">A new craving?</p>
-            <h1 id="t-request">The next great discovery.</h1>
+            <h1 id="t-request">New request</h1>
             <p class="intro">Find a film or a series. Once it is added, Mynou looks for it on your indexers by itself.</p>
           </div>
         </header>
@@ -202,7 +190,7 @@
         </form>
         <p id="catalog-meta" class="catalog-meta" aria-live="polite" hidden></p>
         <div id="request-idle" class="request-idle">
-          <svg class="logo" aria-hidden="true"><use href="#i-logo"></use></svg>
+          <svg class="logo" aria-hidden="true"></svg>
           <h2>You choose. Mynou takes care of the rest.</h2>
           <p>The title is looked up on your indexers, downloaded, then added to Plex.</p>
           <ol class="request-steps"><li>01 · Find</li><li>02 · Add</li><li>03 · Watch it in Plex</li></ol>
@@ -213,8 +201,7 @@
       <section id="view-jobs" class="view compact" aria-labelledby="t-jobs" hidden>
         <header class="page-heading">
           <div>
-            <p class="eyebrow">The history</p>
-            <h1 id="t-jobs">Your collection, day by day.</h1>
+            <h1 id="t-jobs">Activity</h1>
             <p class="intro">From the first search to the latest addition in Plex.</p>
           </div>
         </header>
@@ -222,7 +209,7 @@
           <label class="filter-search"><svg class="icon" aria-hidden="true"><use href="#i-search"></use></svg><input id="job-filter" type="search" placeholder="Search all jobs" aria-label="Search all jobs" spellcheck="false"></label>
           <select id="job-state" aria-label="State"><option value="">All states</option></select>
         </div>
-        <ol id="jobs" class="activity-list"></ol>
+        <ol id="jobs-items" class="activity-list"></ol>
         <div class="actions"><button type="button" id="jobs-more" hidden>Load more jobs</button></div>
       </section>
 
@@ -230,14 +217,13 @@
         <div id="transfers-list">
           <header class="page-heading">
             <div>
-              <p class="eyebrow">Behind the scenes</p>
-              <h1 id="t-transfers">The next feature is on its way.</h1>
-              <p class="intro">A look at what is joining your library.</p>
+              <h1 id="t-transfers">Transfers</h1>
+              <p class="intro">What is joining your library, and what it shares back.</p>
             </div>
             <button type="button" id="torrent-add" class="secondary"><svg class="icon" aria-hidden="true"><use href="#i-requests"></use></svg><span>Add a torrent</span></button>
           </header>
           <dl id="transfer-summary" class="summary-strip transfer-tiles" hidden></dl>
-          <ol id="transfers" class="activity-list"></ol>
+          <ol id="transfers-items" class="activity-list"></ol>
           <div class="actions"><button id="transfers-more" type="button" hidden>Load more transfers</button></div>
         </div>
         <div id="transfer-page" class="transfer-page" hidden></div>
@@ -246,8 +232,7 @@
       <section id="view-storage" class="view compact" aria-labelledby="t-storage" hidden>
         <header class="page-heading">
           <div>
-            <p class="eyebrow">Your disk</p>
-            <h1 id="t-storage">Make some room.</h1>
+            <h1 id="t-storage">Storage</h1>
             <p class="intro">What Mynou keeps on disk that you may no longer need.</p>
           </div>
           <button type="button" id="storage-refresh" class="secondary"><svg class="icon" aria-hidden="true"><use href="#i-sync"></use></svg><span>Look again</span></button>
@@ -260,42 +245,69 @@
       </section>
 
       <section id="view-logs" class="view compact" aria-labelledby="t-logs" hidden>
-        <header class="page-heading">
+        <header class="page-heading log-heading">
           <div>
-            <p class="eyebrow">Behind the scenes</p>
-            <h1 id="t-logs">What happened, and when.</h1>
-            <p class="intro">Mynou’s own log, newest first. Tokens, keys and passwords are hidden before anything is written.</p>
+            <h1 id="t-logs">Logs</h1>
+            <p class="intro">Everything Mynou does, as it happens. Tokens, keys and passwords are hidden before anything is written.</p>
           </div>
-          <div class="heading-actions">
-            <button type="button" id="logs-refresh" class="secondary"><svg class="icon" aria-hidden="true"><use href="#i-sync"></use></svg><span>Look again</span></button>
-            <a class="secondary button-link" href="/api/logs/download" download><svg class="icon" aria-hidden="true"><use href="#i-down"></use></svg><span>Download</span></a>
+          <div class="log-report">
+            <a class="secondary button-link report-button" href="/api/report" download><svg class="icon" aria-hidden="true"><use href="#i-down"></use></svg><span>Download a report</span></a>
+            <p>Something wrong? Send this one file with your message: 30 days of log, the versions and each service’s state, secrets hidden.</p>
           </div>
         </header>
-        <div class="filters">
-          <div id="logs-level" class="segmented" role="group" aria-label="Show">
-            <button type="button" data-level="error" aria-pressed="false">Errors</button>
-            <button type="button" data-level="warn" aria-pressed="false">Warnings</button>
-            <button type="button" data-level="info" aria-pressed="true">Activity</button>
-            <button type="button" data-level="debug" aria-pressed="false">Everything</button>
+        <div class="log-console">
+          <div class="log-toolbar">
+            <div id="logs-level" class="segmented log-levels" role="group" aria-label="Show">
+              <button type="button" data-level="error" aria-pressed="false"><span>Errors</span><small></small></button>
+              <button type="button" data-level="warn" aria-pressed="false"><span>Warnings</span><small></small></button>
+              <button type="button" data-level="info" aria-pressed="true"><span>Activity</span><small></small></button>
+              <button type="button" data-level="debug" aria-pressed="false"><span>Everything</span><small></small></button>
+            </div>
+            <div class="log-tools">
+              <label class="filter-search log-search"><svg class="icon" aria-hidden="true"><use href="#i-search"></use></svg><input id="logs-search" type="search" placeholder="Find in the log" aria-label="Find in the log" maxlength="200" spellcheck="false" autocomplete="off"><kbd aria-hidden="true">/</kbd></label>
+              <select id="logs-source" aria-label="Source"><option value="">All sources</option></select>
+            </div>
           </div>
+          <div class="log-overview">
+            <div class="log-status">
+              <button type="button" id="logs-pause" class="log-live" aria-pressed="false" aria-label="Pause the list"></button>
+              <p id="logs-meta" aria-live="off"></p>
+            </div>
+            <div id="logs-chart" class="log-chart" hidden>
+              <div id="logs-bars" class="log-bars"></div>
+              <div id="logs-axis" class="log-axis" aria-hidden="true"></div>
+              <div id="logs-tip" class="chart-tip log-tip" hidden></div>
+            </div>
+          </div>
+          <p id="logs-dropped" class="log-alert" role="alert" hidden></p>
+          <div class="log-news"><button type="button" id="logs-news" hidden></button></div>
+          <ol id="logs-items" class="log-list" aria-labelledby="t-logs"></ol>
+          <footer id="logs-foot" class="log-foot" hidden>
+            <p id="logs-shown"></p>
+            <button type="button" id="logs-more" class="secondary small" hidden><svg class="icon" aria-hidden="true"><use href="#i-down"></use></svg><span>Show older records</span></button>
+          </footer>
         </div>
-        <p id="logs-meta" class="collection-meta" role="status"></p>
-        <ol id="logs" class="activity-list log-list" aria-labelledby="t-logs"></ol>
-        <div class="actions"><button type="button" id="logs-more" hidden>Show older records</button></div>
       </section>
 
       <section id="view-settings" class="view compact" aria-labelledby="t-settings" hidden>
         <header class="page-heading">
           <div>
-            <p class="eyebrow">Your space</p>
-            <h1 id="t-settings">Just the way you like it.</h1>
+            <h1 id="t-settings">Settings</h1>
             <p class="intro">The essential settings, in one place.</p>
             <p id="settings-state" class="intro" role="status" hidden></p>
           </div>
         </header>
         <div class="settings-layout">
-        <nav id="settings-nav" class="settings-nav" aria-label="Settings pages"></nav>
+        <div class="settings-side">
+          <label class="filter-search settings-search">
+            <svg class="icon" aria-hidden="true"><use href="#i-search"></use></svg>
+            <input id="settings-search" type="search" placeholder="Search settings" aria-label="Search settings" aria-controls="settings-form" autocomplete="off" spellcheck="false" enterkeyhint="go">
+            <kbd aria-hidden="true">/</kbd>
+          </label>
+          <nav id="settings-nav" class="settings-nav" aria-label="Settings pages"></nav>
+        </div>
         <form id="settings-form" class="settings" autocomplete="off">
+          <p id="settings-no-match" class="settings-no-match" role="status" hidden></p>
           <div id="settings-groups"></div>
           <section class="setting-group" data-page="vpn">
             <div class="setting-intro"><h2>VPN</h2><p class="hint">Choose what goes through your WireGuard tunnel. With the VPN off, everything uses your own connection. Plex and this page never go through it.</p></div>
@@ -310,6 +322,32 @@
             <div class="setting-intro"><h2>Network access</h2><p class="hint">Use Mynou from other computers on your local network. Other computers sign in with a password, unless the local network needs none; this Mac never needs to.</p></div>
             <div id="settings-network" class="setting-list"></div>
           </section>
+          <section class="setting-group" data-page="appearance">
+            <div class="setting-intro"><h2>Appearance</h2><p class="hint">Applies at once, and only in this browser.</p></div>
+            <div class="setting-list">
+              <div class="setting-row toggle">
+                <div class="setting-label"><span>Theme</span></div>
+                <div id="theme" class="segmented" role="group" aria-label="Theme">
+                  <button type="button" data-choice="auto" aria-pressed="true" title="Match the system">System</button>
+                  <button type="button" data-choice="light" aria-pressed="false">Light</button>
+                  <button type="button" data-choice="dark" aria-pressed="false">Dark</button>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section class="setting-group" data-page="about">
+            <div class="setting-intro"><h2>About</h2><p class="hint">The Mynou this page is connected to.</p></div>
+            <div class="setting-list">
+              <div class="setting-row toggle">
+                <div class="setting-label"><span>Version</span></div>
+                <output id="about-version">Mynou</output>
+              </div>
+              <div class="setting-row toggle">
+                <div class="setting-label"><span>Connection</span><p class="hint">Between this page and Mynou.</p></div>
+                <output id="link" class="link-state" data-state="connecting" role="status">Connecting</output>
+              </div>
+            </div>
+          </section>
           <section class="setting-group" data-page="indexers">
             <div class="setting-intro"><h2>Indexers</h2><p class="hint">Where Mynou looks for releases.</p></div>
             <div class="setting-list">
@@ -317,23 +355,25 @@
               <button type="button" id="indexer-add" class="setting-add"><svg class="icon" aria-hidden="true"><use href="#i-requests"></use></svg>Add an indexer</button>
             </div>
           </section>
-          <div id="save-bar" class="save-bar" hidden>
-            <span>Unsaved changes</span>
+          <div id="save-bar" class="save-bar" role="region" aria-label="Unsaved changes" hidden>
+            <span class="save-mark" aria-hidden="true"></span>
+            <span class="save-text"><strong id="save-title">Unsaved changes</strong><small id="save-where" aria-live="polite"></small></span>
             <button type="button" id="settings-discard" class="ghost">Discard</button>
-            <button type="submit" class="primary">Save</button>
+            <button type="submit" class="primary" aria-keyshortcuts="Meta+S Control+S">Save<kbd id="save-key" aria-hidden="true"></kbd></button>
           </div>
         </form>
         </div>
       </section>
     </main>
 
-    <footer class="page-footer"><span>mynou<span class="brand-dot">.</span> <span>Your cinema, simply.</span></span></footer>
   </div>
 
   <nav id="mobile-nav" class="mobile-nav" aria-label="Main views"></nav>
+  <output id="link-pill" class="link-pill" data-state="connecting" aria-hidden="true">Connecting…</output>
 
   <dialog id="sign-in" aria-labelledby="sign-in-title">
     <form id="sign-in-form" class="sheet">
+      <svg class="logo" aria-hidden="true"></svg>
       <h2 id="sign-in-title">Sign in to Mynou</h2>
       <p class="muted">This computer reaches Mynou over the network. Enter the password set on the Mac running it.</p>
       <label class="field">Password
@@ -342,16 +382,6 @@
       <p id="sign-in-error" class="error" role="alert"></p>
       <div class="actions"><button class="primary">Sign in</button></div>
     </form>
-  </dialog>
-
-  <dialog id="palette" class="palette" aria-label="Search">
-    <div class="palette-field">
-      <svg class="icon" aria-hidden="true"><use href="#i-search"></use></svg>
-      <input id="palette-input" type="text" role="combobox" aria-expanded="true" aria-controls="palette-list" aria-autocomplete="list" aria-label="Search" placeholder="A title, a page, an action…" spellcheck="false" autocomplete="off">
-      <kbd aria-hidden="true">esc</kbd>
-    </div>
-    <ul id="palette-list" class="palette-list" role="listbox" aria-label="Results"></ul>
-    <footer class="palette-foot" aria-hidden="true"><span><kbd>↑</kbd><kbd>↓</kbd> move</span><span><kbd>↵</kbd> open</span><span><kbd class="shortcut-hint">⌘K</kbd> anywhere</span></footer>
   </dialog>
 
   <dialog id="detail" aria-labelledby="detail-title">

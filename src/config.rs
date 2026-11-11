@@ -643,6 +643,13 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
             }
             let url = text(source, "url", "")?;
             crate::net::parse_url(&url)?;
+            // The indexer's website, for people to open from the settings;
+            // Mynou itself never requests it.
+            let site = text(source, "site_url", "")?;
+            if !site.is_empty() {
+                crate::net::parse_url(&site)
+                    .map_err(|e| format!("Configuration: indexer website: {e}"))?;
+            }
             sources.push(Source {
                 options: crate::indexers::Options::from_json(source, &url)?,
                 name: text(source, "name", "source")?,

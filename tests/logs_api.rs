@@ -1,8 +1,14 @@
 //! The service log over the API: a level filter, the newest records first,
-//! and every file to download, under the same access rules as other routes.
+//! and the debug report, under the same access rules as other routes.
 use crate::api_support::Server;
 use mynou::{config, json};
-use std::{fs, path::PathBuf};
+use std::{
+    fs,
+    io::{Read, Write},
+    net::TcpStream,
+    path::PathBuf,
+    time::Duration,
+};
 
 fn server(name: &str) -> (Server, PathBuf) {
     let root = std::env::temp_dir().join(format!("mynou-logs-api-{name}-{}", std::process::id()));
@@ -56,7 +62,7 @@ fn entries(body: &str) -> Vec<String> {
 }
 
 #[test]
-fn the_log_is_read_by_level_newest_first_and_downloaded_whole() {
+fn the_log_is_read_by_level_newest_first() {
     let (server, root) = server("read");
     fs::write(root.join("logs/mynou.1.log"), OLDER).unwrap();
     fs::write(root.join("logs/mynou.log"), CURRENT).unwrap();
@@ -114,23 +120,103 @@ fn the_log_is_read_by_level_newest_first_and_downloaded_whole() {
         );
     }
 
-    let download = server.call("GET", "/api/logs/download", &[], "");
-    assert_eq!(download.status, 200);
-    assert_eq!(
-        download.headers["content-type"],
-        "text/plain; charset=utf-8"
-    );
-    assert!(download.headers["content-disposition"].starts_with("attachment; filename=\"mynou-"));
-    assert_eq!(download.headers["cache-control"], "no-store");
-    // Oldest file first.
-    assert_eq!(download.body, format!("{OLDER}{CURRENT}"));
-
-    // Another site's page reaches neither route.
-    for route in ["/api/logs", "/api/logs/download"] {
+    // Another site's page reads neither the log nor the report.
+    for route in ["/api/logs", "/api/report"] {
         let reply = server.call("GET", route, &[("Host", "evil.example")], "");
         assert_eq!(reply.status, 403, "{route}");
         assert!(!reply.body.contains("refused"));
     }
+    drop(server);
+    let _ = fs::remove_dir_all(root);
+}
+
+/// The raw answer to `GET path`: its head and its body as bytes.
+fn fetch(server: &Server, path: &str) -> (String, Vec<u8>) {
+    let mut stream = TcpStream::connect(&server.authority).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(30)))
+        .unwrap();
+    write!(
+        stream,
+        "GET {path} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n",
+        server.authority
+    )
+    .unwrap();
+    let mut bytes = Vec::new();
+    stream.read_to_end(&mut bytes).unwrap();
+    let split = bytes.windows(4).position(|w| w == b"\r\n\r\n").unwrap();
+    let head = String::from_utf8(bytes[..split].to_vec()).unwrap();
+    (head, bytes[split + 4..].to_vec())
+}
+
+#[test]
+fn the_debug_report_holds_the_log_the_archive_and_the_state() {
+    let (server, root) = server("report");
+    fs::write(root.join("logs/mynou.log"), CURRENT).unwrap();
+    fs::create_dir(root.join("logs/archive")).unwrap();
+    let archived = [0x1f, 0x8b, 8, 0, 0, 0, 0, 0, 0, 3, 1, 2, 3];
+    fs::write(root.join("logs/archive/mynou-2026-11-10.log.gz"), archived).unwrap();
+
+    let (head, body) = fetch(&server, "/api/report");
+    assert!(head.starts_with("HTTP/1.1 200"), "{head}");
+    let header = |name: &str| {
+        head.lines()
+            .find_map(|line| line.strip_prefix(&format!("{name}: ")))
+            .unwrap_or_default()
+            .to_owned()
+    };
+    assert_eq!(header("Content-Type"), "application/x-tar");
+    assert_eq!(header("Content-Length"), body.len().to_string());
+    assert!(header("Content-Disposition").starts_with("attachment; filename=\"mynou-report-"));
+    assert_eq!(header("Cache-Control"), "no-store");
+
+    // The tar file: each member's name and contents.
+    let mut members = Vec::new();
+    let mut at = 0;
+    while at + 512 <= body.len() && body[at] != 0 {
+        let name = String::from_utf8_lossy(&body[at..at + 100])
+            .trim_end_matches('\0')
+            .to_owned();
+        let size =
+            usize::from_str_radix(std::str::from_utf8(&body[at + 124..at + 135]).unwrap(), 8)
+                .unwrap();
+        members.push((name, body[at + 512..at + 512 + size].to_vec()));
+        at += 512 + size.div_ceil(512) * 512;
+    }
+    assert_eq!(body.len(), at + 1024);
+    let names: Vec<&str> = members
+        .iter()
+        .map(|(name, _)| name.split_once('/').unwrap().1)
+        .collect();
+    assert_eq!(names[0], "README.txt");
+    for expected in [
+        "state/status.json",
+        "state/settings.json",
+        "state/jobs.json",
+        "logs/archive/mynou-2026-11-10.log.gz",
+        "logs/mynou.log.gz",
+    ] {
+        assert!(names.contains(&expected), "{expected} in {names:?}");
+    }
+    assert!(!names.iter().any(|name| name.contains("secrets")));
+    let member = |name: &str| {
+        &members
+            .iter()
+            .find(|(member, _)| member.ends_with(name))
+            .unwrap()
+            .1
+    };
+    let readme = String::from_utf8(member("README.txt").clone()).unwrap();
+    assert!(readme.starts_with("Mynou debug report"), "{readme}");
+    assert!(readme.contains("Tokens, keys and passwords are hidden."));
+    // The archive goes as it is; the newest records are compressed.
+    assert_eq!(member("archive/mynou-2026-11-10.log.gz"), &archived);
+    assert_eq!(&member("logs/mynou.log.gz")[..2], &[0x1f, 0x8b]);
+    let status = json::parse(std::str::from_utf8(member("state/status.json")).unwrap()).unwrap();
+    assert_eq!(
+        status.get("status").and_then(json::Value::as_f64),
+        Some(200.0)
+    );
     drop(server);
     let _ = fs::remove_dir_all(root);
 }
@@ -142,9 +228,6 @@ fn an_installation_without_a_log_reads_as_empty() {
     let reply = server.call("GET", "/api/logs", &[], "");
     assert_eq!(reply.status, 200);
     assert!(entries(&reply.body).is_empty());
-    let download = server.call("GET", "/api/logs/download", &[], "");
-    assert_eq!(download.status, 200);
-    assert_eq!(download.body, "");
     drop(server);
     let _ = fs::remove_dir_all(root);
 }

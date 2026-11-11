@@ -123,7 +123,7 @@ fn restamp(cookies: &mut Cookies, packet: &[u8], now: Duration) -> Vec<u8> {
 
 #[test]
 fn independent_reference_cookie_replies_and_mac2() {
-    let file = std::fs::File::open(std::env::var("MYNOU_CRYPTO_FIXTURES").unwrap()).unwrap();
+    let file = std::fs::File::open(crate::crypto::reference_vectors()).unwrap();
     let mut text = String::new();
     file.take(1024 * 1024 + 1)
         .read_to_string(&mut text)

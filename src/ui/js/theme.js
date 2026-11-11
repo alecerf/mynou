@@ -13,9 +13,24 @@ function applyTheme(choice) {
   return theme;
 }
 
-export function setTheme(choice) {
+function storeTheme(choice) {
   const theme = applyTheme(choice);
   try { if (theme === 'auto') localStorage.removeItem(THEME_KEY); else localStorage.setItem(THEME_KEY, theme); } catch { /* storage unavailable: the choice lasts for this page */ }
+}
+
+/** Applies a theme; the new colours spread in a circle from `origin`, a
+    point on the screen (its centre by default), where the browser can. */
+export function setTheme(choice, origin) {
+  const before = document.documentElement.dataset.theme ?? 'auto';
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (still || before === choice || !document.startViewTransition || !('types' in ViewTransition.prototype)) { storeTheme(choice); return; }
+  const x = origin?.x ?? innerWidth / 2, y = origin?.y ?? innerHeight / 2;
+  const radius = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
+  const shift = document.startViewTransition({ update: () => storeTheme(choice), types: ['theme'] });
+  shift.ready.then(() => document.documentElement.animate(
+    { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${radius}px at ${x}px ${y}px)`] },
+    { duration: 700, easing: 'cubic-bezier(.22,1,.36,1)', pseudoElement: '::view-transition-new(root)' },
+  )).catch(() => { /* skipped: the theme is applied all the same */ });
 }
 
 // Before anything else draws, so a pinned theme does not flash the system one.

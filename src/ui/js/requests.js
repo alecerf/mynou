@@ -40,7 +40,7 @@ views.requests = {
         if (search !== searches) return;
         const noun = kind === 'series' ? 'series' : results.length === 1 ? 'film' : 'films';
         meta.textContent = results.length ? `${results.length} ${noun} on TMDB` : 'TMDB has nothing by that name. Check the spelling, or leave out the year.';
-        out.replaceChildren(...results.map((title, index) => titleCard(title, index)));
+        out.replaceChildren(...results.map((title) => titleCard(title)));
         Motion.arrive(out.children);
       });
       if (search !== searches) return;
@@ -81,7 +81,7 @@ const requestOf = (title) => {
 };
 
 /** One TMDB result as a cover: its poster when TMDB has one, else a typographic cover. */
-function titleCard(title, index) {
+function titleCard(title) {
   const card = createMediaCard();
   card._title = title;
   card.classList.add('catalog-card');
@@ -96,10 +96,8 @@ function titleCard(title, index) {
     const idle = busy(cover);
     openTitle(title).finally(idle);
   });
-  // Stagger the first posters a little so the grid fills in reading order.
   poster(title.poster).then((art) => {
     if (!art) return;
-    card.style.setProperty('--delay', `${Math.min(index, 12) * 30}ms`);
     const img = h('img', { class: 'cover-art', alt: '', decoding: 'async', src: art });
     img.addEventListener('load', () => cover.classList.add('has-art'), { once: true });
     cover.prepend(img);

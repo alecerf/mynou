@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="src/ui/favicon.svg" width="112" height="112" alt="Mynou's pixel cat">
+</p>
+
 <h1 align="center">Mynou</h1>
 
 <p align="center">
@@ -38,8 +42,9 @@ No account, token or Rust needed. The [script](install.sh) downloads the
 latest release, checks that the release key signed its `SHA256SUMS` and that
 the executable matches it, and only then installs `mynou` into `~/.local/bin`,
 without sudo. It ends with the line to add to `~/.zshrc` if that folder is not
-on your `PATH`, and the next steps: start Mynou and
-[set up your library](#set-up-your-library).
+on your `PATH`, the one that turns on tab completion of `mynou` commands
+(`eval "$(mynou completion --shell zsh)"`, or `bash` in `~/.bash_profile`),
+and the next steps: start Mynou and [set up your library](#set-up-your-library).
 
 Run it again to reinstall. For a given version, end the line with
 `| sh -s -- 0.29.0`; for another folder, set `MYNOU_INSTALL_DIR`.
@@ -343,16 +348,31 @@ friend who left it stops being read, and what was already requested stays.
 <details>
 <summary><strong>Where are the logs?</strong></summary>
 
-In the interface: **Overview → Tracking & statistics → Read the logs**, or
-search for "Logs". The newest records come first; choose **Errors**,
-**Warnings**, **Activity** or **Everything**, and **Download** saves every log
-file as one text file. Over HTTP, `GET /api/logs?level=warn&limit=200` reads
-them (levels `error`, `warn`, `info`, `debug`; at most 1,000 records) and
-`GET /api/logs/download` returns the files.
+In the interface: **Overview → Tracking & statistics → Read the logs**. The
+newest records come first, and new ones appear at the top as Mynou writes
+them. Choose **Errors**, **Warnings**, **Activity** or **Everything** (each
+says how many records it holds; the address keeps your choice, as
+`#logs/warn`), find a word with the search field (press `/` to go there,
+Escape to empty it), and pick a source, or click the one on a record. The
+timeline above the records shows when they were written, by level; point at a
+bar to see what it holds, click it to go to its records. A record repeated
+several times in a row shows once with its count; click the count to see each
+one. Click **Live** to pause the list while you read; new records then wait
+above it, as they do when you scroll down, and come in when you go back up.
+The copy button beside a record copies it as the file writes it.
+
+Over HTTP, `GET /api/logs?level=warn&limit=200&q=plex&source=requesters`
+reads them (levels `error`, `warn`, `info`, `debug`; at most 1,000 records;
+`q` finds text in the message or the source, whatever its case). The reply
+also counts the records of each level, lists the sources, and holds a
+`timeline` of at most 60 bars from the oldest record to now.
 
 On disk they are in the data directory, under `logs/`: `mynou.log`, then
-`mynou.1.log` to `mynou.4.log`, older. Each file holds at most 1 MiB, so the
-log never takes more than 5 MiB: the oldest records make room for new ones.
+`mynou.1.log` to `mynou.4.log`, older. Each file holds at most 1 MiB, so these
+take at most 5 MiB. What goes past them is archived, compressed, one file per
+day (UTC) in `logs/archive/mynou-YYYY-MM-DD.log.gz`, kept 30 days and at most
+100 MiB; the oldest days make room. Read an archived day with `gunzip -c`, or
+open it on a Mac.
 Each line reads `<UTC time> <LEVEL> <source>: <message>`. Tokens, passkeys, API
 keys, passwords and cookies are replaced by `[redacted]` before anything is
 written: every secret Mynou keeps, and what looks like one in URLs, headers and
@@ -363,6 +383,19 @@ report, goes to `logs/output.log`; Mynou moves it into the log at start and
 every minute, then empties it. A service installed by an earlier version is
 switched over at its next start. The fixed-code journal in
 `.mynou-service/events.log` stays as it was.
+</details>
+
+<details>
+<summary><strong>Something is wrong: what do I send?</strong></summary>
+
+A report: **Download a report** at the top of the Logs page, or
+`GET /api/report`. It is one `.tar` file, `mynou-report-YYYY-MM-DD.tar`, that
+holds every log file, the 30 days of archive included; the Mynou version and
+build, and the system it runs on; and what Mynou showed of its state when the
+report was made (status, settings, quality profiles, VPN, update, jobs,
+transfers, library, series, sources, requesters and statistics, as JSON).
+Tokens, keys and passwords are hidden there too. `README.txt` inside sums it
+up. Attach the file to an issue, or send it to whoever helps you.
 </details>
 
 <details>

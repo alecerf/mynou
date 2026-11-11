@@ -182,7 +182,9 @@ fn a_missing_volume_prevents_storage_creation_and_reports_a_fixed_code() {
 fn shutdown_fences_the_launchd_process_identity_before_stopping() {
     use std::sync::atomic::Ordering;
     let dir = Directory::new();
-    let config = crate::config::from_json(&crate::config::default_json(), &dir.0).unwrap();
+    let mut config = crate::config::from_json(&crate::config::default_json(), &dir.0).unwrap();
+    // No BitTorrent port: a Mynou running on this computer may hold the default one.
+    config.downloads_enabled = false;
     let engine = crate::engine::Engine::open(config).unwrap();
     let wrong = format!("{{\"expected_pid\":{}}}", u64::from(std::process::id()) + 1);
     assert!(crate::server::route(&engine, "POST", "/api/shutdown", wrong.as_bytes()).is_err());

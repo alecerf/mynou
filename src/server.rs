@@ -544,8 +544,8 @@ fn connection(
     if method == "GET" && path == "/ws" {
         return upgrade(stream, engine, &headers, &|| gate.admitted(free, &headers));
     }
-    if method == "GET" && path == "/api/logs/download" {
-        return respond_logs(stream, engine);
+    if method == "GET" && path == "/api/report" {
+        return respond_report(stream, engine);
     }
     match route(engine, &method, &path, &body) {
         Ok((status, value)) => respond(stream, status, value),
@@ -583,22 +583,20 @@ fn note_refusal(engine: &Engine, stream: &TcpStream, code: &str) {
     }
 }
 
-/// Every log file, oldest first, as one text file to save.
-fn respond_logs(stream: &mut TcpStream, engine: &Engine) -> Result<()> {
-    crate::logs::fold_output();
-    let body = match crate::logs::download(&crate::logs::directory(&engine.config.data_dir)) {
-        Ok(body) => body,
-        Err(e) => return respond(stream, 400, error(&e)),
-    };
+/// The debug report, one tar file to save, sent as it is read.
+fn respond_report(stream: &mut TcpStream, engine: &Arc<Engine>) -> Result<()> {
+    let members = crate::report::members(engine);
     let head = format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: {}\r\nContent-Disposition: attachment; filename=\"mynou-{}.log\"\r\nConnection: close\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nX-Frame-Options: DENY\r\nContent-Security-Policy: default-src 'none'; frame-ancestors 'none'\r\n\r\n",
-        body.len(),
-        crate::date::today()
+        "HTTP/1.1 200 OK\r\nContent-Type: application/x-tar\r\nContent-Length: {}\r\nContent-Disposition: attachment; filename=\"{}.tar\"\r\nConnection: close\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nX-Frame-Options: DENY\r\nContent-Security-Policy: default-src 'none'; frame-ancestors 'none'\r\n\r\n",
+        crate::report::length(&members),
+        crate::report::name()
     );
-    // A few MiB: more time than a JSON answer, still bounded.
-    let deadline = Instant::now() + RESPONSE_DEADLINE * 6;
+    // Up to the archive's bound and more: far more time than a JSON answer.
+    let deadline = Instant::now() + RESPONSE_DEADLINE * 30;
     write_within(stream, head.as_bytes(), deadline)
-        .and_then(|()| write_within(stream, body.as_bytes(), deadline))
+        .and_then(|()| {
+            crate::report::write(members, &mut |chunk| write_within(stream, chunk, deadline))
+        })
         .map_err(|e| format!("Cannot write the response: {e}"))
 }
 
@@ -823,11 +821,10 @@ pub(crate) fn route(
             Ok((202, v))
         }
         ("GET", path) if path == "/api/logs" || path.starts_with("/api/logs?") => {
-            let (level, limit) =
-                crate::logs::query(path.split_once('?').map_or("", |(_, query)| query))?;
+            let query = crate::logs::query(path.split_once('?').map_or("", |(_, query)| query))?;
             crate::logs::fold_output();
             let logs = crate::logs::directory(&engine.config.data_dir);
-            Ok((200, crate::logs::tail(&logs, level, limit)?))
+            Ok((200, crate::logs::tail(&logs, &query)?))
         }
         ("GET", "/api/settings") => Ok((200, engine.settings()?)),
         ("POST", "/api/settings") => {

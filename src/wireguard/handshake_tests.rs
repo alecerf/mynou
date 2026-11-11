@@ -36,7 +36,7 @@ fn remac(packet: &mut Vec<u8>, recipient: [u8; 32]) {
 
 #[test]
 fn independent_noise_transcript_packets_and_session_keys() {
-    let file = std::fs::File::open(std::env::var("MYNOU_CRYPTO_FIXTURES").unwrap()).unwrap();
+    let file = std::fs::File::open(crate::crypto::reference_vectors()).unwrap();
     let mut text = String::new();
     file.take(1024 * 1024 + 1)
         .read_to_string(&mut text)

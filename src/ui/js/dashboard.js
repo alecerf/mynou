@@ -131,8 +131,7 @@ views.dashboard = {
         feature.dataset.key = 'empty';
         feature.replaceChildren(h('div', { class: 'feature feature-empty' },
           h('span', { class: 'feature-caption' }, h('span', { class: 'feature-meta' }, 'Your collection'), h('strong', {}, 'The first title is one request away.'),
-            h('span', {}, text)),
-          h('a', { class: 'primary', href: '#requests' }, icon('requests'), 'New request')));
+            h('span', {}, text))));
       }
       fresh.replaceChildren(h('p', { class: 'empty' }, 'What Mynou adds to your library shows up here.'));
       return;
@@ -158,8 +157,7 @@ views.dashboard = {
     if (!active.length) {
       if (!root.querySelector('.empty-panel')) {
         root.replaceChildren(h('div', { class: 'empty-panel' },
-          h('div', {}, h('strong', {}, 'Nothing in progress'), h('p', {}, 'What you request shows up here while Mynou finds and downloads it.')),
-          h('a', { class: 'secondary', href: '#requests' }, icon('requests'), 'New request')));
+          h('div', {}, h('strong', {}, 'Nothing in progress'), h('p', {}, 'What you request shows up here while Mynou finds and downloads it.'))));
       }
       return;
     }

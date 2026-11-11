@@ -71,10 +71,11 @@ fn old_manual_file(path: &Path, now: SystemTime) -> bool {
 }
 
 fn manual_directory(path: &Path) -> Result<()> {
-    // Inspect every ancestor too: read_dir would otherwise traverse a link.
+    // Inspect every ancestor too: read_dir would otherwise traverse a link
+    // other than the system's own at the top.
     for ancestor in path.ancestors() {
         let metadata = fs::symlink_metadata(ancestor).map_err(|error| error.to_string())?;
-        if !metadata.is_dir() {
+        if !metadata.is_dir() && !crate::store::system_link(ancestor, &metadata) {
             return Err("Manual torrent cleanup requires real directories".into());
         }
     }

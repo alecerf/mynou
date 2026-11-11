@@ -156,10 +156,8 @@ jobs:
           # On macOS, sync_all is F_FULLFSYNC (a whole-drive cache flush), and
           # the growing-inventory tests issue tens of thousands of them (#238).
           # A RAM disk keeps every durability call while making it cheap. The
-          # suite peaked near 170 MiB of temporary data; allocate 2 GiB. Its
-          # /Volumes mount point is physical, unlike macOS's symlinked default
-          # temporary directory, which Mynou refuses. Every later step,
-          # observers included, uses it.
+          # suite peaked near 170 MiB of temporary data; allocate 2 GiB. Every
+          # later step, observers included, uses it.
           ram_disk=$(hdiutil attach -nomount ram://4194304 | awk 'NR == 1 { print $1 }')
           diskutil erasevolume APFS mynou-tests "$ram_disk" > /dev/null
           tmp="$(cd /Volumes/mynou-tests && pwd -P)"

@@ -22,6 +22,7 @@ const HELP: &str = "Mynou — media automation using Rust std only
           [--label org.mynou.automation]
   update [--dir DIR]   (installs the latest release now; Mynou also does it once a day)
   version
+  completion [--shell zsh|bash]   (tab completion: add `eval \"$(mynou completion)\"` to ~/.zshrc)
 
 DIR is the data directory: --dir, else MYNOU_HOME, else $XDG_DATA_HOME/mynou, else
 ~/.local/share/mynou.
@@ -58,6 +59,7 @@ impl Args {
             "service" => &["dir", "help", "action", "label"],
             "serve" => &["dir", "help", "host", "port"],
             "service-run" | "update" => &["dir", "help"],
+            "completion" => &["help", "shell"],
             "help" | "--help" | "version" | "--version" => &[],
             _ => return Err(format!("Unknown command: {command}")),
         };
@@ -217,6 +219,23 @@ fn execute(args: Args) -> Result<()> {
                 "mynou {} — Rust std, 0 dependencies",
                 env!("CARGO_PKG_VERSION")
             );
+            return Ok(());
+        }
+        "completion" => {
+            let login_shell = std::env::var("SHELL").unwrap_or_default();
+            let shell = match args.options.get("shell") {
+                Some(shell) => shell.as_str(),
+                None => login_shell.rsplit('/').next().unwrap_or_default(),
+            };
+            match shell {
+                "zsh" => print!("{}", include_str!("completion.zsh")),
+                "bash" => print!("{}", include_str!("completion.bash")),
+                _ => {
+                    return Err(format!(
+                        "No completion for the shell {shell:?}: use --shell zsh or --shell bash"
+                    ));
+                }
+            }
             return Ok(());
         }
         _ => {}

@@ -287,7 +287,7 @@ views.transfers = {
         transfersTail.next = page.next;
         views.transfers.render();
       }));
-    $('#transfers').addEventListener('click', (event) => {
+    $('#transfers-items').addEventListener('click', (event) => {
       const button = event.target.closest('button[data-act]');
       const row = event.target.closest('.row');
       if (row?._transfer && event.target.closest('.open')) { location.hash = `#transfers/${encodeURIComponent(row._transfer.id)}`; return; }
@@ -304,14 +304,14 @@ views.transfers = {
     $('#transfer-page').hidden = !id;
     if (id) { showPage(id); return; }
     leavePage();
-    const list = $('#transfers');
+    const list = $('#transfers-items');
     const entry = data.get('transfers')?.data;
     const next = transfersTail.items.length ? transfersTail.next : entry?.next;
     const button = $('#transfers-more');
     button.hidden = !next;
     button.textContent = entry?.total ? `Load more transfers (${itemsOf(entry).length + transfersTail.items.length} of ${entry.total})` : 'Load more transfers';
     const summary = $('#transfer-summary');
-    if (emptyOrError('transfers', list, 'No native transfers are active.')) { summary.hidden = true; return; }
+    if (emptyOrError('transfers', list, 'Nothing is downloading or seeding right now.')) { summary.hidden = true; return; }
     const first = itemsOf(entry);
     const seen = new Set(first.map((item) => item.id));
     const all = [...first, ...transfersTail.items.filter((item) => !seen.has(item.id))];

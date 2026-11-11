@@ -111,13 +111,13 @@ views.library = {
       libraryFilter.layout = button.dataset.layout;
       views.library.render();
     });
-    $('#library').addEventListener('click', (event) => {
+    $('#library-items').addEventListener('click', (event) => {
       const entry = event.target.closest('.cover') && event.target.closest('.media-card')?._entry;
       if (entry) openCollectionEntry(entry);
     });
   },
   render() {
-    const container = $('#library');
+    const container = $('#library-items');
     const libraryPage = data.get('library')?.data;
     const seriesPage = data.get('series')?.data;
     const loaded = loadedItems('library', libraryTail.items);
@@ -156,8 +156,6 @@ const showKey = (request = {}) => (request.tmdb_id != null
   : `show:${String(request.title ?? '').trim().toLocaleLowerCase()}:${Number(request.year) || 0}`);
 const entryRequest = (entry) => (entry.type === 'film' ? entry.item.request : entry.request) ?? {};
 
-/** Every title as the library shows it: what the search palette looks through. */
-export const collectionEntries = () => collection();
 /** Opens a film on its sheet, a show on its seasons. */
 export function openCollectionEntry(entry) {
   if (entry.type === 'film') openLibraryEntry(entry.item); else openShow(entry);

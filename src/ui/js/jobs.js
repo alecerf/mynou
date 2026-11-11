@@ -333,7 +333,7 @@ export function refreshJobSearch() {
 }
 views.jobs = {
   init() {
-    wireJobRows($('#jobs'));
+    wireJobRows($('#jobs-items'));
     $('#jobs-more').addEventListener('click', (e) =>
       act(e.currentTarget, async () => {
         if (jobSearch.query) { await searchJobs(true); return; }
@@ -359,7 +359,7 @@ views.jobs = {
     states.addEventListener('change', () => { jobStates = new Set(states.value ? [states.value] : []); searchJobs(false); });
   },
   render() {
-    const list = $('#jobs');
+    const list = $('#jobs-items');
     const entry = data.get('jobs')?.data;
     const more = $('#jobs-more');
     // The search field turns while the server looks; a background refresh stays quiet.

@@ -916,10 +916,24 @@ pub(crate) fn refuse_older_format(directory: &Path, files: &[&str], label: &str)
     Ok(())
 }
 
+/// Whether `path`, whose own metadata is `metadata`, is one of the system's
+/// links at the top of the tree, such as `/var` and `/tmp` on macOS: only the
+/// administrator can make or change an entry of `/`, so it is safe to follow.
+pub(crate) fn system_link(path: &Path, metadata: &fs::Metadata) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    metadata.file_type().is_symlink()
+        && path.parent() == Some(Path::new("/"))
+        && metadata.uid() == 0
+}
+
+/// Refuses a path that goes through a symbolic link, which someone could
+/// point elsewhere; the system's own links at the top are followed.
 pub(crate) fn reject_symlinks(path: &Path) -> Result<()> {
     for ancestor in path.ancestors() {
         match fs::symlink_metadata(ancestor) {
-            Ok(metadata) if metadata.file_type().is_symlink() => {
+            Ok(metadata)
+                if metadata.file_type().is_symlink() && !system_link(ancestor, &metadata) =>
+            {
                 return Err("symbolic link not allowed in a storage path".to_owned());
             }
             Ok(_) => {}
