@@ -395,6 +395,7 @@ fn jobs_above_the_old_total_cap_reach_http_and_websocket_pages() {
             source_url: None,
             runtime_minutes: None,
             source_numbering: None,
+            original_language: None,
             tmdb_id: Some(1),
         })
         .unwrap();

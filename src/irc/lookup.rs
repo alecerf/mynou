@@ -788,6 +788,7 @@ mod tests {
             source_url: None,
             runtime_minutes: None,
             source_numbering: None,
+            original_language: None,
         };
         let matches = |t| super::super::routing::title_matches(&request, t);
         assert!(matches(

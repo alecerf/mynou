@@ -1342,6 +1342,8 @@ impl Engine {
                     let (url, release) = match &job.request.source_url {
                         Some(url) => (url.clone(), None),
                         None => {
+                            // Kept on the job, which is saved whatever the search finds.
+                            integrations::learn_original_language(&config, &mut job.request);
                             let selected = integrations::select_release_refusing(
                                 &config,
                                 &job.request,

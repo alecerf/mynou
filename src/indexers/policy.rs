@@ -372,6 +372,7 @@ impl Engine {
                 tmdb_id: None,
                 runtime_minutes: None,
                 source_numbering: None,
+                original_language: None,
                 source_path: None,
                 source_url: None,
             };

@@ -46,6 +46,7 @@ mod library_store;
 mod media_formats;
 mod monitoring_config;
 mod numbering_management;
+mod original_language;
 mod pack_acquisition;
 mod pack_management;
 mod parallel_config;

@@ -620,6 +620,7 @@ mod tests {
             source_url: source,
             runtime_minutes: None,
             source_numbering: None,
+            original_language: None,
         }
     }
 

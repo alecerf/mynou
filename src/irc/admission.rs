@@ -383,6 +383,13 @@ impl Engine {
         let demand_id = Demand::identity(account_id, &canonical);
         let existing_demand = ledger.demand(&demand_id)?;
         let existing = existing_demand.as_ref();
+        // A demand recorded without the original language keeps none; its
+        // job learns it when it is searched.
+        let mut canonical = canonical;
+        let original_language = canonical.original_language.clone();
+        if existing.is_some_and(|d| d.request.original_language.is_none()) {
+            canonical.original_language = None;
+        }
         if existing.is_some_and(|d| d.request != canonical || d.state == "removed") {
             return Err(
                 "IRC: retained demand differs from the claim or is a removal tombstone".into(),
@@ -399,7 +406,11 @@ impl Engine {
             || self.config.selection.profiles.get(&rule.profile) != Some(&capture.profile)
             || !capture
                 .profile
-                .assess(&record.announcement.title, &canonical.title)
+                .assess_for(
+                    &record.announcement.title,
+                    &canonical.title,
+                    original_language.as_deref(),
+                )
                 .accepted
             || !super::routing::title_matches(&canonical, &record.announcement.title)
         {

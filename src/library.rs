@@ -407,16 +407,26 @@ impl Engine {
             let config = self.configuration_for(&job)?;
             let (_, profile) = config.selection.profile(&job.request.kind)?;
             let recorded = job.release.as_ref().ok_or("Missing release baseline")?;
-            let baseline = profile.assess_with_runtime(
-                &recorded.title,
-                &job.request.title,
-                recorded.size_bytes,
-                Some(1),
-                job.request.runtime_minutes,
-            );
             let mut request = job.request.clone();
             request.source_path = None;
             request.source_url = None;
+            // The file and the candidates are judged with the same original
+            // language, kept on the title once learnt.
+            integrations::learn_original_language(&config, &mut request);
+            if apply
+                && job.request.original_language.is_none()
+                && let Some(language) = &request.original_language
+            {
+                lock(&self.store)?.record_original_language(&job.id, language)?;
+            }
+            let baseline = profile.assess_with_runtime(
+                &recorded.title,
+                &request.title,
+                recorded.size_bytes,
+                Some(1),
+                request.runtime_minutes,
+                request.original_language.as_deref(),
+            );
             let selected = match integrations::select_upgrade_before(
                 &config,
                 &request,

@@ -33,6 +33,7 @@ fn bearer_api_expands_shared_interests_without_undoing_pause_or_modifying_source
         episode: 1,
         runtime_minutes: None,
         source_numbering: None,
+        original_language: None,
         tmdb_id: Some(42),
         source_path: None,
         source_url: Some(torrent.path.to_str().unwrap().into()),

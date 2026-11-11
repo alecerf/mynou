@@ -754,6 +754,7 @@ mod tests {
             episode: 0,
             runtime_minutes: None,
             source_numbering: None,
+            original_language: None,
             tmdb_id: Some(42),
             source_url: None,
             source_path: None,

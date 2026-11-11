@@ -287,6 +287,7 @@ fn protected_feed_cursors_and_pending_demand_survive_restart_and_loss_without_ho
         tmdb_id: Some(42),
         runtime_minutes: None,
         source_numbering: None,
+        original_language: None,
     };
     let id = engine.submit(pending).unwrap()[0].id.clone();
     let poll = {
@@ -671,6 +672,7 @@ fn late_search_results_from_an_earlier_source_are_refused_after_owner_loss() {
         tmdb_id: Some(42),
         runtime_minutes: None,
         source_numbering: None,
+        original_language: None,
     };
     let search = {
         let e = engine.clone();

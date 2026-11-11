@@ -495,6 +495,7 @@ pub(crate) fn watchlist_request(item: &Value) -> Result<Option<Request>> {
         source_url: None,
         runtime_minutes: None,
         source_numbering: None,
+        original_language: None,
         tmdb_id: if kind == "episode" {
             None
         } else {
@@ -719,14 +720,17 @@ pub(crate) fn requester_movie_before(
             &fresh_catalog(config, "search/movie", &pairs, deadline)?,
         )?);
     }
-    if request.runtime_minutes.is_none() && config.catalog.enabled {
+    if (request.runtime_minutes.is_none() || request.original_language.is_none())
+        && config.catalog.enabled
+    {
         let details = fresh_catalog(
             config,
             &format!("movie/{}", request.tmdb_id.ok_or("Missing movie identity")?),
             &[],
             deadline,
         )?;
-        request.runtime_minutes = catalog_runtime(&details);
+        request.runtime_minutes = request.runtime_minutes.or(catalog_runtime(&details));
+        request.original_language = original_language_of(&details);
     }
     request.validate()?;
     Ok(request)
@@ -736,6 +740,66 @@ fn catalog_runtime(value: &Value) -> Option<u32> {
     integer(value, "runtime")
         .and_then(|n| u32::try_from(n).ok())
         .filter(|n| *n > 0)
+}
+
+/// TMDB's `original_language` of a film's or series' details.
+fn original_language_of(value: &Value) -> Option<String> {
+    string(value, "original_language")
+        .filter(|code| crate::selection::valid_language_code(code))
+        .map(str::to_owned)
+}
+
+/// The original language of a request's film or series, from TMDB's
+/// details (cached like the other catalog reads); `None` when TMDB gives none.
+fn catalog_original_language(config: &Config, request: &Request) -> Result<Option<String>> {
+    let movie = match request.kind.as_str() {
+        "movie" => true,
+        "episode" | "series" => false,
+        _ => return Ok(None),
+    };
+    let id = resolve_catalog(config, request)?;
+    let details = catalog_json(
+        config,
+        &format!("{}/{id}", if movie { "movie" } else { "tv" }),
+        &[],
+    )?;
+    if integer(&details, "id").is_some_and(|actual| actual != id) {
+        return Err("TMDB catalog: title identity mismatch".into());
+    }
+    Ok(original_language_of(&details))
+}
+
+/// Fills a request's original language when its profile asks for it and it
+/// does not hold it yet, so that the job keeps it. TMDB off or failing leaves
+/// it unknown: `original` then counts only VO, MULTi and VOSTFR.
+pub fn learn_original_language(config: &Config, request: &mut Request) {
+    let kind = if request.kind == "movie" {
+        "movie"
+    } else {
+        "episode"
+    };
+    if request.original_language.is_none()
+        && config.catalog.enabled
+        && config
+            .selection
+            .profile(kind)
+            .is_ok_and(|(_, profile)| profile.uses_original_language())
+    {
+        request.original_language = catalog_original_language(config, request).unwrap_or(None);
+    }
+}
+
+/// A title's original language as a search report and the interface show it.
+fn original_language_json(code: Option<&str>) -> Value {
+    let mut value = Value::object();
+    value.insert("language", code.map_or(Value::Null, Value::from));
+    value.insert(
+        "name",
+        code.map_or(Value::Null, |code| {
+            crate::selection::language_name(code).into()
+        }),
+    );
+    value
 }
 
 fn catalog_episode_runtime(value: &Value, episode: u32) -> Option<u32> {
@@ -1150,6 +1214,9 @@ fn series_plan_details_before(
     }
     let mut identity = request.clone();
     identity.tmdb_id = Some(id);
+    if let Some(language) = original_language_of(details) {
+        identity.original_language = Some(language);
+    }
     if identity.year == 0 {
         identity.year = string(details, "first_air_date")
             .filter(|text| crate::date::day(text).is_ok())
@@ -1275,6 +1342,7 @@ pub(crate) fn irc_catalog_request_before(
     }
     let mut canonical = claim.clone();
     canonical.title = title.into();
+    canonical.original_language = original_language_of(&details);
     if movie {
         canonical.runtime_minutes = catalog_runtime(&details);
     }
@@ -1569,6 +1637,7 @@ pub fn expand(config: &Config, request: &Request) -> Result<Vec<Request>> {
             expanded.tmdb_id = Some(id);
             let details = catalog_json(config, &format!("movie/{id}"), &[])?;
             expanded.runtime_minutes = catalog_runtime(&details);
+            expanded.original_language = original_language_of(&details);
             if expanded.year == 0 {
                 expanded.year = string(&details, "release_date")
                     .filter(|s| crate::date::day(s).is_ok())
@@ -1662,6 +1731,7 @@ pub fn expand(config: &Config, request: &Request) -> Result<Vec<Request>> {
                 source_url: None,
                 runtime_minutes,
                 source_numbering: None,
+                original_language: original_language_of(&details),
                 tmdb_id: Some(id),
             };
             expanded.validate()?;
@@ -2215,6 +2285,8 @@ impl SearchPage {
 /// accepted pack shortlist are retained, so no total caps the candidates.
 struct SearchResult {
     profile: String,
+    /// The title's original language, when the profile asks for it.
+    original_language: Option<Option<String>>,
     runtime_minutes: Option<u32>,
     total: u64,
     best: Option<(Position, Candidate)>,
@@ -2298,6 +2370,13 @@ impl SearchResult {
             "runtime_minutes",
             self.runtime_minutes.map_or(Value::Null, Value::from),
         );
+        // Null when the profile does not ask for the original language.
+        report.insert(
+            "original_language",
+            self.original_language
+                .as_ref()
+                .map_or(Value::Null, |code| original_language_json(code.as_deref())),
+        );
         report.insert("manual_override", false);
         report.insert("indexers", indexers);
         report.insert("accepted", Value::Array(accepted));
@@ -2346,6 +2425,7 @@ fn assess_release(
         release.size,
         pack_episodes.unwrap_or(Some(1)),
         request.runtime_minutes,
+        request.original_language.as_deref(),
     );
     if (RecordedRelease {
         source_id: None,
@@ -2462,8 +2542,23 @@ fn search_candidates_mode(
     if config.sources.len() > 1_000 {
         return Err("Search: too many indexers".into());
     }
+    // The title's original language, when the profile asks for it and the
+    // request does not hold it yet: once per search.
+    let learnt;
+    let request = if profile.uses_original_language() && request.original_language.is_none() {
+        let mut copy = request.clone();
+        copy.original_language = catalog_original_language(config, &copy).unwrap_or(None);
+        learnt = copy;
+        remaining_search_time(deadline)?;
+        &learnt
+    } else {
+        request
+    };
     let mut result = SearchResult {
         profile: profile_name.into(),
+        original_language: profile
+            .uses_original_language()
+            .then(|| request.original_language.clone()),
         runtime_minutes: request.runtime_minutes,
         total: 0,
         best: None,
@@ -4032,6 +4127,7 @@ mod tests {
                 ..Default::default()
             },
             attributes: Default::default(),
+            original: None,
         };
         let low = [0; 32];
         let high = [255; 32];
@@ -4167,6 +4263,7 @@ mod tests {
             source_url: None,
             runtime_minutes: None,
             source_numbering: None,
+            original_language: None,
             tmdb_id: None,
         }
     }

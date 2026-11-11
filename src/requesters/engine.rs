@@ -60,7 +60,7 @@ fn compatible(config: &crate::config::Config, demand: &Demand, job: &Job) -> Res
                 r.profile == capture.profile_name
                     && capture
                         .profile
-                        .assess_with_runtime(&r.title, &job.request.title, r.size_bytes, Some(1), job.request.runtime_minutes)
+                        .assess_with_runtime(&r.title, &job.request.title, r.size_bytes, Some(1), job.request.runtime_minutes, job.request.original_language.as_deref())
                         .accepted
             },
         ))
@@ -1332,6 +1332,7 @@ pub(crate) mod regression_tests {
             source_url: None,
             runtime_minutes: None,
             source_numbering: None,
+            original_language: None,
         };
         let episodes = [0, 1]
             .into_iter()

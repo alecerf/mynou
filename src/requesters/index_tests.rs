@@ -58,6 +58,7 @@ fn demand(config: &Config, number: u64, origin_bytes: usize) -> Demand {
         source_url: None,
         runtime_minutes: None,
         source_numbering: None,
+        original_language: None,
     };
     Demand {
         id: Demand::identity("fixture", &request),

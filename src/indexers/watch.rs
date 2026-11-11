@@ -678,6 +678,7 @@ impl Engine {
             recorded.size_bytes,
             Some(1),
             current.request.runtime_minutes,
+            current.request.original_language.as_deref(),
         );
         let mut request = current.request.clone();
         request.source_path = None;

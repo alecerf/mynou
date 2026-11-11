@@ -138,7 +138,7 @@ impl Db<'_> {
             return Err("IRC acquisition provenance is immutable".into());
         }
         if current.key != job.key
-            || current.request != job.request
+            || !current.request.same_or_learnt(&job.request)
             || current.created_at != job.created_at
             || current.upgrade_parent != job.upgrade_parent
             || current.shared_file != job.shared_file

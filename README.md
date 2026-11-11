@@ -168,7 +168,7 @@ Everything is also available over HTTP: `/api` routes, and `/healthz` and
 | --- | --- |
 | **Requests** | Plex watchlists, yours and your Plex friends' through your own Plex connection, or other accounts with their own token; the web interface and an HTTP API. |
 | **Sources** | RSS, JSON and Torznab indexers with optional authentication, opt-in feed watching for new releases, and opt-in IRC announcement channels, invite-only ones included. |
-| **Release selection** | Movie and episode profiles on resolution, source, codec, language, terms and scores, with previews that explain every decision. |
+| **Release selection** | Movie and episode profiles on resolution, source, codec, language (each title's original language included), terms and scores, with previews that explain every decision. |
 | **BitTorrent** | v1, v2 and hybrid torrents, magnets, trackers, DHT and PEX, parallel peers, pause and resume, priorities, bandwidth limits and seeding policies. |
 | **Series** | TMDB episode plans, automatic requests for newly aired episodes, an episode calendar, explicit numbering, season packs and multi-episode files. |
 | **Library** | Imports that never overwrite, into the folders Plex already uses, with subtitles and a length check, Plex confirmation, and monitored quality upgrades. |
@@ -273,6 +273,20 @@ import fails with `runtime_mismatch` and both lengths, nothing is written, and
 the release is not picked again for that title. The job's **Files & quality**
 tab, and `import_notes` in the API, say which folder was used and why, and
 whether the length was checked.
+</details>
+
+<details>
+<summary><strong>Why was a release refused for its language?</strong></summary>
+
+A profile's languages are all required, and they decide before the quality.
+**Original language** is each title's own audio, as TMDB gives it: VO, MULTi
+and VOSTFR always hold it; a release without a language tag counts unless the
+title is French; FRENCH, VFF, VFQ and TRUEFRENCH count only for a French title.
+A French dub alone of an English film is refused, and a profile with VFF and
+Original language needs MULTi with VFF for an English film. Mynou keeps the
+language with each title once TMDB gave it; while TMDB is off or does not
+answer, only VO, MULTi and VOSTFR count. **Choose a release** and the Quality
+page's **Try it** say for each release whether it holds the original audio.
 </details>
 
 <details>

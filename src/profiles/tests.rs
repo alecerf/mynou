@@ -70,6 +70,7 @@ fn request(kind: &str, title: &str, tmdb_id: Option<u64>, episode: u32) -> Reque
         source_url: None,
         runtime_minutes: None,
         source_numbering: None,
+        original_language: None,
         tmdb_id,
     }
 }
