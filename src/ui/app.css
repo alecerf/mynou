@@ -55,9 +55,11 @@
     --accent-glow: light-dark(#b3181f40, #d0263452);
     /* The brass of a marquee: second series and quiet highlights. */
     --gold: light-dark(#a87a22, #e2b866);
-    /* The cat: a velvet-red silhouette with brass eyes, by day and by night. */
-    --cat-fur: light-dark(#e0353b, #f2434f);
+    /* The cat: black with brass eyes. By night it stays darker than the
+       hall, set apart from it by a soft moonlight. */
+    --cat-fur: light-dark(#1b1112, #030202);
     --cat-eye: #f3c969;
+    --cat-glow: drop-shadow(0 0 1px light-dark(#0000, #e8d8d466)) drop-shadow(0 0 5px light-dark(#0000, #e8d8d42e));
     --ok: light-dark(#187a4e, #5fd99c);
     --warn: light-dark(#8f5d0e, #f0c264);
     /* Errors lean vermilion so they never pass for the brand red. */
@@ -153,7 +155,7 @@
   .icon { width: 1rem; height: 1rem; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; flex: none; }
   /* The pixel cat of js/cat.js: 16 pixels a side, sized in whole pixels per
      pixel (not rem, which scales with the window) so its edges stay sharp. */
-  .logo { width: 24px; height: 24px; shape-rendering: crispEdges; flex: none; overflow: visible; }
+  .logo { width: 24px; height: 24px; shape-rendering: crispEdges; flex: none; overflow: visible; filter: var(--cat-glow); }
   .cat-sprite { transform-box: fill-box; transform-origin: 50% 100%; }
   .cat-fur { fill: var(--cat-fur); }
   .cat-eye { fill: var(--cat-eye); }
@@ -1194,7 +1196,7 @@
   .setting-group { border-block-start: 0; }
   .finder { border-radius: var(--pill); padding: 0.45rem 0.45rem 0.45rem 0.6rem; }
   .finder .primary { min-height: 2.6rem; }
-  .request-idle .logo { filter: drop-shadow(0 10px 24px var(--accent-glow)); }
+  .request-idle .logo { filter: var(--cat-glow) drop-shadow(0 10px 24px var(--accent-glow)); }
   .request-steps li { padding: 0.45rem 0.9rem; border: 1px solid var(--line); border-radius: var(--pill); background: var(--surface); }
 
   /* ------------------------------------------------------ sheet -- */
