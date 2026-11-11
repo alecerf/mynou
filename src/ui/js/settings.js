@@ -335,11 +335,15 @@ function readIndexerRules(row, indexer) {
 }
 
 /** A web address the page may open: http or https only, never `javascript:`.
-    The scheme is written here rather than copied from the field, so what the
-    field holds can only ever follow it. */
+    encodeURI escapes what a link must not carry raw, the way code scanning
+    expects; the escapes typed and an IPv6 host's brackets stay as they were. */
 function webAddress(text) {
   if (!/^https?:\/\/[^\s/?#@]+/i.test(text)) return null;
-  return (/^https:/i.test(text) ? 'https:' : 'http:') + text.slice(text.indexOf(':') + 1);
+  try {
+    return encodeURI(text).replace(/%5B/g, '[').replace(/%5D/g, ']').replace(/%25(?=[0-9A-Fa-f]{2})/g, '%');
+  } catch {
+    return null; // a lone surrogate
+  }
 }
 
 function indexerRow(indexer) {
