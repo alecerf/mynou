@@ -17,3 +17,22 @@ through `POST /api/settings`; IRC sources have no settings page yet.
 The overview looked for IRC errors where the service does not put them, so a
 failing IRC source never showed there. It now does, with its reason when Mynou
 knows it.
+
+## Added: Cross-seed single episodes and releases with extras
+
+Cross-seed discovery now finds a single episode whose video is a file of a
+season pack you completed, and also searches each pack's season for them. A
+candidate that lacks a few small files, such as an `.nfo` or a sample, is now
+admitted: those files are downloaded into its own folder, up to **Cross-seed
+extras** in Settings, Downloads (50 MB by default), and deleted with it. Video
+is never downloaded and every piece is still verified; a candidate whose reused
+video disagrees fails instead. Torrents with v2 metadata are still not
+cross-seeded. In `POST /api/transfers/{id}/cross-seed`, a `null` entry in
+`mapping` marks a file to download.
+
+## Changed: New transfers ask their tracker again sooner
+
+While the tracker of a new transfer answers with an error, as a private tracker
+does until it lists a new upload, Mynou now asks it again every 7 seconds for
+10 minutes instead of every 30 seconds, so a fresh cross-seed starts seeding
+sooner. Transfers restored at startup keep the usual wait.

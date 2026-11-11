@@ -225,6 +225,9 @@ struct Blocks {
     size: usize,
     data: Vec<u8>,
     received: Vec<bool>,
+    /// Offset and length of each request when only parts of the piece are
+    /// fetched; otherwise the piece's whole blocks in order.
+    spans: Option<Vec<(usize, usize)>>,
     next: usize,
     pending: usize,
 }
@@ -240,8 +243,32 @@ impl Blocks {
             size,
             data: vec![0; length],
             received: vec![false; size.div_ceil(BLOCK)],
+            spans: None,
             next: 0,
             pending: 0,
+        }
+    }
+    /// The offset and length of request `n`.
+    fn span(&self, n: usize) -> (usize, usize) {
+        match &self.spans {
+            Some(spans) => spans[n],
+            None => {
+                let offset = n * BLOCK;
+                (offset, (self.size - offset).min(BLOCK))
+            }
+        }
+    }
+    /// Which request a received block answers, if any.
+    fn position(&self, offset: usize, length: usize) -> Option<usize> {
+        match &self.spans {
+            Some(spans) => spans
+                .binary_search_by_key(&offset, |span| span.0)
+                .ok()
+                .filter(|n| spans[*n].1 == length),
+            None => (offset.is_multiple_of(BLOCK)
+                && offset < self.size
+                && length == (self.size - offset).min(BLOCK))
+            .then_some(offset / BLOCK),
         }
     }
 }
@@ -1371,6 +1398,62 @@ impl Peer {
         }
         self.download_piece(meta, index, upcoming, stop)
     }
+    /// A known piece of which this side already holds every byte outside
+    /// `ranges`, given in `data`: only those ranges are requested, at any
+    /// offset, and the whole piece is then verified.
+    pub fn fetch_piece_ranges(
+        &mut self,
+        meta: &Meta,
+        index: usize,
+        data: Vec<u8>,
+        ranges: &[(usize, usize)],
+        stop: &AtomicBool,
+    ) -> Result<Vec<u8>> {
+        if index >= meta.count() || data.len() != meta.piece_size(index) || self.v2_wire {
+            return Err("Invalid partial piece".into());
+        }
+        let mut spans = Vec::new();
+        let mut end = 0;
+        for &(start, length) in ranges {
+            if start < end
+                || start
+                    .checked_add(length)
+                    .is_none_or(|last| last > data.len())
+            {
+                return Err("Invalid partial piece".into());
+            }
+            end = start + length;
+            spans.extend(
+                (start..end)
+                    .step_by(BLOCK)
+                    .map(|offset| (offset, (end - offset).min(BLOCK))),
+            );
+        }
+        if spans.is_empty() {
+            return if meta.verify(index, &data) {
+                Ok(data)
+            } else {
+                Err("Piece hash mismatch".into())
+            };
+        }
+        if !self.ahead.is_empty() {
+            return Err("Peer pipeline skipped a requested piece".into());
+        }
+        self.ready_for(meta, index, stop)?;
+        if needs_hashes(meta, index) {
+            return Err("V2 hash mismatch".into());
+        }
+        self.ahead.push_front(Blocks {
+            index,
+            size: data.len(),
+            data,
+            received: vec![false; spans.len()],
+            spans: Some(spans),
+            next: 0,
+            pending: 0,
+        });
+        self.download_piece(meta, index, &mut |_| None, stop)
+    }
     fn ready_for(&mut self, meta: &Meta, index: usize, stop: &AtomicBool) -> Result<()> {
         if index >= meta.count() {
             return Err("Invalid piece index".into());
@@ -1421,13 +1504,11 @@ impl Peer {
             if self.done.as_ref().is_some_and(|done| done.has(index)) {
                 let mut cancels = Vec::new();
                 for block in (0..current.next).filter(|block| !current.received[*block]) {
-                    let offset = block * BLOCK;
+                    let (offset, length) = current.span(block);
                     let mut cancel = Vec::with_capacity(12);
                     cancel.extend_from_slice(&(index as u32).to_be_bytes());
                     cancel.extend_from_slice(&(offset as u32).to_be_bytes());
-                    cancel.extend_from_slice(
-                        &((current.size - offset).min(BLOCK) as u32).to_be_bytes(),
-                    );
+                    cancel.extend_from_slice(&(length as u32).to_be_bytes());
                     cancels.extend(frame(8, &cancel)?);
                 }
                 write_all_deadline(
@@ -1518,8 +1599,7 @@ impl Peer {
                         _ => break,
                     }
                 };
-                let offset = target.next * BLOCK;
-                let length = (target.size - offset).min(BLOCK);
+                let (offset, length) = target.span(target.next);
                 let waiting = Instant::now();
                 if in_flight {
                     if !super::RateGate::try_reserve_pair(
@@ -1605,11 +1685,11 @@ impl Peer {
                 } else {
                     self.ahead.iter_mut().find(|ahead| ahead.index == piece)
                 };
-                let Some(target) = target.filter(|target| {
-                    offset.is_multiple_of(BLOCK)
-                        && offset < target.size
-                        && payload.len() - 8 == (target.size - offset).min(BLOCK)
-                        && offset / BLOCK < target.next
+                let Some((target, block)) = target.and_then(|target| {
+                    target
+                        .position(offset, payload.len() - 8)
+                        .filter(|block| *block < target.next)
+                        .map(|block| (target, block))
                 }) else {
                     return Err("Unsolicited or inconsistent piece block".into());
                 };
@@ -1621,9 +1701,9 @@ impl Peer {
                     );
                 }
                 super::add_payload(&self.counters.downloaded, (payload.len() - 8) as u64);
-                if !target.received[offset / BLOCK] {
+                if !target.received[block] {
                     target.data[offset..offset + payload.len() - 8].copy_from_slice(&payload[8..]);
-                    target.received[offset / BLOCK] = true;
+                    target.received[block] = true;
                     target.pending -= 1;
                     deadline = Instant::now() + timeout;
                     // A block of the next piece is that piece's progress,

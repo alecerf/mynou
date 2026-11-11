@@ -31,6 +31,7 @@ use control::RateGate;
 pub use control::{FilePriority, TorrentControl, TransferPolicy};
 pub use cross_seed::{
     CandidateLayout, CrossSeedRequest, MAX_CROSS_SEED_METADATA, ReuseSource, candidate_layout,
+    downloadable_extra,
 };
 pub use inspection::{MetadataFile, TorrentMetadata, inspect_metadata};
 pub use selection::{FileSelection, SelectionUpdate};
@@ -165,6 +166,8 @@ struct AnnounceState {
     in_flight: bool,
     next: Instant,
     retry_after: Instant,
+    /// When this tracker was first asked about the transfer here.
+    first: Option<Instant>,
     /// What the last answer said, for the transfer details.
     last_at: u64,
     last_error: Option<String>,
@@ -181,6 +184,7 @@ impl Default for AnnounceState {
             in_flight: false,
             next: Instant::now(),
             retry_after: Instant::now(),
+            first: None,
             last_at: 0,
             last_error: None,
             seeders: None,
@@ -208,6 +212,9 @@ struct Job {
     seed_queued: bool,
     index: Option<Arc<Mutex<index::TransferIndex>>>,
     cross_seed: Option<Arc<cross_seed::CrossSeed>>,
+    /// Added while this client runs, not restored: its trackers are asked
+    /// again quickly while they do not know it yet.
+    fresh: bool,
     source: Source,
     meta: Option<Arc<Meta>>,
     status: DownloadStatus,
@@ -1003,7 +1010,12 @@ fn transfer_state(job: &Job) -> &'static str {
         "ready"
     } else if job.status.selected_ready {
         "selected_ready"
-    } else if job.running && job.cross_seed.is_some() {
+    } else if job.running
+        && job
+            .cross_seed
+            .as_ref()
+            .is_some_and(|reuse| !reuse.fetching())
+    {
         "verifying"
     } else if job.running {
         "downloading"
@@ -1433,6 +1445,7 @@ fn load_job(config: &DownloadConfig, id: &str) -> Result<Job> {
                 seed_queued: false,
                 source,
                 cross_seed: None,
+                fresh: false,
                 meta: Some(Arc::new(meta)),
                 status,
                 running: false,
@@ -1492,6 +1505,7 @@ fn load_job(config: &DownloadConfig, id: &str) -> Result<Job> {
                 seed_queued: false,
                 meta: None,
                 cross_seed: None,
+                fresh: false,
                 source,
                 status: DownloadStatus {
                     id: id.to_owned(),
@@ -2012,6 +2026,7 @@ impl Client {
                 seed_queued: false,
                 meta: metadata,
                 cross_seed: None,
+                fresh: true,
                 source,
                 status: status.clone(),
                 running: false,
@@ -2196,8 +2211,12 @@ impl Client {
         )?;
         settle_seed_clock(job);
         job.paused = true;
-        // A cross-seed transfer reads another transfer's files: it has none of its own.
-        job.removing = Some(delete_files && job.cross_seed.is_none());
+        // A cross-seed transfer reads another transfer's files: its own are
+        // only the small extras it downloaded, useless without it.
+        job.removing = Some(match &job.cross_seed {
+            Some(reuse) => reuse.downloads(),
+            None => delete_files,
+        });
         job.retiring = true;
         job.cancel.store(true, Ordering::Release);
         job.status.message = "Removing".into();
@@ -2762,6 +2781,10 @@ fn resume_job(config: &DownloadConfig, job: &mut Job) -> Result<()> {
     Ok(())
 }
 
+/// While a new transfer's tracker answers with an error, it is asked again
+/// this often during the window after its first announce.
+const FAST_ANNOUNCE: Duration = Duration::from_secs(7);
+const FAST_ANNOUNCE_WINDOW: Duration = Duration::from_secs(600);
 struct AnnounceTask {
     id: String,
     url: String,
@@ -2822,7 +2845,11 @@ fn select_announce(
                 || job.persistence_failed.load(Ordering::Acquire)
                 || job.cancel.load(Ordering::Acquire)
                 || job.needs_rehash
-                || (job.cross_seed.is_some() && !job.status.ready)
+                || (job
+                    .cross_seed
+                    .as_ref()
+                    .is_some_and(|reuse| !reuse.fetching())
+                    && !job.status.ready)
                 || job.control.user_paused
                 || job.control.seed_limited
                 || job.failed
@@ -2859,6 +2886,7 @@ fn select_announce(
             };
             if let Some(event) = event {
                 state.in_flight = true;
+                state.first.get_or_insert(now);
                 *cursor = Some(id.clone());
                 return Some(AnnounceTask {
                     id: id.clone(),
@@ -2903,7 +2931,7 @@ fn announce(
         };
         if !Arc::ptr_eq(&job.cancel, &task.cancel)
             || (task.event != discovery::TrackerEvent::Stopped
-                && (!job.status.ready
+                && ((!job.status.ready && !reuse.as_ref().is_some_and(|reuse| reuse.fetching()))
                     || job.failed
                     || job.paused
                     || job.control.user_paused
@@ -2970,7 +2998,19 @@ fn announce(
                 }
             }
             Err(error) => {
-                state.next = Instant::now() + Duration::from_secs(30);
+                // A private tracker may not know a new torrent yet: ask again
+                // soon for a while, then wait as usual.
+                let unknown = job.fresh
+                    && !state.started
+                    && state
+                        .first
+                        .is_some_and(|first| first.elapsed() < FAST_ANNOUNCE_WINDOW);
+                state.next = Instant::now()
+                    + if unknown {
+                        FAST_ANNOUNCE
+                    } else {
+                        Duration::from_secs(30)
+                    };
                 state.retry_after = state.next;
                 state.last_error = Some(crate::integrations::report_text(&error, 256));
             }
@@ -3574,7 +3614,7 @@ fn download(
         .cross_seed
         .is_some();
     if seed_only {
-        return cross_seed::verify(config, jobs, stop, id);
+        return cross_seed::verify((config, jobs, stop, id), peer_id, policy);
     }
     let full = jobs
         .lock()
@@ -5112,6 +5152,7 @@ mod control_runtime_tests {
             needs_rehash: false,
             seed_queued: false,
             cross_seed: None,
+            fresh: false,
             source: Source {
                 original: format!("magnet:?xt=urn:btih:{id}"),
                 v1: meta.v1,
@@ -5178,6 +5219,69 @@ mod control_runtime_tests {
             max_seeding: 0,
             max_peers: 4,
         }
+    }
+
+    #[test]
+    fn a_new_transfer_asks_its_erroring_tracker_again_quickly_then_backs_off() {
+        let config = discovery_configuration();
+        // An unsupported scheme fails at once, as an unregistered torrent does.
+        let url = "wss://tracker.example/announce";
+        let jobs_with = |fresh| -> (Jobs, String) {
+            let mut job = discovery_job(7, 0);
+            job.fresh = fresh;
+            job.source.trackers = vec![url.into()];
+            let due = Instant::now() - Duration::from_secs(1);
+            job.announcements.insert(
+                url.into(),
+                AnnounceState {
+                    next: due,
+                    retry_after: due,
+                    ..AnnounceState::default()
+                },
+            );
+            let id = job.status.id.clone();
+            (
+                Arc::new(Mutex::new(BTreeMap::from([(id.clone(), job)]))),
+                id,
+            )
+        };
+        let ask = |jobs: &Jobs, id: &str| {
+            let task = select_announce(&config, jobs, &mut None).unwrap();
+            announce(&transport::Direct, task, 6881, [0; 20], jobs);
+            let map = jobs.lock().unwrap();
+            let state = &map[id].announcements[url];
+            assert!(state.last_error.is_some());
+            state.next.saturating_duration_since(Instant::now())
+        };
+        let (jobs, id) = jobs_with(true);
+        let wait = ask(&jobs, &id);
+        assert!(
+            wait > Duration::from_secs(5) && wait <= FAST_ANNOUNCE,
+            "{wait:?}"
+        );
+        // Still unknown once the window is over: the usual wait.
+        {
+            let mut map = jobs.lock().unwrap();
+            let state = map
+                .get_mut(&id)
+                .unwrap()
+                .announcements
+                .get_mut(url)
+                .unwrap();
+            state.first = Some(
+                Instant::now()
+                    .checked_sub(FAST_ANNOUNCE_WINDOW)
+                    .expect("uptime exceeds the window"),
+            );
+            state.next = Instant::now();
+            state.retry_after = Instant::now();
+        }
+        let wait = ask(&jobs, &id);
+        assert!(wait > Duration::from_secs(25), "{wait:?}");
+        // A transfer restored from an earlier run waits as usual at once.
+        let (jobs, id) = jobs_with(false);
+        let wait = ask(&jobs, &id);
+        assert!(wait > Duration::from_secs(25), "{wait:?}");
     }
 
     #[test]

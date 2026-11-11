@@ -233,6 +233,21 @@ never shown, logged or recorded.
 </details>
 
 <details>
+<summary><strong>Which releases are cross-seeded?</strong></summary>
+
+With cross-seed discovery on for a source, Mynou looks there for other
+releases of what it completed and seeds them from the same files, read-only.
+A candidate must be a v1 torrent whose videos match local files byte for byte:
+the whole release, or a single episode of a season pack you have (Mynou also
+searches the pack's season for them). Other files it lacks, such as an `.nfo`
+or a sample, are downloaded into its own folder up to **Settings → Downloads →
+Cross-seed extras** (50 MB by default); video is never downloaded, and every
+piece is verified before it is seeded. While the tracker of a new transfer
+answers with an error, as a private tracker does until it lists a new upload,
+Mynou asks it again every 7 seconds for 10 minutes, then every 30 seconds.
+</details>
+
+<details>
 <summary><strong>Plex does not show an imported title</strong></summary>
 
 Plex and Mynou must see the library at the same paths. If Plex sees it under

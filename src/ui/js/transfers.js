@@ -316,7 +316,7 @@ views.transfers = {
     const seen = new Set(first.map((item) => item.id));
     const all = [...first, ...transfersTail.items.filter((item) => !seen.has(item.id))];
     // What is still coming in: how many, how fast as measured here, and how much is left.
-    // A cross-seed only checks files already here: it downloads nothing.
+    // A cross-seed checks files already here and fetches at most a few small extras.
     const coming = all.filter((t) => !t.ready && !t.failed && !t.seed_only);
     const running = coming.filter((t) => !t.paused && t.running !== false);
     const speed = running.reduce((sum, t) => sum + rateOf(t), 0);

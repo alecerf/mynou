@@ -111,6 +111,8 @@ pub struct Config {
     pub downloads: DownloadConfig,
     pub download_policy: TransferPolicy,
     pub downloads_enabled: bool,
+    /// Bytes of missing small files (never video) a cross-seed may download.
+    pub cross_seed_missing_bytes: u64,
     pub poll_interval_ms: u64,
     pub lease_duration_secs: u64,
     pub workers: usize,
@@ -127,6 +129,9 @@ pub struct Config {
     pub requesters: crate::requesters::Settings,
     pub irc: crate::irc::Settings,
 }
+
+/// What a cross-seed may download by default: 50 MB of extras.
+const CROSS_SEED_MISSING_BYTES: u64 = 50_000_000;
 
 fn object(items: Vec<(&str, Value)>) -> Value {
     Value::Object(items.into_iter().map(|(k, v)| (k.into(), v)).collect())
@@ -179,6 +184,7 @@ pub fn default_json() -> Value {
                 ("upload_limit_bps", n(0)),
                 ("seed_ratio_milli", Value::Null),
                 ("seed_time_secs", Value::Null),
+                ("cross_seed_missing_bytes", n(CROSS_SEED_MISSING_BYTES)),
             ]),
         ),
         (
@@ -610,6 +616,12 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
         },
         download_policy: download_policy(d)?,
         downloads_enabled: boolean(d, "enabled", true)?,
+        cross_seed_missing_bytes: number(
+            d,
+            "cross_seed_missing_bytes",
+            CROSS_SEED_MISSING_BYTES,
+            10_000_000_000,
+        )?,
         poll_interval_ms,
         lease_duration_secs,
         workers,

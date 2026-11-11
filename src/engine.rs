@@ -639,7 +639,13 @@ impl Engine {
         source_id: &str,
         request: &crate::torrent::CrossSeedRequest,
     ) -> Result<Value> {
-        let status = self.native_client()?.cross_seed(source_id, request)?;
+        // Missing small files are downloaded within the configured bound.
+        let request = crate::torrent::CrossSeedRequest {
+            metadata: request.metadata.clone(),
+            mapping: request.mapping.clone(),
+            missing_limit: self.config.cross_seed_missing_bytes,
+        };
+        let status = self.native_client()?.cross_seed(source_id, &request)?;
         self.transfer(&status.id)
     }
 

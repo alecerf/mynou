@@ -38,7 +38,8 @@ impl Drop for ApiGuard {
 fn request(torrent: &Torrent, mapping: Option<Vec<usize>>) -> CrossSeedRequest {
     CrossSeedRequest {
         metadata: fs::read(&torrent.path).unwrap(),
-        mapping,
+        mapping: mapping.map(|mapping| mapping.into_iter().map(Some).collect()),
+        missing_limit: 0,
     }
 }
 fn fixture_bytes(length: usize) -> Vec<u8> {
@@ -408,7 +409,8 @@ fn mapped_cross_file_padding_reuse_uploads_and_survives_restart_without_media_wr
         .collect();
     let query = CrossSeedRequest {
         metadata: tracker.attach(&candidate),
-        mapping: Some(vec![2, 0, 3]),
+        mapping: Some(vec![Some(2), Some(0), Some(3)]),
+        missing_limit: 0,
     };
     assert!(
         seed.client
@@ -508,6 +510,7 @@ fn partial_match_never_announces_or_acquires_and_resume_reverifies() {
     let bad_request = CrossSeedRequest {
         metadata: tracker.attach(&bad),
         mapping: None,
+        missing_limit: 0,
     };
     seed.client.cross_seed(&source.id, &bad_request).unwrap();
     failed(&seed.client, &bad.id);
@@ -767,6 +770,7 @@ fn raising_a_seed_limit_requires_a_new_proof_before_advertising_changed_files() 
             &CrossSeedRequest {
                 metadata: tracker.attach(&target),
                 mapping: None,
+                missing_limit: 0,
             },
         )
         .unwrap();
@@ -986,6 +990,7 @@ fn malformed_mapping_metadata_and_disabled_optin_have_no_queue_side_effects() {
                 &CrossSeedRequest {
                     metadata,
                     mapping: None,
+                    missing_limit: 0,
                 },
             )
             .unwrap_err();
@@ -1004,7 +1009,8 @@ fn malformed_mapping_metadata_and_disabled_optin_have_no_queue_side_effects() {
                 &source.id,
                 &CrossSeedRequest {
                     metadata: vec![0; 262145],
-                    mapping: None
+                    mapping: None,
+                    missing_limit: 0,
                 }
             )
             .is_err()
@@ -1078,4 +1084,308 @@ fn a_seed_state_directory_retargeted_to_a_link_refuses_restart() {
     symlink(&moved_parent, ancestor).unwrap();
     fs::rename(&moved, cfg.state_dir.clone()).unwrap();
     assert!(Client::open(cfg).is_err());
+}
+
+/// A loopback HTTP tracker answering the n-th announce with `reply(n)`, and
+/// recording when each request line arrived.
+struct ScriptedTracker {
+    url: String,
+    requests: Arc<Mutex<Vec<(Instant, String)>>>,
+    stopped: Arc<AtomicBool>,
+    worker: Option<JoinHandle<()>>,
+}
+impl ScriptedTracker {
+    fn new(reply: impl Fn(usize) -> Vec<u8> + Send + 'static) -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let url = format!("http://{}/announce", listener.local_addr().unwrap());
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let stopped = Arc::new(AtomicBool::new(false));
+        let (record, stop) = (requests.clone(), stopped.clone());
+        let worker = thread::spawn(move || {
+            while !stop.load(Ordering::Acquire) {
+                let mut stream = match listener.accept() {
+                    Ok((stream, _)) => stream,
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        thread::sleep(Duration::from_millis(3));
+                        continue;
+                    }
+                    Err(error) => panic!("scripted tracker accept: {error}"),
+                };
+                stream.set_nonblocking(false).unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(2)))
+                    .unwrap();
+                let mut head = Vec::new();
+                while !head.ends_with(b"\r\n\r\n") && head.len() < 16_384 {
+                    let mut byte = [0];
+                    if stream.read_exact(&mut byte).is_err() {
+                        break;
+                    }
+                    head.push(byte[0]);
+                }
+                let line = String::from_utf8_lossy(&head)
+                    .lines()
+                    .next()
+                    .unwrap_or_default()
+                    .to_owned();
+                let body = {
+                    let mut requests = record.lock().unwrap();
+                    requests.push((Instant::now(), line));
+                    reply(requests.len())
+                };
+                let _ = write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len()
+                )
+                .and_then(|()| stream.write_all(&body));
+            }
+        });
+        Self {
+            url,
+            requests,
+            stopped,
+            worker: Some(worker),
+        }
+    }
+    /// Every announce is answered with this peer.
+    fn with_peer(port: u16) -> Self {
+        Self::new(move |_| {
+            let mut body = b"d8:intervali30e5:peers6:".to_vec();
+            body.extend_from_slice(&[127, 0, 0, 1]);
+            body.extend_from_slice(&port.to_be_bytes());
+            body.push(b'e');
+            body
+        })
+    }
+    fn attach(&self, torrent: &Torrent) -> Vec<u8> {
+        let bencode::Value::Dict(mut fields) =
+            bencode::parse(&fs::read(&torrent.path).unwrap()).unwrap()
+        else {
+            panic!("torrent");
+        };
+        fields.insert(
+            b"announce".to_vec(),
+            bencode::Value::Bytes(self.url.as_bytes().to_vec()),
+        );
+        bencode::encode(&bencode::Value::Dict(fields))
+    }
+    fn lines(&self) -> Vec<String> {
+        let requests = self.requests.lock().unwrap();
+        requests.iter().map(|(_, line)| line.clone()).collect()
+    }
+}
+impl Drop for ScriptedTracker {
+    fn drop(&mut self) {
+        self.stopped.store(true, Ordering::Release);
+        if let Some(worker) = self.worker.take() {
+            worker.join().unwrap();
+        }
+    }
+}
+
+/// A film whose source has only the video, and a candidate that adds an
+/// `.nfo` and a sample: the video's last piece also holds the `.nfo`'s start.
+struct Extras {
+    scratch: Scratch,
+    video: Vec<u8>,
+    source: Torrent,
+    candidate: Torrent,
+    extras: usize,
+}
+fn extras() -> Extras {
+    let scratch = scratch();
+    let video = fixture_bytes(3 * BLOCK + 100);
+    let nfo: Vec<u8> = (0..BLOCK + 500).map(|i| (i % 7) as u8 + b'a').collect();
+    let sample = payload(2_000, 3);
+    let source = Torrent::multiple(
+        &scratch.0,
+        "Movie.2020.1080p.WEB-GRP",
+        vec![(PathBuf::from("Movie.2020.1080p.WEB-GRP.mkv"), video.clone())],
+    );
+    let candidate = Torrent::multiple(
+        &scratch.0,
+        "Movie.2020.1080p.WEB-OTHER",
+        vec![
+            (PathBuf::from("Movie.2020.1080p.WEB-GRP.mkv"), video.clone()),
+            (PathBuf::from("Movie.2020.1080p.WEB-GRP.nfo"), nfo.clone()),
+            (PathBuf::from("Sample/movie-sample.mkv"), sample.clone()),
+        ],
+    );
+    Extras {
+        scratch,
+        video,
+        source,
+        candidate,
+        extras: nfo.len() + sample.len(),
+    }
+}
+
+#[test]
+fn a_candidate_missing_small_extras_downloads_only_them_and_reuses_the_video() {
+    let f = extras();
+    // Another client seeds the whole candidate; the tracker names it.
+    let swarm = Seeder::open(&f.scratch.0.join("swarm"), &[&f.candidate]);
+    let tracker = ScriptedTracker::with_peer(swarm.client.listen_port());
+    let seed = Seeder::open(&f.scratch.0.join("seed"), &[&f.source]);
+    let cfg = client_config(&seed.root, true);
+    let video_path = cfg.data_dir.join(&f.source.id).join(&f.source.files[0].0);
+    let modified = fs::metadata(&video_path).unwrap().modified().unwrap();
+    let query = |missing_limit: u64, mapping: Vec<Option<usize>>| CrossSeedRequest {
+        metadata: tracker.attach(&f.candidate),
+        mapping: Some(mapping),
+        missing_limit,
+    };
+    // Refused before anything is written: video left to download, or extras
+    // above the bound.
+    for (limit, mapping) in [
+        (u64::MAX, vec![None, None, None]),
+        (f.extras as u64 - 1, vec![Some(0), None, None]),
+    ] {
+        assert!(
+            seed.client
+                .cross_seed(&f.source.id, &query(limit, mapping))
+                .is_err()
+        );
+    }
+    assert!(seed.client.check(&f.candidate.id).is_err());
+    assert!(!cfg.data_dir.join(&f.candidate.id).exists());
+
+    seed.client
+        .cross_seed(
+            &f.source.id,
+            &query(f.extras as u64, vec![Some(0), None, None]),
+        )
+        .unwrap();
+    let status = ready(&seed.client, &f.candidate.id);
+    assert!(status.available_files.is_empty());
+    let transfer = seed.client.transfer(&f.candidate.id).unwrap();
+    assert_eq!(transfer.get("seed_only"), Some(&Value::Bool(true)));
+    // Exactly the extras came from the swarm: no byte of the video, not even
+    // the part of the piece it shares with the `.nfo`.
+    assert_eq!(
+        seed.client.transfer_stats(&f.candidate.id).unwrap().0,
+        f.extras as u64
+    );
+    let own = cfg.data_dir.join(&f.candidate.id);
+    for (path, bytes) in &f.candidate.files[1..] {
+        assert_eq!(&fs::read(own.join(path)).unwrap(), bytes);
+    }
+    assert!(!own.join(&f.candidate.files[0].0).exists());
+    assert_eq!(fs::read(&video_path).unwrap(), f.video);
+    assert_eq!(
+        fs::metadata(&video_path).unwrap().modified().unwrap(),
+        modified
+    );
+    // The tracker heard of the missing bytes, then of the completion.
+    let lines = tracker.lines();
+    assert!(
+        lines
+            .iter()
+            .any(|line| line.contains(&format!("left={}", f.candidate.total - 3 * BLOCK))),
+        "{lines:?}"
+    );
+    wait(|| {
+        tracker
+            .lines()
+            .iter()
+            .any(|line| line.contains("event=completed"))
+    });
+
+    // It seeds from both folders.
+    let leecher = Client::open(client_config(&f.scratch.0.join("leecher"), false)).unwrap();
+    leecher
+        .ensure(&f.candidate.magnet(seed.client.listen_port()))
+        .unwrap();
+    f.candidate.assert_files(&ready(&leecher, &f.candidate.id));
+    drop(leecher);
+
+    // After a restart, with the swarm gone, its own files are verified again
+    // and nothing is downloaded.
+    seed.client.pause(&f.candidate.id).unwrap();
+    drop(swarm);
+    drop(seed);
+    let seed = Client::open(cfg.clone()).unwrap();
+    seed.resume(&f.candidate.id).unwrap();
+    ready(&seed, &f.candidate.id);
+    // Removing it deletes only its extras.
+    seed.remove(&f.candidate.id, false).unwrap();
+    wait(|| seed.check(&f.candidate.id).is_err());
+    wait(|| !own.exists());
+    assert_eq!(fs::read(&video_path).unwrap(), f.video);
+}
+
+#[test]
+fn a_reused_video_that_disagrees_with_the_candidate_is_never_downloaded() {
+    let f = extras();
+    let swarm = Seeder::open(&f.scratch.0.join("swarm"), &[&f.candidate]);
+    let tracker = ScriptedTracker::with_peer(swarm.client.listen_port());
+    // Same length, but the video's last byte differs: only the piece it
+    // shares with the `.nfo` can tell.
+    let mut video = f.video.clone();
+    *video.last_mut().unwrap() ^= 1;
+    let source = Torrent::multiple(
+        &f.scratch.0,
+        "Movie.2020.1080p.WEB-ALT",
+        vec![(PathBuf::from("Movie.2020.1080p.WEB-ALT.mkv"), video)],
+    );
+    let seed = Seeder::open(&f.scratch.0.join("seed"), &[&source]);
+    seed.client
+        .cross_seed(
+            &source.id,
+            &CrossSeedRequest {
+                metadata: tracker.attach(&f.candidate),
+                mapping: Some(vec![Some(0), None, None]),
+                missing_limit: f.extras as u64,
+            },
+        )
+        .unwrap();
+    wait(|| {
+        seed.client.transfer(&f.candidate.id).unwrap().get("failed") == Some(&Value::Bool(true))
+    });
+    let transfer = seed.client.transfer(&f.candidate.id).unwrap();
+    assert_eq!(transfer.get("ready"), Some(&Value::Bool(false)));
+    // Each try asked only for the extras' bytes.
+    let downloaded = seed.client.transfer_stats(&f.candidate.id).unwrap().0;
+    assert!(downloaded <= 3 * f.extras as u64, "{downloaded}");
+    let error = seed.client.check(&f.candidate.id).unwrap_err();
+    assert!(error.contains("video is never downloaded"), "{error}");
+}
+
+#[test]
+fn a_new_transfer_is_announced_again_quickly_while_its_tracker_does_not_know_it() {
+    let scratch = scratch();
+    let bytes = fixture_bytes(BLOCK + 9);
+    let source = Torrent::single(&scratch.0, "source.bin", bytes.clone());
+    let target = Torrent::single(&scratch.0, "fresh-target.bin", bytes);
+    // A private tracker that registers the torrent only after a while.
+    let tracker = ScriptedTracker::new(|n| {
+        if n == 1 {
+            b"d14:failure reason20:unregistered torrente".to_vec()
+        } else {
+            b"d8:intervali1800e5:peers0:e".to_vec()
+        }
+    });
+    let seed = Seeder::open(&scratch.0.join("seed"), &[&source]);
+    seed.client
+        .cross_seed(
+            &source.id,
+            &CrossSeedRequest {
+                metadata: tracker.attach(&target),
+                mapping: None,
+                missing_limit: 0,
+            },
+        )
+        .unwrap();
+    ready(&seed.client, &target.id);
+    wait(|| tracker.requests.lock().unwrap().len() >= 2);
+    let requests = tracker.requests.lock().unwrap().clone();
+    let gap = requests[1].0 - requests[0].0;
+    // Well before the usual 30 seconds after an error.
+    assert!(
+        gap >= Duration::from_secs(6) && gap < Duration::from_secs(12),
+        "{gap:?}"
+    );
+    assert!(requests[1].1.contains("event=started"), "{requests:?}");
 }
