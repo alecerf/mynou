@@ -1,4 +1,4 @@
-import { label, dateTime, toneOf, qualityOf, episodeCode, mediaLabel, yesNo, JOB_ICONS, jobTone } from './format.js';
+import { label, dateTime, toneOf, qualityOf, episodeCode, mediaLabel, yesNo, JOB_ICONS, jobTone, wantedNote } from './format.js';
 import { $, h, icon, reconcile } from './dom.js';
 import { Motion } from './motion.js';
 import { quality, factList, openDetail, act, skeleton, sheetPoster, sheetTabs, sheetSection, sheetFacts, catalogEntry, artFor, coverArt } from './components.js';
@@ -318,7 +318,11 @@ function episodeRow(series, episode, item, job, today, back) {
   let tone;
   let mark;
   if (item) { [state, tone] = libraryState(item); state ||= 'In your library'; mark = tone === 'bad' ? 'alert' : 'check'; }
-  else if (job) { state = job.last_error ? `${label('job', job.state)} · ${job.last_error}` : label('job', job.state); tone = jobTone(job.state); mark = JOB_ICONS[job.state] ?? 'clock'; }
+  else if (job) {
+    state = job.state === 'wanted' ? `${label('job', job.state)} · ${wantedNote(job)}`
+      : job.last_error ? `${label('job', job.state)} · ${job.last_error}` : label('job', job.state);
+    tone = jobTone(job.state); mark = JOB_ICONS[job.state] ?? 'clock';
+  }
   else if (!aired) { state = episode.air_date ? `Airs ${episode.air_date}` : 'Not aired yet'; tone = ''; mark = 'clock'; }
   else { state = episode.monitored === false ? 'Missing · not monitored' : 'Missing'; tone = 'warn'; mark = 'alert'; }
   const open = item ? () => openLibraryEntry(item, { label: 'All episodes', run: back }) : null;

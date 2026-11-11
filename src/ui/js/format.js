@@ -8,7 +8,7 @@ export const WORKING = new Set(['processing', 'importing']);
 const LABELS = {
   job: {
     queued: 'Waiting', processing: 'Looking for a release', downloading: 'Downloading', importing: 'Adding to the library',
-    imported: 'Imported', ready: 'In your library', failed: 'Failed', cancelled: 'Cancelled',
+    imported: 'Imported', ready: 'In your library', wanted: 'Wanted', failed: 'Failed', cancelled: 'Cancelled',
   },
   transfer: {
     queued: 'Queued', downloading: 'Downloading', verifying: 'Verifying', selected_ready: 'Selected files ready', ready: 'Complete',
@@ -66,8 +66,22 @@ export const dateTime = (() => {
 const toneFor = (state) =>
   state === 'ready' || state === 'imported' ? 'ok' : state === 'failed' || state === 'cancelled' ? 'bad' : 'warn';
 
-export const JOB_ICONS = { queued: 'clock', processing: 'search', downloading: 'down', importing: 'library', imported: 'check', ready: 'check', failed: 'alert', cancelled: 'close' };
+export const JOB_ICONS = { queued: 'clock', processing: 'search', downloading: 'down', importing: 'library', imported: 'check', ready: 'check', wanted: 'clock', failed: 'alert', cancelled: 'close' };
 export const jobTone = (state) => (state === 'downloading' || state === 'importing' ? 'accent' : toneFor(state));
+
+// Release dates are days; they read the same in every time zone.
+const releaseDay = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeZone: 'UTC' });
+/** A wanted film that cannot be found before its release date. */
+export const notYetAvailable = (job) => job.state === 'wanted' && timeOf(job.availability?.at) > Date.now();
+/** The day a wanted film can be found from, in words. */
+export const availableOn = (job) => releaseDay.format(timeOf(job.availability?.at));
+/** A job's state in words; a wanted film not out yet says so. */
+export const jobLabel = (job) => (notYetAvailable(job) ? 'Not yet available' : label('job', job.state));
+/** What a wanted title waits for: its release, or its next search. */
+export function wantedNote(job) {
+  if (notYetAvailable(job)) return `out ${availableOn(job)}`;
+  return timeOf(job.next_attempt_at) > Date.now() ? `searched again ${relativeTime(job.next_attempt_at)}` : 'searched again soon';
+}
 const hashOf = (text) => {
   let hash = 0;
   for (const char of String(text)) hash = (hash * 31 + char.codePointAt(0)) >>> 0;

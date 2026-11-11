@@ -28,6 +28,28 @@ impl Default for Monitoring {
     }
 }
 
+/// The search of wanted titles, those with no acceptable release yet.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Wanted {
+    /// Each wanted title is searched at most once per interval.
+    pub interval_secs: u64,
+    /// Titles searched in one hourly pass, spread evenly over the hour.
+    pub titles_per_pass: u32,
+    /// Days after a film's first theatrical release after which it counts as
+    /// released, when TMDB gives no earlier digital, physical or TV release.
+    pub theatrical_delay_days: u32,
+}
+
+impl Default for Wanted {
+    fn default() -> Self {
+        Self {
+            interval_secs: 21_600,
+            titles_per_pass: 20,
+            theatrical_delay_days: 90,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PathMapping {
     pub mynou_prefix: String,
@@ -120,6 +142,7 @@ pub struct Config {
     pub minimum_seeders: u64,
     pub selection: crate::selection::SelectionConfig,
     pub monitoring: Monitoring,
+    pub wanted: Wanted,
     pub series_packs_enabled: bool,
     /// Install published updates in the background, the way Plex does.
     pub updates_automatic: bool,
@@ -158,6 +181,14 @@ pub fn default_json() -> Value {
                 ("enabled", false.into()),
                 ("interval_secs", n(3600)),
                 ("max_checks", n(32)),
+            ]),
+        ),
+        (
+            "wanted",
+            object(vec![
+                ("interval_secs", n(21_600)),
+                ("titles_per_pass", n(20)),
+                ("theatrical_delay_days", n(90)),
             ]),
         ),
         (
@@ -415,6 +446,27 @@ fn monitoring(value: &Value) -> Result<Monitoring> {
     })
 }
 
+fn wanted(value: &Value) -> Result<Wanted> {
+    let defaults = Wanted::default();
+    let Some(section) = value.get("wanted") else {
+        return Ok(defaults);
+    };
+    expect_object(section)?;
+    let interval_secs = number(section, "interval_secs", defaults.interval_secs, 2_592_000)?;
+    let titles_per_pass = number(section, "titles_per_pass", 20, 120)? as u32;
+    if interval_secs < 3_600 || titles_per_pass == 0 {
+        return Err(
+            "Configuration: wanted requires interval_secs between 3600 and 2592000 and titles_per_pass between 1 and 120"
+                .into(),
+        );
+    }
+    Ok(Wanted {
+        interval_secs,
+        titles_per_pass,
+        theatrical_delay_days: number(section, "theatrical_delay_days", 90, 730)? as u32,
+    })
+}
+
 fn download_policy(downloads: &Value) -> Result<TransferPolicy> {
     let policy = Value::Object(
         [
@@ -629,6 +681,7 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
         minimum_seeders: number(v, "minimum_seeders", 1, 1000000)?,
         selection,
         monitoring: monitoring(v)?,
+        wanted: wanted(v)?,
         series_packs_enabled,
         updates_automatic,
         plex: Plex {

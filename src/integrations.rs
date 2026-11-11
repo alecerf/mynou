@@ -23,7 +23,13 @@ const MAX_ITEMS: usize = 100_000;
 /// total item or page count applies.
 pub(crate) const PAGE_SIZE: usize = 100;
 const SEARCH_BUDGET: Duration = Duration::from_secs(90);
-const SEARCH_EXPIRED: &str = "Search: indexer search exceeded its time budget";
+pub(crate) const SEARCH_EXPIRED: &str = "Search: indexer search exceeded its time budget";
+/// Searches that found nothing to take, or could not ask any indexer: the
+/// title stays wanted (see `crate::wanted`).
+pub const NO_RELEASE: &str =
+    "Search: no release satisfies the identity, seed count and selection profile";
+pub const NO_INDEXER: &str = "Search: no indexer configured";
+pub const NO_INDEXER_ANSWER: &str = "Search: no indexer returned a usable response";
 /// The outcome of a requester account poll that ran out of time, before or
 /// during a Plex request.
 pub(crate) const PLEX_POLL_DEADLINE: &str = "Plex account poll deadline reached";
@@ -1432,6 +1438,21 @@ fn fresh_catalog(
     Ok(value)
 }
 
+/// A film's TMDB details with its release dates in every country, which tell
+/// when it can be found (see `crate::wanted`). One request, never cached.
+pub(crate) fn movie_release_dates_before(
+    config: &Config,
+    id: u64,
+    deadline: Instant,
+) -> Result<Value> {
+    fresh_catalog(
+        config,
+        &format!("movie/{id}"),
+        &[("append_to_response", "release_dates".into())],
+        deadline,
+    )
+}
+
 /// Canonical TMDB title and year of one movie or series identity.
 pub(crate) fn catalog_canonical_before(
     config: &Config,
@@ -2537,7 +2558,7 @@ fn search_candidates_mode(
             .selection
             .profile(if pack { "episode" } else { &request.kind })?;
     if config.sources.is_empty() {
-        return Err("Search: no indexer configured".into());
+        return Err(NO_INDEXER.into());
     }
     if config.sources.len() > 1_000 {
         return Err("Search: too many indexers".into());
@@ -2629,7 +2650,7 @@ fn search_candidates_mode(
     }
     remaining_search_time(deadline)?;
     if result.successful == 0 {
-        return Err("Search: no indexer returned a usable response".into());
+        return Err(NO_INDEXER_ANSWER.into());
     }
     // A search can query several sources sharing one owner. Take its lease only
     // once: recursively taking read leases can deadlock a waiting revocation.
@@ -2780,9 +2801,7 @@ pub struct SelectedRelease {
 }
 
 fn selected_release(result: SearchResult) -> Result<SelectedRelease> {
-    let (_, candidate) = result
-        .best
-        .ok_or("Search: no release satisfies the identity, seed count and selection profile")?;
+    let (_, candidate) = result.best.ok_or(NO_RELEASE)?;
     Ok(SelectedRelease {
         url: candidate.release.url,
         title: candidate.release.title,

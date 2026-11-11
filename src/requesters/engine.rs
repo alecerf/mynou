@@ -294,7 +294,7 @@ impl Engine {
                     let job = jobs
                         .get(d.job_id.as_deref().ok_or("Requester: missing job")?)?
                         .ok_or("Requester: acquisition is missing")?;
-                    if !matches!(job.state.as_str(), "failed" | "cancelled") {
+                    if !matches!(job.state.as_str(), "failed" | "cancelled" | "wanted") {
                         return Err("Requester: acquisition is not retryable".into());
                     }
                     d.state = "reserved".into();
@@ -497,7 +497,7 @@ impl Engine {
                 // between its two writes. If requeuing fails, the demand stays
                 // reserved so that a later pass tries again.
                 if demand.job_id.as_deref() == Some(job.id.as_str())
-                    && matches!(job.state.as_str(), "failed" | "cancelled")
+                    && matches!(job.state.as_str(), "failed" | "cancelled" | "wanted")
                 {
                     match jobs.retry(&job.id) {
                         Ok(job) => job,
@@ -563,6 +563,9 @@ impl Engine {
                 }
                 if matches!(outcome, "ready" | "conflict" | "failed" | "cancelled") {
                     demand.outcome = outcome.into();
+                } else if outcome == "wanted" {
+                    // Still on its way: it waits for a release.
+                    demand.outcome = "active".into();
                 }
             }
             if demand != original {

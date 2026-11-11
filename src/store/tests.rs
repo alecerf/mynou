@@ -124,6 +124,8 @@ fn raw_job(number: u64, created_at: u64) -> Job {
         subtitles: Vec::new(),
         import_notes: Vec::new(),
         rejected_releases: Vec::new(),
+        searched_at: 0,
+        availability: None,
     }
 }
 

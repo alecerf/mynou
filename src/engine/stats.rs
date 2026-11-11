@@ -19,7 +19,16 @@ const WEEKS: i64 = 12;
 const FAILURES: usize = 5;
 
 /// What became of a film or episode, best first.
-const CATEGORIES: [&str; 5] = ["fetched", "in_plex", "in_progress", "failed", "cancelled"];
+const CATEGORIES: [&str; 7] = [
+    "fetched",
+    "in_plex",
+    "in_progress",
+    "wanted",
+    "not_yet_available",
+    "failed",
+    "cancelled",
+];
+type Counts = [u64; CATEGORIES.len()];
 
 #[derive(Default)]
 pub(crate) struct Cache {
@@ -43,12 +52,14 @@ struct Media {
     updated_at: u64,
 }
 
-fn category(state: &str, imported: bool) -> usize {
-    match state {
-        "ready" if imported => 0,
+fn category(job: &crate::store::Job, now: u64) -> usize {
+    match job.state.as_str() {
+        "ready" if !job.imports.is_empty() => 0,
         "ready" => 1,
-        "failed" => 3,
-        "cancelled" => 4,
+        "wanted" if crate::wanted::not_yet_available(job, now) => 4,
+        "wanted" => 3,
+        "failed" => 5,
+        "cancelled" => 6,
         _ => 2,
     }
 }
@@ -57,7 +68,7 @@ fn number(n: u64) -> Value {
     Value::Number(n as f64)
 }
 
-fn tally(counts: &[u64; 5], missing: Option<u64>) -> Value {
+fn tally(counts: &Counts, missing: Option<u64>) -> Value {
     let mut value = Value::object();
     for (name, n) in CATEGORIES.iter().zip(counts) {
         value.insert(*name, number(*n));
@@ -129,6 +140,7 @@ impl Engine {
         let mut failures = Vec::new();
         let mut after = None;
         let mut partial = false;
+        let now = crate::store::now();
         for page in 0.. {
             if page == MAX_PAGES {
                 partial = true;
@@ -144,7 +156,7 @@ impl Engine {
                 let found = Media {
                     id: job.id.clone(),
                     kind,
-                    category: category(&job.state, !job.imports.is_empty()),
+                    category: category(job, now),
                     updated_at: job.updated_at,
                 };
                 if job.state == "failed" {
@@ -168,7 +180,8 @@ impl Engine {
                 None => break,
             }
         }
-        let mut by_kind = BTreeMap::from([("movie", [0_u64; 5]), ("episode", [0_u64; 5])]);
+        let mut by_kind =
+            BTreeMap::from([("movie", Counts::default()), ("episode", Counts::default())]);
         let today = date::day(&date::today())?;
         // Weeks start on Monday; 1970-01-01 was a Thursday.
         let this_week = today - (today + 3).rem_euclid(7);
@@ -262,7 +275,7 @@ impl Engine {
             watchlist.insert("checked_at", number(plex.checked_at));
             match &plex.watchlist {
                 Ok(items) => {
-                    let mut films = [0_u64; 5];
+                    let mut films = Counts::default();
                     let mut missing = 0;
                     let (mut series, mut tracked) = (0_u64, 0_u64);
                     for item in items {
@@ -313,7 +326,7 @@ impl Engine {
                 if let Some(tmdb) = record.plan.request.tmdb_id.filter(|_| record.monitored) {
                     followed.insert(tmdb);
                 }
-                let mut counts = [0_u64; 5];
+                let mut counts = Counts::default();
                 let mut missing = 0;
                 let mut next: Option<&crate::series::Episode> = None;
                 for episode in &record.plan.episodes {
@@ -358,5 +371,33 @@ impl Engine {
             }
         }
         Ok((rows, followed))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wanted_and_not_yet_available_titles_count_apart_from_failed_ones() {
+        let now = 1_000;
+        let mut job = crate::wanted::tests::queued_film();
+        assert_eq!(CATEGORIES[category(&job, now)], "in_progress");
+        job.state = "wanted".into();
+        assert_eq!(CATEGORIES[category(&job, now)], "wanted");
+        job.availability = Some(crate::wanted::Availability {
+            at: now + 1,
+            checked_at: now,
+            basis: "digital".into(),
+        });
+        assert_eq!(CATEGORIES[category(&job, now)], "not_yet_available");
+        assert_eq!(CATEGORIES[category(&job, now + 1)], "wanted");
+        job.state = "failed".into();
+        assert_eq!(CATEGORIES[category(&job, now)], "failed");
+        let counts = tally(&[1, 2, 3, 4, 5, 6, 7], None);
+        for (name, n) in [("wanted", 4), ("not_yet_available", 5), ("failed", 6)] {
+            assert_eq!(counts.get(name).and_then(Value::as_u64), Some(n));
+        }
+        assert_eq!(counts.get("total").and_then(Value::as_u64), Some(28));
     }
 }

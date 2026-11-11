@@ -410,8 +410,12 @@ pub(crate) fn enabled(config: &Config) -> bool {
                     .any(|s| s.id == r.source && s.enabled && s.can_acquire())
         })
 }
+/// A queued job, or a wanted one that is not a film still to come out.
 pub(crate) fn eligible(job: &Job) -> bool {
-    job.state == "queued" && job.lease_id.is_none() && job.lease_until == 0 && unselected(job)
+    (job.state == "queued" || crate::wanted::routable(job, crate::store::now()))
+        && job.lease_id.is_none()
+        && job.lease_until == 0
+        && unselected(job)
 }
 
 pub(crate) fn waits_for_candidate(

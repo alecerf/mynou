@@ -606,6 +606,8 @@ impl Db<'_> {
                 subtitles: Vec::new(),
                 import_notes: Vec::new(),
                 rejected_releases: Vec::new(),
+                searched_at: 0,
+                availability: None,
                 id: random_id()?,
                 key: request.canonical_key(),
                 request,

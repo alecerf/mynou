@@ -63,6 +63,8 @@ pub(super) const T_MEDIA_RECENT: u8 = 0x44;
 pub(super) const T_MEDIA_BASE: u8 = 0x45;
 pub(super) const T_PENDING_CHILD: u8 = 0x46;
 pub(super) const T_JOB_DUE: u8 = 0x47;
+/// Wanted requests by the time of their next search, then identifier.
+pub(super) const T_WANTED: u8 = 0x48;
 
 pub(super) const FORMAT_KEY: Key = single(T_META, 0);
 pub(super) const COUNTS_KEY: Key = single(T_META, 1);
@@ -80,6 +82,9 @@ pub(super) const SETTINGS_KEY: Key = single(T_META, 13);
 pub(super) const SECRETS_KEY: Key = single(T_META, 14);
 /// The network access password hash and session key; null once removed.
 pub(super) const ACCESS_KEY: Key = single(T_META, 16);
+/// Present once the requests that failed for good without a release, before
+/// wanted titles existed, were made wanted.
+pub(super) const WANTED_ADOPTED_KEY: Key = single(T_META, 20);
 
 const fn single(table: u8, sub: u8) -> Key {
     let mut key = [0; 64];
@@ -181,6 +186,9 @@ pub(super) fn queue_key(created: u64, id: &[u8; 16]) -> Key {
 }
 pub(super) fn wait_key(wake: u64, created: u64, id: &[u8; 16]) -> Key {
     key(&[&[T_WAIT], &wake.to_be_bytes(), &created.to_be_bytes(), id])
+}
+pub(super) fn wanted_key(next_search: u64, id: &[u8; 16]) -> Key {
+    key(&[&[T_WANTED], &next_search.to_be_bytes(), id])
 }
 pub(super) fn group_key(group: &[u8; 16], episode: u32) -> Key {
     key(&[&[T_GROUP], group, &episode.to_be_bytes()])
@@ -491,14 +499,18 @@ pub(super) fn pack_transfers(job: &Job) -> Vec<&str> {
     found
 }
 
+/// Not active: a wanted request only waits for its release.
 pub(super) fn terminal(state: &str) -> bool {
-    matches!(state, "ready" | "failed" | "cancelled")
+    matches!(state, "ready" | "failed" | "cancelled" | "wanted")
 }
 
-/// A job the claim queue may hand out at some time.
+/// A job the claim queue may hand out at some time. A wanted request waits in
+/// its own schedule (`T_WANTED`) until the wanted search puts it back.
 pub(super) fn open(job: &Job) -> bool {
-    !matches!(job.state.as_str(), "ready" | "cancelled" | "staged")
-        && (job.state != "failed" || job.next_attempt_at > 0)
+    !matches!(
+        job.state.as_str(),
+        "ready" | "cancelled" | "staged" | "wanted"
+    ) && (job.state != "failed" || job.next_attempt_at > 0)
 }
 
 /// The first instant at which an open job may be claimed.
@@ -620,6 +632,9 @@ pub(super) fn owned(job: &Job, root: &Root) -> Result<BTreeMap<Key, Entry>> {
     inline(root_key(&id), &root.encode());
     if open(job) {
         inline(wait_key(wake(job), job.created_at, &id), &[]);
+    }
+    if job.state == "wanted" {
+        inline(wanted_key(job.next_attempt_at, &id), &[]);
     }
     if let Some(file) = &job.shared_file {
         let group = short("group", &[&file.id()]);
