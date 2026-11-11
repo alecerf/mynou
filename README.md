@@ -114,10 +114,11 @@ want Mynou to search.
 mynou serve
 ```
 
-Its data goes to `~/Library/Application Support/Mynou`, created on first
-start; use `--dir DIR` or `MYNOU_HOME` for another place. It listens on
-`127.0.0.1:8787` unless **Settings → Network** says otherwise; `--host` and
-`--port` replace that address for one run, such as
+Its data goes to `~/.local/share/mynou` (or `$XDG_DATA_HOME/mynou`), created
+on first start; use `--dir DIR` or `MYNOU_HOME` for another place.
+
+It listens on `127.0.0.1:8787` unless **Settings → Network** says otherwise;
+`--host` and `--port` replace that address for one run, such as
 `mynou serve --host 0.0.0.0 --port 9090`. Started that way with no password
 set, Mynou lets computers on your local network in without one, and nothing
 from other networks; once you set a password in **Settings → Network**, it
