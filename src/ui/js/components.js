@@ -1,5 +1,6 @@
 import { $, h, icon } from './dom.js';
 import { Motion } from './motion.js';
+import { react } from './cat.js';
 import { link } from './link.js';
 
 // Small pieces shared by the views: quality tags, fact lists, toasts, the detail
@@ -21,14 +22,14 @@ export const technical = (pairs) => h('details', { class: 'technical' }, h('summ
 export function toast(message, tone = 'ok') {
   const el = h('button', { type: 'button', class: 'toast', dataset: { tone }, title: 'Dismiss' }, icon(tone === 'ok' ? 'check' : 'alert'), h('span', {}, message));
   $('#toasts').append(el);
-  Motion.animate(el, [{ opacity: 0, transform: 'translateY(12px) scale(.96)' }, { opacity: 1, transform: 'none' }], { duration: 220 });
-  if (tone === 'ok') Motion.cat('success'); else Motion.nudge(el);
+  Motion.animate(el, [{ opacity: 0, transform: 'translateY(24px) scale(.9)' }, { opacity: 1, transform: 'none' }], { duration: 600, easing: Motion.bouncy() });
+  if (tone === 'ok') react('happy'); else { Motion.nudge(el); if (tone === 'bad') react('wince'); }
   let timer = 0;
   // The toast is gone from the page at once; only its picture fades.
   const dismiss = () => {
     clearTimeout(timer);
     if (!el.isConnected) return;
-    const leaving = Motion.animate(el, [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(8px) scale(.97)' }], { duration: 160, fill: 'forwards' });
+    const leaving = Motion.animate(el, [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(10px) scale(.94)', filter: 'blur(4px)' }], { duration: 220, fill: 'forwards' });
     el.inert = true;
     if (leaving) leaving.finished.then(() => el.remove(), () => el.remove()); else el.remove();
   };
@@ -163,10 +164,25 @@ export function sheetFacts(pairs, className = '') {
     h('div', {}, h('dt', {}, term), h('dd', {}, Array.isArray(value) ? value.join('\n') : value instanceof Node ? value : String(value)))));
 }
 
+/** Puts `text` on the clipboard. Over plain HTTP on the local network the
+    browser offers no clipboard API: a selected text is copied instead. */
+export async function copyText(text) {
+  if (window.isSecureContext && navigator.clipboard) { await navigator.clipboard.writeText(text); return; }
+  const area = h('textarea', { value: text, readOnly: true, 'aria-hidden': 'true' });
+  Object.assign(area.style, { position: 'fixed', inset: '0 auto auto 0', opacity: '0', pointerEvents: 'none' });
+  document.body.append(area);
+  area.select();
+  try {
+    if (!document.execCommand('copy')) throw new Error('Copy refused');
+  } finally {
+    area.remove();
+  }
+}
+
 /** Copies a text, such as a file path, when the operator asks for it. */
 export function copyButton(text, what = 'Path') {
   return h('button', { type: 'button', class: 'secondary small', onclick: async () => {
-    try { await navigator.clipboard.writeText(text); toast(`${what} copied`); } catch { toast('This browser does not allow copying here', 'bad'); }
+    try { await copyText(text); toast(`${what} copied`); } catch { toast('This browser does not allow copying here', 'bad'); }
   } }, icon('copy'), `Copy the ${what.toLowerCase()}`);
 }
 

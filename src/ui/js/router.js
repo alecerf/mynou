@@ -17,7 +17,7 @@ export const VIEWS = [
 const REQUEST_VIEW = ['requests', 'New request'];
 // Disk space is reached from the library and the transfers, and from the search.
 export const STORAGE_VIEW = ['storage', 'Storage'];
-// The service's log is reached from the overview's health panel and the search.
+// The service's log sits at the foot of the sidebar, above the settings, and in the phone's bottom bar.
 export const LOGS_VIEW = ['logs', 'Logs'];
 
 function show(hash) {
@@ -30,21 +30,29 @@ function show(hash) {
   // Source states now live beside their settings.
   if (name === 'sources') { history.replaceState(null, '', '#settings'); name = 'settings'; }
   if (!views[name]) name = 'dashboard';
-  const moved = currentView() !== name;
+  const from = currentView();
+  const moved = from !== name;
   const changed = moved || currentParam() !== param;
-  if (changed) views[currentView()]?.leave?.();
+  if (changed) views[from]?.leave?.();
   for (const section of document.querySelectorAll('.view')) section.hidden = section.id !== `view-${name}`;
   for (const link of document.querySelectorAll('a[data-view]')) {
     if (link.dataset.view === name) link.setAttribute('aria-current', 'page'); else link.removeAttribute('aria-current');
   }
-  const title = [...VIEWS, REQUEST_VIEW, STORAGE_VIEW, LOGS_VIEW].find(([id]) => id === name)[1];
+  const title = ORDER.find(([id]) => id === name)[1];
   setCurrentView(name, param);
   document.title = `${title} · Mynou`;
   views[name].render?.();
   Motion.nav();
-  // Another page of the same view, such as a settings page, enters alone,
-  // under a title and a menu that stay put.
-  if (changed) { Motion.enter(moved ? $(`#view-${name}`) : views[name].page?.() ?? $(`#view-${name}`)); scrollTo({ top: 0, behavior: 'instant' }); }
+  // The first page of a visit builds itself (see the motion layer).
+  if (!changed || !from) return;
+  scrollTo({ top: 0, behavior: 'instant' });
+  // A view rises in from below when it sits further down the menu, and comes
+  // down from above when it sits higher. Another page of the same view, such
+  // as a settings page, enters alone under a title that stays.
+  const index = (id) => ORDER.findIndex(([view]) => view === id);
+  Motion.enter(moved ? $(`#view-${name}`) : views[name].page?.() ?? $(`#view-${name}`), moved && index(name) < index(from));
 }
+// Every view in the order it is reached, for titles and the direction of a move.
+const ORDER = [...VIEWS.slice(0, -1), REQUEST_VIEW, STORAGE_VIEW, LOGS_VIEW, VIEWS.at(-1)];
 
 export const route = () => show(location.hash.slice(1));

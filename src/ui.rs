@@ -7,8 +7,10 @@ pub struct Asset {
     pub body: &'static [u8],
 }
 
-/// Same-origin only: no inline script or style, no frames, no forms.
-pub const CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+/// Same-origin only: no inline script or style sheet, no frames, no forms.
+/// Style attributes are allowed because Safari draws each `<select>` with one
+/// and logs a refusal for every menu otherwise; with `img-src` they load nothing.
+pub const CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self'; style-src-attr 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
 /// Pages and code are checked again on every load, so an update shows at once.
 const REVALIDATE: &str = "no-cache";
@@ -38,6 +40,7 @@ macro_rules! modules {
 
 /// The native modules `app.js` imports, served by name only.
 const MODULES: &[(&str, &str)] = modules![
+    "cat",
     "components",
     "dashboard",
     "dom",
@@ -47,7 +50,6 @@ const MODULES: &[(&str, &str)] = modules![
     "link",
     "logs",
     "motion",
-    "palette",
     "quality",
     "releases",
     "requests",

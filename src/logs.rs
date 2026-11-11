@@ -5,10 +5,16 @@
 //! caller. Under launchd, the service's own stdout and stderr go to
 //! [`OUTPUT`] beside it, which the log takes in and empties regularly.
 //!
+//! A file that rotation would drop goes to [`ARCHIVE`] instead, where the
+//! `logs` thread compresses it into one gzip file per day (UTC), kept
+//! [`ARCHIVE_DAYS`] days within [`ARCHIVE_LIMIT`]: enough to debug a problem
+//! noticed late, and all of it goes into the debug report.
+//!
 //! Before [`init`], and when Mynou runs in a terminal, records also go to
 //! stderr.
 use crate::{Result, json::Value};
 use std::{
+    collections::{BTreeMap, VecDeque},
     fmt,
     fs::{self, File},
     io::{Read, Seek, SeekFrom, Write},
@@ -58,6 +64,16 @@ pub const KEPT: usize = 4;
 pub const TOTAL_LIMIT: u64 = FILE_LIMIT * (KEPT as u64 + 1);
 /// The current file.
 pub const CURRENT: &str = "mynou.log";
+/// The folder of the log directory that holds the archives,
+/// `mynou-2026-11-11.log.gz`, one per day.
+pub const ARCHIVE: &str = "archive";
+/// Days kept in the archive, today included.
+pub const ARCHIVE_DAYS: i64 = 30;
+/// The most the archive takes on disk; the oldest days make room.
+pub const ARCHIVE_LIMIT: u64 = 100 << 20;
+/// Files set aside by rotation and not compressed yet; past this many, the
+/// oldest is dropped, as when nothing was archived.
+const WAITING_LIMIT: usize = 16;
 /// Where launchd writes the service's stdout and stderr.
 pub const OUTPUT: &str = "output.log";
 /// A record longer than this is cut.
@@ -72,6 +88,13 @@ const RETRY_AFTER: Duration = Duration::from_secs(30);
 /// The most entries one `GET /api/logs` returns, and their total text.
 pub const MAX_ENTRIES: usize = 1_000;
 const MAX_REPLY_BYTES: usize = 1 << 20;
+/// The most bars of the timeline `GET /api/logs` draws the log with.
+const TIMELINE_BARS: i64 = 60;
+/// The minutes a bar can span: the narrowest that fits the log in
+/// [`TIMELINE_BARS`] is used.
+const TIMELINE_STEPS: [i64; 14] = [
+    1, 2, 5, 10, 15, 30, 60, 120, 180, 360, 720, 1_440, 2_880, 10_080,
+];
 /// Replaces every hidden value.
 pub const REDACTED: &str = "[redacted]";
 
@@ -179,13 +202,18 @@ impl Writer {
     /// Shifts every file one place older, dropping the oldest.
     fn rotate(&mut self) -> std::io::Result<()> {
         self.file = None;
+        set_aside(&self.dir);
         for index in (0..KEPT).rev() {
             match fs::rename(numbered(&self.dir, index), numbered(&self.dir, index + 1)) {
                 Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e),
                 _ => {}
             }
         }
-        self.reopen()
+        self.reopen()?;
+        if let Some(archiver) = ARCHIVER.get() {
+            archiver.unpark();
+        }
+        Ok(())
     }
 
     /// Writes one complete line; false when it was dropped.
@@ -282,18 +310,25 @@ impl Writer {
             if !lines.is_empty() {
                 lines.remove(0);
             }
-            let note = format!("{skipped} earlier bytes of the service output were skipped");
-            if !self.write(&line(Level::Warn, "output", &note)) {
+            let note = line(
+                Level::Warn,
+                "output",
+                &format!("{skipped} earlier bytes of the service output were skipped"),
+            );
+            if !self.write(&note) {
                 count_dropped();
             }
+            keep(&note);
         }
         let mut folded = 0;
         for text in lines.into_iter().filter(|l| !l.trim().is_empty()) {
-            if self.write(&line(Level::Error, "output", text)) {
+            let record = line(Level::Error, "output", text);
+            if self.write(&record) {
                 folded += 1;
             } else {
                 count_dropped();
             }
+            keep(&record);
         }
         folded
     }
@@ -304,6 +339,10 @@ static LOGGER: Mutex<Option<Writer>> = Mutex::new(None);
 static ECHO: AtomicBool = AtomicBool::new(true);
 static ACTIVE: AtomicBool = AtomicBool::new(false);
 static DROPPED: AtomicU64 = AtomicU64::new(0);
+/// The `logs` thread, woken when rotation sets a file aside.
+static ARCHIVER: std::sync::OnceLock<std::thread::Thread> = std::sync::OnceLock::new();
+/// Held while the archive changes, and while the report takes its files.
+static ARCHIVING: Mutex<()> = Mutex::new(());
 
 fn logger() -> MutexGuard<'static, Option<Writer>> {
     LOGGER.lock().unwrap_or_else(|e| e.into_inner())
@@ -338,15 +377,19 @@ pub fn init(data_dir: &Path, echo: bool) -> Result<()> {
     ECHO.store(echo, Ordering::Release);
     ACTIVE.store(true, Ordering::Release);
     install_panic_hook();
-    std::thread::Builder::new()
+    let dir = directory(data_dir);
+    let thread = std::thread::Builder::new()
         .name("logs".into())
-        .spawn(|| {
+        .spawn(move || {
             loop {
-                std::thread::sleep(FOLD_EVERY);
+                // What an earlier run left waiting is archived first.
+                archive(&dir);
+                std::thread::park_timeout(FOLD_EVERY);
                 fold_output();
             }
         })
         .map_err(|e| format!("Logs: cannot start: {e}"))?;
+    let _ = ARCHIVER.set(thread.thread().clone());
     Ok(())
 }
 
@@ -375,8 +418,11 @@ pub fn record(level: Level, module: &str, args: fmt::Arguments<'_>) {
     };
     let line = line(level, source(module), &message);
     let active = active();
-    if active && !logger().as_mut().is_some_and(|w| w.write(&line)) {
-        count_dropped();
+    if active {
+        if !logger().as_mut().is_some_and(|w| w.write(&line)) {
+            count_dropped();
+        }
+        keep(&line);
     }
     if level <= Level::Info && ECHO.load(Ordering::Acquire) {
         if active {
@@ -455,6 +501,9 @@ fn install_panic_hook() {
             .unwrap_or(false);
         if !written {
             count_dropped();
+        }
+        if let Ok(mut recent) = RECENT.try_lock() {
+            recent.push(&line);
         }
         // In a terminal, the usual report follows. Under launchd it would only
         // come back through the output file: it goes there only when the log
@@ -586,7 +635,7 @@ fn irc(text: &str) -> String {
 }
 
 /// Whether a field or parameter named `key` holds a secret.
-fn secret_key(key: &str) -> bool {
+pub(crate) fn secret_key(key: &str) -> bool {
     let key = key.to_ascii_lowercase();
     if key.ends_with("_env") {
         return false;
@@ -735,38 +784,84 @@ fn urls(text: &str) -> String {
 /// The records shown by default.
 pub const DEFAULT_ENTRIES: usize = 200;
 
-/// `level` (the least severe shown, `info` by default) and `limit` (how
-/// many, newest first) of `GET /api/logs`.
-pub fn query(text: &str) -> Result<(Level, usize)> {
-    let mut level = Level::Info;
-    let mut limit = DEFAULT_ENTRIES;
+/// What `GET /api/logs` asks for.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Query {
+    /// The least severe level shown: `info` by default.
+    pub level: Level,
+    /// How many records, newest first.
+    pub limit: usize,
+    /// Text the message or the source holds, in lower case; empty for any.
+    pub text: String,
+    /// The one source shown, such as `torrent`; empty for every source.
+    pub source: String,
+}
+
+impl Query {
+    /// Whether a record of `source` saying `message` is asked for, whatever
+    /// its level.
+    pub fn matches(&self, source: &str, message: &str) -> bool {
+        (self.source.is_empty() || source == self.source)
+            && (self.text.is_empty()
+                || message.to_lowercase().contains(&self.text)
+                || source.to_lowercase().contains(&self.text))
+    }
+}
+
+/// `level`, `limit`, `q` (text to find) and `source` of `GET /api/logs`.
+pub fn query(text: &str) -> Result<Query> {
+    let mut query = Query {
+        level: Level::Info,
+        limit: DEFAULT_ENTRIES,
+        text: String::new(),
+        source: String::new(),
+    };
+    let decode = |value: &str, name: &str, most: usize| {
+        crate::torrent::url_decode(value)
+            .ok()
+            .filter(|text| text.chars().count() <= most)
+            .ok_or(format!(
+                "{name} must be percent-encoded text of at most {most} characters"
+            ))
+    };
     for pair in text.split('&').filter(|pair| !pair.is_empty()) {
         match pair.split_once('=').unwrap_or((pair, "")) {
             ("level", value) => {
-                level = Level::parse(value).ok_or("level must be error, warn, info or debug")?;
+                query.level =
+                    Level::parse(value).ok_or("level must be error, warn, info or debug")?;
             }
             ("limit", value) => {
-                limit = value
+                query.limit = value
                     .parse()
                     .ok()
                     .filter(|limit| (1..=MAX_ENTRIES).contains(limit))
                     .ok_or("limit must be a number from 1 to 1000")?;
             }
-            _ => return Err("Logs accept only level and limit".into()),
+            ("q", value) => query.text = decode(value, "q", 200)?.trim().to_lowercase(),
+            ("source", value) => query.source = decode(value, "source", 64)?.trim().to_owned(),
+            _ => return Err("Logs accept only level, limit, q and source".into()),
         }
     }
-    Ok((level, limit))
+    Ok(query)
 }
 
-/// The newest `limit` records at `minimum` or more severe, newest first, with
-/// the files and how much they hold.
-pub fn tail(dir: &Path, minimum: Level, limit: usize) -> Result<Value> {
-    let limit = limit.clamp(1, MAX_ENTRIES);
+/// The newest records the query asks for, newest first; how many records of
+/// each level match it; every source in the log; the files and the archive.
+pub fn tail(dir: &Path, query: &Query) -> Result<Value> {
+    let limit = query.limit.clamp(1, MAX_ENTRIES);
     let mut entries = Vec::new();
     let mut bytes = 0;
     let mut files = Vec::new();
     let mut total = 0;
     let mut truncated = false;
+    let mut counts = [0u64; 4];
+    let mut sources: BTreeMap<String, u64> = BTreeMap::new();
+    let mut newest = None;
+    let mut oldest = None;
+    // Records asked for, by level, in each minute; the minutes the log spans.
+    let mut minutes: BTreeMap<i64, [u64; 4]> = BTreeMap::new();
+    let mut span: Option<(i64, i64)> = None;
+    let mut day = ([0u8; 10], 0i64);
     for index in 0..=KEPT {
         let path = numbered(dir, index);
         let Ok(metadata) = fs::symlink_metadata(&path) else {
@@ -783,53 +878,172 @@ pub fn tail(dir: &Path, minimum: Level, limit: usize) -> Result<Value> {
         );
         file.insert("bytes", Value::Number(metadata.len() as f64));
         files.push(file);
-        if entries.len() >= limit || truncated {
-            continue;
-        }
         let Some(text) = read(&path)? else { continue };
+        let mut first = None;
         for raw in text.lines().rev() {
             let Some((at, level, source, message)) = parse(raw) else {
                 continue;
             };
-            if level > minimum {
+            if newest.is_none() {
+                newest = Some(at.to_owned());
+            }
+            first = Some(at);
+            match sources.get_mut(source) {
+                Some(count) => *count += 1,
+                None => {
+                    sources.insert(source.to_owned(), 1);
+                }
+            }
+            let at_minute = minute(at, &mut day);
+            if let Some(m) = at_minute {
+                span = Some(span.map_or((m, m), |(a, b)| (a.min(m), b.max(m))));
+            }
+            if !query.matches(source, message) {
                 continue;
             }
-            if entries.len() >= limit || bytes + message.len() > MAX_REPLY_BYTES {
-                truncated = bytes + message.len() > MAX_REPLY_BYTES;
-                break;
+            counts[level as usize] += 1;
+            if let Some(m) = at_minute {
+                minutes.entry(m).or_default()[level as usize] += 1;
+            }
+            if level > query.level || entries.len() >= limit || truncated {
+                continue;
+            }
+            if bytes + message.len() > MAX_REPLY_BYTES {
+                truncated = true;
+                continue;
             }
             bytes += message.len();
-            let mut entry = Value::object();
-            entry.insert("at", at);
-            entry.insert("level", level.name());
-            entry.insert("source", source);
-            entry.insert("message", message);
-            entries.push(entry);
+            entries.push(entry(at, level, source, message));
+        }
+        if let Some(at) = first {
+            oldest = Some(at.to_owned());
         }
     }
+    let mut by_level = Value::object();
+    for level in [Level::Error, Level::Warn, Level::Info, Level::Debug] {
+        by_level.insert(level.name(), Value::Number(counts[level as usize] as f64));
+    }
+    let sources = sources
+        .into_iter()
+        .map(|(name, count)| {
+            let mut source = Value::object();
+            source.insert("name", name);
+            source.insert("count", Value::Number(count as f64));
+            source
+        })
+        .collect();
     let mut value = Value::object();
-    value.insert("level", minimum.name());
+    value.insert("level", query.level.name());
     value.insert("entries", Value::Array(entries));
     value.insert("truncated", truncated);
+    value.insert("counts", by_level);
+    value.insert("sources", Value::Array(sources));
+    // The span of the log read: the page drops the records it is then sent
+    // that are not newer than the newest one read.
+    value.insert("newest", newest.map_or(Value::Null, Value::from));
+    value.insert("oldest", oldest.map_or(Value::Null, Value::from));
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |elapsed| {
+            i64::try_from(elapsed.as_secs() / 60).unwrap_or(0)
+        });
+    value.insert("timeline", timeline(span, &minutes, now));
     value.insert("files", Value::Array(files));
     value.insert("bytes", Value::Number(total as f64));
     value.insert("limit_bytes", Value::Number(TOTAL_LIMIT as f64));
     value.insert("dropped", Value::Number(dropped() as f64));
+    value.insert("archive", archive_usage(dir));
     Ok(value)
 }
 
-/// Every log file, oldest first, as one text.
-pub fn download(dir: &Path) -> Result<String> {
-    let mut text = String::new();
-    for index in (0..=KEPT).rev() {
-        if let Some(part) = read(&numbered(dir, index))? {
-            text.push_str(&part);
-            if !text.is_empty() && !text.ends_with('\n') {
-                text.push('\n');
-            }
+/// The minute since the epoch of a record written at `2026-11-11T08:15:30.123Z`.
+/// `day` holds the last date read and its day number: records come in runs
+/// of one day.
+fn minute(at: &str, day: &mut ([u8; 10], i64)) -> Option<i64> {
+    let bytes = at.as_bytes();
+    let number = |range: std::ops::Range<usize>| {
+        let digits = bytes.get(range)?;
+        digits
+            .iter()
+            .all(u8::is_ascii_digit)
+            .then(|| digits.iter().fold(0, |n, d| n * 10 + i64::from(d - b'0')))
+    };
+    if bytes.get(10) != Some(&b'T') || bytes.get(13) != Some(&b':') {
+        return None;
+    }
+    let (hour, min) = (number(11..13)?, number(14..16)?);
+    if hour > 23 || min > 59 {
+        return None;
+    }
+    if day.0 != bytes[..10] {
+        let number = crate::date::day(at.get(..10)?).ok()?;
+        day.0.copy_from_slice(&bytes[..10]);
+        day.1 = number;
+    }
+    Some(day.1 * 1_440 + hour * 60 + min)
+}
+
+/// How the records asked for spread over time: `start` (UTC), `step` in
+/// seconds, and for each bar the records of each level, most severe first.
+/// The bars run to now, from the oldest record or [`TIMELINE_BARS`] steps
+/// before now, whichever is earlier.
+fn timeline(span: Option<(i64, i64)>, minutes: &BTreeMap<i64, [u64; 4]>, now: i64) -> Value {
+    let Some((first, last)) = span else {
+        return Value::Null;
+    };
+    // A clock set back leaves the newest record ahead of now.
+    let last = last.max(now);
+    let fits = |step: i64| last.div_euclid(step) - first.div_euclid(step) < TIMELINE_BARS;
+    let step = TIMELINE_STEPS
+        .into_iter()
+        .find(|&step| fits(step))
+        .unwrap_or_else(|| (last - first) / (TIMELINE_BARS - 1) + 1);
+    // A young log still gets every bar: the timeline starts before it.
+    let start = first
+        .div_euclid(step)
+        .min(last.div_euclid(step) - (TIMELINE_BARS - 1))
+        * step;
+    let len = usize::try_from(last.div_euclid(step) - start / step + 1).unwrap_or(0);
+    let mut bars = vec![[0u64; 4]; len];
+    for (&at, counts) in minutes.range(start..) {
+        let Some(bar) = usize::try_from((at - start) / step)
+            .ok()
+            .and_then(|i| bars.get_mut(i))
+        else {
+            continue;
+        };
+        for (sum, count) in bar.iter_mut().zip(counts) {
+            *sum += count;
         }
     }
-    Ok(text)
+    let Ok(date) = crate::date::from_day(start.div_euclid(1_440)) else {
+        return Value::Null;
+    };
+    let time = start.rem_euclid(1_440);
+    let mut value = Value::object();
+    value.insert(
+        "start",
+        format!("{date}T{:02}:{:02}:00Z", time / 60, time % 60),
+    );
+    value.insert("step", Value::Number((step * 60) as f64));
+    value.insert(
+        "bars",
+        Value::Array(
+            bars.into_iter()
+                .map(|bar| Value::Array(bar.into_iter().map(|n| Value::Number(n as f64)).collect()))
+                .collect(),
+        ),
+    );
+    value
+}
+
+/// What the log takes on disk, all files together.
+pub fn size(dir: &Path) -> u64 {
+    (0..=KEPT)
+        .filter_map(|index| fs::symlink_metadata(numbered(dir, index)).ok())
+        .filter(fs::Metadata::is_file)
+        .map(|metadata| metadata.len())
+        .sum()
 }
 
 /// A log file's text, or `None` when there is none. A file that grew past
@@ -848,6 +1062,292 @@ fn read(path: &Path) -> Result<Option<String>> {
         .read_to_end(&mut bytes)
         .map_err(|e| format!("Logs: cannot read {}: {e}", path.display()))?;
     Ok(Some(String::from_utf8_lossy(&bytes).into_owned()))
+}
+
+/// One record as `GET /api/logs` and the `logs:LEVEL` topic show it.
+fn entry(at: &str, level: Level, source: &str, message: &str) -> Value {
+    let mut entry = Value::object();
+    entry.insert("at", at);
+    entry.insert("level", level.name());
+    entry.insert("source", source);
+    entry.insert("message", message);
+    entry
+}
+
+// Following --------------------------------------------------------------
+
+/// The most records kept in memory for the pages that follow the log, and
+/// their total length: enough for a burst between two pushes.
+const RECENT_LINES: usize = 1_000;
+const RECENT_BYTES: usize = 512 * 1024;
+
+/// The newest records, numbered in the order they were written.
+struct Recent {
+    lines: VecDeque<String>,
+    bytes: usize,
+    /// The number the next record takes.
+    next: u64,
+}
+
+impl Recent {
+    const fn new() -> Self {
+        Self {
+            lines: VecDeque::new(),
+            bytes: 0,
+            next: 0,
+        }
+    }
+
+    fn push(&mut self, line: &str) {
+        self.bytes += line.len();
+        self.lines.push_back(line.to_owned());
+        self.next += 1;
+        while self.lines.len() > RECENT_LINES || self.bytes > RECENT_BYTES {
+            let Some(old) = self.lines.pop_front() else {
+                break;
+            };
+            self.bytes -= old.len();
+        }
+    }
+
+    /// The records numbered `cursor` and after, oldest first; the cursor
+    /// after them; and how many of them had already left memory.
+    fn since(&self, cursor: u64) -> (Vec<Value>, u64, u64) {
+        let oldest = self.next - self.lines.len() as u64;
+        let entries = self
+            .lines
+            .iter()
+            .skip(usize::try_from(cursor.saturating_sub(oldest)).unwrap_or(usize::MAX))
+            .filter_map(|line| parse(line.trim_end_matches('\n')))
+            .map(|(at, level, source, message)| entry(at, level, source, message))
+            .collect();
+        (entries, self.next, oldest.saturating_sub(cursor))
+    }
+}
+
+static RECENT: Mutex<Recent> = Mutex::new(Recent::new());
+
+fn recent() -> MutexGuard<'static, Recent> {
+    RECENT.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Keeps a record for the pages that follow the log.
+fn keep(line: &str) {
+    recent().push(line);
+}
+
+/// The number the next record takes: where a page starts following the log.
+pub fn cursor() -> u64 {
+    recent().next
+}
+
+/// The records written since `cursor`, oldest first; the cursor to follow on
+/// from; and how many records went by too fast to be kept.
+pub fn written_since(cursor: u64) -> (Vec<Value>, u64, u64) {
+    recent().since(cursor)
+}
+
+// Archiving --------------------------------------------------------------
+
+fn archiving() -> MutexGuard<'static, ()> {
+    ARCHIVING.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Files of `folder` named `prefix…suffix`, sorted by name.
+fn named(folder: &Path, prefix: &str, suffix: &str) -> Vec<(String, PathBuf, u64)> {
+    let Ok(read) = fs::read_dir(folder) else {
+        return Vec::new();
+    };
+    let mut found: Vec<_> = read
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            let name = entry.file_name().into_string().ok()?;
+            let metadata = fs::symlink_metadata(entry.path()).ok()?;
+            (name.starts_with(prefix) && name.ends_with(suffix) && metadata.is_file())
+                .then(|| (name, entry.path(), metadata.len()))
+        })
+        .collect();
+    found.sort();
+    found
+}
+
+/// `mynou-2026-11-11.log.gz`: its day, when the name is one.
+fn archive_day(name: &str) -> Option<&str> {
+    let day = name.strip_prefix("mynou-")?.strip_suffix(".log.gz")?;
+    let bytes = day.as_bytes();
+    (bytes.len() == 10
+        && bytes[4] == b'-'
+        && bytes[7] == b'-'
+        && bytes
+            .iter()
+            .enumerate()
+            .all(|(i, b)| i == 4 || i == 7 || b.is_ascii_digit()))
+    .then_some(day)
+}
+
+/// The archives, oldest day first: `(day, path, bytes)`.
+fn archives(folder: &Path) -> Vec<(String, PathBuf, u64)> {
+    named(folder, "mynou-", ".log.gz")
+        .into_iter()
+        .filter_map(|(name, path, bytes)| Some((archive_day(&name)?.to_owned(), path, bytes)))
+        .collect()
+}
+
+/// Moves the oldest file, which rotation is about to drop, to the archive
+/// folder, where the `logs` thread compresses it.
+fn set_aside(dir: &Path) {
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let oldest = numbered(dir, KEPT);
+    if !fs::symlink_metadata(&oldest).is_ok_and(|m| m.is_file()) {
+        return;
+    }
+    let folder = dir.join(ARCHIVE);
+    if prepare(&folder).is_err() {
+        return;
+    }
+    let waiting = named(&folder, "waiting-", ".log");
+    for (_, path, _) in waiting
+        .iter()
+        .take((waiting.len() + 1).saturating_sub(WAITING_LIMIT))
+    {
+        let _ = fs::remove_file(path);
+    }
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let name = format!(
+        "waiting-{nanos:024}-{:06}.log",
+        NEXT.fetch_add(1, Ordering::Relaxed) % 1_000_000
+    );
+    let _ = fs::rename(&oldest, folder.join(name));
+}
+
+/// The day of a record, `2026-11-11`, from its time.
+fn record_day(line: &str) -> Option<&str> {
+    let day = line.get(..10)?;
+    archive_day(&format!("mynou-{day}.log.gz"))
+        .is_some()
+        .then_some(day)
+}
+
+/// Compresses what rotation set aside into the archive of each day it
+/// covers, oldest first, then keeps the archive within its bounds. A file
+/// that cannot be archived waits for the next turn.
+pub(crate) fn archive(dir: &Path) {
+    let folder = dir.join(ARCHIVE);
+    let _held = archiving();
+    for (_, path, _) in named(&folder, "waiting-", ".log") {
+        let Ok(Some(text)) = read(&path) else { break };
+        let mut days: Vec<(String, String)> = Vec::new();
+        for line in text.split_inclusive('\n') {
+            let day = record_day(line)
+                .map(str::to_owned)
+                .or_else(|| days.last().map(|(day, _)| day.clone()))
+                .unwrap_or_else(crate::date::today);
+            match days.last_mut() {
+                Some((last, records)) if *last == day => records.push_str(line),
+                _ => days.push((day, line.to_owned())),
+            }
+        }
+        let written = days.iter().all(|(day, records)| {
+            crate::store::private_options()
+                .append(true)
+                .create(true)
+                .open(folder.join(format!("mynou-{day}.log.gz")))
+                .and_then(|mut file| {
+                    file.write_all(&crate::gzip::compress(records.as_bytes()))?;
+                    file.sync_data()
+                })
+                .is_ok()
+        });
+        if !written {
+            break;
+        }
+        let _ = fs::remove_file(&path);
+    }
+    prune(&folder);
+}
+
+/// Drops the days older than [`ARCHIVE_DAYS`], then the oldest days while the
+/// archive takes more than [`ARCHIVE_LIMIT`].
+fn prune(folder: &Path) {
+    let today = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+        / 86_400;
+    if let Ok(first) = crate::date::from_day(today as i64 - ARCHIVE_DAYS + 1) {
+        prune_within(folder, &first, ARCHIVE_LIMIT);
+    }
+}
+
+/// Drops the days before `first`, then the oldest while over `limit` bytes.
+fn prune_within(folder: &Path, first: &str, limit: u64) {
+    let mut kept = Vec::new();
+    for (day, path, bytes) in archives(folder) {
+        if day.as_str() < first {
+            let _ = fs::remove_file(&path);
+        } else {
+            kept.push((path, bytes));
+        }
+    }
+    let mut total: u64 = kept.iter().map(|(_, bytes)| bytes).sum();
+    for (path, bytes) in kept {
+        if total <= limit {
+            break;
+        }
+        if fs::remove_file(&path).is_ok() {
+            total -= bytes;
+        }
+    }
+}
+
+/// What the archive holds: `bytes`, `days` and the oldest day, `since`.
+pub fn archive_usage(dir: &Path) -> Value {
+    let archives = archives(&dir.join(ARCHIVE));
+    let mut value = Value::object();
+    value.insert(
+        "bytes",
+        Value::Number(archives.iter().map(|(_, _, bytes)| bytes).sum::<u64>() as f64),
+    );
+    value.insert("days", Value::Number(archives.len() as f64));
+    value.insert(
+        "since",
+        archives
+            .first()
+            .map_or(Value::Null, |(day, _, _)| Value::from(day.as_str())),
+    );
+    value.insert("limit_bytes", Value::Number(ARCHIVE_LIMIT as f64));
+    value.insert("limit_days", Value::Number(ARCHIVE_DAYS as f64));
+    value
+}
+
+/// Every log file for the debug report, opened while the archive holds
+/// still: `(name, file, bytes)`, archives first, then the newest records.
+pub fn files(dir: &Path) -> Vec<(String, File, u64)> {
+    fold_output();
+    let _held = archiving();
+    let open = |name: String, path: &Path| {
+        let file = File::open(path).ok()?;
+        let bytes = file.metadata().ok().filter(fs::Metadata::is_file)?.len();
+        Some((name, file, bytes))
+    };
+    let mut found: Vec<_> = archives(&dir.join(ARCHIVE))
+        .into_iter()
+        .filter_map(|(day, path, _)| open(format!("{ARCHIVE}/mynou-{day}.log.gz"), &path))
+        .collect();
+    found.extend(
+        named(&dir.join(ARCHIVE), "waiting-", ".log")
+            .into_iter()
+            .filter_map(|(name, path, _)| open(format!("{ARCHIVE}/{name}"), &path)),
+    );
+    found.extend((0..=KEPT).rev().filter_map(|index| {
+        let path = numbered(dir, index);
+        let name = path.file_name()?.to_str()?.to_owned();
+        open(name, &path)
+    }));
+    found
 }
 
 /// `(time, level, source, message)` of one record.

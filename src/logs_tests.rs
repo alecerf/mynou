@@ -48,7 +48,10 @@ fn the_log_rotates_within_its_bound_and_keeps_the_newest_records() {
     assert!(sizes.iter().all(|&size| size <= FILE_LIMIT), "{sizes:?}");
     assert!(sizes.iter().sum::<u64>() <= TOTAL_LIMIT);
     assert!(!numbered(&dir.logs(), KEPT + 1).exists());
-    let text = download(&dir.logs()).unwrap();
+    let text: String = (0..=KEPT)
+        .rev()
+        .filter_map(|index| read(&numbered(&dir.logs(), index)).unwrap())
+        .collect();
     assert!(text.contains(&format!("record {:06} ", index - 1)));
     assert!(!text.contains("record 000000 "));
     // Oldest first, one record per line.
@@ -303,7 +306,8 @@ fn reading_filters_by_level_newest_first() {
             })
             .collect::<Vec<_>>()
     };
-    let warnings = tail(&logs, Level::Warn, 10).unwrap();
+    let read = |text: &str| tail(&logs, &query(text).unwrap()).unwrap();
+    let warnings = read("level=warn&limit=10");
     assert_eq!(
         messages(&warnings),
         [
@@ -319,27 +323,198 @@ fn reading_filters_by_level_newest_first() {
         Some(TOTAL_LIMIT as f64)
     );
     assert_eq!(
-        messages(&tail(&logs, Level::Debug, 2).unwrap()),
+        messages(&read("level=debug&limit=2")),
         [
             "error tunnel gave up",
             "warn indexers source unavailable: a: b"
         ]
     );
-    assert_eq!(messages(&tail(&logs, Level::Error, 10).unwrap()).len(), 2);
-    let info = tail(&logs, Level::Info, 10).unwrap();
+    assert_eq!(messages(&read("level=error")).len(), 2);
+    let info = read("level=info&limit=10");
     assert_eq!(
         field(&field(&info, "entries").as_array().unwrap()[0], "at").as_str(),
         Some("2026-11-11T01:00:03.000Z")
     );
-    assert_eq!(query("").unwrap(), (Level::Info, DEFAULT_ENTRIES));
-    assert_eq!(query("level=error&limit=5").unwrap(), (Level::Error, 5));
+    // Each level counts what matches, whatever level is shown.
+    let number = |value: &Value, key: &str| field(value, key).as_f64().unwrap() as u64;
+    let counts = field(&warnings, "counts");
+    assert_eq!(
+        ["error", "warn", "info", "debug"].map(|level| number(&counts, level)),
+        [2, 1, 1, 1]
+    );
+    let sources: Vec<_> = field(&warnings, "sources")
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| {
+            format!(
+                "{} {}",
+                field(s, "name").as_str().unwrap(),
+                number(s, "count")
+            )
+        })
+        .collect();
+    assert_eq!(sources, ["engine 1", "indexers 2", "irc 1", "tunnel 1"]);
+    // Text is found in the message or the source, whatever its case.
+    assert_eq!(
+        messages(&read("level=debug&q=UNAVAILABLE")),
+        ["warn indexers source unavailable: a: b"]
+    );
+    assert_eq!(
+        messages(&read("level=debug&q=tun")),
+        ["error tunnel gave up"]
+    );
+    let found = read("level=debug&source=indexers");
+    assert_eq!(messages(&found).len(), 2);
+    assert_eq!(number(&field(&found, "counts"), "error"), 0);
+    assert_eq!(messages(&read("level=debug&q=gave%20up")).len(), 1);
+    assert_eq!(field(&field(&found, "archive"), "days").as_f64(), Some(0.0));
+    // The span read, whatever the query keeps.
+    for value in [&warnings, &found] {
+        assert_eq!(
+            field(value, "newest").as_str(),
+            Some("2026-11-11T01:00:03.000Z")
+        );
+        assert_eq!(
+            field(value, "oldest").as_str(),
+            Some("2026-11-10T23:00:00.000Z")
+        );
+    }
+
+    assert_eq!(
+        query("").unwrap(),
+        Query {
+            level: Level::Info,
+            limit: DEFAULT_ENTRIES,
+            text: String::new(),
+            source: String::new()
+        }
+    );
+    let asked = query("level=error&limit=5&q=%20Gave%20Up%20&source=tunnel").unwrap();
+    assert_eq!(
+        (
+            asked.level,
+            asked.limit,
+            asked.text.as_str(),
+            asked.source.as_str()
+        ),
+        (Level::Error, 5, "gave up", "tunnel")
+    );
+    assert!(query(&format!("q={}", "x".repeat(201))).is_err());
+    assert!(query("q=%FF").is_err());
     assert!(query("level=trace").is_err());
     assert!(query("limit=0").is_err());
     assert!(query("limit=1001").is_err());
     assert!(query("since=1").is_err());
     // An empty directory reads as no record.
     let empty = Directory::new();
-    let none = tail(&empty.logs(), Level::Debug, 10).unwrap();
+    let none = tail(&empty.logs(), &query("level=debug").unwrap()).unwrap();
     assert_eq!(field(&none, "entries").as_array().unwrap().len(), 0);
-    assert_eq!(download(&empty.logs()).unwrap(), "");
+    assert_eq!(field(&none, "newest"), Value::Null);
+    assert_eq!(size(&empty.logs()), 0);
+}
+
+#[test]
+fn followers_get_each_new_record_once() {
+    let message = |entries: &[Value], i: usize| {
+        entries[i]
+            .get("message")
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+    };
+    let mut recent = Recent::new();
+    recent.push(&line(Level::Info, "torrent", "first"));
+    recent.push(&line(Level::Debug, "torrent", "detail"));
+    let (entries, cursor, missed) = recent.since(0);
+    assert_eq!((entries.len(), cursor, missed), (2, 2, 0));
+    assert_eq!(message(&entries, 0).as_deref(), Some("first"));
+    assert_eq!(
+        entries[1].get("level").and_then(Value::as_str),
+        Some("debug")
+    );
+    assert_eq!(
+        entries[0].get("source").and_then(Value::as_str),
+        Some("torrent")
+    );
+
+    recent.push(&line(Level::Error, "irc", "second"));
+    let (entries, cursor, _) = recent.since(cursor);
+    assert_eq!(message(&entries, 0).as_deref(), Some("second"));
+    assert_eq!(entries.len(), 1);
+    assert!(recent.since(cursor).0.is_empty());
+
+    // A follower left behind learns how many records went by unseen.
+    for i in 0..RECENT_LINES + 5 {
+        recent.push(&line(Level::Info, "torrent", &i.to_string()));
+    }
+    let (entries, next, missed) = recent.since(cursor);
+    assert_eq!((entries.len(), next, missed), (RECENT_LINES, 1_008, 5));
+    assert_eq!(message(&entries, 0).as_deref(), Some("5"));
+}
+
+#[test]
+fn rotation_archives_each_day_compressed_and_keeps_the_archive_bounded() {
+    let dir = Directory::new();
+    let logs = dir.logs();
+    let mut writer = Writer::open(&logs).unwrap();
+    let filler = "x".repeat(1_000);
+    let mut written = 0_u64;
+    let mut index = 0;
+    while written < TOTAL_LIMIT + 2 * FILE_LIMIT {
+        let record = line(Level::Info, "test", &format!("record {index:06} {filler}"));
+        assert!(writer.write(&record));
+        written += record.len() as u64;
+        index += 1;
+    }
+    let folder = logs.join(ARCHIVE);
+    let waiting = named(&folder, "waiting-", ".log").len();
+    assert!(waiting >= 1, "{waiting}");
+    // The live files keep their bound.
+    assert!(sizes(&logs).iter().sum::<u64>() <= TOTAL_LIMIT);
+
+    archive(&logs);
+    assert!(named(&folder, "waiting-", ".log").is_empty());
+    let days = archives(&folder);
+    assert_eq!(days.len(), 1);
+    assert_eq!(days[0].0, crate::date::today());
+    let text = String::from_utf8(crate::gzip::gunzip(&fs::read(&days[0].1).unwrap())).unwrap();
+    // The oldest records, in order, none lost between the archive and the live files.
+    let numbers: Vec<u32> = text
+        .lines()
+        .map(|l| l.split("record ").nth(1).unwrap()[..6].parse().unwrap())
+        .collect();
+    assert_eq!(numbers[0], 0);
+    assert!(numbers.windows(2).all(|pair| pair[1] == pair[0] + 1));
+    let live: String = (0..=KEPT)
+        .rev()
+        .filter_map(|index| read(&numbered(&logs, index)).unwrap())
+        .collect();
+    let first_live: u32 = live.split("record ").nth(1).unwrap()[..6].parse().unwrap();
+    assert_eq!(first_live, numbers.last().unwrap() + 1);
+    assert_eq!(
+        archive_usage(&logs).get("days").and_then(Value::as_f64),
+        Some(1.0)
+    );
+
+    // Days past the window go, then the oldest while over the bound.
+    let today = crate::date::today();
+    let oldest_kept = crate::date::add(&today, -(ARCHIVE_DAYS - 1)).unwrap();
+    let too_old = crate::date::add(&today, -ARCHIVE_DAYS).unwrap();
+    for day in [&oldest_kept, &too_old] {
+        fs::write(folder.join(format!("mynou-{day}.log.gz")), [0u8; 100]).unwrap();
+    }
+    fs::write(folder.join("notes.txt"), "kept").unwrap();
+    archive(&logs);
+    let kept: Vec<String> = archives(&folder)
+        .into_iter()
+        .map(|(day, _, _)| day)
+        .collect();
+    assert_eq!(kept, [oldest_kept.clone(), today.clone()]);
+    prune_within(&folder, &oldest_kept, 100);
+    let kept: Vec<String> = archives(&folder)
+        .into_iter()
+        .map(|(day, _, _)| day)
+        .collect();
+    assert!(kept.is_empty() || kept == [today], "{kept:?}");
+    assert!(folder.join("notes.txt").exists());
 }

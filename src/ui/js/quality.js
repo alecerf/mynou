@@ -129,12 +129,25 @@ function keyFor(label, taken) {
 // The page edits a copy of the saved selection; Save sends it with the other settings.
 let draft = null;
 let saved = '';
+let savedDraft = null;
+
+/** What differs from the saved selection: each default, and the profiles changed or added. */
+export function qualityEdits() {
+  if (!draft) return null;
+  const json = (value) => JSON.stringify(value ?? null);
+  return {
+    movie_profile: draft.movie_profile !== savedDraft.movie_profile,
+    episode_profile: draft.episode_profile !== savedDraft.episode_profile,
+    profiles: new Set(Object.keys(draft.profiles).filter((name) => json(draft.profiles[name]) !== json(savedDraft.profiles?.[name]))),
+  };
+}
 
 /** The Quality page as [title, about, rows] groups; `row` lays out one setting. */
 export function qualityGroups(document, row) {
   draft = structuredClone(document.selection ?? { profiles: { any: {} }, movie_profile: 'any', episode_profile: 'any' });
   draft.profiles ??= {};
   saved = JSON.stringify(draft);
+  savedDraft = JSON.parse(saved);
   const container = h('div', { class: 'quality-profiles' });
   const changed = () => container.dispatchEvent(new Event('input', { bubbles: true }));
   const defaults = h('div', { class: 'quality-defaults' });
@@ -210,7 +223,7 @@ function profileCard(name, row, changed, paint, open) {
         title: tags.length ? 'A default profile cannot be deleted' : undefined,
         onclick: () => { delete draft.profiles[name]; changed(); paint(null); },
       }, 'Delete')));
-  return h('details', { class: 'quality-profile', open },
+  return h('details', { class: 'quality-profile', open, dataset: { profile: name } },
     h('summary', {}, h('span', { class: 'quality-profile-head' }, title, ...tags.map((tag) => h('span', { class: 'badge', dataset: { tone: 'accent' } }, tag))), summary),
     body);
 }

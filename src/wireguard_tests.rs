@@ -31,7 +31,7 @@ fn bytes(text: &str) -> Vec<u8> {
 
 #[test]
 fn independent_reference_packets_include_nonce_endianness_and_padding() {
-    let file = std::fs::File::open(std::env::var("MYNOU_CRYPTO_FIXTURES").unwrap()).unwrap();
+    let file = std::fs::File::open(crate::crypto::reference_vectors()).unwrap();
     let mut data = String::new();
     file.take(1024 * 1024 + 1)
         .read_to_string(&mut data)

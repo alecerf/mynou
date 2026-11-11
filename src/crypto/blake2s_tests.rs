@@ -16,9 +16,7 @@ fn size(record: &Value) -> usize {
 }
 fn fixtures() -> Value {
     use std::io::Read;
-    let path = std::env::var("MYNOU_CRYPTO_FIXTURES")
-        .expect("CI must generate independent Python std reference vectors before running tests");
-    let file = std::fs::File::open(path).unwrap();
+    let file = std::fs::File::open(crate::crypto::reference_vectors()).unwrap();
     let mut data = String::new();
     file.take(1024 * 1024 + 1)
         .read_to_string(&mut data)

@@ -2,6 +2,7 @@ import { $ } from './dom.js';
 import { busy } from './components.js';
 import { Motion } from './motion.js';
 import { link } from './link.js';
+import { react, shy } from './cat.js';
 
 // Signing in from another computer on the network. The Mac running Mynou never
 // signs in; elsewhere the password buys an HttpOnly session cookie.
@@ -53,6 +54,12 @@ export async function signOut() {
 export function setupSession() {
   const dialog = $('#sign-in');
   dialog.addEventListener('cancel', (event) => event.preventDefault());
+  // The cats look away while a password is typed.
+  const password = $('input[name="password"]', dialog);
+  password.addEventListener('input', () => shy(password.value !== ''));
+  password.addEventListener('blur', () => shy(false));
+  password.addEventListener('focus', () => shy(password.value !== ''));
+  dialog.addEventListener('close', () => shy(false));
   $('#sign-in-form').addEventListener('submit', async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
@@ -67,6 +74,7 @@ export function setupSession() {
     } catch (error) {
       $('#sign-in-error').textContent = error.message;
       Motion.nudge(form);
+      react('wince');
     } finally { idle(); }
   });
   // A session that ended (expired, or a new password) closes the socket.

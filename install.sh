@@ -171,6 +171,10 @@ main() {
     printf '  Restart Mynou if it is running, to use this version.\n'
   fi
 
+  case ${SHELL-} in
+    */bash) shell=bash rc='~/.bash_profile' ;;
+    *) shell=zsh rc='~/.zshrc' ;;
+  esac
   case ":${PATH-}:" in
     *":$dir:"*)
       found=$(command -v mynou || true)
@@ -184,14 +188,14 @@ main() {
       if [ "$shown" != "$dir" ]; then
         line="export PATH=\"\$HOME${dir#"$HOME"}:\$PATH\""
       fi
-      case ${SHELL-} in
-        */bash) rc='~/.bash_profile' ;;
-        *) rc='~/.zshrc' ;;
-      esac
       printf '\n%s!%s %s is not on your PATH. Add this line to %s, then open a new terminal:\n\n    %s\n' \
         "$yellow" "$reset" "$shown" "$rc" "$line"
       ;;
   esac
+  if ! grep -qs 'mynou completion' "$HOME/${rc#\~/}"; then
+    printf '\nFor tab completion of mynou commands, add this line to %s:\n\n    eval "$(mynou completion --shell %s)"\n' \
+      "$rc" "$shell"
+  fi
 
   cat <<EOF
 

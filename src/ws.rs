@@ -9,6 +9,7 @@ use crate::{
     crypto::sha1,
     engine::Engine,
     json::{self, Value},
+    logs,
 };
 use std::{
     collections::BTreeMap,
@@ -47,14 +48,40 @@ const TOPICS: [(&str, &str, Duration); 10] = [
 ];
 static OPEN: AtomicUsize = AtomicUsize::new(0);
 
-/// A fixed topic, or `transfer:ID` for the details of one native transfer.
-fn topic(name: &str) -> Option<(String, String, Duration)> {
-    if let Some((topic, path, every)) = TOPICS.iter().find(|(topic, _, _)| *topic == name) {
-        return Some(((*topic).to_owned(), (*path).to_owned(), *every));
+/// What a socket pushes for one topic.
+enum Watch {
+    /// A route read again every `every`, sent when its reply changed.
+    Route {
+        path: String,
+        every: Duration,
+        due: Instant,
+        last: Option<String>,
+    },
+    /// The records written to the log from the subscription on, each once,
+    /// with what the log takes on disk.
+    Log { cursor: u64 },
+}
+
+/// A fixed topic, `transfer:ID` for the details of one native transfer, or
+/// `logs` for the log as it is written.
+fn topic(name: &str) -> Option<Watch> {
+    let route = |path: String, every| Watch::Route {
+        path,
+        every,
+        due: Instant::now(),
+        last: None,
+    };
+    if let Some((_, path, every)) = TOPICS.iter().find(|(topic, _, _)| *topic == name) {
+        return Some(route((*path).to_owned(), *every));
+    }
+    if name == "logs" {
+        return Some(Watch::Log {
+            cursor: logs::cursor(),
+        });
     }
     let id = name.strip_prefix("transfer:")?;
     ([40, 64].contains(&id.len()) && id.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')))
-        .then(|| (name.to_owned(), format!("/api/transfers/{id}"), FAST))
+        .then(|| route(format!("/api/transfers/{id}"), FAST))
 }
 
 pub type Route = fn(&Arc<Engine>, &str, &str, &[u8]) -> Result<(u16, Value)>;
@@ -260,13 +287,6 @@ fn call(engine: &Arc<Engine>, route: Route, message: &Value) -> String {
     reply(&id, status, &json::stringify(&value))
 }
 
-struct Watch {
-    path: String,
-    every: Duration,
-    due: Instant,
-    last: Option<String>,
-}
-
 /// Serves an upgraded socket until it closes, errors, the engine stops or
 /// the client is no longer `admitted`: a session that expired, or that a new
 /// password ended, closes the socket too.
@@ -340,18 +360,15 @@ pub fn serve(
                         let names = topics.as_array().filter(|a| a.len() <= MAX_TOPICS);
                         let names: Option<Vec<&str>> =
                             names.and_then(|a| a.iter().map(Value::as_str).collect());
-                        let wanted: Option<Vec<_>> =
-                            names.and_then(|names| names.iter().map(|n| topic(n)).collect());
+                        let wanted: Option<Vec<_>> = names.and_then(|names| {
+                            names.iter().map(|n| Some((*n, topic(n)?))).collect()
+                        });
                         match wanted {
                             Some(wanted) => {
-                                watches.retain(|name, _| wanted.iter().any(|(t, _, _)| t == name));
-                                for (name, path, every) in wanted {
-                                    watches.entry(name).or_insert(Watch {
-                                        path,
-                                        every,
-                                        due: Instant::now(),
-                                        last: None,
-                                    });
+                                watches.retain(|name, _| wanted.iter().any(|(t, _)| t == name));
+                                // A topic already pushed keeps its place.
+                                for (name, watch) in wanted {
+                                    watches.entry(name.to_owned()).or_insert(watch);
                                 }
                             }
                             None => send(
@@ -378,18 +395,51 @@ pub fn serve(
         }
         let now = Instant::now();
         for (name, watch) in &mut watches {
-            if now < watch.due {
-                continue;
-            }
-            watch.due = now + watch.every;
-            let (status, body) = match route(engine, "GET", &watch.path, &[]) {
-                Ok((status, value)) => (status, json::stringify(&value)),
-                Err(e) => (400, failure(&e)),
-            };
-            let text = format!("{{\"topic\":\"{name}\",\"status\":{status},\"data\":{body}}}");
-            if watch.last.as_deref() != Some(text.as_str()) && text.len() <= MAX_MESSAGE {
-                send(stream, 1, text.as_bytes())?;
-                watch.last = Some(text);
+            match watch {
+                Watch::Route {
+                    path,
+                    every,
+                    due,
+                    last,
+                } => {
+                    if now < *due {
+                        continue;
+                    }
+                    *due = now + *every;
+                    let (status, body) = match route(engine, "GET", path, &[]) {
+                        Ok((status, value)) => (status, json::stringify(&value)),
+                        Err(e) => (400, failure(&e)),
+                    };
+                    let text =
+                        format!("{{\"topic\":\"{name}\",\"status\":{status},\"data\":{body}}}");
+                    if last.as_deref() != Some(text.as_str()) && text.len() <= MAX_MESSAGE {
+                        send(stream, 1, text.as_bytes())?;
+                        *last = Some(text);
+                    }
+                }
+                Watch::Log { cursor } => {
+                    if logs::cursor() == *cursor {
+                        continue;
+                    }
+                    let (entries, next, missed) = logs::written_since(*cursor);
+                    *cursor = next;
+                    // Every level goes: the page counts them all and filters.
+                    let dir = logs::directory(&engine.config.data_dir);
+                    let mut data = Value::object();
+                    data.insert("entries", Value::Array(entries));
+                    data.insert("missed", Value::Number(missed as f64));
+                    data.insert("bytes", Value::Number(logs::size(&dir) as f64));
+                    data.insert("dropped", Value::Number(logs::dropped() as f64));
+                    data.insert("archive", logs::archive_usage(&dir));
+                    let text = format!(
+                        "{{\"topic\":\"{name}\",\"status\":200,\"data\":{}}}",
+                        json::stringify(&data)
+                    );
+                    // The memory kept is far below a message: this never skips.
+                    if text.len() <= MAX_MESSAGE {
+                        send(stream, 1, text.as_bytes())?;
+                    }
+                }
             }
         }
         if now.duration_since(heard) > IDLE_LIMIT {

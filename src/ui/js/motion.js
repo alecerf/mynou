@@ -7,7 +7,12 @@ export const Motion = (() => {
   const reduce = matchMedia('(prefers-reduced-motion: reduce)');
   const channels = new WeakMap();
   const progressValues = new Map();
-  const ease = 'cubic-bezier(.2,.75,.25,1)';
+  const ease = 'cubic-bezier(.22,1,.36,1)';
+  // The springs of the stylesheet, for animations started from here.
+  const token = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const springs = CSS.supports('transition-timing-function', 'linear(0, 1)');
+  const spring = () => (springs && token('--spring')) || ease;
+  const bouncy = () => (springs && token('--bouncy')) || ease;
   function animate(el, frames, options = {}, channel = 'response') {
     if (!el?.animate || reduce.matches) return null;
     let owned = channels.get(el);
@@ -17,8 +22,9 @@ export const Motion = (() => {
     owned.set(channel, animation);
     return animation;
   }
-  const enter = (view) =>
-    animate(view, [{ opacity: 0.72, transform: 'translateY(7px)' }, { opacity: 1, transform: 'none' }], { duration: 180 }, 'view');
+  /** A page that arrives rises into place, or comes down when `back`. */
+  const enter = (view, back = false) =>
+    animate(view, [{ opacity: 0, transform: `translateY(${back ? -20 : 20}px)` }, { opacity: 1, transform: 'none' }], { duration: 560 }, 'view');
   /** Positions before a change, for `afterLayout` to glide each child from. */
   function beforeLayout(root) {
     const positions = new Map();
@@ -40,7 +46,7 @@ export const Motion = (() => {
       if (Math.abs(x) + Math.abs(y) < 1) continue;
       // A long move gets a local response, not a journey across the screen.
       if (Math.hypot(x, y) > 350) animate(el, [{ opacity: 0.75, transform: 'translateY(5px)' }, { opacity: 1, transform: 'none' }], { duration: 160 }, 'layout');
-      else animate(el, [{ transform: `translate(${x}px, ${y}px)` }, { transform: 'none' }], { duration: 220 }, 'layout');
+      else animate(el, [{ transform: `translate(${x}px, ${y}px)` }, { transform: 'none' }], { duration: 480, easing: spring() }, 'layout');
     }
   }
   /** Sets a progress bar and, when its value changed, glides it from the old one. */
@@ -54,11 +60,12 @@ export const Motion = (() => {
     }
     progressValues.set(key, value);
   }
-  /** The pill under the current link; it slides once it has a first place. */
+  /** The pill under the current link of the sidebar, the foot's included;
+      it slides once it has a first place. */
   function nav() {
     const indicator = $('#nav-indicator');
     if (!indicator) return;
-    const selected = $('#nav [aria-current="page"]');
+    const selected = $('.sidebar .nav-link[aria-current="page"]');
     if (!selected?.offsetParent) { indicator.dataset.state = 'off'; delete indicator.dataset.placed; return; }
     indicator.dataset.state = 'on';
     indicator.style.width = `${selected.offsetWidth}px`;
@@ -71,7 +78,7 @@ export const Motion = (() => {
   function count(el, to, text) {
     cancelAnimationFrame(counts.get(el));
     if (reduce.matches || !Number.isFinite(to) || to <= 0) { el.textContent = text; return; }
-    const start = performance.now(), duration = 900;
+    const start = performance.now(), duration = 750;
     const step = (now) => {
       const t = Math.min(1, (now - start) / duration);
       el.textContent = t < 1 ? Math.round(to * (1 - (1 - t) ** 4)).toLocaleString() : text;
@@ -85,51 +92,46 @@ export const Motion = (() => {
     cancelAnimationFrame(counts.get(el));
     el.textContent = text;
   }
-  /** Cards that catch the light learn where the pointer is. */
-  const LIT = '.stat, .now, .panel, .history-chart, .series-stats, .sheet-highlights';
-  function spotlight() {
-    if (!matchMedia('(hover: hover)').matches) return;
-    addEventListener('pointermove', (event) => {
-      const card = event.target.closest?.(LIT);
-      if (!card) return;
-      const box = card.getBoundingClientRect();
-      card.style.setProperty('--mx', `${event.clientX - box.left}px`);
-      card.style.setProperty('--my', `${event.clientY - box.top}px`);
-    }, { passive: true });
-  }
   /** New content in place of old, as in a sheet that changes page. */
   function swap(el) {
-    animate(el, [{ opacity: 0.4, transform: 'translateX(10px)' }, { opacity: 1, transform: 'none' }], { duration: 200 }, 'swap');
+    animate(el, [{ opacity: 0.4, transform: 'translateX(14px)' }, { opacity: 1, transform: 'none' }], { duration: 420, easing: spring() }, 'swap');
   }
   /** Something changed state: a short pop draws the eye to it. */
   function pop(el) {
-    animate(el, [{ transform: 'scale(.7)', opacity: 0.4 }, { transform: 'scale(1.08)', offset: 0.6 }, { transform: 'none', opacity: 1 }], { duration: 300 }, 'pop');
+    animate(el, [{ transform: 'scale(.6)', opacity: 0.4 }, { transform: 'none', opacity: 1 }], { duration: 550, easing: bouncy() }, 'pop');
   }
   /** A number that changed rises into place. */
   function tick(el) {
-    animate(el, [{ opacity: 0.3, transform: 'translateY(0.35em)' }, { opacity: 1, transform: 'none' }], { duration: 260 }, 'tick');
+    animate(el, [{ opacity: 0.3, transform: 'translateY(0.45em)' }, { opacity: 1, transform: 'none' }], { duration: 450, easing: spring() }, 'tick');
   }
   /** Results that just arrived settle in reading order, never hidden while they do. */
   function arrive(elements) {
     [...elements].slice(0, 24).forEach((el, i) =>
-      animate(el, [{ opacity: 0.35, transform: 'translateY(10px)' }, { opacity: 1, transform: 'none' }], { duration: 260, delay: Math.min(i, 12) * 22, fill: 'backwards' }, 'arrive'));
+      animate(el, [{ opacity: 0, transform: 'translateY(16px) scale(.97)' }, { opacity: 1, transform: 'none' }], { duration: 520, easing: spring(), delay: Math.min(i, 12) * 28, fill: 'backwards' }, 'arrive'));
   }
   /** A refusal or a second step: a short shake, the way a field says no. */
   function nudge(el) {
     animate(el, [{ transform: 'none' }, { transform: 'translateX(-4px)', offset: 0.25 }, { transform: 'translateX(3px)', offset: 0.55 }, { transform: 'translateX(-1px)', offset: 0.8 }, { transform: 'none' }], { duration: 320 }, 'nudge');
   }
-  /** The cat answers: a hop for a success, a blink otherwise. */
-  function cat(pose = 'blink') {
-    for (const svg of document.querySelectorAll('svg.logo')) {
-      if (!svg.getClientRects().length) continue;
-      if (pose === 'success') animate(svg, [{ transform: 'none' }, { transform: 'translateY(-4px)', offset: 0.4 }, { transform: 'none' }], { duration: 300 }, 'cat');
-      const tail = $('.cat-tail', svg), eyes = $('.cat-eyes', svg);
-      if (tail && pose === 'success') animate(tail, [{ transform: 'none' }, { transform: 'translateX(-1px)', offset: 0.3 }, { transform: 'translateX(1px)', offset: 0.65 }, { transform: 'none' }], { duration: 320, easing: 'steps(2, end)' }, 'tail');
-      if (eyes) animate(eyes, [{ transform: 'scaleY(1)' }, { transform: 'scaleY(.08)', offset: 0.35 }, { transform: 'scaleY(.08)', offset: 0.5 }, { transform: 'scaleY(1)' }], { duration: 230 }, 'blink');
-    }
+  /** `el` drifts up and out of focus over the first `rems` of scrolling. Set
+      from here rather than by a scroll timeline: Safari now and then left the
+      blur on once the page was back at the top. */
+  function fadeOnScroll(el, rems) {
+    let queued = false;
+    const apply = () => {
+      queued = false;
+      const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+      const t = reduce.matches || !el.offsetParent ? 0 : Math.min(1, Math.max(0, scrollY / (rems * rem)));
+      if (t === 0) { el.style.removeProperty('opacity'); el.style.removeProperty('translate'); el.style.removeProperty('filter'); return; }
+      el.style.opacity = String(1 - t);
+      el.style.translate = `0 ${(-2.5 * t).toFixed(3)}rem`;
+      el.style.filter = `blur(${(10 * t).toFixed(2)}px)`;
+    };
+    addEventListener('scroll', () => { if (!queued) { queued = true; requestAnimationFrame(apply); } }, { passive: true });
+    apply();
   }
   reduce.addEventListener('change', () => { if (reduce.matches) for (const a of document.getAnimations()) a.cancel(); });
-  return { animate, enter, beforeLayout, afterLayout, progress, nav, count, settle, spotlight, swap, pop, tick, arrive, nudge, cat };
+  return { animate, enter, spring, bouncy, beforeLayout, afterLayout, progress, nav, count, settle, swap, pop, tick, arrive, nudge, fadeOnScroll };
 })();
 
 /** A progress bar element; `Motion.progress` sets its value. */
