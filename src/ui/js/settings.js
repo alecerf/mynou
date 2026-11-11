@@ -334,8 +334,13 @@ function readIndexerRules(row, indexer) {
   }
 }
 
-/** A web address the page may open: http or https only, never `javascript:`. */
-const webAddress = (text) => /^https?:\/\/[^\s/?#@]+/i.test(text) ? text : null;
+/** A web address the page may open: http or https only, never `javascript:`.
+    The scheme is written here rather than copied from the field, so what the
+    field holds can only ever follow it. */
+function webAddress(text) {
+  if (!/^https?:\/\/[^\s/?#@]+/i.test(text)) return null;
+  return (/^https:/i.test(text) ? 'https:' : 'http:') + text.slice(text.indexOf(':') + 1);
+}
 
 function indexerRow(indexer) {
   const keyName = indexer.api_key_env ?? 'MYNOU_INDEXER_API_KEY';
@@ -345,7 +350,7 @@ function indexerRow(indexer) {
     'aria-label': 'Indexer website', spellcheck: false, dataset: { field: 'site_url' } });
   site._check = () => (site.value.trim() && !webAddress(site.value.trim()) ? 'A full address, as in the address bar of a browser' : null);
   const address = h('input', { type: 'url', value: indexer.url ?? '', required: true, placeholder: 'Indexer address', 'aria-label': 'Indexer URL', spellcheck: false, dataset: { field: 'url' } });
-  address._check = () => (!address.value.trim() ? 'Type the indexer address' : address.validity.typeMismatch ? 'A full address, starting with https://' : null);
+  address._check = () => (!address.value.trim() ? 'Type the indexer address' : address.validity.typeMismatch ? 'A full web address, starting with https' : null);
   const name = h('input', { value: indexer.name ?? '', maxLength: 200, placeholder: 'Name', 'aria-label': 'Indexer name', dataset: { field: 'name' }, spellcheck: false });
   const showVisit = () => {
     const href = webAddress(site.value.trim());
