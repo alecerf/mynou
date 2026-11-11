@@ -13,9 +13,9 @@ optional. Leave out tokens, private paths and media names.
 Found a vulnerability? Do not open a public issue: follow
 [SECURITY.md](SECURITY.md).
 
-Opening issues and pull requests can be limited to collaborators. If GitHub
-does not let you open one, the project is not taking outside contributions at
-the moment; forking is always fine (see [LICENSE.md](LICENSE.md)).
+Anyone can open an issue. Pull requests are limited to collaborators: to
+propose a change, describe it in an issue. Forking is always fine (see
+[LICENSE.md](LICENSE.md)).
 
 ## Ground rules for code
 
