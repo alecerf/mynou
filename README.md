@@ -283,10 +283,15 @@ The executable is `target/release/mynou`.
 ## Contributing and security
 
 Bug reports and feature ideas are welcome through the
-[issue templates](https://github.com/alecerf/mynou/issues/new/choose). Product
-code stays on the Rust standard library: no dependency and no external helper.
-`unsafe` is allowed where the standard library offers no safe way, such as
-processor intrinsics.
+[issue templates](https://github.com/alecerf/mynou/issues/new/choose). Before
+changing code, read [CONTRIBUTING.md](CONTRIBUTING.md): product code stays on
+the Rust standard library, with no dependency and no external helper.
+Everyone follows the [code of conduct](CODE_OF_CONDUCT.md).
 
 Found a vulnerability? Do not open a public issue; follow
 [SECURITY.md](SECURITY.md).
+
+## License
+
+No formal license: anyone may use Mynou for anything, without warranty. See
+[LICENSE.md](LICENSE.md).

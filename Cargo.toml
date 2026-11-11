@@ -4,6 +4,7 @@ version = "0.29.0"
 edition = "2024"
 rust-version = "1.99"
 description = "Media library automation in Rust, using the standard library only"
+license-file = "LICENSE.md"
 publish = false
 # tests/*.rs are modules of one integration binary (tests/main.rs): linking
 # each as its own crate dominated the test build. New files must be declared there.
