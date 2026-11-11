@@ -267,6 +267,12 @@ impl Api {
                     // The listener stays bound until the next start.
                     config.listen = previous.listen.clone();
                     config.listen_override = previous.listen_override;
+                    if previous
+                        .listen_override
+                        .is_some_and(|value| value.opens_local_network)
+                    {
+                        config.local_network_open = true;
+                    }
                     config
                 });
                 let operator = self.engine.vpn.as_ref().filter(|v| !v.changed()).cloned();
@@ -692,6 +698,13 @@ fn network_access(
         value.insert("from_this_mac", local);
         value.insert("listen", engine.config.listen.as_str());
         value.insert("listen_from_start", engine.config.listen_override.is_some());
+        value.insert(
+            "local_network_open_from_start",
+            engine
+                .config
+                .listen_override
+                .is_some_and(|value| value.opens_local_network),
+        );
         value.insert(
             "local_name",
             access::local_name().map_or(Value::Null, |name| Value::String(format!("{name}.local"))),
