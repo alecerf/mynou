@@ -246,11 +246,17 @@ pub fn check_now() -> Value {
             Ok((latest, staged)) => {
                 status.latest = Some(latest);
                 status.error = None;
+                if let Some(staged) = &staged {
+                    crate::info!("Update {} downloaded", display(staged.version));
+                }
                 if staged.is_some() {
                     status.staged = staged;
                 }
             }
-            Err(error) => status.error = Some(error),
+            Err(error) => {
+                crate::warn!("{error}");
+                status.error = Some(error);
+            }
         }
     }
     report()

@@ -118,6 +118,11 @@ fn secrets_are_write_only_and_apply_at_once() {
     let text = json::stringify(&saved);
     assert!(text.contains(name) && text.contains("stored"));
     assert!(!text.contains("value-never-returned"));
+    // The log hides a saved value wherever it appears.
+    assert_eq!(
+        crate::logs::redact("tracker answered value-never-returned"),
+        "tracker answered [redacted]"
+    );
     assert!(!json::stringify(&call(&engine, "GET", "/api/settings", "")).contains("value-never"));
     assert_eq!(config::secret(name).unwrap(), "value-never-returned");
     for body in [

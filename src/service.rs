@@ -91,6 +91,47 @@ fn escape(text: &str) -> Result<String> {
         .replace('\'', "&apos;"))
 }
 
+/// Where launchd sends the service's stdout and stderr. Registrations made
+/// before the log existed sent them to `/dev/null`.
+fn output_keys(path: &str) -> String {
+    format!(
+        "<key>StandardOutPath</key><string>{path}</string>\n\
+        <key>StandardErrorPath</key><string>{path}</string>\n"
+    )
+}
+
+fn output_path(data_dir: &Path) -> Result<String> {
+    escape(
+        crate::logs::directory(data_dir)
+            .join(crate::logs::OUTPUT)
+            .to_str()
+            .ok_or("Service: paths must be UTF-8")?,
+    )
+}
+
+/// An older registration of this data directory, made to send the service's
+/// output to the log; `None` when it needs no change or is not one.
+fn upgraded(document: &str, data_dir: &Path) -> Result<Option<String>> {
+    let older = output_keys("/dev/null");
+    Ok(document
+        .contains(&older)
+        .then(|| output_path(data_dir))
+        .transpose()?
+        .map(|path| document.replacen(&older, &output_keys(&path), 1)))
+}
+
+/// Replaces a registration at once, never leaving a partial one.
+fn replace(path: &Path, bytes: &[u8]) -> Result<()> {
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or("Service: invalid registration")?;
+    let next = path.with_file_name(format!("{name}.mynou-new"));
+    let _ = fs::remove_file(&next);
+    create(&next, bytes)?;
+    fs::rename(&next, path).map_err(|_| "Service: cannot replace the registration".into())
+}
+
 fn plist(label: &str, binary: &Path, data_dir: &Path, home: &Path) -> Result<String> {
     let text = |p: &Path| escape(p.to_str().ok_or("Service: paths must be UTF-8")?);
     Ok(format!(
@@ -107,14 +148,103 @@ fn plist(label: &str, binary: &Path, data_dir: &Path, home: &Path) -> Result<Str
         <key>ExitTimeOut</key><integer>120</integer>\n\
         <key>Umask</key><integer>63</integer>\n\
         <key>SoftResourceLimits</key><dict><key>NumberOfFiles</key><integer>10240</integer></dict>\n\
-        <key>StandardOutPath</key><string>/dev/null</string>\n\
-        <key>StandardErrorPath</key><string>/dev/null</string>\n\
+        {}\
         </dict></plist>\n",
         text(binary)?,
         text(data_dir)?,
         text(data_dir)?,
-        text(home)?
+        text(home)?,
+        output_keys(&output_path(data_dir)?)
     ))
+}
+
+/// Set once this process ran itself again with its output in the log.
+const ADOPTED: &str = "MYNOU_SERVICE_OUTPUT";
+
+/// A service started by an older registration has its stdout and stderr on
+/// `/dev/null`: it runs itself again with them in the log's output file,
+/// keeping its process identity so that launchd keeps supervising it. Returns
+/// when there is nothing to do, or with the reason it could not.
+pub fn adopt_output(data_dir: &Path) -> Result<()> {
+    use std::os::{fd::AsFd, unix::process::CommandExt};
+    // Only a launchd job of Mynou, which launchd names in XPC_SERVICE_NAME.
+    if std::env::var_os(ADOPTED).is_some() || launchd_label().is_none() {
+        return Ok(());
+    }
+    let null = fs::metadata("/dev/null").map_err(|_| "Service: /dev/null unavailable")?;
+    let stderr = std::io::stderr()
+        .as_fd()
+        .try_clone_to_owned()
+        .map(fs::File::from)
+        .and_then(|file| file.metadata())
+        .map_err(|_| "Service: cannot inspect stderr")?;
+    if !store::same_inode(&null, &stderr) {
+        return Ok(());
+    }
+    let dir = crate::logs::directory(data_dir);
+    crate::logs::prepare(&dir)?;
+    let output = store::private_options()
+        .append(true)
+        .create(true)
+        .open(dir.join(crate::logs::OUTPUT))
+        .map_err(|_| "Service: cannot open the output file")?;
+    if !output.metadata().is_ok_and(|m| m.is_file()) {
+        return Err("Service: the output file is not a file".into());
+    }
+    let copy = output
+        .try_clone()
+        .map_err(|_| "Service: cannot open the output file")?;
+    let executable = std::env::current_exe().map_err(|_| "Service: executable unavailable")?;
+    let error = Command::new(executable)
+        .args(std::env::args_os().skip(1))
+        .env(ADOPTED, "1")
+        .stdout(copy)
+        .stderr(output)
+        .exec();
+    Err(format!(
+        "Service: cannot send the output to the log: {error}"
+    ))
+}
+
+/// The registration launchd started this service from, rewritten when it is
+/// an older one of this data directory, so that the next start sends the
+/// output to the log too. launchd names the job in `XPC_SERVICE_NAME`.
+/// Returns whether it changed.
+pub fn refresh_registration(data_dir: &Path) -> Result<bool> {
+    let Some(label) = launchd_label() else {
+        return Ok(false);
+    };
+    let home = PathBuf::from(std::env::var_os("HOME").ok_or("Service: HOME is missing")?);
+    absolute(&home)?;
+    let registration = home.join(format!("Library/LaunchAgents/{label}.plist"));
+    if fs::symlink_metadata(&registration).is_err() {
+        return Ok(false);
+    }
+    let document = read(&registration, 524_288)?;
+    if !owns(&document, &label, data_dir)? {
+        return Ok(false);
+    }
+    let Some(next) = upgraded(&document, data_dir)? else {
+        return Ok(false);
+    };
+    crate::logs::prepare(&crate::logs::directory(data_dir))?;
+    replace(&registration, next.as_bytes())?;
+    Ok(true)
+}
+
+/// The label of the launchd job this process runs as, if it is Mynou's.
+fn launchd_label() -> Option<String> {
+    std::env::var("XPC_SERVICE_NAME")
+        .ok()
+        .filter(|label| valid_label(label))
+}
+
+fn valid_label(label: &str) -> bool {
+    label.starts_with("org.mynou.")
+        && label.len() <= 96
+        && label
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-')
 }
 
 /// Refuse missing volumes before any engine opens or creates storage. Missing
@@ -266,12 +396,7 @@ pub fn manage(
     ) {
         return Err("Service: action requires install, status, start, stop or uninstall".into());
     }
-    if !label.starts_with("org.mynou.")
-        || label.len() > 96
-        || !label
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-')
-    {
+    if !valid_label(label) {
         return Err("Service: label must start with org.mynou. and contain only letters, digits, dots and hyphens".into());
     }
     let identity = installation(data_dir)?;
@@ -346,9 +471,17 @@ pub fn manage(
         let binary = std::env::current_exe().map_err(|_| "Service: executable unavailable")?;
         absolute(&binary)?;
         let document = plist(label, &binary, data_dir, &home)?;
+        // launchd opens the output file before Mynou starts.
+        crate::logs::prepare(&crate::logs::directory(data_dir))?;
         if registered {
-            if read(&registration, 524_288)? != document {
-                return Err("Service: existing registration differs; stop and uninstall it before reinstalling".into());
+            let existing = read(&registration, 524_288)?;
+            if existing != document {
+                // One made before the log only gains its output file; it
+                // applies the next time launchd loads it.
+                if upgraded(&existing, data_dir)?.as_deref() != Some(document.as_str()) {
+                    return Err("Service: existing registration differs; stop and uninstall it before reinstalling".into());
+                }
+                replace(&registration, document.as_bytes())?;
             }
         } else {
             if loaded.is_some() {
@@ -415,7 +548,12 @@ pub fn manage(
     );
     report.insert("loaded", loaded.is_some());
     report.insert("running", loaded.as_deref().and_then(pid).is_some());
-    report.insert("logs", "private_fixed_codes_two_64k_files");
+    report.insert(
+        "logs",
+        crate::logs::directory(data_dir)
+            .to_str()
+            .ok_or("Service: non-UTF-8 path")?,
+    );
     Ok(report)
 }
 

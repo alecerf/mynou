@@ -219,7 +219,22 @@ fn execute(args: Args) -> Result<()> {
     let path = args.data_dir()?;
     let supervised = args.command == "service-run";
     if supervised {
+        // Returns only when the output already reaches the log, or cannot.
+        let adopted = mynou::service::adopt_output(&path);
+        start_logs(&path, false);
+        if let Err(error) = adopted {
+            mynou::warn!("{error}");
+        }
+        match mynou::service::refresh_registration(&path) {
+            Ok(true) => mynou::info!(
+                "The launchd registration now sends the service output to the log; this applies the next time launchd loads it"
+            ),
+            Ok(false) => {}
+            Err(error) => mynou::warn!("Cannot update the launchd registration: {error}"),
+        }
         mynou::service::log(&path, "starting")?;
+    } else if args.command == "serve" && path.is_dir() {
+        start_logs(&path, true);
     }
     let (config, online) = if args.command == "serve" || supervised {
         (config::load(&path)?, false)
@@ -248,6 +263,10 @@ fn execute(args: Args) -> Result<()> {
             }
             output(&reply);
         } else {
+            // Stopped: this command writes the service's log in its place.
+            if path.is_dir() {
+                let _ = mynou::logs::init(&path, false);
+            }
             mynou::update::check_now();
             let installed = match mynou::update::staged() {
                 Some(staged) => {
@@ -269,6 +288,7 @@ fn execute(args: Args) -> Result<()> {
         mynou::service::preflight(&path, &config)?;
     }
     ensure_data_dir(&path)?;
+    start_logs(&path, !supervised);
     // The listener answers health checks while storage opens. Reading the
     // credentials opens the storage too: a version that cannot read it rolls
     // back here as well.
@@ -279,14 +299,12 @@ fn execute(args: Args) -> Result<()> {
         std::sync::Arc::new(mynou::access::Access::new(access)),
     )?;
     record_endpoint(&path, startup.address()?)?;
-    if !supervised {
-        eprintln!(
-            "mynou {} — {} — API http://{}",
-            env!("CARGO_PKG_VERSION"),
-            path.display(),
-            startup.address()?
-        );
-    }
+    mynou::info!(
+        "mynou {} — {} — API http://{}",
+        env!("CARGO_PKG_VERSION"),
+        path.display(),
+        startup.address()?
+    );
     let engine =
         Engine::open_serving(config).map_err(|error| roll_back(&path, supervised, error))?;
     // The storage opened: an update that led here is kept.
@@ -299,20 +317,31 @@ fn execute(args: Args) -> Result<()> {
         && let Some(staged) = mynou::update::staged()
     {
         match mynou::update::apply(&path, &staged) {
-            Ok(()) if supervised => mynou::service::log(&path, "updating")?,
-            Ok(()) => eprintln!(
-                "mynou: installing {}",
-                mynou::update::display(staged.version)
-            ),
+            Ok(()) => {
+                if supervised {
+                    mynou::service::log(&path, "updating")?;
+                }
+                mynou::info!("Installing {}", mynou::update::display(staged.version));
+            }
             // Restart unchanged rather than stay stopped.
-            Err(error) => eprintln!("mynou: {error}"),
+            Err(error) => mynou::error!("{error}"),
         }
         return Err(mynou::update::restart());
     }
-    if supervised && result.is_ok() {
-        mynou::service::log(&path, "stopped_cleanly")?;
+    if result.is_ok() {
+        if supervised {
+            mynou::service::log(&path, "stopped_cleanly")?;
+        }
+        mynou::info!("Stopped");
     }
     result
+}
+
+/// Starts the service's log. Without it, records still reach stderr.
+fn start_logs(path: &Path, echo: bool) {
+    if let Err(error) = mynou::logs::init(path, echo) {
+        eprintln!("mynou: {error}");
+    }
 }
 
 /// The version an update just installed could not open the storage, to read
@@ -327,7 +356,7 @@ fn roll_back(path: &Path, supervised: bool, error: String) -> String {
     if supervised {
         let _ = mynou::service::log(path, "update_rolled_back");
     }
-    eprintln!("mynou: {error}; restoring the previous version");
+    mynou::error!("{error}; restoring the previous version");
     mynou::update::restart()
 }
 
@@ -341,6 +370,10 @@ fn main() {
     if let Err(error) = args.and_then(execute) {
         if let Some(path) = service_path {
             let _ = mynou::service::log(&path, "runtime_failed");
+        }
+        // Without the log, a service's stderr still reaches it through launchd.
+        if mynou::logs::active() {
+            mynou::error!("{error}");
         } else {
             eprintln!("mynou: {error}");
         }

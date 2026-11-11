@@ -45,6 +45,7 @@ const MODULES: &[(&str, &str)] = modules![
     "jobs",
     "library",
     "link",
+    "logs",
     "motion",
     "palette",
     "quality",

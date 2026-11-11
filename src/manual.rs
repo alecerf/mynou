@@ -263,7 +263,7 @@ impl Engine {
             result
         })();
         if let Err(error) = result {
-            eprintln!("mynou: manual torrent cleanup skipped: {error}");
+            crate::warn!("Manual torrent cleanup skipped: {error}");
         }
     }
 

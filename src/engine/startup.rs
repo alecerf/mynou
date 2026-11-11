@@ -236,7 +236,7 @@ impl Engine {
                 if self.transfers_waiting()
                     && let Err(error) = self.start_transfers()
                 {
-                    eprintln!("mynou: transfers did not start: {error}");
+                    crate::error!("Transfers did not start: {error}");
                     if let Ok(mut startup) = lock(&self.startup) {
                         startup.error = Some(error);
                     }

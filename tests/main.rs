@@ -43,6 +43,7 @@ mod json_mapping;
 mod library_api;
 mod library_automation;
 mod library_store;
+mod logs_api;
 mod media_formats;
 mod monitoring_config;
 mod numbering_management;

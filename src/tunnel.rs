@@ -631,9 +631,17 @@ impl<E: Entropy + Clone, C: Clock> Tunnel<E, C> {
         if self.attempt >= self.config.reconnect_attempts {
             // The next profile gets the same budget: a first generation,
             // then its own retries.
+            let from = self.active;
             self.attempt = 0;
             self.exhausted += 1;
             self.next_profile(reason);
+            if self.active != from {
+                crate::warn!(
+                    "VPN tunnel: {reason:?}; profile {} gave up, switching to profile {}",
+                    from + 1,
+                    self.active + 1
+                );
+            }
             self.state = TunnelState::Reconnecting;
             let delay = if self.exhausted < self.profiles.len() {
                 self.config.reconnect_initial
@@ -646,11 +654,19 @@ impl<E: Entropy + Clone, C: Clock> Tunnel<E, C> {
                     .saturating_mul(1 << self.rests.min(16))
                     .min(self.config.rest_max);
                 self.rests = self.rests.saturating_add(1);
+                crate::error!(
+                    "VPN tunnel: {reason:?}; every profile failed, trying again in {} s",
+                    rest.as_secs()
+                );
                 rest
             };
             self.retry_at = Some(now.saturating_add(delay));
             return;
         }
+        crate::warn!(
+            "VPN tunnel: {reason:?}; reconnecting, attempt {}",
+            self.attempt + 1
+        );
         let shift = self.attempt.min(16);
         self.attempt += 1;
         let delay = self
@@ -722,6 +738,7 @@ impl<E: Entropy + Clone, C: Clock> Tunnel<E, C> {
                         .config
                         .keepalive
                         .and_then(|every| now.checked_add(every));
+                    crate::info!("VPN tunnel: connected");
                 }
                 self.state = TunnelState::Protected;
                 self.reason = None;

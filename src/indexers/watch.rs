@@ -315,11 +315,21 @@ impl Engine {
             state.last_attempt_at = at;
             state.outcome = outcome;
             if outcome == "ok" {
+                if state.consecutive_failures > 0 {
+                    crate::info!("Feed {}: polling again", source.name);
+                }
                 state.consecutive_failures = 0;
                 state.last = tally;
             } else {
                 state.failures = state.failures.saturating_add(1);
                 state.consecutive_failures = state.consecutive_failures.saturating_add(1);
+                if outcome != "disabled" {
+                    crate::warn!(
+                        "Feed {}: poll failed ({outcome}), {} in a row",
+                        source.name,
+                        state.consecutive_failures
+                    );
+                }
             }
             state.routed = state.routed.saturating_add(u64::from(tally.routed));
             state.upgrades = state.upgrades.saturating_add(u64::from(tally.upgrades));

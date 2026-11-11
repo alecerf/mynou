@@ -12,6 +12,7 @@ pub mod inventory;
 pub mod irc;
 pub mod json;
 pub mod library;
+pub mod logs;
 pub mod manual;
 pub mod media;
 pub mod net;

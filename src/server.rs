@@ -537,6 +537,9 @@ fn connection(
     if method == "GET" && path == "/ws" {
         return upgrade(stream, engine, &headers, &|| gate.admitted(free, &headers));
     }
+    if method == "GET" && path == "/api/logs/download" {
+        return respond_logs(stream, engine);
+    }
     match route(engine, &method, &path, &body) {
         Ok((status, value)) => respond(stream, status, value),
         Err(e) => respond(stream, 400, error(&e)),
@@ -569,8 +572,27 @@ fn session_cookie(value: &str, max_age: u64) -> String {
 fn note_refusal(engine: &Engine, stream: &TcpStream, code: &str) {
     let _ = crate::service::log(&engine.config.data_dir, code);
     if let Ok(peer) = stream.peer_addr() {
-        eprintln!("mynou: {} from {}", code.replace('_', " "), peer.ip());
+        crate::warn!("{} from {}", code.replace('_', " "), peer.ip());
     }
+}
+
+/// Every log file, oldest first, as one text file to save.
+fn respond_logs(stream: &mut TcpStream, engine: &Engine) -> Result<()> {
+    crate::logs::fold_output();
+    let body = match crate::logs::download(&crate::logs::directory(&engine.config.data_dir)) {
+        Ok(body) => body,
+        Err(e) => return respond(stream, 400, error(&e)),
+    };
+    let head = format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: {}\r\nContent-Disposition: attachment; filename=\"mynou-{}.log\"\r\nConnection: close\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nX-Frame-Options: DENY\r\nContent-Security-Policy: default-src 'none'; frame-ancestors 'none'\r\n\r\n",
+        body.len(),
+        crate::date::today()
+    );
+    // A few MiB: more time than a JSON answer, still bounded.
+    let deadline = Instant::now() + RESPONSE_DEADLINE * 6;
+    write_within(stream, head.as_bytes(), deadline)
+        .and_then(|()| write_within(stream, body.as_bytes(), deadline))
+        .map_err(|e| format!("Cannot write the response: {e}"))
 }
 
 /// `GET` tells whether this client must and did sign in, `POST` signs in
@@ -784,6 +806,13 @@ pub(crate) fn route(
             let mut v = Value::object();
             v.insert("status", "installing");
             Ok((202, v))
+        }
+        ("GET", path) if path == "/api/logs" || path.starts_with("/api/logs?") => {
+            let (level, limit) =
+                crate::logs::query(path.split_once('?').map_or("", |(_, query)| query))?;
+            crate::logs::fold_output();
+            let logs = crate::logs::directory(&engine.config.data_dir);
+            Ok((200, crate::logs::tail(&logs, level, limit)?))
         }
         ("GET", "/api/settings") => Ok((200, engine.settings()?)),
         ("POST", "/api/settings") => {
