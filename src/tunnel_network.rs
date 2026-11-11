@@ -31,7 +31,7 @@ fn message(error: io::Error) -> String {
 /// A literal, usable destination with a nonzero port: IPv4, or IPv6 when
 /// the tunnel carries it.
 fn destination(connector: &Connector, address: SocketAddr) -> io::Result<SocketAddr> {
-    let family = address.is_ipv4() || connector.owner.ipv6;
+    let family = address.is_ipv4() || connector.ipv6;
     if address.port() != 0 && usable(address.ip()) && family {
         Ok(address)
     } else {
@@ -91,7 +91,7 @@ impl TunnelNetwork {
     fn virtual_datagram(&self, ipv6: bool) -> io::Result<Datagram> {
         // Without IPv6 in the tunnel, IPv6 is refused, never sent elsewhere.
         // A virtual socket serves both families.
-        if ipv6 && !self.connector.owner.ipv6 {
+        if ipv6 && !self.connector.ipv6 {
             return Err(error(io::ErrorKind::InvalidInput));
         }
         self.bind_datagram_port(0)
@@ -129,7 +129,7 @@ impl TunnelNetwork {
         // listener is reachable only through the tunnel, never on the host. It
         // accepts both families the tunnel carries.
         let ip = address.ip();
-        let family = address.is_ipv4() || self.connector.owner.ipv6;
+        let family = address.is_ipv4() || self.connector.ipv6;
         if !(ip.is_unspecified() || ip.is_loopback()) || !family {
             return Err(error(io::ErrorKind::InvalidInput));
         }

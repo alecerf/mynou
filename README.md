@@ -125,11 +125,13 @@ Mac.
 | Your Plex friends' watchlists | Plex & TMDB: Friends, a switch for each friend | |
 | TMDB catalog, to find titles and follow series | Plex & TMDB: TMDB | A TMDB read access token |
 | Sources to search | Indexers, each with its own rules (priority, seeders, seeding goal) | The API key of each source |
-| What goes through a VPN | VPN: a WireGuard profile, then Torrents, Indexers, TMDB | Your provider's WireGuard profile |
+| What goes through a VPN | VPN: WireGuard profiles, then Torrents, Indexers, TMDB | Your provider's WireGuard profiles |
 | Use from other computers | Network: Allow other computers | A password, or none on your local network |
 
 - **Without a VPN profile**, everything uses your own connection. Once you
-  import one, torrents go through it; indexers and TMDB can too.
+  import one, torrents go through it; indexers and TMDB can too. Import
+  several, such as several servers of your provider, and Mynou moves to the
+  next one by itself when a server stops answering.
 - **Saving** validates the settings and applies them at once; an invalid change
   is refused and leaves the saved settings untouched.
 - **Tokens** are kept in Mynou's storage and never shown again.
@@ -170,7 +172,9 @@ Mynou is young and deliberately explicit about its edges:
 - **Local by default.** Mynou listens on this Mac only. It answers this Mac's
   pages and commands without sign-in, and never a page from another site.
 - **Native WireGuard protects the supported torrent paths**, over IPv4 and,
-  when the profile routes it, IPv6, with NAT-PMP port forwarding.
+  when the profile routes it, IPv6, with NAT-PMP port forwarding. Each profile
+  has one server, reached at an IPv4 address; up to 16 profiles take over
+  from one another.
 - **The network and cryptographic code is original** and has not had an
   independent review.
 
@@ -278,6 +282,21 @@ import fails with `runtime_mismatch` and both lengths, nothing is written, and
 the release is not picked again for that title. The job's **Files & quality**
 tab, and `import_notes` in the API, say which folder was used and why, and
 whether the length was checked.
+</details>
+
+<details>
+<summary><strong>The VPN server stopped answering</strong></summary>
+
+Open **Settings → VPN**. With several profiles, when a server stops answering
+for a few minutes, Mynou moves to the next profile in the list, wrapping
+around, and asks the new server for a forwarded port; peers and trackers are
+then told the new port. Meanwhile torrents, and whatever else you send through
+the VPN, wait: nothing uses your own connection instead. A lone profile gets
+about fifteen minutes before Mynou gives up on it. Once every profile has
+failed in a row, Mynou tries the list again after five minutes, then waits
+twice as long each time, up to an hour; **Try again** starts at once. **Recent
+switches** says when and why Mynou changed profile, and the arrows set the
+order in which profiles are tried.
 </details>
 
 <details>

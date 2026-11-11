@@ -13,6 +13,7 @@ use crate::netstack::{
 use crate::wireguard::{
     Entropy, Load, MAX_DATAGRAM, MAX_QUEUED_PAYLOADS, Peer, PeerClock, PeerOutput, PeerStatus,
 };
+use std::collections::VecDeque;
 use std::io::ErrorKind;
 use std::net::{IpAddr, SocketAddr, UdpSocket};
 use std::time::{Duration, Instant, SystemTime};
@@ -25,6 +26,10 @@ const RECEIVE_BUFFER: usize = 2048;
 const HOUR: Duration = Duration::from_secs(3600);
 /// ICMPv6 echo replies waiting for the next timer run; more requests are dropped.
 const ECHO_REPLIES: usize = 8;
+/// Profiles one runtime can move between.
+pub const MAX_PROFILES: usize = 16;
+/// Profile switches kept for the operator, oldest dropped first.
+pub const SWITCHES: usize = 8;
 
 /// The runtime's only time source: a monotonic elapsed time and the wall time
 /// used for handshake timestamps. Production uses [`SystemClock`].
@@ -130,8 +135,13 @@ pub struct TunnelConfig {
     pub datagrams_per_pump: usize,
     pub reconnect_initial: Duration,
     pub reconnect_max: Duration,
-    /// Consecutive failed generations before the runtime is `Blocked`.
+    /// Failed generations retried on this profile before the next profile
+    /// gets its turn.
     pub reconnect_attempts: u32,
+    /// Once every profile used its attempts in a row, the wait before the
+    /// next round; it doubles with each failed round, up to `rest_max`.
+    pub rest_initial: Duration,
+    pub rest_max: Duration,
 }
 
 impl TunnelConfig {
@@ -168,6 +178,8 @@ impl TunnelConfig {
             reconnect_initial: Duration::from_secs(1),
             reconnect_max: Duration::from_secs(60),
             reconnect_attempts: 8,
+            rest_initial: Duration::from_secs(5 * 60),
+            rest_max: HOUR,
         }
     }
 
@@ -201,7 +213,10 @@ impl TunnelConfig {
             && timer(self.reconnect_initial)
             && timer(self.reconnect_max)
             && self.reconnect_initial <= self.reconnect_max
-            && (1..=64).contains(&self.reconnect_attempts);
+            && (1..=64).contains(&self.reconnect_attempts)
+            && timer(self.rest_initial)
+            && timer(self.rest_max)
+            && self.rest_initial <= self.rest_max;
         if valid {
             Ok(())
         } else {
@@ -252,8 +267,19 @@ pub enum Reason {
     Failed,
     EndpointChanged,
     Cancelled,
-    /// `reconnect_attempts` consecutive generations failed.
+    /// Every profile used its `reconnect_attempts` in a row: the runtime
+    /// rests until `retry_at`, then tries the list again.
     Exhausted,
+}
+
+/// The runtime moved to another profile once `from` used its attempts.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Switch {
+    pub at: SystemTime,
+    pub from: usize,
+    pub to: usize,
+    /// How the last generation of `from` ended.
+    pub reason: Reason,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -267,6 +293,8 @@ pub struct Status {
     /// Where outer datagrams go: the pinned endpoint, or the last
     /// authenticated source after roaming.
     pub remote: Option<SocketAddr>,
+    /// Index of the profile in use, or tried next while reconnecting.
+    pub profile: usize,
 }
 
 /// Counters only; no packet content is kept.
@@ -372,7 +400,16 @@ impl<E: Entropy> Live<E> {
 /// generation. Not `Send`: a later integration owns it from one thread, so
 /// revocation and new operations are serialized by construction.
 pub struct Tunnel<E: Entropy + Clone, C: Clock> {
+    /// The active profile's configuration.
     config: TunnelConfig,
+    /// Every profile in failover order; `active` indexes it.
+    profiles: Vec<TunnelConfig>,
+    active: usize,
+    /// Profiles that used all their attempts in a row since the last
+    /// protected session, and failed rounds of the whole list.
+    exhausted: usize,
+    rests: u32,
+    switches: VecDeque<Switch>,
     entropy: E,
     clock: C,
     socket: UdpSocket,
@@ -409,13 +446,38 @@ impl<E: Entropy + Clone, C: Clock> Tunnel<E, C> {
     /// Validates the config and endpoint, binds the one outer socket and starts
     /// the first generation. Nothing else touches the ordinary network.
     pub fn new(config: TunnelConfig, entropy: E, clock: C) -> Result<Self, TunnelError> {
-        config.validate()?;
+        Self::with_profiles(vec![config], entropy, clock)
+    }
+
+    /// Like `new`, with profiles tried in order: when one has used its
+    /// `reconnect_attempts`, the next one starts, wrapping around. They share
+    /// the one outer socket, so they must bind the same address.
+    pub fn with_profiles(
+        profiles: Vec<TunnelConfig>,
+        entropy: E,
+        clock: C,
+    ) -> Result<Self, TunnelError> {
+        let Some(config) = profiles.first().cloned() else {
+            return Err(TunnelError::Config);
+        };
+        if profiles.len() > MAX_PROFILES || profiles.iter().any(|p| p.bind != config.bind) {
+            return Err(TunnelError::Config);
+        }
+        for profile in &profiles {
+            profile.validate()?;
+            validate_endpoint(&profile.endpoint)?;
+        }
         let endpoint = validate_endpoint(&config.endpoint)?;
         let socket =
             UdpSocket::bind(config.bind).map_err(|error| TunnelError::Io(error.to_string()))?;
         let window = clock.now();
         let mut tunnel = Self {
             config,
+            profiles,
+            active: 0,
+            exhausted: 0,
+            rests: 0,
+            switches: VecDeque::new(),
             entropy,
             clock,
             socket,
@@ -470,7 +532,19 @@ impl<E: Entropy + Clone, C: Clock> Tunnel<E, C> {
             attempt: self.attempt,
             retry_at: self.retry_at,
             remote: self.live.as_ref().map(|live| live.remote),
+            profile: self.active,
         }
+    }
+
+    /// The last profile switches, oldest first.
+    pub fn switches(&self) -> Vec<Switch> {
+        self.switches.iter().copied().collect()
+    }
+
+    /// How long until the next scheduled generation, while reconnecting.
+    pub fn retry_in(&self) -> Option<Duration> {
+        let now = self.clock.now();
+        self.retry_at.map(|at| at.saturating_sub(now))
     }
 
     fn peer_clock(&self, generation: u64, now: Duration) -> PeerClock {
@@ -548,13 +622,33 @@ impl<E: Entropy + Clone, C: Clock> Tunnel<E, C> {
     }
 
     /// Revokes and schedules a bounded, exponentially spaced new generation.
+    /// A profile out of attempts hands over to the next one; once all of
+    /// them failed in a row, the list is tried again after a long rest. No
+    /// generation is live meanwhile, so nothing is sent but handshakes.
     fn fail(&mut self, reason: Reason, now: Duration) {
         self.revoke();
         self.reason = Some(reason);
         if self.attempt >= self.config.reconnect_attempts {
-            self.state = TunnelState::Blocked;
-            self.reason = Some(Reason::Exhausted);
-            self.retry_at = None;
+            // The next profile gets the same budget: a first generation,
+            // then its own retries.
+            self.attempt = 0;
+            self.exhausted += 1;
+            self.next_profile(reason);
+            self.state = TunnelState::Reconnecting;
+            let delay = if self.exhausted < self.profiles.len() {
+                self.config.reconnect_initial
+            } else {
+                self.exhausted = 0;
+                self.reason = Some(Reason::Exhausted);
+                let rest = self
+                    .config
+                    .rest_initial
+                    .saturating_mul(1 << self.rests.min(16))
+                    .min(self.config.rest_max);
+                self.rests = self.rests.saturating_add(1);
+                rest
+            };
+            self.retry_at = Some(now.saturating_add(delay));
             return;
         }
         let shift = self.attempt.min(16);
@@ -566,6 +660,31 @@ impl<E: Entropy + Clone, C: Clock> Tunnel<E, C> {
             .min(self.config.reconnect_max);
         self.retry_at = Some(now.saturating_add(delay));
         self.state = TunnelState::Reconnecting;
+    }
+
+    /// Makes the next profile active, wrapping around. Only configuration
+    /// changes: the generation is already revoked, and the next one is built
+    /// from the new profile.
+    fn next_profile(&mut self, reason: Reason) {
+        let from = self.active;
+        let to = (from + 1) % self.profiles.len();
+        if to == from {
+            return;
+        }
+        self.active = to;
+        self.config = self.profiles[to].clone();
+        // Validated when the runtime was built.
+        let Endpoint::Address(address) = self.config.endpoint;
+        self.endpoint = address;
+        if self.switches.len() == SWITCHES {
+            self.switches.pop_front();
+        }
+        self.switches.push_back(Switch {
+            at: self.clock.wall(),
+            from,
+            to,
+            reason,
+        });
     }
 
     /// Whether the session this generation relied on is gone. The peer can
@@ -607,6 +726,8 @@ impl<E: Entropy + Clone, C: Clock> Tunnel<E, C> {
                 self.state = TunnelState::Protected;
                 self.reason = None;
                 self.attempt = 0;
+                self.exhausted = 0;
+                self.rests = 0;
             }
             PeerStatus::NoSession | PeerStatus::Handshaking => {
                 self.state = TunnelState::Connecting;
@@ -930,6 +1051,7 @@ impl<E: Entropy + Clone, C: Clock> Tunnel<E, C> {
         }
         let address = validate_endpoint(&endpoint)?;
         self.revoke();
+        self.profiles[self.active].endpoint = endpoint.clone();
         self.config.endpoint = endpoint;
         self.endpoint = address;
         self.reason = Some(Reason::EndpointChanged);
@@ -950,12 +1072,17 @@ impl<E: Entropy + Clone, C: Clock> Tunnel<E, C> {
         self.retry_at = None;
     }
 
-    /// Leaves `Blocked` with a fresh generation and a fresh attempt budget.
+    /// Leaves `Blocked`, or the rest after every profile failed, with a
+    /// fresh generation and fresh attempt budgets.
     pub fn reconnect(&mut self) -> Result<(), TunnelError> {
-        if self.state != TunnelState::Blocked {
+        let resting =
+            self.state == TunnelState::Reconnecting && self.reason == Some(Reason::Exhausted);
+        if self.state != TunnelState::Blocked && !resting {
             return Err(TunnelError::Unavailable);
         }
         self.attempt = 0;
+        self.exhausted = 0;
+        self.rests = 0;
         self.start(self.clock.now());
         Ok(())
     }

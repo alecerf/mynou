@@ -70,3 +70,24 @@ release key signed its `SHA256SUMS` and that the executable matches it, and
 only then installs `mynou` into `~/.local/bin` (or `MYNOU_INSTALL_DIR`), with
 no sudo. It refuses any Mac without Apple Silicon, and when that folder is not
 on your `PATH`, it gives you the line to add to `~/.zshrc`.
+
+## Added: Several VPN profiles that take over from one another
+
+Settings, VPN now keeps a list of up to 16 WireGuard profiles, such as several
+servers of your provider: **Add a .conf** imports one more, named after its
+file, and each can be moved up or down or removed. When the server in use stops
+answering for a few minutes, Mynou moves to the next profile, wrapping around
+the list, and asks the new server for a forwarded port, which peers and trackers
+then learn. While it switches, torrents, and whatever else goes through the VPN,
+wait; nothing falls back to your own connection. The page and the overview show
+the profile in use, and **Recent switches** lists the last changes with their
+time and reason. `GET /api/vpn` and `GET /api/stats` report the same. The
+profile you had keeps working as a list of one.
+
+## Changed: The VPN keeps trying after it gives up
+
+Once every profile has failed in a row, or the only one has, Mynou no longer
+waits for you to press **Try again**: it tries again after five minutes, then
+waits twice as long each time, up to an hour, and starts over at five minutes
+once the VPN works again. **Try again** still starts at once. Importing a
+profile now adds it to the list instead of replacing the one you had.

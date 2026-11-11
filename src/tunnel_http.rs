@@ -5,8 +5,8 @@ use crate::{
     net::{HttpConnector, NetworkStream},
     netstack::{Answer, Failure, Read as TcpRead, Record, TcpState},
     tunnel::{
-        Endpoint, Lookup, Status, SystemClock, Tunnel, TunnelConfig, TunnelState, VirtualFlow,
-        VirtualListener, VirtualUdp,
+        Endpoint, Lookup, Status, Switch, SystemClock, Tunnel, TunnelConfig, TunnelState,
+        VirtualFlow, VirtualListener, VirtualUdp,
     },
     wireguard::OsEntropy,
 };
@@ -154,8 +154,6 @@ impl Runtime {
 
 struct Owner {
     identity: u128,
-    /// The tunnel carries IPv6: AAAA lookups and IPv6 destinations are used.
-    ipv6: bool,
     sender: SyncSender<Command>,
     cancelled: Arc<AtomicBool>,
     generation: Arc<AtomicU64>,
@@ -392,10 +390,17 @@ impl HttpTunnel {
     /// Starts the owner with a literal IPv4 outer endpoint. This creates no
     /// host DNS lookup; readiness is checked separately by `connector`.
     pub fn start(config: TunnelConfig) -> io::Result<Self> {
-        if !matches!(config.endpoint, Endpoint::Address(a) if a.is_ipv4()) {
+        Self::start_profiles(vec![config])
+    }
+    /// Starts the owner with profiles tried in order (see
+    /// `Tunnel::with_profiles`), each with a literal IPv4 outer endpoint.
+    pub fn start_profiles(profiles: Vec<TunnelConfig>) -> io::Result<Self> {
+        if !profiles
+            .iter()
+            .all(|config| matches!(config.endpoint, Endpoint::Address(a) if a.is_ipv4()))
+        {
             return Err(error(io::ErrorKind::InvalidInput));
         }
-        let ipv6 = config.ip.local_ipv6().is_some();
         let identity = u128::from_be_bytes(
             crate::crypto::random_bytes::<16>().map_err(|_| error(io::ErrorKind::Other))?,
         );
@@ -413,7 +418,7 @@ impl HttpTunnel {
             .name("mynou-tunnel-http".into())
             .spawn(move || {
                 // Tunnel contains Rc: construct and destroy it entirely here.
-                let tunnel = match Native::new(config, OsEntropy, SystemClock::new()) {
+                let tunnel = match Native::with_profiles(profiles, OsEntropy, SystemClock::new()) {
                     Ok(tunnel) => tunnel,
                     Err(_) => {
                         let _ = ready.send(Err(error(io::ErrorKind::InvalidInput)));
@@ -436,7 +441,6 @@ impl HttpTunnel {
             .map_err(|_| error(io::ErrorKind::Other))?;
         let owner = Arc::new(Owner {
             identity,
-            ipv6,
             sender,
             cancelled,
             generation,
@@ -462,6 +466,18 @@ impl HttpTunnel {
             ))
         })
     }
+    /// Telemetry with the recent profile switches, from one owner call.
+    pub fn report(&self, deadline: Instant) -> io::Result<Report> {
+        self.owner.call(None, deadline, |r| {
+            Ok(Report {
+                status: r.tunnel.status(),
+                stats: r.tunnel.stats(),
+                handshake_age: r.tunnel.handshake_age(),
+                retry_in: r.tunnel.retry_in(),
+                switches: r.tunnel.switches(),
+            })
+        })
+    }
     pub fn status(&self, deadline: Instant) -> io::Result<Status> {
         self.owner.call(None, deadline, |r| Ok(r.tunnel.status()))
     }
@@ -476,12 +492,21 @@ impl HttpTunnel {
         &self,
         deadline: Instant,
     ) -> io::Result<Arc<dyn crate::torrent::transport::Network>> {
-        Ok(Arc::new(network::TunnelNetwork::new(
-            self.protected(deadline)?,
-        )))
+        Ok(self.network_profile(deadline)?.0)
+    }
+    /// `network`, with the index of the profile its generation runs on.
+    pub fn network_profile(
+        &self,
+        deadline: Instant,
+    ) -> io::Result<(Arc<dyn crate::torrent::transport::Network>, usize)> {
+        let connector = self.protected(deadline)?;
+        let profile = connector.profile;
+        Ok((Arc::new(network::TunnelNetwork::new(connector)), profile))
     }
     fn protected(&self, deadline: Instant) -> io::Result<Connector> {
-        let status = self.status(deadline)?;
+        let (status, ipv6) = self
+            .owner
+            .call(None, deadline, |r| Ok((r.tunnel.status(), r.tunnel.ipv6())))?;
         let generation = status
             .generation
             .filter(|_| status.state == TunnelState::Protected)
@@ -490,6 +515,8 @@ impl HttpTunnel {
         Ok(Connector {
             owner: self.owner.clone(),
             generation,
+            ipv6,
+            profile: status.profile,
         })
     }
     /// Close admission immediately and wait for admitted local publications,
@@ -506,9 +533,25 @@ impl HttpTunnel {
     }
 }
 
+/// Owner telemetry for the operator: see `HttpTunnel::report`.
+#[derive(Clone, Debug)]
+pub struct Report {
+    pub status: Status,
+    pub stats: crate::tunnel::Stats,
+    pub handshake_age: Option<Duration>,
+    /// Until the next generation, while reconnecting or resting.
+    pub retry_in: Option<Duration>,
+    /// The last profile switches, oldest first.
+    pub switches: Vec<Switch>,
+}
+
 struct Connector {
     owner: Arc<Owner>,
     generation: u64,
+    /// The generation's profile carries IPv6: AAAA lookups and IPv6
+    /// destinations are used.
+    ipv6: bool,
+    profile: usize,
 }
 impl Connector {
     /// IPv4 addresses first, then IPv6 ones when the tunnel carries IPv6.
@@ -518,7 +561,7 @@ impl Connector {
     fn resolve(&self, host: &str, deadline: Instant) -> io::Result<Vec<IpAddr>> {
         if let Ok(ip) = host.parse::<IpAddr>() {
             return match ip {
-                ip if usable(ip) && (ip.is_ipv4() || self.owner.ipv6) => Ok(vec![ip]),
+                ip if usable(ip) && (ip.is_ipv4() || self.ipv6) => Ok(vec![ip]),
                 _ => Err(error(io::ErrorKind::InvalidInput)),
             };
         }
@@ -530,7 +573,7 @@ impl Connector {
         let lease = Arc::new(());
         let weak = Arc::downgrade(&lease);
         let name = host.to_owned();
-        let records = if self.owner.ipv6 {
+        let records = if self.ipv6 {
             vec![Record::A, Record::Aaaa]
         } else {
             vec![Record::A]

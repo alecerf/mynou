@@ -117,7 +117,9 @@ function paintHealth(stats, status) {
   const el = $('#panel-health');
   if (!status) { paintOnce(el, null, () => note('Checking…')); return; }
   const vpn = status.vpn ?? {};
-  const [vpnText, vpnTone] = VPN_STATES[vpn.state] ?? [sentence(vpn.state), 'warn'];
+  const [vpnState, vpnTone] = VPN_STATES[vpn.state] ?? [sentence(vpn.state), 'warn'];
+  // With several profiles, the one in use.
+  const vpnText = itemsOf(vpn.profiles).length > 1 && vpn.active_profile ? `${vpnState} · ${vpn.active_profile}` : vpnState;
   const plexOn = Boolean(stats?.plex);
   const reports = indexerReports();
   const broken = reports.filter((r) => r.last_error && r.last_error !== 'disabled');

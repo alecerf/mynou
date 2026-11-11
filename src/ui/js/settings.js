@@ -477,12 +477,17 @@ const VPN_STATES = {
   protected: ['Protected', 'ok'], connecting: ['Connecting', 'warn'], reconnecting: ['Reconnecting', 'warn'],
   disabled: ['Off', 'warn'], blocked: ['Blocked', 'bad'], error: ['Error', 'bad'],
 };
-const VPN_DONE = { enable: 'VPN turned on: connecting', disable: 'VPN turned off: everything uses your own connection' };
+const VPN_DONE = {
+  enable: 'VPN turned on: connecting', disable: 'VPN turned off: everything uses your own connection',
+  move: 'Order saved: reconnecting', remove: 'Profile removed',
+};
 const VPN_REASONS = {
   GaveUp: 'The VPN server never answered. Check the profile, or try another server.',
   Expired: 'The session expired.', Failed: 'The tunnel failed.', EndpointChanged: 'The server address changed.',
-  Cancelled: 'Stopped.', Exhausted: 'Every reconnection failed.',
+  Cancelled: 'Stopped.', Exhausted: 'Every profile failed.',
 };
+// Why the tunnel left a profile for the next one.
+const VPN_SWITCHES = { GaveUp: 'Its server stopped answering', Expired: 'Its session expired', Failed: 'The tunnel failed' };
 const VPN_RESTARTING = 'Retiring previous engine generation';
 const VPN_REVOKED = 'Profile revoked by operator';
 const vpnControl = (body) => link.call('POST', '/api/vpn/control', body);
@@ -496,13 +501,38 @@ function vpnRows() {
         h('button', { type: 'button', class: 'secondary', dataset: { vpnAct: 'enable' } }, 'Turn on'),
         h('button', { type: 'button', class: 'ghost danger', dataset: { vpnAct: 'disable' } }, 'Turn off'))),
     h('div', { class: 'setting-row toggle', dataset: { vpn: 'profile' } },
-      h('div', { class: 'setting-label' }, label('WireGuard profile'), h('p', { class: 'hint' }, 'The WireGuard .conf file from your provider.')),
+      h('div', { class: 'setting-label' }, label('WireGuard profiles'), h('p', { class: 'hint' })),
       h('button', { type: 'button', class: 'secondary', dataset: { vpnAct: 'import' } }),
-      h('input', { type: 'file', accept: '.conf', hidden: true, dataset: { vpn: 'file' } })),
+      h('input', { type: 'file', accept: '.conf', hidden: true, dataset: { vpn: 'file' } }),
+      h('ol', { class: 'vpn-profiles', dataset: { vpn: 'list' } })),
+    h('div', { class: 'setting-row toggle', dataset: { vpn: 'switches' } },
+      h('div', { class: 'setting-label' }, h('span', {}, 'Recent switches'), h('ol', { class: 'vpn-switches' }))),
     h('div', { class: 'setting-row toggle', dataset: { vpn: 'forwarding' } },
       h('div', { class: 'setting-label' }, h('label', { htmlFor: 'vpn-forwarding' }, 'Open a port for seeding'), h('p', { class: 'hint' })),
       h('input', { id: 'vpn-forwarding', type: 'checkbox', class: 'switch' })),
   ];
+}
+
+/** The profiles in the order they are tried, each movable and removable. */
+function paintVpnProfiles(list, vpn) {
+  const profiles = itemsOf(vpn?.profiles);
+  // Repainted only when it changed, so a push never swaps a button being clicked.
+  const signature = JSON.stringify([profiles, vpn?.enabled, vpn?.state]);
+  if (list.dataset.signature === signature) return;
+  list.dataset.signature = signature;
+  // The last profile goes once the VPN is off: protected traffic never goes direct.
+  const locked = profiles.length === 1 && Boolean(vpn?.enabled);
+  list.replaceChildren(...profiles.map((profile, index) => h('li', { class: profile.active ? 'on' : '' },
+    h('span', { class: 'vpn-rank' }, String(index + 1)),
+    h('span', { class: 'vpn-name' }, h('strong', {}, profile.name),
+      profile.active ? h('small', {}, vpn?.state === 'protected' ? 'In use' : 'Trying now') : null),
+    h('span', { class: 'ladder-moves' },
+      h('button', { type: 'button', class: 'icon-button', 'aria-label': `Try ${profile.name} earlier`, disabled: index === 0, dataset: { vpnAct: 'move', index, to: index - 1 } }, '↑'),
+      h('button', { type: 'button', class: 'icon-button', 'aria-label': `Try ${profile.name} later`, disabled: index === profiles.length - 1, dataset: { vpnAct: 'move', index, to: index + 1 } }, '↓'),
+      h('button', {
+        type: 'button', class: 'icon-button danger', 'aria-label': `Remove ${profile.name}`, disabled: locked,
+        title: locked ? 'Turn the VPN off before removing its last profile' : '', dataset: { vpnAct: 'remove', index, name: profile.name },
+      }, icon('close'))))));
 }
 
 /** The tunnel as the last status push reports it. */
@@ -513,20 +543,26 @@ function paintVpn() {
   const row = (name) => $(`[data-vpn="${name}"]`, list);
   const external = vpn?.state === 'external';
   const profile = Boolean(vpn?.profile_present);
+  const profiles = itemsOf(vpn?.profiles);
   const revoked = vpn?.reason === VPN_REVOKED;
+  // Every profile failed in a row: Mynou waits, then tries the list again.
+  const resting = vpn?.state === 'reconnecting' && vpn.reason === 'Exhausted';
   const [state, tone] = !vpn ? ['…', 'warn'] : external ? ['Not managed here', 'warn']
-    : vpn.reason === VPN_RESTARTING ? ['Restarting', 'warn'] : VPN_STATES[vpn.state] ?? [sentence(vpn.state), 'warn'];
+    : vpn.reason === VPN_RESTARTING ? ['Restarting', 'warn'] : resting ? ['Waiting', 'bad']
+    : VPN_STATES[vpn.state] ?? [sentence(vpn.state), 'warn'];
   const badge = $('.badge', row('state'));
   badge.textContent = state;
   badge.dataset.tone = tone;
   const age = Number(vpn?.handshake_age_secs);
+  const through = profiles.length > 1 && vpn?.active_profile ? `Through ${vpn.active_profile}. ` : '';
   $('.hint', row('state')).textContent = external ? 'This Mynou uses an outside network; it runs no VPN of its own.'
-    : vpn?.state === 'protected' ? `${vpn.ipv6 ? 'IPv4 and IPv6.' : 'IPv4 only.'} ${Number.isFinite(age) && vpn.handshake_age_secs !== null ? `Last handshake ${age} s ago.` : 'Connected.'}`
+    : vpn?.state === 'protected' ? `${through}${vpn.ipv6 ? 'IPv4 and IPv6.' : 'IPv4 only.'} ${Number.isFinite(age) && vpn.handshake_age_secs !== null ? `Last handshake ${age} s ago.` : 'Connected.'}`
     : vpn?.state === 'disabled' ? (profile ? 'Everything uses your own connection.' : 'Import a profile to use a VPN.')
-    : vpn?.state === 'connecting' ? 'Waiting for the VPN server to answer.'
+    : resting ? `${profiles.length > 1 ? 'Every profile failed' : 'The VPN server never answered'}, so torrents wait. Next try ${relativeTime(Date.now() / 1000 + (Number(vpn.retry_in_secs) || 0))}`
+    : vpn?.state === 'connecting' ? `${through}Waiting for the VPN server to answer.`
     : vpn?.reason && vpn.reason !== VPN_RESTARTING ? VPN_REASONS[vpn.reason] ?? vpn.reason : '';
   // A failed tunnel is retried from here: turning it off would send torrents direct.
-  const failed = vpn?.enabled && !revoked && (vpn.state === 'error' || (vpn.state === 'blocked' && vpn.reason !== VPN_RESTARTING));
+  const failed = vpn?.enabled && !revoked && (resting || vpn.state === 'error' || (vpn.state === 'blocked' && vpn.reason !== VPN_RESTARTING));
   const enable = $('[data-vpn-act="enable"]', list);
   enable.hidden = external || !profile || (vpn.enabled && !revoked && !failed);
   enable.textContent = failed ? 'Try again' : 'Turn on';
@@ -535,9 +571,18 @@ function paintVpn() {
   $('#settings-vpn-uses').hidden = external || !vpn?.enabled;
   row('profile').hidden = !vpn || external;
   const imported = $('.badge', row('profile'));
-  imported.textContent = profile ? 'Imported' : 'Not imported';
+  imported.textContent = profiles.length > 1 ? `${profiles.length} profiles` : profile ? 'Imported' : 'Not imported';
   imported.dataset.tone = profile ? 'ok' : 'warn';
-  $('[data-vpn-act="import"]', list).textContent = profile ? 'Replace' : 'Import a .conf';
+  $('.hint', row('profile')).textContent = profiles.length > 1
+    ? 'Tried in this order. When a server stops answering for about five minutes, the next profile takes over.'
+    : 'The WireGuard .conf file from your provider. Add others to fall back on when its server stops answering.';
+  $('[data-vpn-act="import"]', list).textContent = profile ? 'Add a .conf' : 'Import a .conf';
+  paintVpnProfiles($('[data-vpn="list"]', list), vpn);
+  const switches = itemsOf(vpn?.switches);
+  row('switches').hidden = external || !switches.length;
+  $('.vpn-switches', list).replaceChildren(...switches.map((change) => h('li', {},
+    h('span', {}, `${change.from ?? '?'} → ${change.to ?? '?'}`),
+    h('small', {}, `${relativeTime(change.at)} · ${VPN_SWITCHES[change.reason] ?? sentence(change.reason)}`))));
   row('forwarding').hidden = !profile || external;
   const forwarding = $('#vpn-forwarding');
   if (!forwarding.disabled) forwarding.checked = Boolean(vpn?.forwarding) && vpn.forwarding !== 'disabled';
@@ -711,7 +756,12 @@ views.settings = {
       const action = button.dataset.vpnAct;
       if (action === 'import') { $('[data-vpn="file"]', vpn).click(); return; }
       if (action === 'disable' && !confirm('Turn off the VPN? Everything will then use your own connection.')) return;
-      act(button, () => vpnControl({ action }), VPN_DONE[action]);
+      if (action === 'remove' && !confirm(`Remove the profile ${button.dataset.name}? Mynou forgets its keys.`)) return;
+      const body = { action };
+      // Profiles are counted from 0, in the order they are tried.
+      if (action === 'move' || action === 'remove') body.index = Number(button.dataset.index);
+      if (action === 'move') body.to = Number(button.dataset.to);
+      act(button, () => vpnControl(body), VPN_DONE[action]);
     });
     vpn.addEventListener('change', (event) => {
       event.stopPropagation();
@@ -722,8 +772,9 @@ views.settings = {
         if (!file) return;
         act($('[data-vpn-act="import"]', vpn), async () => {
           if (file.size > 16_384) throw new Error('This is not a WireGuard profile: it is larger than 16 KB');
-          await vpnControl({ action: 'import', profile: await file.text() });
-        }, 'Profile imported: connecting');
+          // The file's name is the profile's, such as the server it leads to.
+          await vpnControl({ action: 'import', profile: await file.text(), name: file.name.replace(/\.conf$/i, '') });
+        }, 'Profile added: connecting');
       } else if (input.id === 'vpn-forwarding') {
         const on = input.checked;
         input.disabled = true;

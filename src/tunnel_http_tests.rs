@@ -502,7 +502,6 @@ fn full_queue_is_fail_fast_and_dropped_last_owner_joins() {
     let (sender, receiver) = mpsc::sync_channel(QUEUE);
     let owner = Owner {
         identity: 1,
-        ipv6: false,
         sender,
         cancelled: Arc::new(AtomicBool::new(false)),
         generation: Arc::new(AtomicU64::new(1)),
@@ -587,7 +586,6 @@ fn stream_operations_wait_for_queue_space_until_their_deadline() {
     let (sender, receiver) = mpsc::sync_channel(QUEUE);
     let owner = Owner {
         identity: 1,
-        ipv6: false,
         sender,
         cancelled: Arc::new(AtomicBool::new(false)),
         generation: Arc::new(AtomicU64::new(1)),
@@ -1156,3 +1154,6 @@ pub(crate) fn udp_protocol_server(driver: &HttpTunnel) -> (u16, JoinHandle<()>) 
     });
     (port, worker)
 }
+
+#[path = "tunnel_http_failover_tests.rs"]
+pub(crate) mod failover;
