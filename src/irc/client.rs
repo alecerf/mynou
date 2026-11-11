@@ -25,6 +25,8 @@ pub(crate) struct Health {
     rejected: u64,
     last_received: u64,
     last_error: Option<String>,
+    /// Why the last attempt failed, when known, until the next failure or join.
+    reason: Option<String>,
     retry_in_secs: u64,
     sasl_authenticated: bool,
     nickserv_authenticated: bool,
@@ -48,6 +50,10 @@ impl Health {
         v.insert(
             "last_error",
             self.last_error.clone().map_or(Value::Null, Value::from),
+        );
+        v.insert(
+            "reason",
+            self.reason.clone().map_or(Value::Null, Value::from),
         );
         v
     }
@@ -79,6 +85,7 @@ impl Runtime {
                             rejected: 0,
                             last_received: 0,
                             last_error: None,
+                            reason: None,
                             retry_in_secs: 0,
                             sasl_authenticated: false,
                             nickserv_authenticated: false,
@@ -102,6 +109,9 @@ fn health(engine: &Engine, id: &str, phase: &str, error: Option<&str>, delay: u6
         if matches!(phase, "connecting" | "backoff" | "stopped") {
             h.sasl_authenticated = false;
             h.nickserv_authenticated = false;
+        }
+        if matches!(phase, "connected" | "backoff" | "stopped") {
+            h.reason = None;
         }
     }
 }
@@ -160,20 +170,33 @@ pub(crate) fn start(engine: &Arc<Engine>, handles: &mut Vec<JoinHandle<()>>) {
                 if engine.stopped.load(Ordering::Acquire) {
                     break;
                 }
-                if started.elapsed() >= Duration::from_secs(30) {
+                let failure = result
+                    .as_ref()
+                    .err()
+                    .and_then(|e| super::invite::failure(&source, e));
+                if failure.is_some() {
+                    // Asking a bot again at once would only repeat its refusal.
+                    delay = source.reconnect_max_secs;
+                } else if started.elapsed() >= Duration::from_secs(30) {
                     delay = source.reconnect_min_secs;
                 }
                 health(
                     &engine,
                     &source.id,
                     "backoff",
-                    Some(if result.is_err() {
-                        "connection_or_protocol_failed"
-                    } else {
-                        "connection_closed"
+                    Some(match (&failure, &result) {
+                        (Some((code, _)), _) => code,
+                        (None, Err(_)) => "connection_or_protocol_failed",
+                        (None, Ok(())) => "connection_closed",
                     }),
                     delay,
                 );
+                if let Some((_, reason)) = failure
+                    && let Ok(mut r) = engine.irc_runtime.lock()
+                    && let Some(h) = r.health.get_mut(&source.id)
+                {
+                    h.reason = Some(reason);
+                }
                 engine.wait(delay * 1000);
                 delay = delay.saturating_mul(2).min(source.reconnect_max_secs);
             }
@@ -240,6 +263,96 @@ impl Stream {
             Self::Tls(s) => s.set_deadline(deadline),
         }
     }
+    fn buffered(&self) -> bool {
+        match self {
+            Self::Tcp(_) => false,
+            Self::Tls(s) => s.buffered(),
+        }
+    }
+}
+/// The connection under TLS, shared with the receive loop so that it can wait
+/// for input until a timer: a timeout inside a TLS record would end the
+/// connection, a timeout before any byte of one does not.
+#[derive(Clone)]
+struct Wire(Arc<std::sync::Mutex<WireState>>);
+struct WireState {
+    stream: DeadlineStream,
+    ahead: Vec<u8>,
+    end: bool,
+}
+impl Wire {
+    fn new(stream: DeadlineStream) -> Self {
+        Self(Arc::new(std::sync::Mutex::new(WireState {
+            stream,
+            ahead: Vec::new(),
+            end: false,
+        })))
+    }
+    fn state(&self) -> std::io::Result<std::sync::MutexGuard<'_, WireState>> {
+        self.0.lock().map_err(|_| std::io::ErrorKind::Other.into())
+    }
+    /// Waits until input arrives, keeping it for the next read, or `until`:
+    /// false when nothing came by then.
+    fn wait(&self, until: Instant) -> Result<bool> {
+        let mut state = self.state().map_err(|_| "IRC: read failed")?;
+        if !state.ahead.is_empty() || state.end {
+            return Ok(true);
+        }
+        if until <= Instant::now() {
+            return Ok(false);
+        }
+        state.stream.set_deadline(until);
+        let mut bytes = [0; 4096];
+        match state.stream.read(&mut bytes) {
+            Ok(0) => state.end = true,
+            Ok(n) => state.ahead.extend_from_slice(&bytes[..n]),
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
+                ) =>
+            {
+                return Ok(false);
+            }
+            Err(_) => return Err("IRC: read failed or timed out".into()),
+        }
+        Ok(true)
+    }
+}
+impl Read for Wire {
+    fn read(&mut self, bytes: &mut [u8]) -> std::io::Result<usize> {
+        let mut state = self.state()?;
+        if !state.ahead.is_empty() {
+            let n = bytes.len().min(state.ahead.len());
+            bytes[..n].copy_from_slice(&state.ahead[..n]);
+            state.ahead.drain(..n);
+            return Ok(n);
+        }
+        if state.end {
+            return Ok(0);
+        }
+        state.stream.read(bytes)
+    }
+}
+impl Write for Wire {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.state()?.stream.write(bytes)
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.state()?.stream.flush()
+    }
+}
+impl crate::net::NetworkStream for Wire {
+    // The deadline stream above sets the remaining time before each operation.
+    fn set_read_timeout(&self, timeout: Option<Duration>) -> std::io::Result<()> {
+        self.state()?
+            .stream
+            .set_deadline(Instant::now() + timeout.unwrap_or(Duration::from_secs(180)));
+        Ok(())
+    }
+    fn set_write_timeout(&self, timeout: Option<Duration>) -> std::io::Result<()> {
+        self.set_read_timeout(timeout)
+    }
 }
 impl Read for Stream {
     fn read(&mut self, b: &mut [u8]) -> std::io::Result<usize> {
@@ -299,8 +412,13 @@ fn connected(engine: &Arc<Engine>, source: &Source) -> Result<()> {
         .as_ref()
         .map(super::NickServ::command)
         .transpose()?;
+    let invitation = source
+        .invite
+        .as_ref()
+        .map(super::Invite::command)
+        .transpose()?;
     let (url, tls) = source.endpoint()?;
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let mut deadline = Instant::now() + Duration::from_secs(10);
     let stream = if source.protection == crate::source_network::Protection::Protected {
         let network = &engine.source_network;
         let authority = if url.host.contains(':') {
@@ -341,6 +459,8 @@ fn connected(engine: &Arc<Engine>, source: &Source) -> Result<()> {
         drop(runtime);
         stream
     };
+    let wire = Wire::new(stream);
+    let stream = DeadlineStream::from_stream(Box::new(wire.clone()), deadline);
     let mut stream = if tls {
         Stream::Tls(Box::new(crate::tls::TlsStream::connect_stream(
             stream, &url.host,
@@ -365,43 +485,66 @@ fn connected(engine: &Arc<Engine>, source: &Source) -> Result<()> {
     let mut ready = false;
     let mut window = Instant::now();
     let mut messages = 0_u32;
+    // The wait for an invitation, or the delay before asking again. Each one
+    // moves the registration deadline once, and their number is bounded.
+    let mut timer: Option<Instant> = None;
     while !engine.stopped.load(Ordering::Acquire) {
-        let deadline = if !ready {
-            deadline
-        } else if let Some(started) = partial_started {
-            started + Duration::from_secs(10)
+        if let Some(at) = timer
+            && !stream.buffered()
+            && Instant::now() < at
+            && !wire.wait(at.min(deadline))?
+            && Instant::now() < deadline
+        {
+            continue;
+        }
+        let inputs = if timer.is_some_and(|at| Instant::now() >= at) {
+            timer = None;
+            vec![None]
         } else {
-            last_complete + Duration::from_secs(source.idle_timeout_secs)
+            let until = if !ready {
+                deadline
+            } else if let Some(started) = partial_started {
+                started + Duration::from_secs(10)
+            } else {
+                last_complete + Duration::from_secs(source.idle_timeout_secs)
+            };
+            stream.deadline(until);
+            let n = stream
+                .read(&mut buffer)
+                .map_err(|_| "IRC: read failed or timed out")?;
+            if n == 0 {
+                return Ok(());
+            }
+            let was_partial = decoder.has_partial();
+            let decoded = decoder.feed(&buffer[..n])?;
+            if !decoded.is_empty() {
+                last_complete = Instant::now();
+            }
+            if decoder.has_partial() {
+                if !was_partial || !decoded.is_empty() {
+                    partial_started = Some(Instant::now());
+                }
+            } else {
+                partial_started = None;
+            }
+            decoded.into_iter().map(Some).collect::<Vec<_>>()
         };
-        stream.deadline(deadline);
-        let n = stream
-            .read(&mut buffer)
-            .map_err(|_| "IRC: read failed or timed out")?;
-        if n == 0 {
-            return Ok(());
-        }
-        let was_partial = decoder.has_partial();
-        let decoded = decoder.feed(&buffer[..n])?;
-        if !decoded.is_empty() {
-            last_complete = Instant::now();
-        }
-        if decoder.has_partial() {
-            if !was_partial || !decoded.is_empty() {
-                partial_started = Some(Instant::now());
-            }
-        } else {
-            partial_started = None;
-        }
-        for message in decoded {
-            if window.elapsed() >= Duration::from_secs(1) {
-                window = Instant::now();
-                messages = 0;
-            }
-            messages += 1;
-            if messages > 256 {
-                return Err("IRC: message rate exceeds bounds".into());
-            }
-            match protocol.receive(&message)? {
+        for input in inputs {
+            let event = match input {
+                None => protocol.elapsed(),
+                Some(message) => {
+                    if window.elapsed() >= Duration::from_secs(1) {
+                        window = Instant::now();
+                        messages = 0;
+                    }
+                    messages += 1;
+                    if messages > 256 {
+                        return Err("IRC: message rate exceeds bounds".into());
+                    }
+                    protocol.receive(&message)?
+                }
+            };
+            match event {
                 Event::Ignore => {}
                 Event::Reply(reply) => {
                     send(&mut stream, &reply)?;
@@ -431,11 +574,37 @@ fn connected(engine: &Arc<Engine>, source: &Source) -> Result<()> {
                             .ok_or("IRC: NickServ identification already sent")?,
                     )?;
                 }
+                Event::Invite => {
+                    if source.nickserv.is_some()
+                        && let Some(h) = lock(&engine.irc_runtime)?.health.get_mut(&source.id)
+                    {
+                        h.nickserv_authenticated = true;
+                    }
+                    let (command, wait) = invitation
+                        .as_ref()
+                        .zip(source.invite.as_ref())
+                        .ok_or("IRC: no invite command is configured")?;
+                    health(engine, &source.id, "inviting", None, 0);
+                    send(&mut stream, command)?;
+                    let at = Instant::now() + Duration::from_secs(wait.timeout_secs);
+                    timer = Some(at);
+                    deadline = at + Duration::from_secs(10);
+                }
+                Event::Retry(secs) => {
+                    health(engine, &source.id, "inviting", None, secs);
+                    let at = Instant::now() + Duration::from_secs(secs);
+                    timer = Some(at);
+                    deadline = at + Duration::from_secs(10);
+                }
                 Event::Join => {
                     if source.nickserv.is_some()
                         && let Some(h) = lock(&engine.irc_runtime)?.health.get_mut(&source.id)
                     {
                         h.nickserv_authenticated = true;
+                    }
+                    if source.invite.is_some() {
+                        timer = None;
+                        deadline = Instant::now() + Duration::from_secs(10);
                     }
                     health(engine, &source.id, "joining", None, 0);
                     send(
@@ -449,6 +618,7 @@ fn connected(engine: &Arc<Engine>, source: &Source) -> Result<()> {
                 }
                 Event::Joined => {
                     ready = true;
+                    timer = None;
                     health(engine, &source.id, "connected", None, 0);
                 }
                 Event::Announcement(body) if source.announcement_lookup.is_some() => {

@@ -15,7 +15,7 @@ export const indexerReports = () => data.get('indexers')?.data?.sources ?? [];
 export function sourceProblems() {
   const indexers = indexerReports().filter((r) => r.last_error && r.last_error !== 'disabled')
     .map((r) => `Indexer ${r.name ?? r.id}: ${INDEXER_ERRORS[r.last_error] ?? sentence(r.last_error)}`);
-  const irc = (data.get('irc')?.data?.sources ?? []).filter((r) => r.last_error ?? r.error)
-    .map((r) => `IRC ${r.name ?? r.id}: ${r.last_error ?? r.error}`);
+  const irc = (data.get('irc')?.data?.sources ?? []).filter((r) => r.health?.reason ?? r.health?.last_error)
+    .map((r) => `IRC ${r.id}: ${r.health.reason ?? sentence(r.health.last_error)}`);
   return [...indexers, ...irc];
 }

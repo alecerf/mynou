@@ -4,6 +4,7 @@ pub(crate) mod client;
 mod engine;
 pub(crate) mod format;
 mod index;
+pub(crate) mod invite;
 pub(crate) mod lookup;
 mod nickserv;
 mod persistence;
@@ -14,6 +15,7 @@ pub(crate) mod sasl;
 mod tunnel_tests;
 use crate::{Result, crypto::sha256, json::Value, selection::SelectionConfig, store::Request};
 pub use format::Delimited;
+pub use invite::Settings as Invite;
 pub use lookup::{Candidate, Lookup};
 pub use nickserv::Settings as NickServ;
 pub(crate) use persistence::AnnouncementStore;
@@ -197,6 +199,7 @@ pub struct Source {
     pub join_key_env: Option<String>,
     pub sasl: Option<Sasl>,
     pub nickserv: Option<NickServ>,
+    pub invite: Option<Invite>,
     pub announcement_format: Option<Delimited>,
     pub announcement_lookup: Option<Lookup>,
     pub magnet_template: Option<String>,
@@ -246,6 +249,7 @@ impl Source {
                 "join_key_env",
                 "sasl",
                 "nickserv",
+                "invite",
                 "announcement_format",
                 "magnet_template",
                 "idle_timeout_secs",
@@ -277,6 +281,10 @@ impl Source {
             nickserv: match v.get("nickserv") {
                 None | Some(Value::Null) => None,
                 Some(v) => Some(NickServ::from_json(v)?),
+            },
+            invite: match v.get("invite") {
+                None | Some(Value::Null) => None,
+                Some(v) => Some(Invite::from_json(v)?),
             },
             announcement_format: match v.get("announcement_format") {
                 None | Some(Value::Null) => None,
@@ -387,6 +395,12 @@ impl Source {
             } else {
                 "none"
             },
+        );
+        v.insert(
+            "invite_nick",
+            self.invite
+                .as_ref()
+                .map_or(Value::Null, |i| Value::from(i.nick.clone())),
         );
         v
     }
@@ -556,6 +570,8 @@ impl Settings {
                         let mut v = s.public_json();
                         if let Value::Object(fields) = &mut v {
                             fields.remove("announcement_format");
+                            // Joining never changes what an announcement means.
+                            fields.remove("invite_nick");
                         }
                         v.insert("binding", s.binding());
                         v.insert(

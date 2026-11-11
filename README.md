@@ -167,7 +167,7 @@ Everything is also available over HTTP: `/api` routes, and `/healthz` and
 | | |
 | --- | --- |
 | **Requests** | Plex watchlists, yours and your Plex friends' through your own Plex connection, or other accounts with their own token; the web interface and an HTTP API. |
-| **Sources** | RSS, JSON and Torznab indexers with optional authentication, opt-in feed watching for new releases, and opt-in IRC announcement channels. |
+| **Sources** | RSS, JSON and Torznab indexers with optional authentication, opt-in feed watching for new releases, and opt-in IRC announcement channels, invite-only ones included. |
 | **Release selection** | Movie and episode profiles on resolution, source, codec, language, terms and scores, with previews that explain every decision. |
 | **BitTorrent** | v1, v2 and hybrid torrents, magnets, trackers, DHT and PEX, parallel peers, pause and resume, priorities, bandwidth limits and seeding policies. |
 | **Series** | TMDB episode plans, automatic requests for newly aired episodes, an episode calendar, explicit numbering, season packs and multi-episode files. |
@@ -213,6 +213,23 @@ enabled.
 
 Open **Settings → Indexers** to see the state of each source. Series
 also need the TMDB catalog (enabled in Settings, with its token).
+</details>
+
+<details>
+<summary><strong>An IRC announce channel is invite-only</strong></summary>
+
+Some private trackers invite you to their announce channel when you ask their
+bot. Give the IRC source an invite command through `POST /api/settings`, such
+as `"invite": {"nick": "Bot", "message": "invite {secret}", "secret_env":
+"MYNOU_IRC_INVITE_KEY"}`, and save the key with `POST /api/secrets`. Once
+registered and identified (SASL or NickServ), Mynou sends the message to the
+bot with the key in place of `{secret}`, waits for its invitation up to
+`timeout_secs` (10 seconds by default, at most 60), then joins. If the channel
+still refuses the join, Mynou asks again three times, waiting longer each time,
+then `GET /api/irc` shows the source's `last_error` (`invite_not_received`)
+and the reason, and it tries again after the source's longest reconnect delay.
+Without an invite command, the error is `invite_command_required`. The key is
+never shown, logged or recorded.
 </details>
 
 <details>

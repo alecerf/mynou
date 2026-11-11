@@ -508,6 +508,87 @@ fn protected_irc_tls_sasl_reconnect_restart_and_dedup_use_only_virtual_services(
     assert!(!report.contains("fixture-pass"));
     assert!(!report.contains("fixture-user"));
 }
+#[test]
+fn protected_irc_tls_waits_for_an_invitation_and_asks_again_without_breaking_records() {
+    if child(
+        "source_network::tests::protected_irc_tls_waits_for_an_invitation_and_asks_again_without_breaking_records",
+    ) {
+        return;
+    }
+    let pair = Pair::new();
+    let dir = Directory::new();
+    let service = listener(&pair);
+    let mut cfg = irc_settings(service.port());
+    let Value::Array(sources) = cfg.get_mut("irc").unwrap().get_mut("sources").unwrap() else {
+        panic!()
+    };
+    sources[0].insert(
+        "invite",
+        json::parse(r#"{"nick":"Bot","message":"invite {secret}","secret_env":"MYNOU_FIXTURE_PASS","timeout_secs":1}"#).unwrap(),
+    );
+    let notice=format!(":mynou!user@fixture JOIN :#announces\r\n:announce!bot@fixture PRIVMSG #announces :MYNOU {{\"title\":\"Fixture.Movie.2024.1080p\",\"media_title\":\"Fixture Movie\",\"kind\":\"movie\",\"year\":2024,\"tmdb_id\":\"42\",\"info_hash\":\"{}\"}}\r\n","1".repeat(40)).into_bytes();
+    let expected = "AGZpeHR1cmUtdXNlcgBmaXh0dXJlLXBhc3M=";
+    let expected = format!("AUTHENTICATE {expected}\r\n").into_bytes();
+    let (next, go) = mpsc::channel();
+    let worker = thread::spawn(move || {
+        let mut stream = accept(&*service);
+        let invite: &[u8] = b"PRIVMSG Bot :invite fixture-pass\r\n";
+        crate::tls::tests::serve_dialogue(
+            &mut stream,
+            &[
+                (b"CAP LS 302\r\n", b""),
+                (b"NICK mynou\r\n", b""),
+                (
+                    b"USER mynou 0 * :Mynou\r\n",
+                    b":server CAP * LS :sasl=PLAIN\r\n",
+                ),
+                (b"CAP REQ :sasl\r\n", b":server CAP mynou ACK :sasl\r\n"),
+                (b"AUTHENTICATE PLAIN\r\n", b"AUTHENTICATE +\r\n"),
+                (&expected, b":server 903 mynou :Authenticated\r\n"),
+                (b"CAP END\r\n", b":server 001 mynou :Welcome\r\n"),
+                // No invitation: the client waits, then joins anyway.
+                (invite, b""),
+                (
+                    b"JOIN #announces\r\n",
+                    b":server 473 mynou #announces :Cannot join channel (+i)\r\n",
+                ),
+                // Asked again after a delay, the bot invites.
+                (invite, b":Bot!bot@fixture INVITE mynou :#announces\r\n"),
+                (b"JOIN #announces\r\n", &notice),
+            ],
+        )
+        .unwrap();
+        go.recv_timeout(Duration::from_secs(10)).unwrap();
+        drop(stream);
+    });
+    let engine = open(&dir, &pair, &cfg);
+    let mut handles = Vec::new();
+    crate::irc::client::start(&engine, &mut handles);
+    let health = |key: &str| {
+        engine
+            .irc_sources()
+            .unwrap()
+            .get("sources")
+            .unwrap()
+            .as_array()
+            .unwrap()[0]
+            .get("health")
+            .unwrap()
+            .get(key)
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+    };
+    wait(|| health("received").as_deref() == Some("1"));
+    assert_eq!(health("phase").as_deref(), Some("connected"));
+    assert_eq!(health("attempts").as_deref(), Some("1"));
+    engine.stopped.store(true, Ordering::Release);
+    for h in handles {
+        h.join().unwrap();
+    }
+    next.send(()).unwrap();
+    worker.join().unwrap();
+    assert!(!json::stringify(&engine.irc_sources().unwrap()).contains("fixture-pass"));
+}
 
 #[test]
 fn replaced_generation_requires_a_fresh_engine_and_ipv6_never_falls_back() {
