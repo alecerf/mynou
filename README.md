@@ -1,90 +1,51 @@
 <h1 align="center">Mynou</h1>
 
 <p align="center">
-  <strong>Your media library on autopilot, in one self-contained program.</strong><br>
-  Add a title to your Plex watchlist. Mynou finds a release, downloads it,
+  <strong>Your media library on autopilot, in one self-contained program.</strong>
+</p>
+
+<p align="center">
+  Add a title to your Plex watchlist. Mynou finds a release, downloads it,<br>
   files it in your library and checks that Plex shows it.
 </p>
 
 <p align="center">
-  <a href="https://github.com/alecerf/mynou/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/alecerf/mynou?label=release"></a>
-  <img alt="Platform: macOS on Apple Silicon" src="https://img.shields.io/badge/platform-macOS%20Apple%20Silicon-lightgrey">
+  <a href="https://github.com/alecerf/mynou/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/alecerf/mynou?label=release&color=blue"></a>
+  <img alt="Platform: macOS on Apple Silicon" src="https://img.shields.io/badge/platform-macOS%20on%20Apple%20Silicon-lightgrey">
   <img alt="Zero dependencies" src="https://img.shields.io/badge/dependencies-0-brightgreen">
   <img alt="Unsafe code only for the SHA instructions" src="https://img.shields.io/badge/unsafe-SHA%20instructions%20only-brightgreen">
+  <a href="LICENSE.md"><img alt="License: do anything" src="https://img.shields.io/badge/license-do%20anything-blue"></a>
 </p>
 
 <p align="center">
   <a href="#quick-start">Quick start</a> ·
+  <a href="#what-it-does">What it does</a> ·
   <a href="#set-up-your-library">Set up</a> ·
   <a href="#features">Features</a> ·
+  <a href="#good-to-know">Good to know</a> ·
   <a href="#questions-and-troubleshooting">Help</a>
 </p>
 
----
-
-## Why Mynou
-
-- **One program instead of a stack.** The BitTorrent client, the release
-  search, the media parsers, the web interface and the storage are all inside
-  one executable. There is no qBittorrent, Radarr, Sonarr, ffprobe, SQLite or
-  Docker to install and keep in sync.
-- **Nothing hidden underneath.** Mynou is safe Rust built on the standard
-  library only: zero Cargo dependencies and no external program at runtime.
-  The only `unsafe` code calls the processor's SHA instructions.
-- **It explains itself.** The release list of a title shows which one Mynou
-  would pick and why every other one was rejected; you can also pick one
-  yourself.
-- **Careful with your files.** Imports never overwrite, a video or a
-  subtitle, and never write outside your library folders. A file far shorter
-  or longer than the title is refused before anything is written. An upgrade
-  deletes the file it replaces only once the new one is in place (and in
-  Plex), and cancelling a request never deletes anything.
-
-You bring the network services: Plex, a TMDB account for series, and the
-indexers you want Mynou to search.
-
-## How it works
-
-<p align="center">
-  <strong>Request</strong> → <strong>Search</strong> → <strong>Select</strong> →
-  <strong>Download</strong> → <strong>Analyze</strong> → <strong>Import</strong> →
-  <strong>Confirm</strong>
-</p>
-
-| Step | What Mynou does |
-| --- | --- |
-| 1. Request | Takes a title from a Plex watchlist, the API or the web interface. |
-| 2. Search | Asks the indexers you configured for matching releases. |
-| 3. Select | Picks the best release for your profile and records why the others lost. |
-| 4. Download | Fetches it with the built-in BitTorrent client and verifies every piece. |
-| 5. Analyze | Reads the media file's metadata to check what was downloaded. |
-| 6. Import | Checks its length against the title's, then files it with its subtitles in the folder Plex already uses for the title, without overwriting anything. |
-| 7. Confirm | Asks Plex to scan and waits until Plex lists the title. |
-
-After that, Mynou can keep watching: new episodes of the series you follow are
-requested when they air, and better releases of titles you already own can be
-imported as upgrades.
-
 ## Quick start
 
-**You need:** a Mac with Apple Silicon. Nothing else — no account, no token, no
-Rust.
-
-**Install** by pasting this into Terminal:
+On a Mac with Apple Silicon, paste this into Terminal:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/alecerf/mynou/trunk/install.sh | sh
 ```
 
-The [script](install.sh) downloads the latest release, checks that the release
-key signed its `SHA256SUMS` and that the executable matches it, and only then
-installs `mynou` into `~/.local/bin`. If that folder is not on your `PATH`, it
-prints the line to add to `~/.zshrc`. Run it again to reinstall; add
-`-s -- 0.29.0` after `sh` for a given version, or set `MYNOU_INSTALL_DIR` for
-another folder.
+No account, token or Rust needed. The [script](install.sh) downloads the
+latest release, checks that the release key signed its `SHA256SUMS` and that
+the executable matches it, and only then installs `mynou` into `~/.local/bin`,
+without sudo. It ends with the line to add to `~/.zshrc` if that folder is not
+on your `PATH`, and the next steps: start Mynou and
+[set up your library](#set-up-your-library).
+
+Run it again to reinstall. For a given version, end the line with
+`| sh -s -- 0.29.0`; for another folder, set `MYNOU_INSTALL_DIR`.
 
 <details>
-<summary>Install by hand instead</summary>
+<summary><strong>Verify and install by hand</strong></summary>
 
 Download `mynou-v<version>-macos-arm64`, `SHA256SUMS` and `SHA256SUMS.sig`
 from the [latest release](https://github.com/alecerf/mynou/releases/latest),
@@ -100,73 +61,87 @@ openssl dgst -sha256 -verify release-key.pub.pem -signature SHA256SUMS.sig SHA25
 ```
 
 Each step runs only if the previous one succeeded: a bad signature or checksum
-stops before anything is installed.
+stops before anything is installed. Mynou's own updates make both checks.
 </details>
+
+## What it does
+
+| Step | What Mynou does |
+| --- | --- |
+| **Request** | Takes a title from a Plex watchlist, the web interface or the API. |
+| **Search** | Asks the indexers you configured for matching releases. |
+| **Select** | Picks the best release for your profile and records why the others lost. |
+| **Download** | Fetches it with the built-in BitTorrent client and verifies every piece. |
+| **Analyze** | Reads the media file's metadata to check what was downloaded. |
+| **Import** | Checks its length against the title's, then files it with its subtitles in the folder Plex already uses for the title. |
+| **Confirm** | Asks Plex to scan and waits until Plex lists the title. |
+
+Then it keeps watching: new episodes of the series you follow are requested
+when they air and, if you turn it on, better releases replace the ones you
+have.
+
+### Why Mynou
+
+- **One program, not a stack.** The BitTorrent client, the release search, the
+  media parsers, the web interface and the storage live in one executable: no
+  qBittorrent, Radarr, Sonarr, ffprobe, SQLite or Docker to install and keep in
+  sync.
+- **Nothing hidden underneath.** Safe Rust on the standard library only: zero
+  Cargo dependencies, no external program at runtime, and `unsafe` code only
+  to call the processor's SHA instructions.
+- **It explains itself.** A title's release list shows which release Mynou
+  would pick and why every other one lost; you can also pick one yourself.
+- **Careful with your files.** Imports never overwrite a video or a subtitle,
+  and never write outside your library folders. A file far shorter or longer
+  than the title is refused before anything is written. An upgrade deletes the
+  file it replaces only once the new one is in place (and in Plex), and
+  cancelling a request never deletes anything.
+
+You bring the services: Plex, a TMDB account for series, and the indexers you
+want Mynou to search.
 
 ## Set up your library
 
-Mynou keeps its settings in its own storage and you set it up from the web
-interface.
-
-**1. Start Mynou:**
+**1. Start Mynou.**
 
 ```sh
 mynou serve
 ```
 
-It keeps its data in `~/Library/Application Support/Mynou` (use `--dir DIR` or
-`MYNOU_HOME` for another place) and creates that folder on first start.
+Its data goes to `~/Library/Application Support/Mynou`, created on first
+start; use `--dir DIR` or `MYNOU_HOME` for another place.
 
-**2. Open <http://127.0.0.1:8787/>**. There is no account or sign-in on your
-Mac. To use Mynou from other computers on your network, open Settings,
-Network.
+**2. Open <http://127.0.0.1:8787/>.** There is no account or sign-in on your
+Mac.
 
-**3. Open the Settings view** and turn on what you use. Plex and TMDB start
-disabled:
+**3. Open Settings** and turn on what you use. Plex and TMDB start off.
 
-| To set up | In the Settings view | Secret |
+| To set up | Settings page | You need |
 | --- | --- | --- |
-| Library folders | Library | |
-| Downloads | Downloads (folders, port 6881, limits, seeding) | |
-| Plex server and watchlist | Plex: **Connect to Plex**, then choose the server | |
-| Your Plex friends' watchlists | Friends: a switch for each friend | |
-| TMDB catalog, to find titles and follow series | TMDB catalog | TMDB token |
-| Sources to search | Indexers | API key of each source |
-| What goes through a VPN | VPN: a WireGuard profile, then torrents, indexers, TMDB | |
+| Movies and series folders | Library | |
+| Downloads | Downloads: folder, downloads at once, peers, speed limits (BitTorrent port 6881 by default) | |
+| What a good release is | Quality: profiles with qualities, sources, languages and sizes | |
+| Plex server and watchlist | Plex & TMDB: **Connect to Plex**, then choose the server | A Plex account |
+| Your Plex friends' watchlists | Plex & TMDB: Friends, a switch for each friend | |
+| TMDB catalog, to find titles and follow series | Plex & TMDB: TMDB | A TMDB read access token |
+| Sources to search | Indexers, each with its own rules (priority, seeders, seeding goal) | The API key of each source |
+| What goes through a VPN | VPN: a WireGuard profile, then Torrents, Indexers, TMDB | Your provider's WireGuard profile |
+| Use from other computers | Network: Allow other computers | A password, or none on your local network |
 
-Without a VPN profile, everything uses your own connection. Once you import
-your provider's WireGuard profile, torrents go through it; indexers and TMDB
-can too.
+- **Without a VPN profile**, everything uses your own connection. Once you
+  import one, torrents go through it; indexers and TMDB can too.
+- **Saving** validates the settings and applies them at once; an invalid change
+  is refused and leaves the saved settings untouched.
+- **Tokens** are kept in Mynou's storage and never shown again.
+- **Every setting**, including those the view does not show, such as IRC
+  sources, is also available through `GET` and `POST /api/settings`, and
+  secrets through `POST /api/secrets`.
 
-Saving validates the settings and applies them at once; an invalid change is
-refused and leaves the saved settings untouched. Tokens are kept in Mynou's
-storage and never shown again. Every setting, including release profiles,
-requester accounts and IRC, is also available as JSON in the same view, through
-`GET` and `POST /api/settings`, and `POST /api/secrets`.
-
-> [!NOTE]
-> For unattended account-login startup, install the native launchd service
-> with `mynou service --action install --dir /absolute/data-directory`.
-
-## Web interface
-
-The interface is served by Mynou itself at `http://127.0.0.1:8787/`: plain
-HTML, CSS and JavaScript embedded in the executable, with no build step.
-
-- **Five views**: overview, library (films and series), jobs, transfers and
-  settings, updated live.
-- **Like Radarr and Sonarr**: find a film or a series on TMDB and add it;
-  Mynou then searches the indexers by itself. From a job, or from any episode
-  of a followed series, **Choose a release** lists what the indexers offer,
-  with why each release was kept or rejected, and downloads the one you pick.
-
-By default it listens on a loopback address only and answers pages and
-commands of this Mac, without sign-in, never a page of another site. Settings,
-Network can open it to your local network: other computers then sign in with a
-password.
-
-Everything is also available over HTTP: `/api` routes, and `/healthz` and
-`/readyz` for health.
+> [!TIP]
+> To start Mynou at login without a terminal, stop `mynou serve` (Ctrl-C) and
+> install the native launchd service with `mynou service --action install`.
+> Add `--dir` with the absolute path of your data directory if it is not the
+> default one. `--action status`, `stop`, `start` and `uninstall` manage it.
 
 ## Features
 
@@ -174,11 +149,13 @@ Everything is also available over HTTP: `/api` routes, and `/healthz` and
 | --- | --- |
 | **Requests** | Plex watchlists, yours and your Plex friends' through your own Plex connection, or other accounts with their own token; the web interface and an HTTP API. |
 | **Sources** | RSS, JSON and Torznab indexers with optional authentication, opt-in feed watching for new releases, and opt-in IRC announcement channels, invite-only ones included. |
-| **Release selection** | Movie and episode profiles on resolution, source, codec, language (each title's original language included), terms and scores, with previews that explain every decision. |
-| **BitTorrent** | v1, v2 and hybrid torrents, magnets, trackers, DHT and PEX, parallel peers, pause and resume, priorities, bandwidth limits and seeding policies. |
+| **Release selection** | Quality profiles for films and series on quality, source, language (each title's original language included), size, codec and preferred words, with French versions told apart (VFF, VFQ, VFI, VOSTFR) and previews that explain every decision. |
+| **BitTorrent** | v1, v2 and hybrid torrents, magnets, trackers, DHT and PEX, TCP and uTP peers, pause and resume, priorities, bandwidth limits and seeding policies. |
 | **Series** | TMDB episode plans, automatic requests for newly aired episodes, an episode calendar, explicit numbering, season packs and multi-episode files. |
-| **Library** | Imports that never overwrite, into the folders Plex already uses, with subtitles and a length check, Plex confirmation, and monitored quality upgrades. |
+| **Library** | Imports that never overwrite, into the folders Plex already uses, with subtitles and a length check, Plex confirmation, monitored quality upgrades, and a Storage view to free up space. |
 | **Media analysis** | Metadata of MP4/MOV, Matroska/WebM, AVI, WAV/RF64, FLAC and MP3 files. |
+| **Web interface** | Overview, Library, Transfers, Activity and Settings, updated live. Find a film or a series on TMDB and add it, as in Radarr and Sonarr. **Choose a release**, from a job or any episode of a followed series, lists what the indexers offer and why each release was kept or rejected. Plain HTML, CSS and JavaScript built into the executable, with no build step. |
+| **API** | Everything over HTTP under `/api`, with `/healthz` and `/readyz` for health checks. |
 
 ## Good to know
 
@@ -190,6 +167,8 @@ Mynou is young and deliberately explicit about its edges:
   covers the same journey with fewer options.
 - **Every feature has a stated bound**, and exceeding one produces a clear
   error instead of unbounded growth.
+- **Local by default.** Mynou listens on this Mac only. It answers this Mac's
+  pages and commands without sign-in, and never a page from another site.
 - **Native WireGuard protects the supported torrent paths**, over IPv4 and,
   when the profile routes it, IPv6, with NAT-PMP port forwarding.
 - **The network and cryptographic code is original** and has not had an
@@ -201,24 +180,30 @@ Mynou is young and deliberately explicit about its edges:
 <summary><strong>macOS refuses to open the executable</strong></summary>
 
 The executable is not signed with an Apple Developer identity or notarized.
-Once you have verified the checksum, open **System Settings → Privacy &
-Security**, choose **Open Anyway** for Mynou and confirm. Keep Gatekeeper
-enabled.
+The install script downloads it with `curl`, which macOS does not quarantine;
+a browser download is. Once you have verified it, open **System Settings →
+Privacy & Security**, choose **Open Anyway** for Mynou and confirm. Keep
+Gatekeeper enabled.
 </details>
 
 <details>
 <summary><strong><code>command not found: mynou</code></strong></summary>
 
-`$HOME/.local/bin` is not on your `PATH`. Run
-`export PATH="$HOME/.local/bin:$PATH"`, add that line to `~/.zshrc`, or call
-`"$HOME/.local/bin/mynou"` directly.
+`~/.local/bin` is not on your `PATH`. Add this line to `~/.zshrc`, then open a
+new terminal:
+
+```sh
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Or call `~/.local/bin/mynou` directly.
 </details>
 
 <details>
 <summary><strong>A search finds nothing</strong></summary>
 
-Open **Settings → Indexers** to see the state of each source. Series
-also need the TMDB catalog (enabled in Settings, with its token).
+Open **Settings → Indexers** to see the state of each source. Series also need
+the TMDB catalog (turned on in **Settings → Plex & TMDB**, with its token).
 </details>
 
 <details>
@@ -254,6 +239,20 @@ Mynou asks it again every 7 seconds for 10 minutes, then every 30 seconds.
 </details>
 
 <details>
+<summary><strong>Why was a release refused for its language?</strong></summary>
+
+A profile's languages are all required, and they decide before the quality.
+**Original language** is each title's own audio, as TMDB gives it: VO, MULTi
+and VOSTFR always hold it; a release without a language tag counts unless the
+title is French; FRENCH, VFF, VFQ and TRUEFRENCH count only for a French title.
+A French dub alone of an English film is refused, and a profile with VFF and
+Original language needs MULTi with VFF for an English film. Mynou keeps the
+language with each title once TMDB gave it; while TMDB is off or does not
+answer, only VO, MULTi and VOSTFR count. **Choose a release** and the Quality
+page's **Try it** say for each release whether it holds the original audio.
+</details>
+
+<details>
 <summary><strong>Plex does not show an imported title</strong></summary>
 
 Plex and Mynou must see the library at the same paths. If Plex sees it under
@@ -282,49 +281,42 @@ whether the length was checked.
 </details>
 
 <details>
-<summary><strong>Why was a release refused for its language?</strong></summary>
-
-A profile's languages are all required, and they decide before the quality.
-**Original language** is each title's own audio, as TMDB gives it: VO, MULTi
-and VOSTFR always hold it; a release without a language tag counts unless the
-title is French; FRENCH, VFF, VFQ and TRUEFRENCH count only for a French title.
-A French dub alone of an English film is refused, and a profile with VFF and
-Original language needs MULTi with VFF for an English film. Mynou keeps the
-language with each title once TMDB gave it; while TMDB is off or does not
-answer, only VO, MULTi and VOSTFR count. **Choose a release** and the Quality
-page's **Try it** say for each release whether it holds the original audio.
-</details>
-
-<details>
 <summary><strong>A friend's watchlist is not read</strong></summary>
 
-Open **Settings → Plex & TMDB → Friends**. Friends are off until you turn
-them on, and the reason Plex gave shows under a friend whose watchlist cannot
-be read, for example a private one. **Check now** reads your friend list
-again; a friend who left it stops being read, and what was already requested
-stays.
+Open **Settings → Plex & TMDB → Friends**. Friends are off until you turn them
+on, and the reason Plex gave shows under a friend whose watchlist cannot be
+read, for example a private one. **Check now** reads your friend list again; a
+friend who left it stops being read, and what was already requested stays.
 </details>
 
 <details>
 <summary><strong>How do I upgrade or back up?</strong></summary>
 
-Mynou updates itself, like Plex. It checks for a new release once a day and
-installs it once no request is in progress, after backing up its storage. If
-the new version cannot start, Mynou goes back to the previous version and
-data. `mynou update` installs one now. For your own backups, stop the service
-and copy the data directory (its `state/` and `downloads/` folders, which also
-hold your settings) and your library.
+Mynou updates itself, like Plex, unless you turn off **Update Mynou
+automatically** in **Settings → Library**. It checks for a new release once a
+day and installs it once no request is in progress, after backing up its
+storage. If the new version cannot start, Mynou goes back to the previous
+version and data. `mynou update` installs one now, the same way. For your own
+backups, stop the service and copy the data directory (its `state/` and
+`downloads/` folders, which also hold your settings) and your library.
+</details>
+
+<details>
+<summary><strong>How do I uninstall Mynou?</strong></summary>
+
+If you installed the service, remove it with `mynou service --action uninstall`
+(with the same `--dir`, if any). Then delete `~/.local/bin/mynou`. Your
+settings and data stay in the data directory until you delete it, and your
+library stays where it is.
 </details>
 
 Still stuck? [Open an issue](https://github.com/alecerf/mynou/issues/new/choose),
-without tokens, private paths or media names.
-
-What changed in each version is in the
-[release notes](https://github.com/alecerf/mynou/releases).
+without tokens, private paths or media names. What changed in each version is
+in the [release notes](https://github.com/alecerf/mynou/releases).
 
 ## Build from source
 
-With Rust 1.99.1 and no network access needed:
+With Rust 1.99.1, which `rust-toolchain.toml` pins, and no network access:
 
 ```sh
 cargo build --release --offline --locked
@@ -335,7 +327,7 @@ The executable is `target/release/mynou`.
 ## Contributing and security
 
 Bug reports and feature ideas are welcome through the
-[issue templates](https://github.com/alecerf/mynou/issues/new/choose). Before
+[issue forms](https://github.com/alecerf/mynou/issues/new/choose). Before
 changing code, read [CONTRIBUTING.md](CONTRIBUTING.md): product code stays on
 the Rust standard library, with no dependency and no external helper.
 Everyone follows the [code of conduct](CODE_OF_CONDUCT.md).
