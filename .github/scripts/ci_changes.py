@@ -35,7 +35,9 @@ def select(paths, full=False, pull_request=True):
                                   ".github/scripts/host_io_observer.py", ".github/scripts/host_io_observer.c"}
         work["tests"] |= product or path.startswith("tests/") or ci or control or native_fixture
         work["build"] |= product or ci or control or path == ".github/scripts/publish-release.sh"
-        work["tooling"] |= path.startswith((".github/scripts/", ".github/workflows/", ".github/actions/"))
+        # The install script is tested with the CI tooling, not built into Mynou.
+        installer = path == "install.sh"
+        work["tooling"] |= installer or path.startswith((".github/scripts/", ".github/workflows/", ".github/actions/"))
         security = control or path.startswith(".github/codeql") or path == ".github/workflows/codeql.yml"
         if rust or security:
             languages.add("rust")
@@ -47,7 +49,7 @@ def select(paths, full=False, pull_request=True):
             languages.add("actions")
         # Known non-product paths are cheap. New/unclassified inputs get the
         # full product checks rather than silently losing coverage.
-        known = (product or path.startswith(("tests/", ".cargo/", ".github/", "docs/"))
+        known = (product or installer or path.startswith(("tests/", ".cargo/", ".github/", "docs/"))
                  or ("/" not in path and path.endswith(".md")) or path == ".gitignore")
         if not known:
             work.update(dict.fromkeys(KEYS, True))
