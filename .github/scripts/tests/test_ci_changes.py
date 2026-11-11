@@ -49,6 +49,9 @@ class SelectionTests(unittest.TestCase):
         for path in (".github/scripts/host_io_observer.py", ".github/scripts/host_io_observer.c",
                      ".github/scripts/host_route_observer.py"):
             self.assertTrue(ci.select([path])["tests"])
+        installer = ci.select(["install.sh"])
+        self.assertTrue(installer["tooling"])
+        self.assertFalse(installer["tests"] or installer["build"])
         package = ci.select([".github/scripts/publish-release.sh"])
         self.assertTrue(package["tooling"] and package["build"])
         self.assertFalse(package["tests"])

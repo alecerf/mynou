@@ -70,32 +70,38 @@ imported as upgrades.
 **You need:** a Mac with Apple Silicon. Nothing else — no account, no token, no
 Rust.
 
-**1. Download, verify and install.** Paste this into Terminal, with `VERSION`
-set to the [latest release](https://github.com/alecerf/mynou/releases/latest):
+**Install** by pasting this into Terminal:
 
 ```sh
-VERSION=0.23.0
-cd "$HOME/Downloads" &&
-  curl -fLO "https://github.com/alecerf/mynou/releases/download/v$VERSION/mynou-v$VERSION-macos-arm64" &&
-  curl -fLO "https://github.com/alecerf/mynou/releases/download/v$VERSION/SHA256SUMS" &&
-  awk -v file="mynou-v$VERSION-macos-arm64" '$2 == file' SHA256SUMS | shasum -a 256 -c - &&
+curl -fsSL https://raw.githubusercontent.com/alecerf/mynou/trunk/install.sh | sh
+```
+
+The [script](install.sh) downloads the latest release, checks that the release
+key signed its `SHA256SUMS` and that the executable matches it, and only then
+installs `mynou` into `~/.local/bin`. If that folder is not on your `PATH`, it
+prints the line to add to `~/.zshrc`. Run it again to reinstall; add
+`-s -- 0.29.0` after `sh` for a given version, or set `MYNOU_INSTALL_DIR` for
+another folder.
+
+<details>
+<summary>Install by hand instead</summary>
+
+Download `mynou-v<version>-macos-arm64`, `SHA256SUMS` and `SHA256SUMS.sig`
+from the [latest release](https://github.com/alecerf/mynou/releases/latest),
+and [`release-key.pub.pem`](release-key.pub.pem) from this repository, into
+one folder. Then, in that folder:
+
+```sh
+VERSION=0.29.0
+openssl dgst -sha256 -verify release-key.pub.pem -signature SHA256SUMS.sig SHA256SUMS &&
+  shasum -a 256 -c SHA256SUMS &&
   mkdir -p "$HOME/.local/bin" &&
   install -m 755 "mynou-v$VERSION-macos-arm64" "$HOME/.local/bin/mynou"
 ```
 
-Each step runs only if the previous one succeeded, so a failed checksum stops
-before anything is installed. To also check that the release key signed the
-manifest, download `SHA256SUMS.sig` from the release and
-[`release-key.pub.pem`](release-key.pub.pem) from this repository, then run
-`openssl dgst -sha256 -verify release-key.pub.pem -signature SHA256SUMS.sig SHA256SUMS`.
-Mynou's own updates make both checks. Prefer clicking? Download both files from the
-[Releases page](https://github.com/alecerf/mynou/releases).
-
-**2. Put `mynou` on your `PATH`** (add this line to `~/.zshrc` to keep it):
-
-```sh
-export PATH="$HOME/.local/bin:$PATH"
-```
+Each step runs only if the previous one succeeded: a bad signature or checksum
+stops before anything is installed.
+</details>
 
 ## Set up your library
 

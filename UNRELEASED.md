@@ -55,3 +55,18 @@ count. **Choose a release** says for each release whether it holds the
 original audio and why, and the Quality page's **Try it** can take a title's
 original language to show the decision. Search reports carry
 `original_language`, and each assessment its `original` decision.
+
+## Added: Install with one command
+
+Mynou now installs with one line in Terminal, which also upgrades an existing
+installation:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/alecerf/mynou/trunk/install.sh | sh
+```
+
+It downloads the latest release, or the version you name, checks that the
+release key signed its `SHA256SUMS` and that the executable matches it, and
+only then installs `mynou` into `~/.local/bin` (or `MYNOU_INSTALL_DIR`), with
+no sudo. It refuses any Mac without Apple Silicon, and when that folder is not
+on your `PATH`, it gives you the line to add to `~/.zshrc`.
