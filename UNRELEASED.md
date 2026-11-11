@@ -91,3 +91,21 @@ waits for you to press **Try again**: it tries again after five minutes, then
 waits twice as long each time, up to an hour, and starts over at five minutes
 once the VPN works again. **Try again** still starts at once. Importing a
 profile now adds it to the list instead of replacing the one you had.
+
+## Added: Logs
+
+Mynou now keeps a log in the data directory, under `logs/`: one line per
+record, with its time, its level (error, warning, information or detail) and
+where it comes from. Failed searches, indexer and feed errors, IRC
+disconnections, VPN reconnections, downloads, imports and failed requests are
+all there. The log never takes more than 5 MiB: five files of at most 1 MiB,
+the oldest records making room for new ones. Tokens, passkeys, API keys,
+passwords and cookies are replaced by `[redacted]` before anything is written.
+
+Under the launchd service, what the process prints itself, such as a crash
+report, no longer goes to `/dev/null`: it lands in the log too. A service
+installed by an earlier version is switched over at its next start.
+
+The overview's Services panel has **Read the logs**: the newest records first,
+filtered by level, with **Download** to save them all. `GET /api/logs` and
+`GET /api/logs/download` serve the same.

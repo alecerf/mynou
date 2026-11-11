@@ -1324,6 +1324,23 @@
   /* ---------------------------------------------------- transfers -- */
   .summary-strip.transfer-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: 1.5rem; }
   .summary-strip.storage-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 44rem; }
+
+  /* --------------------------------------------------------- logs -- */
+  .panel > .text-link { margin-top: 1.25rem; }
+  .log-list > .log-line {
+    display: grid; grid-template-columns: 7.5rem 5rem 6.5rem minmax(0, 1fr); align-items: baseline; gap: 0.25rem 1rem;
+    padding: 0.7rem 0; font-size: 0.8125rem;
+  }
+  .log-line time, .log-source { font: 0.75rem var(--mono); font-variant-numeric: tabular-nums; color: var(--subtle); white-space: nowrap; }
+  .log-source { color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+  .log-line .badge { justify-self: start; }
+  .log-message { overflow-wrap: anywhere; line-height: 1.5; }
+  .log-line[data-level="debug"] .log-message { color: var(--muted); }
+  .log-line[data-level="error"] .log-message { color: var(--bad); }
+  @media (max-width: 48rem) {
+    .log-list > .log-line { grid-template-columns: auto auto minmax(0, 1fr); }
+    .log-message { grid-column: 1 / -1; }
+  }
   .transfer-tiles dt[data-tone="accent"]::before {
     content: ""; display: inline-block; width: 6px; height: 6px; margin-inline-end: 0.45rem; vertical-align: 0.15em;
     border-radius: 50%; background: var(--ok); animation: pulse 2.4s ease-out infinite;

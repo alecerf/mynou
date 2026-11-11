@@ -2749,7 +2749,7 @@ impl Drop for Client {
         if let Ok(mut jobs) = self.jobs.lock() {
             for job in jobs.values_mut() {
                 if let Err(error) = persist_control(&self.config, job) {
-                    eprintln!("Could not flush native transfer controls: {error}");
+                    crate::error!("Could not flush native transfer controls: {error}");
                 }
             }
         }
@@ -3174,7 +3174,7 @@ fn manager_loop(
                     .seed_queue
                     .advance(&index, &mut seed_scan, admission.as_ref())
             {
-                eprintln!("Could not read seed queue: {error}");
+                crate::error!("Could not read seed queue: {error}");
                 stop.store(true, Ordering::Release);
                 break;
             }
@@ -3196,7 +3196,7 @@ fn manager_loop(
                 }
             }
             if let Err(error) = trim_jobs(&config, &mut map, config.resident(32)) {
-                eprintln!("Could not retire indexed transfer: {error}");
+                crate::warn!("Could not retire indexed transfer: {error}");
             }
             // Rotation only makes room: when every retained seed fits in the
             // working set, retiring them would only reverify their data.
@@ -3242,7 +3242,7 @@ fn manager_loop(
                         None => persist_control(&config, &mut job),
                     };
                     if let Err(error) = result {
-                        eprintln!("Could not retire transfer {id}: {error}");
+                        crate::warn!("Could not retire transfer {id}: {error}");
                         map.insert(id, job);
                     }
                 }
@@ -3294,7 +3294,7 @@ fn manager_loop(
                                     slot.insert(job);
                                 }
                                 Err(error) => {
-                                    eprintln!("Could not load indexed transfer: {error}");
+                                    crate::error!("Could not load indexed transfer: {error}");
                                     if let Ok(mut catalog) = index.lock() {
                                         let _ = catalog.mark_failed(&id, &error);
                                     }
@@ -3303,7 +3303,7 @@ fn manager_loop(
                         }
                     }
                 }
-                Err(error) => eprintln!("Could not read indexed queue: {error}"),
+                Err(error) => crate::error!("Could not read indexed queue: {error}"),
             }
             if config.seed && map.len() < config.resident(32) {
                 let candidates = index
@@ -3332,7 +3332,7 @@ fn manager_loop(
                                         slot.insert(job);
                                     }
                                     Err(error) => {
-                                        eprintln!("Could not load retained seed: {error}");
+                                        crate::error!("Could not load retained seed: {error}");
                                         if let Ok(mut catalog) = index.lock() {
                                             let _ = catalog.mark_failed(&id, &error);
                                         }
@@ -3341,7 +3341,7 @@ fn manager_loop(
                             }
                         }
                     }
-                    Err(error) => eprintln!("Could not read indexed seeds: {error}"),
+                    Err(error) => crate::error!("Could not read indexed seeds: {error}"),
                 }
             }
         }

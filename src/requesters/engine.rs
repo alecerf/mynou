@@ -502,7 +502,7 @@ impl Engine {
                     match jobs.retry(&job.id) {
                         Ok(job) => job,
                         Err(error) => {
-                            eprintln!("mynou: requester retry of {} waits: {error}", job.id);
+                            crate::warn!("Requester retry of {} waits: {error}", job.id);
                             continue;
                         }
                     }

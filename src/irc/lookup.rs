@@ -545,7 +545,7 @@ pub(crate) fn start(engine: &Arc<Engine>, handles: &mut Vec<JoinHandle<()>>) {
             if pruned.is_none_or(|at| at.elapsed() >= PRUNE_EVERY) {
                 pruned = Some(Instant::now());
                 if let Err(error) = engine.prune_metainfo(std::time::SystemTime::now()) {
-                    eprintln!("mynou: IRC metainfo cleanup stopped: {error}");
+                    crate::warn!("IRC metainfo cleanup stopped: {error}");
                 }
             }
             let busy = engine

@@ -682,6 +682,24 @@ pub fn lookup(name: &str) -> Option<String> {
     stored(name).or_else(|| environment(name))
 }
 
+/// Every secret value this process knows, saved or from a `MYNOU_`
+/// environment variable other than `MYNOU_HOME`: the log hides them.
+pub fn known_secret_values() -> Vec<String> {
+    let mut values: Vec<String> = STORED
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .values()
+        .cloned()
+        .collect();
+    values.extend(std::env::vars_os().filter_map(|(name, value)| {
+        let name = name.to_str()?;
+        (name != "MYNOU_HOME" && check_secret_name(name).is_ok())
+            .then(|| value.into_string().ok())
+            .flatten()
+    }));
+    values
+}
+
 fn environment(name: &str) -> Option<String> {
     check_secret_name(name).ok()?;
     std::env::var(name).ok()

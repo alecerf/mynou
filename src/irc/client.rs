@@ -180,6 +180,10 @@ pub(crate) fn start(engine: &Arc<Engine>, handles: &mut Vec<JoinHandle<()>>) {
                 } else if started.elapsed() >= Duration::from_secs(30) {
                     delay = source.reconnect_min_secs;
                 }
+                match &result {
+                    Err(error) => crate::warn!("IRC {}: {error}; again in {delay} s", source.id),
+                    Ok(()) => crate::info!("IRC {}: disconnected; again in {delay} s", source.id),
+                }
                 health(
                     &engine,
                     &source.id,

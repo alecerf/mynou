@@ -309,6 +309,31 @@ friend who left it stops being read, and what was already requested stays.
 </details>
 
 <details>
+<summary><strong>Where are the logs?</strong></summary>
+
+In the interface: **Overview → Tracking & statistics → Read the logs**, or
+search for "Logs". The newest records come first; choose **Errors**,
+**Warnings**, **Activity** or **Everything**, and **Download** saves every log
+file as one text file. Over HTTP, `GET /api/logs?level=warn&limit=200` reads
+them (levels `error`, `warn`, `info`, `debug`; at most 1,000 records) and
+`GET /api/logs/download` returns the files.
+
+On disk they are in the data directory, under `logs/`: `mynou.log`, then
+`mynou.1.log` to `mynou.4.log`, older. Each file holds at most 1 MiB, so the
+log never takes more than 5 MiB: the oldest records make room for new ones.
+Each line reads `<UTC time> <LEVEL> <source>: <message>`. Tokens, passkeys, API
+keys, passwords and cookies are replaced by `[redacted]` before anything is
+written: every secret Mynou keeps, and what looks like one in URLs, headers and
+IRC commands.
+
+Under the launchd service, what the process prints itself, such as a crash
+report, goes to `logs/output.log`; Mynou moves it into the log at start and
+every minute, then empties it. A service installed by an earlier version is
+switched over at its next start. The fixed-code journal in
+`.mynou-service/events.log` stays as it was.
+</details>
+
+<details>
 <summary><strong>How do I upgrade or back up?</strong></summary>
 
 Mynou updates itself, like Plex, unless you turn off **Update Mynou

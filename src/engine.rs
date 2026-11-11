@@ -149,6 +149,57 @@ pub(crate) fn try_lock<T>(mutex: &Mutex<T>) -> Result<Option<MutexGuard<'_, T>>>
     }
 }
 
+/// Logs the step a job just took: a download, an import, a failure. A job
+/// that only waits again logs nothing.
+fn log_step(previous: &str, job: &Job) {
+    if previous == job.state {
+        return;
+    }
+    let request = &job.request;
+    let title = if request.kind == "episode" {
+        format!(
+            "{} S{:02}E{:02}",
+            request.title, request.season, request.episode
+        )
+    } else if request.year > 0 {
+        format!("{} ({})", request.title, request.year)
+    } else {
+        request.title.clone()
+    };
+    let release = job.release.as_ref().map_or("", |r| r.title.as_str());
+    match job.state.as_str() {
+        "downloading" => crate::info!("{title}: downloading {release} [job {}]", job.id),
+        "importing" | "imported" | "ready" => {
+            crate::info!("{title}: {} [job {}]", job.state, job.id);
+        }
+        "failed" => crate::warn!(
+            "{title}: failed after {} attempt(s), {}: {} [job {}]",
+            job.attempts,
+            if job.next_attempt_at == 0 {
+                "no automatic retry"
+            } else {
+                "retrying later"
+            },
+            job.last_error.as_deref().unwrap_or("unknown error"),
+            job.id
+        ),
+        _ => {}
+    }
+}
+
+/// Keeps a background task's latest error, and logs it when it changes.
+fn note_error(slot: &Mutex<Option<String>>, task: &str, error: Option<String>) {
+    if let Ok(mut current) = slot.lock() {
+        if *current != error {
+            match &error {
+                Some(error) => crate::warn!("{task}: {error}"),
+                None => crate::info!("{task}: working again"),
+            }
+        }
+        *current = error;
+    }
+}
+
 impl Engine {
     pub fn open(config: Config) -> Result<Arc<Self>> {
         Self::open_with_downloads(config, true)
@@ -936,7 +987,7 @@ impl Engine {
                 Ok(true) => {}
                 Ok(false) => return,
                 Err(error) => {
-                    eprintln!("mynou: startup validation failed: {error}");
+                    crate::error!("Startup validation failed: {error}");
                     return;
                 }
             }
@@ -998,9 +1049,7 @@ impl Engine {
             handles.push(thread::spawn(move || {
                 while !engine.stopped.load(Ordering::Acquire) {
                     let error = engine.refresh_series_due().err();
-                    if let Ok(mut current) = engine.last_series_error.lock() {
-                        *current = error;
-                    }
+                    note_error(&engine.last_series_error, "Series refresh", error);
                     engine.wait(60_000);
                 }
             }));
@@ -1013,7 +1062,7 @@ impl Engine {
                         Ok(true) => {}
                         Ok(false) => engine.wait(engine.config.poll_interval_ms),
                         Err(error) => {
-                            eprintln!("mynou: {error}");
+                            crate::error!("{error}");
                             engine.wait(1000);
                         }
                     }
@@ -1028,10 +1077,7 @@ impl Engine {
                     if matches!(result, Ok((_, true))) {
                         engine.last_sync_at.store(store::now(), Ordering::Release);
                     }
-                    let error = result.err();
-                    if let Ok(mut current) = engine.last_sync_error.lock() {
-                        *current = error;
-                    }
+                    note_error(&engine.last_sync_error, "Watchlist sync", result.err());
                     engine.wait(60_000);
                 }
             }));
@@ -1042,9 +1088,7 @@ impl Engine {
             handles.push(thread::spawn(move || {
                 while !engine.stopped.load(Ordering::Acquire) {
                     let error = engine.check_due_upgrades().err();
-                    if let Ok(mut current) = engine.last_upgrade_error.lock() {
-                        *current = error;
-                    }
+                    note_error(&engine.last_upgrade_error, "Upgrade check", error);
                     engine.wait(60_000);
                 }
             }));
@@ -1088,6 +1132,7 @@ impl Engine {
             return Ok(false);
         };
         let lease = job.lease_id.clone().ok_or("Missing lease")?;
+        let previous = job.state.clone();
         let heartbeat = Heartbeat::start(self.clone(), job.id.clone(), lease.clone());
         let result = self.advance(&mut job, &heartbeat.active);
         heartbeat.finish();
@@ -1142,6 +1187,7 @@ impl Engine {
             store.release_lease(&job.id, &lease)?;
         }
         drop(store);
+        log_step(&previous, &job);
         if job.state == "ready"
             && job.shared_file.is_none()
             && let Some(parent) = &job.upgrade_parent

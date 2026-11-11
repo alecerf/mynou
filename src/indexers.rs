@@ -501,11 +501,12 @@ pub(crate) fn fetch(
             state.successes = state.successes.saturating_add(1);
             state.last_error = None;
         }
-        Err(_) => {
+        Err(error) => {
             state.failures = state.failures.saturating_add(1);
             if state.last_error.is_none() {
                 state.last_error = Some("request_failed");
             }
+            crate::warn!("{error} ({})", source.name);
         }
     }
     result
@@ -604,7 +605,10 @@ fn fetch_before(
             .with_max_body(8 * 1024 * 1024)
             .without_redirects()
             .request("GET", url, &headers, &[])
-            .map_err(|_| "Indexer: network request failed")?;
+            .map_err(|error| {
+                crate::debug!("Indexer request failed ({}): {error}", source.name);
+                "Indexer: network request failed"
+            })?;
         remaining(deadline)?;
         state.last_status = Some(response.status);
         if response.status == 401

@@ -47,6 +47,13 @@ fn plist_escapes_paths_and_confines_process_arguments() {
         .unwrap();
     assert!(!args.contains("/bin/sh"));
     assert!(args.contains("/fixture/a&amp;b/data"));
+    // launchd sends stdout and stderr to the log's output file.
+    assert!(!document.contains("/dev/null"));
+    for key in ["StandardOutPath", "StandardErrorPath"] {
+        assert!(document.contains(&format!(
+            "<key>{key}</key><string>/fixture/a&amp;b/data/logs/output.log</string>"
+        )));
+    }
     // Secrets live in the store, never in the registration.
     assert!(!document.contains("MYNOU_API_TOKEN"));
     #[cfg(target_os = "macos")]
@@ -72,6 +79,55 @@ fn plist_escapes_paths_and_confines_process_arguments() {
             .unwrap();
         assert!(child.wait().unwrap().success());
     }
+}
+
+#[test]
+fn an_older_registration_gains_the_output_file_and_nothing_else() {
+    let dir = Directory::new();
+    let data = dir.0.join("data");
+    let (label, binary, home) = (
+        "org.mynou.fixture",
+        Path::new("/fixture/mynou"),
+        Path::new("/fixture/home"),
+    );
+    let current = plist(label, binary, &data, home).unwrap();
+    // What 0.29.0 and earlier registered.
+    let older = current.replace(
+        &output_keys(&output_path(&data).unwrap()),
+        &output_keys("/dev/null"),
+    );
+    assert_ne!(older, current);
+    assert!(older.contains("<key>StandardErrorPath</key><string>/dev/null</string>"));
+    assert_eq!(upgraded(&older, &data).unwrap(), Some(current.clone()));
+    assert_eq!(upgraded(&current, &data).unwrap(), None);
+    // Another binary or account is still a different registration.
+    let moved = plist(label, Path::new("/elsewhere/mynou"), &data, home).unwrap();
+    let moved = moved.replace(
+        &output_keys(&output_path(&data).unwrap()),
+        &output_keys("/dev/null"),
+    );
+    assert_ne!(upgraded(&moved, &data).unwrap(), Some(current.clone()));
+    // The registration is replaced whole, private, without a leftover.
+    let path = dir.0.join(format!("{label}.plist"));
+    create(&path, older.as_bytes()).unwrap();
+    replace(&path, current.as_bytes()).unwrap();
+    assert_eq!(read(&path, 524_288).unwrap(), current);
+    assert!(!dir.0.join(format!("{label}.plist.mynou-new")).exists());
+}
+
+#[test]
+fn only_a_process_whose_output_is_discarded_runs_itself_again() {
+    // Outside a launchd job of Mynou, nothing is adopted whatever stderr is.
+    let dir = Directory::new();
+    adopt_output(&dir.0).unwrap();
+    assert!(!crate::logs::directory(&dir.0).exists());
+    // The check that recognises /dev/null through a descriptor.
+    let null = fs::metadata("/dev/null").unwrap();
+    let opened = fs::File::open("/dev/null").unwrap().metadata().unwrap();
+    assert!(store::same_inode(&null, &opened));
+    let file = dir.0.join("file");
+    create(&file, b"").unwrap();
+    assert!(!store::same_inode(&null, &fs::metadata(&file).unwrap()));
 }
 
 #[test]
