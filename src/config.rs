@@ -572,20 +572,34 @@ fn download_policy(downloads: &Value) -> Result<TransferPolicy> {
 }
 
 /// The data directory: `--dir`, else `MYNOU_HOME`, else the account's
-/// `~/Library/Application Support/Mynou`.
+/// default, [`default_data_dir`].
 pub fn data_dir(option: Option<&str>) -> Result<PathBuf> {
     let path = match option {
         Some(path) if !path.trim().is_empty() => PathBuf::from(path),
         Some(_) => return Err("--dir requires a directory".into()),
         None => match std::env::var_os("MYNOU_HOME").filter(|v| !v.is_empty()) {
             Some(path) => PathBuf::from(path),
-            None => PathBuf::from(std::env::var_os("HOME").ok_or(
-                "Set --dir or MYNOU_HOME: HOME is missing for the default data directory",
-            )?)
-            .join("Library/Application Support/Mynou"),
+            None => default_data_dir(
+                std::env::var_os("HOME").map(PathBuf::from),
+                std::env::var_os("XDG_DATA_HOME").map(PathBuf::from),
+            )?,
         },
     };
     absolute_path(&path)
+}
+
+/// The XDG data directory: `$XDG_DATA_HOME/mynou`, else
+/// `~/.local/share/mynou`. `XDG_DATA_HOME` counts only when absolute, as the
+/// XDG rules say.
+fn default_data_dir(home: Option<PathBuf>, xdg_data_home: Option<PathBuf>) -> Result<PathBuf> {
+    let base = match xdg_data_home.filter(|path| path.is_absolute()) {
+        Some(base) => base,
+        None => home
+            .filter(|path| !path.as_os_str().is_empty())
+            .ok_or("Set --dir or MYNOU_HOME: HOME is missing for the default data directory")?
+            .join(".local/share"),
+    };
+    Ok(base.join("mynou"))
 }
 
 /// The job store, which also holds the settings and secrets.

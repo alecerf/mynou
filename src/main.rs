@@ -23,7 +23,8 @@ const HELP: &str = "Mynou — media automation using Rust std only
   update [--dir DIR]   (installs the latest release now; Mynou also does it once a day)
   version
 
-DIR is the data directory: --dir, else MYNOU_HOME, else ~/Library/Application Support/Mynou.
+DIR is the data directory: --dir, else MYNOU_HOME, else $XDG_DATA_HOME/mynou, else
+~/.local/share/mynou.
 --host and --port replace the address of Settings, Network for this run only (127.0.0.1:8787
 by default). With --host 0.0.0.0 and no password set, computers on your local network open
 Mynou without one; other networks cannot. A password set in Settings, Network keeps applying.
