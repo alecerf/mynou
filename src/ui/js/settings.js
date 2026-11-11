@@ -386,9 +386,11 @@ function networkRows() {
   const where = access.local_name ?? access.address;
   const address = where ? `${location.protocol}//${where}${active === '80' ? '' : `:${active}`}` : null;
   const open = Boolean(getPath(settings.document, 'access.local_network_open'));
-  const state = settings.report.restart_required ? 'Restart Mynou to apply the change.'
+  const started = access.listen_from_start
+    ? `Started with --host or --port, Mynou listens on ${access.listen} until it starts without them. ` : '';
+  const state = started + (settings.report.restart_required ? 'Restart Mynou to apply the change.'
     : exposed(access.listen) ? (address ? `From another computer, open ${address}.` : 'Other computers can open Mynou.')
-    : 'Only this Mac can open Mynou.';
+    : 'Only this Mac can open Mynou.');
   const row = (label, hint, control, toggle = false) => h('div', { class: `setting-row${toggle ? ' toggle' : ''}` },
     h('div', { class: 'setting-label' }, label, hint ? h('p', { class: 'hint' }, hint) : null), control);
   const badge = h('span', { class: 'badge', dataset: { tone: access.password_set ? 'ok' : 'warn' } }, access.password_set ? 'Set' : 'Not set');

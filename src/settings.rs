@@ -82,9 +82,15 @@ impl Engine {
         let pending = lock(&self.pending_settings)?.is_some();
         let current = self.current_settings()?;
         let mut value = Value::object();
+        let saved = current.get("listen").and_then(Value::as_str).map(|listen| {
+            match &self.config.listen_override {
+                Some(value) => value.apply(listen).unwrap_or_else(|_| listen.to_owned()),
+                None => listen.to_owned(),
+            }
+        });
         value.insert(
             "restart_required",
-            current.get("listen").and_then(Value::as_str) != Some(self.config.listen.as_str()),
+            saved.as_deref() != Some(self.config.listen.as_str()),
         );
         value.insert("settings", current);
         value.insert("active", self.config.document.clone());

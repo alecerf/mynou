@@ -7,6 +7,65 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
+/// The `--host` and `--port` of `mynou serve`: each replaces its part of the
+/// saved listen address, for this run only.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ListenOverride {
+    pub host: Option<std::net::IpAddr>,
+    pub port: Option<u16>,
+}
+
+impl ListenOverride {
+    /// The override the two options name, or none when neither is given.
+    pub fn parse(host: Option<&str>, port: Option<&str>) -> Result<Option<Self>> {
+        let host = host
+            .map(|text| {
+                text.trim_start_matches('[')
+                    .trim_end_matches(']')
+                    .parse::<std::net::IpAddr>()
+                    .map_err(|_| {
+                        format!(
+                            "--host takes an IP address, such as 127.0.0.1, 0.0.0.0 or ::, not {text}"
+                        )
+                    })
+            })
+            .transpose()?;
+        let port = port
+            .map(|text| {
+                text.parse::<u16>()
+                    .ok()
+                    .filter(|port| *port > 0)
+                    .ok_or_else(|| format!("--port takes a number from 1 to 65535, not {text}"))
+            })
+            .transpose()?;
+        Ok((host.is_some() || port.is_some()).then_some(Self { host, port }))
+    }
+
+    /// `listen` with the parts this override replaces.
+    pub fn apply(&self, listen: &str) -> Result<String> {
+        let mut address = listen
+            .parse::<std::net::SocketAddr>()
+            .map_err(|_| format!("Configuration: invalid listen address {listen}"))?;
+        if let Some(host) = self.host {
+            address.set_ip(host);
+        }
+        if let Some(port) = self.port {
+            address.set_port(port);
+        }
+        Ok(address.to_string())
+    }
+}
+
+impl Config {
+    /// Listens where `--host` and `--port` say for this run, whatever the
+    /// saved address.
+    pub fn override_listen(&mut self, value: ListenOverride) -> Result<()> {
+        self.listen = value.apply(&self.listen)?;
+        self.listen_override = Some(value);
+        Ok(())
+    }
+}
+
 /// Secret values in one store record, and the size of each.
 pub const MAX_SECRETS: usize = 256;
 pub const MAX_SECRET_BYTES: usize = 4096;
@@ -121,7 +180,12 @@ pub struct Config {
     /// The settings document this configuration was validated from.
     pub document: Value,
     pub store_dir: PathBuf,
+    /// Where the API listens: the saved address, or the one `--host` and
+    /// `--port` gave `mynou serve` for this run.
     pub listen: String,
+    /// The `--host` and `--port` of this run, which the saved address does
+    /// not change until Mynou starts without them.
+    pub listen_override: Option<ListenOverride>,
     /// Host names the owner allows besides the detected ones, when `listen`
     /// is reachable from the network.
     pub allowed_hosts: Vec<String>,
@@ -650,6 +714,7 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
         data_dir: base.clone(),
         document: v.clone(),
         listen,
+        listen_override: None,
         allowed_hosts,
         local_network_open,
         vpn,
