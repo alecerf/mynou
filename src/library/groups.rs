@@ -302,6 +302,7 @@ impl Engine {
             release.size_bytes,
             Some(1),
             initial[0].request.runtime_minutes,
+            initial[0].request.original_language.as_deref(),
         );
         let current = initial[0].release.as_ref().map(|old| {
             profile.assess_with_runtime(
@@ -310,6 +311,7 @@ impl Engine {
                 old.size_bytes,
                 Some(1),
                 initial[0].request.runtime_minutes,
+                initial[0].request.original_language.as_deref(),
             )
         });
         if query.action == "replace"

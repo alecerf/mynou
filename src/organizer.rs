@@ -1555,6 +1555,7 @@ mod tests {
             source_url: None,
             runtime_minutes: None,
             source_numbering: None,
+            original_language: None,
             tmdb_id: None,
         }
     }

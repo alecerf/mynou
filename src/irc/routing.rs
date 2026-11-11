@@ -828,7 +828,11 @@ fn candidate(
     if name != rule.profile
         || config.selection.profiles.get(name) != Some(profile)
         || !profile
-            .assess(&r.announcement.title, &job.request.title)
+            .assess_for(
+                &r.announcement.title,
+                &job.request.title,
+                job.request.original_language.as_deref(),
+            )
             .accepted
     {
         return Err("IRC: candidate differs from the admitted profile".into());
@@ -992,6 +996,7 @@ impl Engine {
                 Some(file_length),
                 Some(1),
                 job.request.runtime_minutes,
+                job.request.original_language.as_deref(),
             )
             .accepted
         {
@@ -1162,6 +1167,7 @@ mod tests {
                     tmdb_id: Some(7),
                     runtime_minutes: runtime,
                     source_numbering: None,
+                    original_language: None,
                     source_path: None,
                     source_url: None,
                 })

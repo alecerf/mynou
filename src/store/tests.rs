@@ -84,6 +84,7 @@ fn request(title: &str) -> Request {
         source_url: None,
         runtime_minutes: None,
         source_numbering: None,
+        original_language: None,
         tmdb_id: None,
     }
 }
@@ -299,6 +300,64 @@ fn an_acquisition_file_is_needed_until_its_job_is_cancelled_or_imported() {
     let magnet = routed.acquisition_url.clone().unwrap();
     bulk(&mut store, vec![routed]);
     assert!(store.acquisition_needed(&magnet).unwrap());
+}
+
+#[test]
+fn the_original_language_is_optional_and_learnt_once() {
+    // Older records hold none and still open; a known one round-trips.
+    let plain = request("Original");
+    assert!(plain.to_json().get("original_language").is_none());
+    let mut known = plain.clone();
+    known.original_language = Some("en".into());
+    assert_eq!(Request::from_json(&known.to_json()).unwrap(), known);
+    for invalid in ["", "EN", "english", "e1"] {
+        known.original_language = Some(invalid.into());
+        assert!(known.validate().is_err(), "{invalid}");
+    }
+    assert!(plain.same_or_learnt(&plain));
+    let mut learnt = plain.clone();
+    learnt.original_language = Some("fr".into());
+    assert!(plain.same_or_learnt(&learnt));
+    assert!(!learnt.same_or_learnt(&plain));
+
+    // A worker learns it for its job; a stale copy cannot forget it, and
+    // nothing else of the request may change.
+    let directory = Directory::new();
+    let mut store = Store::open(&directory.0).unwrap();
+    let submitted = store.submit(request("Original")).unwrap();
+    let mut worker = store.claim(now(), 60).unwrap().unwrap();
+    let stale = worker.clone();
+    worker.request.original_language = Some("fr".into());
+    store.update(worker.clone()).unwrap();
+    store.update(stale).unwrap();
+    let saved = store.get(&submitted.id).unwrap().unwrap();
+    assert_eq!(saved.request.original_language.as_deref(), Some("fr"));
+    worker.request.original_language = Some("en".into());
+    assert!(store.update(worker.clone()).is_err());
+    worker.request.original_language = Some("fr".into());
+    worker.request.runtime_minutes = Some(90);
+    assert!(store.update(worker).is_err());
+
+    // A ready title records it outside a worker, once.
+    let other = store.submit(request("Recorded")).unwrap();
+    store.record_original_language(&other.id, "ja").unwrap();
+    store.record_original_language(&other.id, "ko").unwrap();
+    let saved = store.get(&other.id).unwrap().unwrap();
+    assert_eq!(saved.request.original_language.as_deref(), Some("ja"));
+    let invalid = store.submit(request("Invalid")).unwrap();
+    assert!(store.record_original_language(&invalid.id, "JA").is_err());
+    drop(store);
+    let mut store = Store::open(&directory.0).unwrap();
+    assert_eq!(
+        store
+            .get(&submitted.id)
+            .unwrap()
+            .unwrap()
+            .request
+            .original_language
+            .as_deref(),
+        Some("fr")
+    );
 }
 
 #[test]
@@ -1240,6 +1299,7 @@ fn shared_requests(file: &crate::pack::SharedFile) -> Vec<Request> {
             source_url: Some("https://example.invalid/pack.torrent".into()),
             runtime_minutes: None,
             source_numbering: None,
+            original_language: None,
             tmdb_id: Some(file.tmdb_id),
         })
         .collect()

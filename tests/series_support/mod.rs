@@ -184,6 +184,7 @@ pub fn request() -> Request {
         source_url: None,
         runtime_minutes: None,
         source_numbering: None,
+        original_language: None,
         tmdb_id: Some(42),
     }
 }
@@ -245,6 +246,7 @@ pub fn synthetic_record(
                 tmdb_id: Some(tmdb_id),
                 runtime_minutes: None,
                 source_numbering: None,
+                original_language: None,
                 source_path: None,
                 source_url: None,
             },

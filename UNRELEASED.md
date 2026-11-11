@@ -36,3 +36,22 @@ While the tracker of a new transfer answers with an error, as a private tracker
 does until it lists a new upload, Mynou now asks it again every 7 seconds for
 10 minutes instead of every 30 seconds, so a fresh cross-seed starts seeding
 sooner. Transfers restored at startup keep the usual wait.
+
+## Added: Original language in quality profiles
+
+A quality profile can now ask for **Original language**: each title's own
+audio, as TMDB gives it. VO, MULTi and VOSTFR releases hold it; a release
+without a language tag counts unless the title is French; FRENCH, VFF, VFQ and
+TRUEFRENCH count only for a French title. One profile now fits French and
+English films alike: a French dub alone of an English film is refused, and a
+French film's FRENCH release is taken. It combines with the other languages,
+all of them still required: with VFF and Original language, an English film
+needs MULTi with VFF.
+
+Mynou keeps the original language with each film, series and episode once
+TMDB gave it, and looks it up for titles added earlier when their profile
+asks for it. While TMDB is off or does not answer, only VO, MULTi and VOSTFR
+count. **Choose a release** says for each release whether it holds the
+original audio and why, and the Quality page's **Try it** can take a title's
+original language to show the decision. Search reports carry
+`original_language`, and each assessment its `original` decision.

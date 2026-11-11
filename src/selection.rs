@@ -11,10 +11,14 @@ const MAX_SCORE: i32 = 100_000;
 const RESOLUTIONS: &[u32] = &[480, 576, 720, 1080, 2160];
 const SOURCES: &[&str] = &["cam", "dvd", "hdtv", "webrip", "web-dl", "bluray", "remux"];
 const CODECS: &[&str] = &["h264", "h265", "av1", "vp9"];
-/// `vostfr` is the original audio with French subtitles.
+/// `vostfr` is the original audio with French subtitles; `original` is the
+/// title's own language, which TMDB gives title by title.
 const LANGUAGES: &[&str] = &[
     "en", "fr", "vff", "vfq", "vfi", "vostfr", "de", "es", "it", "ja", "ko", "zh", "pt", "ru",
+    ORIGINAL,
 ];
+/// The profile language resolved per title from TMDB's original language.
+pub const ORIGINAL: &str = "original";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SelectionConfig {
@@ -188,7 +192,8 @@ pub struct Profile {
     pub codecs: Vec<String>,
     /// Every language a release must have; the first ones count most when a
     /// release has only some of them. `fr` matches any French audio; variants
-    /// match exactly. The language decides before the quality.
+    /// match exactly; `original` is the title's own audio. The language
+    /// decides before the quality.
     pub languages: Vec<String>,
     pub allow_unknown_resolution: bool,
     pub allow_unknown_source: bool,
@@ -460,6 +465,13 @@ impl Profile {
         })
     }
 
+    /// Whether the title's original language decides: `original` is among
+    /// the languages and they count.
+    pub fn uses_original_language(&self) -> bool {
+        self.effective_language_mode() != LanguageMode::Any
+            && self.languages.iter().any(|language| language == ORIGINAL)
+    }
+
     pub fn cutoff_reached(&self, assessment: &Assessment) -> bool {
         if !assessment.accepted {
             return false;
@@ -474,10 +486,13 @@ impl Profile {
         });
         // Upgrades go on until a release has every language of the profile.
         if self.effective_language_mode() != LanguageMode::Any
-            && !self
-                .languages
-                .iter()
-                .all(|target| matches_language(target, &assessment.attributes.languages))
+            && !self.languages.iter().all(|target| {
+                if target == ORIGINAL {
+                    assessment.original.as_ref().is_some_and(|o| o.audio)
+                } else {
+                    matches_language(target, &assessment.attributes.languages)
+                }
+            })
         {
             return false;
         }
@@ -510,11 +525,13 @@ impl Profile {
         }
     }
 
+    /// Without the title's facts, as for an announcement not identified yet:
+    /// `original` is left to the check made once the title is known.
     pub fn assess(&self, release_title: &str, media_title: &str) -> Assessment {
         self.assess_with_size(release_title, media_title, None, Some(1))
     }
 
-    /// Limits are decimal MB per movie or episode.
+    /// Limits are decimal MB per movie or episode. `original` is not judged.
     pub fn assess_with_size(
         &self,
         release_title: &str,
@@ -522,10 +539,37 @@ impl Profile {
         size: Option<u64>,
         episodes: Option<u32>,
     ) -> Assessment {
-        self.assess_with_runtime(release_title, media_title, size, episodes, None)
+        self.assess_release(
+            release_title,
+            media_title,
+            size,
+            episodes,
+            None,
+            Original::Unjudged,
+        )
+    }
+
+    /// A release of a title whose original language is `original_language`,
+    /// without its size; see [`Self::assess_with_runtime`].
+    pub fn assess_for(
+        &self,
+        release_title: &str,
+        media_title: &str,
+        original_language: Option<&str>,
+    ) -> Assessment {
+        self.assess_with_runtime(
+            release_title,
+            media_title,
+            None,
+            Some(1),
+            None,
+            original_language,
+        )
     }
 
     /// Runtime is the total duration covered by the release.
+    /// `original_language` is TMDB's code for the title's own language; when
+    /// it is unknown, `original` counts only VO, MULTi and VOSTFR.
     pub fn assess_with_runtime(
         &self,
         release_title: &str,
@@ -533,8 +577,28 @@ impl Profile {
         size: Option<u64>,
         episodes: Option<u32>,
         runtime_minutes: Option<u32>,
+        original_language: Option<&str>,
     ) -> Assessment {
-        let mut assessment = self.assess_title(release_title, media_title);
+        self.assess_release(
+            release_title,
+            media_title,
+            size,
+            episodes,
+            runtime_minutes,
+            Original::Title(original_language),
+        )
+    }
+
+    fn assess_release(
+        &self,
+        release_title: &str,
+        media_title: &str,
+        size: Option<u64>,
+        episodes: Option<u32>,
+        runtime_minutes: Option<u32>,
+        original: Original<'_>,
+    ) -> Assessment {
+        let mut assessment = self.assess_title(release_title, media_title, original);
         let hourly = runtime_minutes
             .filter(|minutes| *minutes > 0)
             .filter(|_| self.min_mb_per_hour.is_some() || self.max_mb_per_hour.is_some());
@@ -629,7 +693,12 @@ impl Profile {
             })
     }
 
-    fn assess_title(&self, release_title: &str, media_title: &str) -> Assessment {
+    fn assess_title(
+        &self,
+        release_title: &str,
+        media_title: &str,
+        original: Original<'_>,
+    ) -> Assessment {
         let (attributes, suffix, invalid) = parse_attributes(release_title, media_title);
         let mut reasons = Vec::new();
         if invalid.global {
@@ -693,17 +762,41 @@ impl Profile {
             &mut reasons,
         );
         let mode = self.effective_language_mode();
+        let mut original_audio = None;
         let language = if mode == LanguageMode::Any {
             0
         } else {
+            if let Original::Title(code) = original
+                && self.languages.iter().any(|language| language == ORIGINAL)
+            {
+                original_audio = Some(OriginalAudio::of(&attributes, code));
+            }
             let matched: Vec<bool> = self
                 .languages
                 .iter()
-                .map(|language| matches_language(language, &attributes.languages))
+                .map(|language| {
+                    if language == ORIGINAL {
+                        original_audio.as_ref().is_none_or(|o| o.audio)
+                    } else {
+                        matches_language(language, &attributes.languages)
+                    }
+                })
                 .collect();
             let count = matched.iter().filter(|matched| **matched).count();
             if mode == LanguageMode::Require && count < matched.len() {
-                if attributes.languages.is_empty() {
+                // An untagged release passes when the profile accepts those.
+                if let Some(o) = original_audio.as_ref().filter(|o| !o.audio)
+                    && !(attributes.languages.is_empty() && self.allow_unknown_language)
+                {
+                    reasons.push(o.explanation.clone());
+                }
+                let others_missing = matched
+                    .iter()
+                    .zip(&self.languages)
+                    .any(|(matched, language)| !matched && language != ORIGINAL);
+                if !others_missing {
+                    // Only the original audio is missing; said above.
+                } else if attributes.languages.is_empty() {
                     if !self.allow_unknown_language {
                         reasons.push("Language is unknown".into());
                     }
@@ -737,8 +830,160 @@ impl Profile {
                 language,
             },
             attributes,
+            original: original_audio,
         }
     }
+}
+
+/// What is known of a title's original language when its release is assessed.
+#[derive(Clone, Copy)]
+enum Original<'a> {
+    /// TMDB's code for it, such as `en`; `None` when TMDB did not give it.
+    Title(Option<&'a str>),
+    /// No title yet: `original` waits for the check made once it is known.
+    Unjudged,
+}
+
+/// Whether a release holds its title's original audio, and why, in words.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OriginalAudio {
+    /// TMDB's code for the title's original language; `None` when unknown.
+    pub language: Option<String>,
+    pub audio: bool,
+    /// Such as "Original language: English — VFF only, no original audio".
+    pub explanation: String,
+}
+
+impl OriginalAudio {
+    /// VO, MULTi and VOSTFR hold the original audio whatever it is. Without
+    /// any of them, the original language decides: a release without a
+    /// language tag counts unless the title is French, and French audio
+    /// counts only for a French title.
+    fn of(attributes: &Attributes, language: Option<&str>) -> Self {
+        let tags = attributes
+            .languages
+            .iter()
+            .map(|tag| tag.to_uppercase())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let (audio, why) = if attributes.multi {
+            (true, "MULTi, with the original audio".to_owned())
+        } else if attributes.vo {
+            (true, "VO, the original audio".to_owned())
+        } else if attributes.languages.iter().any(|tag| tag == "vostfr") {
+            (
+                true,
+                "VOSTFR, the original audio with French subtitles".to_owned(),
+            )
+        } else if let Some(code) = language {
+            let french = |tag: &String| matches!(tag.as_str(), "fr" | "vff" | "vfq" | "vfi");
+            if let Some(tag) = attributes
+                .languages
+                .iter()
+                .find(|tag| *tag == release_language(code) || (code == "fr" && french(tag)))
+            {
+                (true, format!("{}, the original audio", tag.to_uppercase()))
+            } else if attributes.languages.is_empty() && code == "fr" {
+                (false, "no language tag, no sign of French audio".to_owned())
+            } else if attributes.languages.is_empty() {
+                (
+                    true,
+                    "no language tag, taken as the original audio".to_owned(),
+                )
+            } else {
+                (false, format!("{tags} only, no original audio"))
+            }
+        } else if attributes.languages.is_empty() {
+            (
+                false,
+                "no language tag; only VO, MULTi or VOSTFR count".to_owned(),
+            )
+        } else {
+            (
+                false,
+                format!("{tags} only; only VO, MULTi or VOSTFR count"),
+            )
+        };
+        let head = language.map_or_else(
+            || "Original language unknown".to_owned(),
+            |code| format!("Original language: {}", language_name(code)),
+        );
+        Self {
+            language: language.map(str::to_owned),
+            audio,
+            explanation: format!("{head} — {why}"),
+        }
+    }
+
+    pub fn to_json(&self) -> Value {
+        object([
+            (
+                "language",
+                self.language.clone().map_or(Value::Null, Value::String),
+            ),
+            (
+                "name",
+                self.language
+                    .as_deref()
+                    .map_or(Value::Null, |code| language_name(code).into()),
+            ),
+            ("audio", self.audio.into()),
+            ("explanation", self.explanation.clone().into()),
+        ])
+    }
+}
+
+/// A TMDB original language code: two or three lowercase ASCII letters.
+pub fn valid_language_code(code: &str) -> bool {
+    (2..=3).contains(&code.len()) && code.bytes().all(|byte| byte.is_ascii_lowercase())
+}
+
+/// The release-name language of a TMDB code: TMDB's `cn` (Cantonese) is
+/// tagged as Chinese.
+fn release_language(code: &str) -> &str {
+    if code == "cn" { "zh" } else { code }
+}
+
+/// The English name of a TMDB original language code; the code itself,
+/// upper case, for a language without one here.
+pub fn language_name(code: &str) -> String {
+    match code {
+        "en" => "English",
+        "fr" => "French",
+        "de" => "German",
+        "es" => "Spanish",
+        "it" => "Italian",
+        "pt" => "Portuguese",
+        "ja" => "Japanese",
+        "ko" => "Korean",
+        "zh" => "Chinese",
+        "cn" => "Cantonese",
+        "ru" => "Russian",
+        "hi" => "Hindi",
+        "ta" => "Tamil",
+        "te" => "Telugu",
+        "nl" => "Dutch",
+        "sv" => "Swedish",
+        "da" => "Danish",
+        "no" | "nb" => "Norwegian",
+        "fi" => "Finnish",
+        "is" => "Icelandic",
+        "pl" => "Polish",
+        "cs" => "Czech",
+        "hu" => "Hungarian",
+        "ro" => "Romanian",
+        "el" => "Greek",
+        "tr" => "Turkish",
+        "uk" => "Ukrainian",
+        "ar" => "Arabic",
+        "he" => "Hebrew",
+        "fa" => "Persian",
+        "th" => "Thai",
+        "id" => "Indonesian",
+        "xx" => "No language",
+        _ => return code.to_uppercase(),
+    }
+    .into()
 }
 
 /// Larger values win: the language first, then the quality, then the rest.
@@ -810,6 +1055,10 @@ pub struct Attributes {
     pub codec: Option<String>,
     pub languages: Vec<String>,
     pub issues: Vec<String>,
+    /// Tagged MULTi: the original audio beside another one.
+    pub multi: bool,
+    /// Tagged VO: the original audio.
+    pub vo: bool,
 }
 
 impl Attributes {
@@ -839,16 +1088,23 @@ pub struct Assessment {
     pub reasons: Vec<String>,
     pub rank: Rank,
     pub attributes: Attributes,
+    /// Whether the release holds the title's original audio, when the
+    /// profile asks for it and the title is known.
+    pub original: Option<OriginalAudio>,
 }
 
 impl Assessment {
     pub fn to_json(&self) -> Value {
-        object([
+        let mut value = object([
             ("accepted", self.accepted.into()),
             ("reasons", strings(&self.reasons)),
             ("rank", self.rank.to_json()),
             ("attributes", self.attributes.to_json()),
-        ])
+        ]);
+        if let Some(original) = &self.original {
+            value.insert("original", original.to_json());
+        }
+        value
     }
 }
 
@@ -1146,12 +1402,17 @@ fn parse_attributes(
     {
         languages.remove("fr");
     }
+    let tagged = |tag: &str| {
+        suffix
+            .iter()
+            .enumerate()
+            .any(|(index, token)| token == tag && !episode_title[index])
+    };
+    attributes.multi = tagged("multi");
+    attributes.vo = tagged("vo");
     // MULTi holds the original audio beside the French one, with French
     // subtitles in practice: it counts as VOSTFR too.
-    if suffix
-        .iter()
-        .enumerate()
-        .any(|(index, token)| token == "multi" && !episode_title[index])
+    if attributes.multi
         && languages
             .iter()
             .any(|language| matches!(*language, "fr" | "vff" | "vfq" | "vfi"))
@@ -1533,6 +1794,209 @@ mod tests {
     }
 
     #[test]
+    fn original_language_is_resolved_per_title() {
+        let p = parse_profile(r#"{"languages":["original"],"language_mode":"require"}"#);
+        assert_eq!(Profile::from_json(&p.to_json()).unwrap(), p);
+        assert!(p.uses_original_language());
+        let english = |title: &str| p.assess_for(title, "Example", Some("en"));
+        let french = |title: &str| p.assess_for(title, "Example", Some("fr"));
+        // A French dub alone is no English film's original audio; it is a
+        // French film's.
+        for tag in ["FRENCH", "VFF", "VFQ", "TRUEFRENCH", "VF2", "VFI"] {
+            let title = format!("Example 2024 1080p {tag}");
+            assert!(!english(&title).accepted, "{tag}");
+            assert!(french(&title).accepted, "{tag}");
+        }
+        // VO, MULTi and VOSTFR hold it whatever it is.
+        for tag in [
+            "MULTi",
+            "MULTi.VFF",
+            "MULTi.FRENCH",
+            "VO",
+            "VFF.VO",
+            "VOSTFR",
+            "SUBFRENCH",
+        ] {
+            let title = format!("Example 2024 1080p {tag}");
+            for assessment in [english(&title), french(&title)] {
+                assert!(assessment.accepted, "{tag}");
+                assert!(assessment.original.unwrap().audio, "{tag}");
+            }
+        }
+        // A release without a language tag is the original audio unless the
+        // title is French.
+        assert!(english("Example 2024 1080p").accepted);
+        assert!(!french("Example 2024 1080p").accepted);
+        // The title's own language, as release names tag it.
+        assert!(english("Example 2024 1080p ENGLISH").accepted);
+        assert!(!french("Example 2024 1080p ENGLISH").accepted);
+        assert!(!english("Example 2024 1080p GERMAN").accepted);
+        assert!(
+            p.assess_for("Example 1080p JAPANESE", "Example", Some("ja"))
+                .accepted
+        );
+        assert!(
+            p.assess_for("Example 1080p CHINESE", "Example", Some("cn"))
+                .accepted
+        );
+
+        // Each decision says why.
+        let refused = english("Example 2024 1080p VFF");
+        let why = "Original language: English — VFF only, no original audio";
+        assert_eq!(refused.reasons, [why]);
+        assert_eq!(refused.original.as_ref().unwrap().explanation, why);
+        let json = refused.to_json();
+        let original = json.get("original").unwrap();
+        assert_eq!(original.get("language").and_then(Value::as_str), Some("en"));
+        assert_eq!(
+            original.get("name").and_then(Value::as_str),
+            Some("English")
+        );
+        assert_eq!(original.get("audio").and_then(Value::as_bool), Some(false));
+        assert_eq!(
+            original.get("explanation").and_then(Value::as_str),
+            Some(why)
+        );
+        for (assessment, explanation) in [
+            (
+                french("Example 2024 1080p FRENCH"),
+                "Original language: French — FR, the original audio",
+            ),
+            (
+                english("Example 2024 1080p MULTi VFF"),
+                "Original language: English — MULTi, with the original audio",
+            ),
+            (
+                english("Example 2024 1080p VOSTFR"),
+                "Original language: English — VOSTFR, the original audio with French subtitles",
+            ),
+            (
+                english("Example 2024 1080p"),
+                "Original language: English — no language tag, taken as the original audio",
+            ),
+            (
+                english("Example 2024 1080p EN"),
+                "Original language: English — EN, the original audio",
+            ),
+        ] {
+            assert!(assessment.reasons.is_empty(), "{explanation}");
+            assert_eq!(assessment.original.unwrap().explanation, explanation);
+        }
+        assert_eq!(
+            french("Example 2024 1080p").reasons,
+            ["Original language: French — no language tag, no sign of French audio"]
+        );
+        assert_eq!(
+            english("Example 2024 1080p GERMAN VFF").reasons,
+            ["Original language: English — DE, VFF only, no original audio"]
+        );
+
+        // Unknown, it never lets a French dub alone or an untagged release
+        // pass; VO, MULTi and VOSTFR still count.
+        let unknown = |title: &str| p.assess_for(title, "Example", None);
+        assert_eq!(
+            unknown("Example 2024 1080p VFF").reasons,
+            ["Original language unknown — VFF only; only VO, MULTi or VOSTFR count"]
+        );
+        assert_eq!(
+            unknown("Example 2024 1080p").reasons,
+            ["Original language unknown — no language tag; only VO, MULTi or VOSTFR count"]
+        );
+        assert!(unknown("Example 2024 1080p MULTi VFF").accepted);
+        assert!(unknown("Example 2024 1080p VOSTFR").accepted);
+        let json = unknown("Example 2024 1080p VFF").to_json();
+        assert_eq!(
+            json.get("original").unwrap().get("name"),
+            Some(&Value::Null)
+        );
+
+        // Before the title is known (an announcement), the title's own check decides.
+        let early = p.assess("Example 2024 1080p VFF", "Example");
+        assert!(early.accepted);
+        assert!(early.original.is_none());
+
+        // Untagged releases pass anyway when the profile accepts them.
+        let lenient = parse_profile(
+            r#"{"languages":["original"],"language_mode":"require","allow_unknown_language":true}"#,
+        );
+        assert!(
+            lenient
+                .assess_for("Example 2024 1080p", "Example", Some("fr"))
+                .accepted
+        );
+        assert!(
+            !lenient
+                .assess_for("Example 2024 1080p VFF", "Example", Some("en"))
+                .accepted
+        );
+        // Languages that do not count leave it out.
+        let any = parse_profile(r#"{"languages":["original"],"language_mode":"any"}"#);
+        assert!(!any.uses_original_language());
+        let assessment = any.assess_for("Example 2024 1080p VFF", "Example", Some("en"));
+        assert!(assessment.accepted && assessment.original.is_none());
+    }
+
+    #[test]
+    fn original_language_keeps_every_language_needed_and_ranks_first() {
+        // VFF and the original audio: an English film needs MULTi with VFF,
+        // or VFF with VO; VFF alone is complete for a French film.
+        let p = parse_profile(
+            r#"{"resolutions":[2160,1080],"cutoff_resolution":1080,"languages":["vff","original"],"language_mode":"require"}"#,
+        );
+        let english = |title: &str| p.assess_for(title, "Example", Some("en"));
+        let french = |title: &str| p.assess_for(title, "Example", Some("fr"));
+        for title in ["Example 1080p MULTi VFF", "Example 1080p VFF VO"] {
+            assert!(english(title).accepted, "{title}");
+            assert!(p.cutoff_reached(&english(title)), "{title}");
+        }
+        assert_eq!(
+            english("Example 1080p VFF").reasons,
+            ["Original language: English — VFF only, no original audio"]
+        );
+        assert_eq!(
+            english("Example 1080p MULTi").reasons,
+            ["Language is unknown"]
+        );
+        assert_eq!(
+            english("Example 1080p VOSTFR").reasons,
+            ["The release lacks some of the profile's languages"]
+        );
+        assert_eq!(
+            english("Example 1080p GERMAN").reasons,
+            [
+                "Original language: English — DE only, no original audio",
+                "No explicitly marked language is allowed by the profile"
+            ]
+        );
+        assert!(french("Example 1080p VFF").accepted);
+        assert!(p.cutoff_reached(&french("Example 1080p VFF")));
+        assert!(!french("Example 1080p FRENCH").accepted);
+
+        // Accepted until a complete one: the language still ranks before
+        // the quality, and upgrades go on until the original audio is there.
+        let mut prefer = p.clone();
+        prefer.language_mode = Some(LanguageMode::Prefer);
+        let uhd = "Example 2160p VFF";
+        let multi = "Example 1080p MULTi VFF";
+        let partial = prefer.assess_for(uhd, "Example", Some("en"));
+        let complete = prefer.assess_for(multi, "Example", Some("en"));
+        assert!(partial.accepted && partial.reasons.is_empty());
+        assert_eq!(
+            partial.original.as_ref().unwrap().explanation,
+            "Original language: English — VFF only, no original audio"
+        );
+        assert!(complete.rank > partial.rank);
+        assert!(!prefer.cutoff_reached(&partial));
+        assert!(prefer.cutoff_reached(&complete));
+        assert!(prefer.is_upgrade(&complete, &partial, multi, uhd));
+        assert!(!prefer.is_upgrade(&partial, &complete, uhd, multi));
+        // For a French film, the 4K in VFF is complete and wins.
+        let french_uhd = prefer.assess_for(uhd, "Example", Some("fr"));
+        assert!(french_uhd.rank > prefer.assess_for(multi, "Example", Some("fr")).rank);
+        assert!(prefer.cutoff_reached(&french_uhd));
+    }
+
+    #[test]
     fn french_variant_profiles_round_trip() {
         let p = parse_profile(
             r#"{"languages":["vff","vfi","vfq","vostfr","fr","en","de","es","it","ja","ko","zh","pt","ru"],"language_mode":"require"}"#,
@@ -1645,7 +2109,7 @@ mod tests {
             r#"{"min_mb_per_hour":100,"max_mb_per_hour":200,"min_size_mb":10,"max_size_mb":20,"allow_unknown_size":false}"#,
         );
         let assess = |size, count, runtime| {
-            p.assess_with_runtime("Example", "Example", size, count, runtime)
+            p.assess_with_runtime("Example", "Example", size, count, runtime, None)
         };
         assert!(assess(Some(200_000_000), Some(1), Some(120)).accepted);
         assert!(assess(Some(400_000_000), Some(4), Some(120)).accepted);

@@ -576,6 +576,7 @@ fn item_request(
                 source_url: None,
                 runtime_minutes: None,
                 source_numbering: None,
+                original_language: None,
             };
             request.validate()?;
             request

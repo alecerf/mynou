@@ -109,6 +109,7 @@ fn local_request(path: &Path, title: &str) -> Request {
         source_url: None,
         runtime_minutes: None,
         source_numbering: None,
+        original_language: None,
         tmdb_id: None,
     }
 }
@@ -195,6 +196,7 @@ fn native_torrent_cancel_and_retry_preserve_identity() {
         source_url: Some("magnet:?xt=urn:btih:0123456789012345678901234567890123456789".into()),
         runtime_minutes: None,
         source_numbering: None,
+        original_language: None,
         tmdb_id: None,
     };
     let id = submit(&server, &request);
@@ -445,6 +447,7 @@ fn cancellation_during_metadata_fetch_pauses_native_transfer_and_survives_restar
         source_url: Some(metadata.url.clone()),
         runtime_minutes: None,
         source_numbering: None,
+        original_language: None,
         tmdb_id: None,
     };
     let id = submit(&server, &request);

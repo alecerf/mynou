@@ -38,6 +38,7 @@ fn request(title: &str, url: Option<&str>) -> Request {
         source_url: url.map(str::to_owned),
         runtime_minutes: None,
         source_numbering: None,
+        original_language: None,
         tmdb_id: None,
     }
 }

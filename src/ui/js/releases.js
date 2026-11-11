@@ -3,7 +3,7 @@ import { quality, openDetail, act, toast, skeleton } from './components.js';
 import { Motion } from './motion.js';
 import { link } from './link.js';
 import { itemsOf } from './store.js';
-import { lostText, sizeFacts } from './quality.js';
+import { lostText, sizeFacts, originalLanguageText, originalAudioLine } from './quality.js';
 
 // Manual search: the releases the indexers offer for one film or episode, and
 // the one the operator picks. Mynou would choose the first acceptable release
@@ -32,6 +32,8 @@ export async function openReleases(title, source, back) {
   const rejectedSummary = h('summary');
   const rejected = h('details', { class: 'release-rejected', hidden: true }, rejectedSummary, rejectedList);
   const summary = h('p', { class: 'detail-sub searching' }, 'Searching the indexers…');
+  // The title's original language, when the profile asks for it.
+  const origin = h('p', { class: 'hint', hidden: true });
   const more = h('button', { type: 'button', hidden: true }, 'Load more releases');
   const counts = { accepted: 0, rejected: 0 };
   let next = null;
@@ -72,13 +74,15 @@ export async function openReleases(title, source, back) {
     if (!counts.accepted) list.replaceChildren(h('li', { class: 'empty' }, 'No release meets your profile. A rejected one can still be downloaded.'));
     rejected.hidden = !counts.rejected;
     rejectedSummary.textContent = `${counts.rejected} rejected by your profile`;
+    const language = originalLanguageText(report);
+    if (language) { origin.textContent = language; origin.hidden = false; }
     more.hidden = !next;
     Motion.arrive([...list.children, ...rejectedList.children].slice(before));
   };
   more.addEventListener('click', () => act(more, async () => { if (next) add(await source.search(next)); }));
   openDetail(`Releases`,
     back ? h('button', { type: 'button', class: 'text-link back', onclick: back.run }, `← ${back.label}`) : null,
-    back ? null : h('p', { class: 'releases-of' }, title), summary, list, rejected, h('div', { class: 'actions' }, more));
+    back ? null : h('p', { class: 'releases-of' }, title), summary, origin, list, rejected, h('div', { class: 'actions' }, more));
   try { add(await source.search(null)); } catch (error) {
     list.querySelector(':scope > .loading')?.remove();
     summary.classList.remove('searching');
@@ -114,6 +118,8 @@ function releaseRow(c, grab, chosen) {
         size ? h('span', {}, size) : null,
         typeof rank.custom_score === 'number' && rank.custom_score ? h('span', {}, `score ${rank.custom_score}`) : null),
       reasons.length ? h('div', { class: 'release-why' }, reasons.join(' · ')) : null,
+      // Whether it holds the title's original audio, and why.
+      originalAudioLine(c),
       lost ? h('div', { class: 'release-why' }, lost) : null),
     h('div', { class: 'release-side' },
       h('span', { class: 'seeders', dataset: { tone: seeders ? '' : 'bad' }, title: 'Seeders' }, h('strong', {}, Number.isFinite(seeders) ? String(seeders) : String(c.seeders ?? '?')), ' seeders'),

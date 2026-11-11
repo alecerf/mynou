@@ -50,6 +50,7 @@ fn demand(config: &crate::config::Config, account: &str, number: u64) -> Demand 
         source_url: None,
         runtime_minutes: None,
         source_numbering: None,
+        original_language: None,
     };
     Demand {
         id: Demand::identity(account, &request),

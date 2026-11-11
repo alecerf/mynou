@@ -178,6 +178,7 @@ fn request(kind: &str, title: &str, year: u32, tmdb: Option<u64>) -> Request {
         source_url: None,
         runtime_minutes: None,
         source_numbering: None,
+        original_language: None,
         tmdb_id: tmdb,
     }
 }

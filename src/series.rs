@@ -190,6 +190,7 @@ impl Record {
                 .catalog_id
                 .and_then(|id| self.numbering.get(&id).map(|choice| choice.source)),
             tmdb_id: self.plan.request.tmdb_id,
+            original_language: self.plan.request.original_language.clone(),
         }
     }
     fn validate(&self) -> Result<()> {

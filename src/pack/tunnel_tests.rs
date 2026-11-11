@@ -68,6 +68,7 @@ pub(crate) fn engine_with(
             tmdb_id: Some(42),
             runtime_minutes: None,
             source_numbering: None,
+            original_language: None,
         },
         episodes: (1..=2)
             .map(|episode| Episode {

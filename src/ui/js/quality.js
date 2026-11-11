@@ -24,13 +24,16 @@ const AUDIO = [
   ['vfi', 'VFI', 'International dub'],
   ['fr', 'French', 'Any French, dub named or not'],
   ['vostfr', 'VOSTFR', 'Original audio, French subtitles; MULTi with French counts'],
+  // Resolved for each title from TMDB.
+  ['original', 'Original language', "Each title's own, from TMDB: VO, MULTi or VOSTFR; French audio for a French title"],
   ...LANGUAGES.filter(([value]) => value !== 'fr').map(([value, label]) => [value, label, null]),
 ];
 const FRENCH = new Set(['vff', 'vfq', 'vfi', 'fr', 'vostfr']);
+const audioGroup = (key) => (key === 'original' ? 'title' : FRENCH.has(key) ? 'french' : 'other');
 const audioName = (value) => AUDIO.find(([key]) => key === value)?.[1] ?? languageName(value);
 /** What a list of profile languages reads as: "VFF and VOSTFR", all of them needed. */
 const languagesName = (languages) => {
-  const names = languages.map(audioName);
+  const names = languages.map((value, index) => (index && value === 'original' ? 'original language' : audioName(value)));
   return names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names[0];
 };
 // MULTI holds the original audio too; it is set from the audio rows.
@@ -196,7 +199,7 @@ function profileCard(name, row, changed, paint, open) {
       textInput(id('avoid'), avoidWords(profile).join(', '), 1024, (value) => { setWords(profile, 'avoid', words(value)); update(); })),
     row(id('require'), 'Required words', 'A release must hold every one of them. Empty: none.',
       textInput(id('require'), (profile.required_terms ?? []).join(', '), 1024, (value) => { profile.required_terms = words(value); update(); })),
-    tryOut(name, profile),
+    tryOut(name, profile, hooks),
     h('div', { class: 'actions' },
       h('button', {
         type: 'button', class: 'secondary',
@@ -333,10 +336,13 @@ function audioRows(id, row, profile, update, hooks) {
           h('button', { type: 'button', class: 'icon-button', 'aria-label': `Remove ${audioName(value)}`, onclick: () => set(languages.filter((v) => v !== value)) }, icon('close'))));
     }));
     list.hidden = !languages.length;
-    const left = (french) => AUDIO.filter(([key]) => FRENCH.has(key) === french && !languages.includes(key))
-      .map(([key, label, detail]) => h('option', { value: key }, detail ? `${label} · ${detail}` : label));
+    const group = (key, label) => {
+      const left = AUDIO.filter(([value]) => audioGroup(value) === key && !languages.includes(value))
+        .map(([value, name, detail]) => h('option', { value }, detail ? `${name} · ${detail}` : name));
+      return left.length ? h('optgroup', { label }, left) : null;
+    };
     add.replaceChildren(h('option', { value: '' }, languages.length ? 'Also needed…' : 'Any language. Add one…'),
-      h('optgroup', { label: 'French' }, left(true)), h('optgroup', { label: 'Other languages' }, left(false)));
+      ...[group('title', 'Each title'), group('french', 'French'), group('other', 'Other languages')].filter(Boolean));
     add.value = '';
   };
   add.addEventListener('change', (event) => { event.stopPropagation(); if (add.value) set([...chosen(), add.value]); });
@@ -353,7 +359,7 @@ function audioRows(id, row, profile, update, hooks) {
   const unknown = check(id('lang-unknown'), profile.allow_unknown_language !== false, (on) => { profile.allow_unknown_language = on; update(); });
   const multi = check(id('multi'), hasExtra(profile, 'prefer', MULTI), (on) => { setExtra(profile, 'prefer', MULTI, on); update(); });
   const rows = [
-    row(id('lang'), 'Languages', 'A release needs every one: VFF and VOSTFR take a release with both, such as MULTi.VFF. They decide before the quality: a 1080p with both beats a 4K with VFF alone. None: any language.', h('div', { class: 'audio-choice' }, list, add)),
+    row(id('lang'), 'Languages', "A release needs every one: VFF and VOSTFR take a release with both, such as MULTi.VFF. Original language is each title's own audio: an English film then needs VO, MULTi or VOSTFR, or no language tag; a French film, French audio. They decide before the quality: a 1080p with both beats a 4K with VFF alone. None: any language.", h('div', { class: 'audio-choice' }, list, add)),
     row(id('lang-others'), 'Missing some', 'Accepted: the release with most of them comes first, the first ones counting most, and an upgrade replaces it once a release has them all. Refused: only a release with every one is downloaded.', others),
     row(id('lang-unknown'), 'MULTI and untagged', 'A release marked only MULTI, or without a language, does not say what it holds. On: they are accepted anyway.', unknown, true),
     row(id('multi'), 'MULTI first', 'Releases that also hold the original audio, such as MULTi.VFF, go before VFF alone.', multi, true),
@@ -401,8 +407,15 @@ function setWords(profile, kind, list) {
 }
 
 /** Tries the profile as it is being edited on a real search, saving nothing. */
-function tryOut(name, profile) {
+function tryOut(name, profile, hooks) {
   const title = h('input', { type: 'text', spellcheck: false, placeholder: 'A film, or a series with its episode: Severance S01E01', 'aria-label': 'Title to try' });
+  // With "Original language" among the languages: TMDB's, found from the title, or one picked here.
+  const original = h('select', { 'aria-label': 'Original language of the title to try' },
+    h('option', { value: '' }, 'Original language from TMDB'),
+    ...LANGUAGES.map(([value, label]) => h('option', { value }, `Original language: ${label}`)));
+  const showOriginal = () => { original.hidden = !(profile.languages ?? []).includes('original'); };
+  hooks.push(showOriginal);
+  showOriginal();
   const run = h('button', { type: 'button', class: 'secondary' }, icon('search'), 'Try');
   const out = h('ol', { class: 'release-list try-out' });
   run.addEventListener('click', () => act(run, async () => {
@@ -412,13 +425,31 @@ function tryOut(name, profile) {
     const request = episode
       ? { kind: 'episode', title: episode[1].trim(), season: Number(episode[2]), episode: Number(episode[3]) }
       : { kind: 'movie', title: typed };
+    const chosen = !original.hidden && original.value ? original.value : null;
     out.replaceChildren(h('li', { class: 'empty' }, 'Searching the indexers…'));
-    const report = await link.call('POST', '/api/search', { ...request, profile: clean(profile) });
-    out.replaceChildren(...tryRows(report));
+    const report = await link.call('POST', '/api/search', { ...request, ...(chosen ? { original_language: chosen } : {}), profile: clean(profile) });
+    out.replaceChildren(...tryRows(report, Boolean(chosen)));
   }));
   return h('div', { class: 'setting-row try-row' },
     h('div', { class: 'setting-label' }, h('span', {}, 'Try it'), h('p', { class: 'hint' }, 'Searches your indexers with this profile as it is now, before you save it. Nothing is downloaded.')),
-    h('div', {}, h('span', { class: 'with-unit try-input' }, title, run), out));
+    h('div', {}, h('span', { class: 'with-unit try-input' }, title, original, run), out));
+}
+
+/** What a search knew of the title's original language, when the profile asks for it. */
+export function originalLanguageText(report, chosen = false) {
+  const original = report?.original_language;
+  if (!original || typeof original !== 'object') return null;
+  if (typeof original.name === 'string' && original.name) return `Original language: ${original.name}, ${chosen ? 'as chosen' : 'from TMDB'}`;
+  return 'Original language unknown: TMDB did not give it, so only VO, MULTi and VOSTFR count as original audio';
+}
+
+/** Why a release has, or lacks, the title's original audio, when the profile
+    asks for it; nothing when its reasons already say it. */
+export function originalAudioLine(c) {
+  const original = c.assessment?.original;
+  const text = original?.explanation;
+  if (typeof text !== 'string' || !text || (c.assessment.reasons ?? []).includes(text)) return null;
+  return h('div', { class: 'release-original', dataset: original.audio ? {} : { tone: 'warn' } }, text);
 }
 
 /** A profile as the server reads it: the label and unset values left out when empty. */
@@ -429,16 +460,19 @@ function clean(profile) {
 }
 
 /** The pick, the closest contenders and why they lost, then the rejections. */
-function tryRows(report) {
+function tryRows(report, chosen) {
   const accepted = Array.isArray(report.accepted) ? report.accepted : [];
   const rejected = Array.isArray(report.rejected) ? report.rejected : [];
-  if (!accepted.length && !rejected.length) return [h('li', { class: 'empty' }, 'The indexers found nothing for this title.')];
+  const origin = originalLanguageText(report, chosen);
+  const head = origin ? [h('li', { class: 'empty' }, origin)] : [];
+  if (!accepted.length && !rejected.length) return [...head, h('li', { class: 'empty' }, 'The indexers found nothing for this title.')];
   const pick = report.selected_candidate_id;
-  const rows = accepted.slice(0, 5).map((c) => h('li', { class: `release${c.id === pick ? ' chosen' : ''}` },
+  const rows = [...head, ...accepted.slice(0, 5).map((c) => h('li', { class: `release${c.id === pick ? ' chosen' : ''}` },
     h('div', { class: 'release-main' },
       c.id === pick ? h('span', { class: 'badge', dataset: { tone: 'accent' } }, "Mynou's pick") : null,
       h('div', { class: 'release-title' }, c.title ?? '(untitled)'),
-      h('div', { class: 'release-why' }, c.id === pick ? sizeFacts(c) : [lostText(c.lost_on), sizeFacts(c)].filter(Boolean).join(' · ')))));
+      originalAudioLine(c),
+      h('div', { class: 'release-why' }, c.id === pick ? sizeFacts(c) : [lostText(c.lost_on), sizeFacts(c)].filter(Boolean).join(' · ')))))];
   if (!accepted.length) rows.push(h('li', { class: 'empty' }, 'No release meets this profile.'));
   if (rejected.length) {
     const reasons = new Map();

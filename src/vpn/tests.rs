@@ -374,6 +374,7 @@ fn real_native_owner_is_used_for_protected_startup_dns_and_revocation() {
             source_url: None,
             runtime_minutes: None,
             source_numbering: None,
+            original_language: None,
         },
     );
     let report = engine.vpn_control(&body("revoke")).unwrap();
@@ -427,6 +428,7 @@ fn owner_loss_never_replaces_a_captured_engine_transport_with_direct() {
             source_url: None,
             runtime_minutes: None,
             source_numbering: None,
+            original_language: None,
         },
     );
     pair.client.cancel();
@@ -624,6 +626,7 @@ fn verified_bytes_user_pause_and_priorities_survive_owner_loss_and_a_new_protect
             source_url: Some(source.to_str().unwrap().into()),
             runtime_minutes: None,
             source_numbering: None,
+            original_language: None,
         },
     );
     engine.tick().unwrap();

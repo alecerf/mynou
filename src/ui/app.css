@@ -760,6 +760,8 @@
   .release-facts { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem 0.75rem; font-size: 0.8125rem; color: var(--muted); }
   .release-facts .quality { margin: 0; }
   .release-why { font-size: 0.8125rem; color: var(--bad); }
+  .release-original { font-size: 0.8125rem; color: var(--muted); }
+  .release-original[data-tone="warn"] { color: var(--warn); }
   .release.refused .release-title { color: var(--muted); }
   .release-side { display: flex; align-items: center; gap: 1rem; }
   .seeders { font-size: 0.75rem; color: var(--subtle); white-space: nowrap; }
@@ -1454,8 +1456,9 @@
   .audio-name small { color: var(--muted); font-size: 0.75rem; }
   .audio-list .ladder-moves .icon-button svg { width: 0.9rem; height: 0.9rem; }
   .try-row { grid-template-columns: minmax(0, 1fr); }
-  .try-input { display: flex; gap: 0.5rem; }
-  .try-input input { flex: 1; padding-inline-end: 0.75rem; }
+  .try-input { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+  .try-input input { flex: 1; min-width: 12rem; padding-inline-end: 0.75rem; }
+  .try-input select { width: auto; flex: 0 1 auto; }
   .try-out:empty { display: none; }
   .try-out { margin-top: 0.75rem; }
   .profile-picker { width: auto; min-height: 2.6rem; }

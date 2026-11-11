@@ -53,6 +53,7 @@ fn a_failed_transfers_stage_leaves_no_native_client_running() {
                 source_url: None,
                 runtime_minutes: None,
                 source_numbering: None,
+                original_language: None,
             })
             .unwrap();
         job.state = "failed".into();

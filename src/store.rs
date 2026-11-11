@@ -48,6 +48,22 @@ pub struct Request {
     pub tmdb_id: Option<u64>,
     pub runtime_minutes: Option<u32>,
     pub source_numbering: Option<crate::numbering::SourceNumber>,
+    /// TMDB's code for the title's original language, such as `en`, for the
+    /// `original` profile language. Learnt once; absent from older records.
+    pub original_language: Option<String>,
+}
+
+impl Request {
+    /// Whether `learnt` is this request, or this one with the original
+    /// language it did not hold yet.
+    pub fn same_or_learnt(&self, learnt: &Self) -> bool {
+        if self.original_language.is_none() && learnt.original_language.is_some() {
+            let mut learnt = learnt.clone();
+            learnt.original_language = None;
+            return *self == learnt;
+        }
+        self == learnt
+    }
 }
 
 /// The release description used to compare future acquisitions with an import.
@@ -343,6 +359,13 @@ impl Request {
         if self.runtime_minutes == Some(0) {
             return Err("runtime_minutes must be positive".into());
         }
+        if self
+            .original_language
+            .as_deref()
+            .is_some_and(|code| !crate::selection::valid_language_code(code))
+        {
+            return Err("original_language must be a TMDB language code such as en".into());
+        }
         if self.year > 9999 || self.season > 9999 || self.episode > 99999 {
             return Err("invalid year, season, or episode".to_owned());
         }
@@ -427,6 +450,9 @@ impl Request {
         if let Some(number) = self.source_numbering {
             value.insert("source_numbering", number.to_json());
         }
+        if let Some(language) = &self.original_language {
+            value.insert("original_language", language.clone());
+        }
         value
     }
 
@@ -456,6 +482,7 @@ impl Request {
                 Some(value) => Some(crate::numbering::SourceNumber::from_json(value)?),
             },
             tmdb_id: optional_u64(map, "tmdb_id")?,
+            original_language: optional(map, "original_language")?,
         };
         request.validate()?;
         Ok(request)
@@ -2303,6 +2330,21 @@ impl Store {
         })
     }
 
+    /// Records on `id` the original language learnt for its title, when it
+    /// holds none yet. Nothing else of the job changes.
+    pub fn record_original_language(&mut self, id: &str, language: &str) -> Result<()> {
+        self.mutate(|db| {
+            let mut job = db.get(id)?.ok_or_else(|| "unknown job".to_owned())?;
+            if job.request.original_language.is_some() {
+                return Ok(());
+            }
+            job.request.original_language = Some(language.to_owned());
+            job.request.validate()?;
+            job.updated_at = now();
+            db.commit_jobs(vec![job], "original language learnt for this title")
+        })
+    }
+
     pub fn set_monitored(&mut self, id: &str, monitored: bool) -> Result<Job> {
         self.mutate(|db| {
             let mut job = db
@@ -2670,8 +2712,12 @@ impl Store {
     pub fn update(&mut self, mut job: Job) -> Result<()> {
         self.mutate(|db| {
             let current = db.get(&job.id)?.ok_or_else(|| "unknown job".to_owned())?;
+            // The original language may be learnt once; a stale copy keeps it.
+            if job.request.original_language.is_none() {
+                job.request.original_language = current.request.original_language.clone();
+            }
             if current.key != job.key
-                || current.request != job.request
+                || !current.request.same_or_learnt(&job.request)
                 || current.created_at != job.created_at
                 || current.upgrade_parent != job.upgrade_parent
                 || current.pack_file != job.pack_file

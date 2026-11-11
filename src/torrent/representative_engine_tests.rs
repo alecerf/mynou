@@ -317,6 +317,7 @@ impl Fixture {
                 source_url: None,
                 runtime_minutes: None,
                 source_numbering: None,
+                original_language: None,
                 tmdb_id: None,
             };
             let first = running.call("POST", "/api/jobs", Some(&request.to_json()));
@@ -390,6 +391,7 @@ impl Fixture {
             source_url: None,
             runtime_minutes: None,
             source_numbering: None,
+            original_language: None,
             tmdb_id: Some(42),
         };
         let record = running.engine.track_series(&request, false, true).unwrap();

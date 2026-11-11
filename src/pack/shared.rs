@@ -113,6 +113,7 @@ impl SharedFile {
             tmdb_id: Some(self.tmdb_id),
             runtime_minutes: None,
             source_numbering: None,
+            original_language: None,
         }
     }
     pub(crate) fn validate_job(&self, job: &Job) -> Result<()> {
