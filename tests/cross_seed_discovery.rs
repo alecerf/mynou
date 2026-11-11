@@ -34,6 +34,8 @@ struct Indexer {
     url: String,
     feed: Arc<Mutex<String>>,
     search: Arc<Mutex<String>>,
+    /// Search answers for one exact (encoded) query, before `search`.
+    queries: Arc<Mutex<BTreeMap<String, String>>>,
     files: Arc<Mutex<BTreeMap<String, Vec<u8>>>>,
     lines: Arc<Mutex<Vec<String>>>,
     failing: Arc<AtomicBool>,
@@ -47,13 +49,15 @@ impl Indexer {
         let url = format!("http://{}", listener.local_addr().unwrap());
         let feed = Arc::new(Mutex::new(rss(&[])));
         let search = Arc::new(Mutex::new(rss(&[])));
+        let queries = Arc::new(Mutex::new(BTreeMap::<String, String>::new()));
         let files = Arc::new(Mutex::new(BTreeMap::<String, Vec<u8>>::new()));
         let lines = Arc::new(Mutex::new(Vec::new()));
         let failing = Arc::new(AtomicBool::new(false));
         let stop = Arc::new(AtomicBool::new(false));
-        let (f, s, d, l, e, x) = (
+        let (f, s, q, d, l, e, x) = (
             feed.clone(),
             search.clone(),
+            queries.clone(),
             files.clone(),
             lines.clone(),
             failing.clone(),
@@ -94,9 +98,17 @@ impl Indexer {
                         None => ("text/plain", None),
                     }
                 } else if target.contains("&q=") || target.contains("?q=") {
+                    let text = target
+                        .split(['?', '&'])
+                        .find_map(|pair| pair.strip_prefix("q="))
+                        .unwrap_or_default();
+                    let body = q.lock().unwrap().get(text).cloned();
                     (
                         "application/rss+xml",
-                        Some(s.lock().unwrap().clone().into_bytes()),
+                        Some(
+                            body.unwrap_or_else(|| s.lock().unwrap().clone())
+                                .into_bytes(),
+                        ),
                     )
                 } else {
                     (
@@ -121,6 +133,7 @@ impl Indexer {
             url,
             feed,
             search,
+            queries,
             files,
             lines,
             failing,
@@ -274,18 +287,37 @@ fn fixture(indexer: &Indexer) -> Fixture {
 }
 
 fn fixture_with(indexer: &Indexer, json_source: bool) -> Fixture {
-    let mut scratch = Scratch::new();
-    scratch.0 = scratch.0.canonicalize().unwrap();
     let video = content(3 * BLOCK + 77, 1);
     let nfo = content(40, 2);
-    let source = Torrent::multiple(
-        &scratch.0,
+    let (scratch, cfg, source) = completed(
+        indexer,
+        json_source,
         NAME,
         vec![
             (PathBuf::from("ep.mkv"), video.clone()),
             (PathBuf::from("info.nfo"), nfo.clone()),
         ],
     );
+    Fixture {
+        scratch,
+        cfg,
+        source,
+        video,
+        nfo,
+    }
+}
+
+/// Settings with one cross-seeding indexer, and a completed transfer of
+/// these files already on disk.
+fn completed(
+    indexer: &Indexer,
+    json_source: bool,
+    name: &str,
+    files: Vec<(PathBuf, Vec<u8>)>,
+) -> (Scratch, config::Config, String) {
+    let mut scratch = Scratch::new();
+    scratch.0 = scratch.0.canonicalize().unwrap();
+    let source = Torrent::multiple(&scratch.0, name, files);
     let mut settings = configuration();
     let Value::Object(downloads) = settings.get_mut("downloads").unwrap() else {
         panic!("downloads must be an object");
@@ -319,13 +351,7 @@ fn fixture_with(indexer: &Indexer, json_source: bool) -> Fixture {
     )
     .unwrap();
     mynou::torrent::index_handmade_transfer(&cfg.downloads, &source.id).unwrap();
-    Fixture {
-        scratch,
-        cfg,
-        source: source.id,
-        video,
-        nfo,
-    }
+    (scratch, cfg, source.id)
 }
 
 fn open(f: &Fixture) -> Arc<Engine> {
@@ -622,4 +648,95 @@ fn an_unavailable_indexer_leaves_entries_pending_until_it_recovers() {
         json::stringify(&recovered)
     );
     wait(|| transfer(&engine, &good_id).is_some_and(|t| flag(&t, "ready")));
+}
+
+#[test]
+fn an_episode_is_reused_from_the_local_season_pack_its_season_search_finds() {
+    let indexer = Indexer::open();
+    let first = content(3 * BLOCK + 50, 3);
+    let second = content(2 * BLOCK + 900, 4);
+    let (scratch, cfg, pack) = completed(
+        &indexer,
+        false,
+        "Show.S01.1080p.WEB-GRP",
+        vec![
+            (
+                PathBuf::from("Show.S01E01.1080p.WEB-GRP.mkv"),
+                first.clone(),
+            ),
+            (
+                PathBuf::from("Show.S01E02.1080p.WEB-GRP.mkv"),
+                second.clone(),
+            ),
+        ],
+    );
+    // The second episode alone, as another tracker lists it.
+    let (episode, episode_id) = metainfo(
+        "Show.S01E02.1080p.WEB-GRP",
+        &[("Show.S01E02.1080p.WEB-GRP.mkv", &second)],
+        "B",
+    );
+    // The first one with an `.nfo` the pack lacks: admitted, with only the
+    // `.nfo` left to download.
+    let nfo = content(300, 5);
+    let (with_nfo, with_nfo_id) = metainfo(
+        "Show.S01E01.1080p.WEB-GRP",
+        &[
+            ("Show.S01E01.1080p.WEB-GRP.mkv", &first),
+            ("Show.S01E01.1080p.WEB-GRP.nfo", &nfo),
+        ],
+        "C",
+    );
+    // An episode whose video is no file of the pack.
+    let (other, other_id) = metainfo(
+        "Show.S01E03.1080p.WEB-GRP",
+        &[("Show.S01E03.1080p.WEB-GRP.mkv", &content(BLOCK, 6))],
+        "D",
+    );
+    for (key, bytes) in [("episode", &episode), ("nfo", &with_nfo), ("other", &other)] {
+        indexer.publish(key, bytes);
+    }
+    // Only the season search finds the episodes.
+    indexer.queries.lock().unwrap().insert(
+        "Show%20S01".into(),
+        rss(&[
+            ("e2", "Show S01E02 1080p WEB-GRP", "episode", None, None),
+            ("e1", "Show.S01E01.1080p.WEB-GRP", "nfo", None, None),
+            ("e3", "Show S01E03 1080p WEB-GRP", "other", None, None),
+            ("x1", "Show S02E01 1080p WEB-GRP", "missing", None, None),
+        ]),
+    );
+    let engine = Engine::open(cfg.clone()).unwrap();
+    wait(|| transfer(&engine, &pack).is_some_and(|t| flag(&t, "ready")));
+    // One search a pass: the pack's name first, then its season.
+    let named = engine.cross_seed_discover(&Run::default()).unwrap();
+    assert_eq!(number(&named, "searches"), 1);
+    assert_eq!(number(&named, "added"), 0);
+    let report = engine.cross_seed_discover(&Run::default()).unwrap();
+    let text = json::stringify(&report);
+    assert_eq!(number(&report, "searches"), 1, "{text}");
+    assert_eq!(number(&report, "added"), 2, "{text}");
+    assert_eq!(number(&report, "rejected"), 1, "{text}");
+    assert_eq!(number(&report, "unmatched"), 1, "{text}");
+    let lines = indexer.lines.lock().unwrap().clone();
+    assert!(
+        lines.iter().any(|l| l.contains("q=Show%20S01 ")),
+        "{lines:?}"
+    );
+    wait(|| transfer(&engine, &episode_id).is_some_and(|t| flag(&t, "ready")));
+    let reused = transfer(&engine, &episode_id).unwrap();
+    assert!(flag(&reused, "seed_only"));
+    assert_eq!(
+        reused.get("cross_seed_source_id").and_then(Value::as_str),
+        Some(pack.as_str())
+    );
+    assert!(!cfg.downloads.data_dir.join(&episode_id).exists());
+    // Its video verified from the pack, the `.nfo` waits for a peer.
+    wait(|| {
+        transfer(&engine, &with_nfo_id)
+            .is_some_and(|t| t.get("status").and_then(Value::as_str) == Some("downloading"))
+    });
+    assert!(transfer(&engine, &other_id).is_none());
+    drop(engine);
+    drop(scratch);
 }

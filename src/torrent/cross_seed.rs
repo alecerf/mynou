@@ -46,7 +46,11 @@ fn safe_directory(path: &Path) -> Result<()> {
 
 pub struct CrossSeedRequest {
     pub metadata: Vec<u8>,
-    pub mapping: Option<Vec<usize>>,
+    /// The source file index of each candidate payload file, in order; `None`
+    /// downloads that file instead. Absent, the source's files map in order.
+    pub mapping: Option<Vec<Option<usize>>>,
+    /// Bytes of missing non-video files the cross-seed may download.
+    pub missing_limit: u64,
 }
 impl CrossSeedRequest {
     pub fn from_json(value: &Json) -> Result<Self> {
@@ -90,26 +94,82 @@ impl CrossSeedRequest {
                 }
                 entries
                     .iter()
-                    .map(|entry| {
-                        entry
+                    .map(|entry| match entry {
+                        Json::Null => Ok(None),
+                        entry => entry
                             .as_u64()
                             .and_then(|index| usize::try_from(index).ok())
+                            .map(Some)
                             .ok_or_else(|| {
-                                "mapping must contain nonnegative integer indices".into()
-                            })
+                                "mapping must contain nonnegative integer indices or null".into()
+                            }),
                     })
                     .collect::<Result<Vec<_>>>()
             })
             .transpose()?;
-        Ok(Self { metadata, mapping })
+        Ok(Self {
+            metadata,
+            mapping,
+            missing_limit: 0,
+        })
     }
+}
+
+/// Video files: a cross-seed reuses them and never downloads any of their
+/// bytes. Samples count as small extras.
+const VIDEO_EXTENSIONS: &[&str] = &[
+    "mkv", "mp4", "m4v", "avi", "ts", "m2ts", "mts", "wmv", "mov", "webm", "mpg", "mpeg", "vob",
+    "iso", "divx", "flv", "ogm", "evo",
+];
+
+/// Whether a cross-seed may download this missing file: anything but a video,
+/// a sample excepted (`Sample/x.mkv`, `x-sample.mkv`).
+pub fn downloadable_extra(path: &Path) -> bool {
+    let video = path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| {
+            VIDEO_EXTENSIONS
+                .iter()
+                .any(|known| extension.eq_ignore_ascii_case(known))
+        });
+    let sample =
+        |word: &str| word.eq_ignore_ascii_case("sample") || word.eq_ignore_ascii_case("samples");
+    !video
+        || path
+            .parent()
+            .is_some_and(|parent| parent.iter().any(|part| part.to_str().is_some_and(sample)))
+        || path
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .is_some_and(|stem| {
+                let mut words = stem
+                    .split(|c: char| !c.is_alphanumeric())
+                    .filter(|word| !word.is_empty());
+                words.next().is_some_and(sample) || words.next_back().is_some_and(sample)
+            })
+}
+
+/// Where each candidate file's bytes come from.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Slot {
+    Padding,
+    /// This original file of the source transfer, read-only.
+    Reused(usize),
+    /// Missing from the source: downloaded under the cross-seed's own folder.
+    Downloaded,
 }
 
 pub(super) struct CrossSeed {
     pub source_id: String,
     pub activity: Arc<Mutex<()>>,
+    /// The cross-seed's own identity, which names the folder of its
+    /// downloaded files.
+    id: String,
     original: Arc<Meta>,
-    indices: Vec<Option<usize>>,
+    slots: Vec<Slot>,
+    /// Every reused piece verified; the missing ones are being downloaded.
+    fetching: AtomicBool,
 }
 
 fn candidate(encoded: &[u8]) -> Result<Meta> {
@@ -127,11 +187,14 @@ fn candidate(encoded: &[u8]) -> Result<Meta> {
 }
 
 impl CrossSeed {
+    /// `limit` bounds the bytes to download at registration; a reloaded
+    /// record was bounded when it was registered.
     fn bind(
-        source_id: &str,
+        (source_id, id): (&str, &str),
         original: Arc<Meta>,
         meta: &Meta,
-        mapping: Option<&[usize]>,
+        mapping: Option<&[Option<usize>]>,
+        limit: Option<u64>,
     ) -> Result<Self> {
         if ![40, 64].contains(&source_id.len())
             || !source_id.bytes().all(|byte| byte.is_ascii_hexdigit())
@@ -146,7 +209,7 @@ impl CrossSeed {
                 .files
                 .iter()
                 .enumerate()
-                .filter_map(|(index, file)| (!file.padding).then_some(index))
+                .filter_map(|(index, file)| (!file.padding).then_some(Some(index)))
                 .take(MAX_FILES + 1)
                 .collect()
         };
@@ -156,13 +219,21 @@ impl CrossSeed {
         }
         let mut seen = BTreeSet::new();
         let mut next = mapping.iter();
-        let mut indices = Vec::with_capacity(meta.files.len());
+        let mut slots = Vec::with_capacity(meta.files.len());
+        let mut missing = 0_u64;
         for file in &meta.files {
             if file.padding {
-                indices.push(None);
+                slots.push(Slot::Padding);
                 continue;
             }
-            let index = *next.next().ok_or("Missing source file mapping")?;
+            let Some(index) = *next.next().ok_or("Missing source file mapping")? else {
+                if !downloadable_extra(&file.path) {
+                    return Err("A cross-seed never downloads video; map every video file".into());
+                }
+                missing = missing.saturating_add(file.length);
+                slots.push(Slot::Downloaded);
+                continue;
+            };
             let source = original
                 .files
                 .get(index)
@@ -172,27 +243,56 @@ impl CrossSeed {
                     "Mapped files must have equal sizes, be non-padding and distinct".into(),
                 );
             }
-            indices.push(Some(index));
+            slots.push(Slot::Reused(index));
+        }
+        if seen.is_empty() {
+            return Err("A cross-seed must reuse at least one source file".into());
+        }
+        if limit.is_some_and(|limit| missing > limit) {
+            return Err(format!(
+                "The missing files hold {missing} bytes, more than the cross-seed download limit"
+            ));
         }
         Ok(Self {
             source_id: source_id.to_owned(),
+            id: id.to_owned(),
             original,
-            indices,
+            slots,
             activity: Arc::new(Mutex::new(())),
+            fetching: AtomicBool::new(false),
         })
     }
 
+    /// Whether some files are downloaded rather than reused.
+    pub fn downloads(&self) -> bool {
+        self.slots.contains(&Slot::Downloaded)
+    }
+
+    /// Every reused piece verified, missing ones still downloading.
+    pub fn fetching(&self) -> bool {
+        self.fetching.load(Ordering::Acquire)
+    }
+
+    fn own_base(&self, config: &DownloadConfig) -> PathBuf {
+        config.data_dir.join(&self.id)
+    }
+
+    /// The candidate files downloaded into the cross-seed's own folder.
+    fn own_files(&self) -> Vec<bool> {
+        self.slots
+            .iter()
+            .map(|slot| *slot == Slot::Downloaded)
+            .collect()
+    }
+
     fn open_file(&self, config: &DownloadConfig, index: usize) -> Result<File> {
+        let Some(Slot::Reused(original)) = self.slots.get(index).copied() else {
+            return Err("Missing source file mapping".into());
+        };
         let source = self
             .original
             .files
-            .get(
-                self.indices
-                    .get(index)
-                    .copied()
-                    .flatten()
-                    .ok_or("Missing source file mapping")?,
-            )
+            .get(original)
             .ok_or("Invalid source file mapping")?;
         let base = config.data_dir.join(&self.source_id);
         safe_directory(&base)?;
@@ -239,12 +339,18 @@ impl CrossSeed {
         Ok(file)
     }
 
-    pub fn read_piece(
-        &self,
-        config: &DownloadConfig,
-        meta: &Meta,
-        index: usize,
-    ) -> Result<Vec<u8>> {
+    /// A downloaded file of this cross-seed, under its own folder.
+    fn own_file(&self, config: &DownloadConfig, meta: &Meta, index: usize) -> Result<PathBuf> {
+        let base = self.own_base(config);
+        safe_directory(&base)?;
+        let path = confined(&base, &meta.files[index].path)?;
+        inspect_media_file(&path)?;
+        Ok(path)
+    }
+
+    /// The piece as held here: reused bytes, downloaded files as they stand
+    /// and zero padding, not yet verified.
+    fn assemble(&self, config: &DownloadConfig, meta: &Meta, index: usize) -> Result<Vec<u8>> {
         let start = index as u64 * meta.piece_length as u64;
         let mut data = vec![0; meta.piece_size(index)];
         let end = start + data.len() as u64;
@@ -254,13 +360,87 @@ impl CrossSeed {
             }
             let a = start.max(entry.offset);
             let b = end.min(entry.offset + entry.length);
-            let mut file = self.open_file(config, file_index)?;
-            file.seek(SeekFrom::Start(a - entry.offset))
-                .and_then(|_| {
-                    file.read_exact(&mut data[(a - start) as usize..(b - start) as usize])
-                })
-                .map_err(|_| "Cross-seed source read failed; no download attempted")?;
+            let target = &mut data[(a - start) as usize..(b - start) as usize];
+            match self.slots[file_index] {
+                Slot::Padding => {}
+                Slot::Reused(_) => {
+                    let mut file = self.open_file(config, file_index)?;
+                    file.seek(SeekFrom::Start(a - entry.offset))
+                        .and_then(|_| file.read_exact(target))
+                        .map_err(|_| "Cross-seed source read failed; no download attempted")?;
+                }
+                Slot::Downloaded => {
+                    let mut file = File::open(self.own_file(config, meta, file_index)?)
+                        .map_err(|_| "Could not read a downloaded cross-seed file")?;
+                    file.seek(SeekFrom::Start(a - entry.offset))
+                        .and_then(|_| file.read_exact(target))
+                        .map_err(|_| "Truncated downloaded cross-seed file")?;
+                }
+            }
         }
+        Ok(data)
+    }
+
+    /// The byte ranges of a piece that belong to downloaded files.
+    fn own_ranges(&self, meta: &Meta, index: usize) -> Vec<(usize, usize)> {
+        let start = index as u64 * meta.piece_length as u64;
+        let end = start + meta.piece_size(index) as u64;
+        let mut ranges: Vec<(usize, usize)> = Vec::new();
+        for (file_index, entry) in meta.files.iter().enumerate() {
+            if self.slots[file_index] != Slot::Downloaded
+                || entry.offset >= end
+                || entry.offset + entry.length <= start
+            {
+                continue;
+            }
+            let a = (start.max(entry.offset) - start) as usize;
+            let b = (end.min(entry.offset + entry.length) - start) as usize;
+            match ranges.last_mut() {
+                Some(last) if last.0 + last.1 == a => last.1 += b - a,
+                _ => ranges.push((a, b - a)),
+            }
+        }
+        ranges
+    }
+
+    /// Writes the downloaded files' part of a verified piece; reused files
+    /// are never written.
+    fn write_own(
+        &self,
+        config: &DownloadConfig,
+        meta: &Meta,
+        index: usize,
+        data: &[u8],
+    ) -> Result<()> {
+        let start = index as u64 * meta.piece_length as u64;
+        let end = start + data.len() as u64;
+        for (file_index, entry) in meta.files.iter().enumerate() {
+            if self.slots[file_index] != Slot::Downloaded
+                || entry.offset >= end
+                || entry.offset + entry.length <= start
+            {
+                continue;
+            }
+            let a = start.max(entry.offset);
+            let b = end.min(entry.offset + entry.length);
+            let mut file = OpenOptions::new()
+                .write(true)
+                .open(self.own_file(config, meta, file_index)?)
+                .map_err(|_| "Could not write a downloaded cross-seed file")?;
+            file.seek(SeekFrom::Start(a - entry.offset))
+                .and_then(|_| file.write_all(&data[(a - start) as usize..(b - start) as usize]))
+                .map_err(|_| "Could not write a downloaded cross-seed file")?;
+        }
+        Ok(())
+    }
+
+    pub fn read_piece(
+        &self,
+        config: &DownloadConfig,
+        meta: &Meta,
+        index: usize,
+    ) -> Result<Vec<u8>> {
+        let data = self.assemble(config, meta, index)?;
         if !meta.verify(index, &data) {
             return Err(format!(
                 "Cross-seed mismatch at piece {index}; no download attempted"
@@ -269,21 +449,29 @@ impl CrossSeed {
         Ok(data)
     }
 
-    fn paths(&self, config: &DownloadConfig) -> Vec<PathBuf> {
-        self.indices
+    fn paths(&self, config: &DownloadConfig, meta: &Meta) -> Vec<PathBuf> {
+        self.slots
             .iter()
-            .flatten()
-            .map(|index| {
-                config
-                    .data_dir
-                    .join(&self.source_id)
-                    .join(&self.original.files[*index].path)
+            .zip(&meta.files)
+            .filter_map(|(slot, file)| match slot {
+                Slot::Padding => None,
+                Slot::Reused(index) => Some(
+                    config
+                        .data_dir
+                        .join(&self.source_id)
+                        .join(&self.original.files[*index].path),
+                ),
+                Slot::Downloaded => Some(self.own_base(config).join(&file.path)),
             })
             .collect()
     }
+    /// Schema 1 reuses every file; schema 2 marks downloaded files with -1.
     fn encode(&self, meta: &Meta) -> Vec<u8> {
         crate::bencode::encode(&Value::Dict(BTreeMap::from([
-            (b"schema".to_vec(), Value::Int(1)),
+            (
+                b"schema".to_vec(),
+                Value::Int(if self.downloads() { 2 } else { 1 }),
+            ),
             (
                 b"source".to_vec(),
                 Value::Bytes(self.source_id.as_bytes().to_vec()),
@@ -292,10 +480,13 @@ impl CrossSeed {
             (
                 b"mapping".to_vec(),
                 Value::List(
-                    self.indices
+                    self.slots
                         .iter()
-                        .flatten()
-                        .map(|index| Value::Int(*index as i64))
+                        .filter_map(|slot| match slot {
+                            Slot::Padding => None,
+                            Slot::Reused(index) => Some(Value::Int(*index as i64)),
+                            Slot::Downloaded => Some(Value::Int(-1)),
+                        })
                         .collect(),
                 ),
             ),
@@ -336,12 +527,13 @@ fn queued(
             progress: 0.0,
             ready: false,
             selected_ready: false,
-            files: reuse.paths(config),
+            files: reuse.paths(config, &meta),
             available_files: Vec::new(),
             message: "Cross-seed verifying existing files".into(),
         },
         meta: Some(Arc::new(meta)),
         cross_seed: Some(Arc::new(reuse)),
+        fresh: false,
         running: false,
         paused: persisted_pause(config, &id)?,
         failed: false,
@@ -436,10 +628,11 @@ impl Client {
             return Err("Cross-seed source must be a fully verified ordinary transfer".into());
         }
         let reuse = CrossSeed::bind(
-            source_id,
+            (source_id, &id),
             source.meta.clone().ok_or("Missing source metadata")?,
             &meta,
             request.mapping.as_deref(),
+            Some(request.missing_limit),
         )?;
         trim_jobs(&self.config, &mut jobs, self.config.resident(31))?;
         if jobs.len() >= self.config.resident(64) {
@@ -452,6 +645,7 @@ impl Client {
             .next_order()?;
         let encoded = reuse.encode(&meta);
         let mut job = queued(meta, reuse, id.clone(), order, &self.config)?;
+        job.fresh = true;
         job.saved_control = job.control.encode()?;
         // The isolated primary record includes the seed-only binding and metadata
         // in one atomic publication. A crash cannot produce an ordinary torrent.
@@ -506,7 +700,13 @@ pub(super) fn load(config: &DownloadConfig, id: &str) -> Result<Job> {
     let Value::Dict(fields) = crate::bencode::parse(&encoded)? else {
         return Err("Invalid cross-seed state".into());
     };
-    if fields.len() != 4 || fields.get(b"schema".as_slice()) != Some(&Value::Int(1)) {
+    // Schema 2 records download some files (mapping -1); schema 1 reuses all.
+    let downloads = match fields.get(b"schema".as_slice()) {
+        Some(Value::Int(1)) => false,
+        Some(Value::Int(2)) => true,
+        _ => return Err("Invalid cross-seed schema".into()),
+    };
+    if fields.len() != 4 {
         return Err("Invalid cross-seed schema".into());
     }
     let bytes = |key: &[u8]| -> Result<&[u8]> {
@@ -529,11 +729,16 @@ pub(super) fn load(config: &DownloadConfig, id: &str) -> Result<Job> {
     }
     let mapping = mapping
         .iter()
-        .map(|value| {
-            usize::try_from(metainfo::integer(value)?)
-                .map_err(|_| "Invalid cross-seed mapping".into())
+        .map(|value| match metainfo::integer(value)? {
+            -1 if downloads => Ok(None),
+            index => usize::try_from(index)
+                .map(Some)
+                .map_err(|_| "Invalid cross-seed mapping".into()),
         })
         .collect::<Result<Vec<_>>>()?;
+    if downloads != mapping.contains(&None) {
+        return Err("Invalid cross-seed mapping".into());
+    }
     if ![40, 64].contains(&source_id.len())
         || !source_id.bytes().all(|b| b.is_ascii_hexdigit())
         || source_id != source_id.to_ascii_lowercase()
@@ -553,22 +758,31 @@ pub(super) fn load(config: &DownloadConfig, id: &str) -> Result<Job> {
         return Err("Chained cross-seeding is not supported".into());
     }
     let reuse = CrossSeed::bind(
-        source_id,
+        (source_id, id),
         source
             .meta
             .clone()
             .ok_or("Cross-seed source metadata is missing")?,
         &meta,
         Some(&mapping),
+        None,
     )?;
     queued(meta, reuse, id.to_owned(), 1, config)
 }
 
+/// Tries of one piece holding a missing file: past them its reused bytes
+/// cannot be right, and a cross-seed never downloads them.
+const MAX_PIECE_ATTEMPTS: u32 = 3;
+/// A cross-seed whose missing files no peer serves for this long gives its
+/// download slot back.
+const FETCH_STALL: Duration = Duration::from_secs(600);
+
+/// Verifies every reused piece, then downloads the missing files' bytes, and
+/// only those, before the cross-seed seeds.
 pub(super) fn verify(
-    config: &DownloadConfig,
-    jobs: &Jobs,
-    stop: &AtomicBool,
-    id: &str,
+    (config, jobs, stop, id): (&DownloadConfig, &Jobs, &AtomicBool, &str),
+    peer_id: &[u8; 20],
+    policy: &PolicyRuntime,
 ) -> Result<()> {
     let (reuse, meta, counters) = {
         let map = jobs
@@ -581,28 +795,58 @@ pub(super) fn verify(
             job.counters.clone(),
         )
     };
+    let own = reuse.own_files();
+    let base = reuse.own_base(config);
+    if reuse.downloads() {
+        mkdir_private(&base)?;
+        safe_directory(&base)?;
+        prepare_selected_files(&meta, &base, stop, Some(&own))?;
+    }
     // Includes zero-length files that no piece read would otherwise touch.
     let mut stamps = Vec::with_capacity(meta.files.len());
-    for (index, file) in meta.files.iter().enumerate() {
+    for (index, slot) in reuse.slots.iter().enumerate() {
         if stop.load(Ordering::Acquire) {
             return Err("Cross-seed verification interrupted".into());
         }
-        stamps.push(if file.padding {
-            None
-        } else {
-            Some(
+        stamps.push(match slot {
+            Slot::Reused(_) => Some(
                 reuse
                     .open_file(config, index)?
                     .metadata()
                     .map_err(|_| "Could not inspect cross-seed source")?,
-            )
+            ),
+            _ => None,
         });
     }
+    let mut missing = Vec::new();
+    let mut verified = 0;
     for index in 0..meta.count() {
         if stop.load(Ordering::Acquire) {
             return Err("Cross-seed verification interrupted".into());
         }
-        reuse.read_piece(config, &meta, index)?;
+        let data = reuse.assemble(config, &meta, index)?;
+        if meta.verify(index, &data) {
+            verified += verified_piece_bytes(&meta, index);
+        } else if reuse.own_ranges(&meta, index).is_empty() {
+            return Err(format!(
+                "Cross-seed mismatch at piece {index}; no download attempted"
+            ));
+        } else {
+            missing.push(index);
+        }
+    }
+    counters.verified.store(verified, Ordering::Relaxed);
+    if !missing.is_empty() {
+        fetch_missing(
+            (config, jobs, stop, id),
+            (peer_id, policy),
+            &reuse,
+            &meta,
+            missing,
+        )?;
+    }
+    if reuse.downloads() {
+        sync_selected_files(&meta, &base, stop, Some(&own))?;
     }
     for (index, stamp) in stamps.iter().enumerate() {
         if let Some(before) = stamp {
@@ -654,12 +898,155 @@ pub(super) fn verify(
             .sum(),
         Ordering::Relaxed,
     );
+    reuse.fetching.store(false, Ordering::Release);
     job.status.progress = 1.0;
     job.status.ready = true;
     job.status.selected_ready = true;
     // Seed-only status never supplies acquisition/import availability.
     job.status.available_files.clear();
-    job.status.message = "Cross-seed verified; existing files reused read-only".into();
+    job.status.message = if reuse.downloads() {
+        "Cross-seed verified; small extras downloaded, other files reused read-only"
+    } else {
+        "Cross-seed verified; existing files reused read-only"
+    }
+    .into();
+    Ok(())
+}
+
+/// Downloads the pieces that hold missing files. Only the missing files'
+/// bytes are requested; the reused bytes come from disk and the whole piece
+/// is verified before anything is written.
+fn fetch_missing(
+    (config, jobs, stop, id): (&DownloadConfig, &Jobs, &AtomicBool, &str),
+    (peer_id, policy): (&[u8; 20], &PolicyRuntime),
+    reuse: &CrossSeed,
+    meta: &Meta,
+    mut missing: Vec<usize>,
+) -> Result<()> {
+    let hash = meta.v1.ok_or("Missing v1 cross-seed identity")?;
+    let count = meta.count();
+    let (counters, local_gate) = {
+        let mut map = jobs
+            .lock()
+            .map_err(|_| "BitTorrent state lock is poisoned")?;
+        let job = map.get_mut(id).ok_or("Unknown cross-seed transfer")?;
+        if stop.load(Ordering::Acquire) || !std::ptr::eq(&*job.cancel, stop) {
+            return Err("Cross-seed verification interrupted".into());
+        }
+        // Announces now start, with what is left to download.
+        reuse.fetching.store(true, Ordering::Release);
+        job.status.progress = (count - missing.len()) as f64 / count as f64;
+        job.status.message = "Cross-seed downloading its missing small files".into();
+        (job.counters.clone(), job.download_gate.clone())
+    };
+    let mut attempts = BTreeMap::<usize, u32>::new();
+    let mut addresses = BTreeSet::new();
+    let mut next_dht = Instant::now();
+    let mut progressed = Instant::now();
+    while !missing.is_empty() {
+        if stop.load(Ordering::Acquire) {
+            return Err("Cross-seed verification interrupted".into());
+        }
+        if progressed.elapsed() >= FETCH_STALL {
+            return Err("No peer sent the cross-seed's missing files; resume to try again".into());
+        }
+        if let Ok(map) = jobs.lock()
+            && let Some(job) = map.get(id)
+        {
+            merge_peers(&mut addresses, job.tracker_peers.iter().copied());
+        }
+        if config.dht && !meta.private && Instant::now() >= next_dht {
+            let peers =
+                discovery::dht_lookup(&*policy.network, &hash, config.listen_port, true, stop, &[])
+                    .unwrap_or_default();
+            next_dht = Instant::now()
+                + if peers.is_empty() {
+                    discovery::DHT_RETRY
+                } else {
+                    Duration::from_secs(60)
+                };
+            merge_peers(&mut addresses, peers);
+        }
+        let peers: Vec<_> = addresses.iter().copied().take(1000).collect();
+        if let Ok(mut map) = jobs.lock()
+            && let Some(job) = map.get_mut(id)
+        {
+            job.peers = peers.clone();
+        }
+        let mut advanced = false;
+        for address in peers {
+            if stop.load(Ordering::Acquire) {
+                return Err("Cross-seed verification interrupted".into());
+            }
+            let Ok(mut peer) = wire::Peer::connect_cancellable(
+                address,
+                &hash,
+                peer_id,
+                wire::PeerSettings {
+                    meta: Some(meta),
+                    port: config.listen_port,
+                    pex: false,
+                    v2_wire: false,
+                    counters: counters.clone(),
+                    download_gate: policy.download.clone(),
+                    local_download_gate: local_gate.clone(),
+                    network: &*policy.network,
+                    serving: None,
+                },
+                stop,
+            ) else {
+                continue;
+            };
+            for index in missing.clone() {
+                if !peer.has_piece(index) {
+                    continue;
+                }
+                let data = reuse.assemble(config, meta, index)?;
+                let ranges = reuse.own_ranges(meta, index);
+                match peer.fetch_piece_ranges(meta, index, data, &ranges, stop) {
+                    Ok(data) => {
+                        let _publication = policy.network.publication()?;
+                        reuse.write_own(config, meta, index, &data)?;
+                        missing.retain(|other| *other != index);
+                        counters
+                            .verified
+                            .fetch_add(verified_piece_bytes(meta, index), Ordering::Relaxed);
+                        advanced = true;
+                        progressed = Instant::now();
+                        if let Ok(mut map) = jobs.lock()
+                            && let Some(job) = map.get_mut(id)
+                            && std::ptr::eq(&*job.cancel, stop)
+                        {
+                            job.status.progress = (count - missing.len()) as f64 / count as f64;
+                        }
+                    }
+                    Err(error) if error.contains("does not advertise") => continue,
+                    Err(error) if error == "Piece hash mismatch" => {
+                        let tries = attempts.entry(index).or_default();
+                        *tries += 1;
+                        if *tries >= MAX_PIECE_ATTEMPTS {
+                            return Err(format!(
+                                "Cross-seed piece {index} does not match its reused files; video is never downloaded"
+                            ));
+                        }
+                        break;
+                    }
+                    Err(_) => break,
+                }
+            }
+            if missing.is_empty() {
+                break;
+            }
+        }
+        if !advanced {
+            for _ in 0..20 {
+                if stop.load(Ordering::Acquire) {
+                    return Err("Cross-seed verification interrupted".into());
+                }
+                thread::sleep(Duration::from_millis(100));
+            }
+        }
+    }
     Ok(())
 }
 
@@ -841,7 +1228,8 @@ impl Client {
 }
 
 pub(super) fn retire_proof(job: &mut Job) {
-    if job.cross_seed.is_some() {
+    if let Some(reuse) = &job.cross_seed {
+        reuse.fetching.store(false, Ordering::Release);
         job.cancel.store(true, Ordering::Release);
         job.cancel = Arc::new(AtomicBool::new(job.control.seed_limited));
         job.status.ready = false;
@@ -855,6 +1243,30 @@ pub(super) fn retire_proof(job: &mut Job) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_small_extras_and_samples_may_be_downloaded() {
+        for extra in [
+            "Show/info.nfo",
+            "Show/cover.JPG",
+            "Show/Subs/en.srt",
+            "Show/Sample/show.mkv",
+            "Show/show-sample.MKV",
+            "notes.txt",
+        ] {
+            assert!(downloadable_extra(Path::new(extra)), "{extra}");
+        }
+        for video in [
+            "Show/show.mkv",
+            "Show/SHOW.MP4",
+            "Show/disc.iso",
+            "Show/Samples.of.Life.2020.mkv/extra.m2ts",
+            "Example.Show.S01E01.avi",
+            "The.Sample.2023.1080p.mkv",
+        ] {
+            assert!(!downloadable_extra(Path::new(video)), "{video}");
+        }
+    }
 
     #[test]
     fn stale_verifier_and_announcer_cannot_publish_a_new_generation_and_private_dht_is_disabled() {
@@ -910,17 +1322,25 @@ mod tests {
         let source_id = "12".repeat(20);
         fs::create_dir_all(config.data_dir.join(&source_id)).unwrap();
         fs::write(config.data_dir.join(&source_id).join("empty.bin"), []).unwrap();
-        let reuse = CrossSeed::bind(&source_id, Arc::new(meta.clone()), &meta, None).unwrap();
+        let reuse =
+            CrossSeed::bind((&source_id, &id), Arc::new(meta.clone()), &meta, None, None).unwrap();
         let job = queued(meta, reuse, id.clone(), 1, &config).unwrap();
+        let policy = PolicyRuntime {
+            policy: TransferPolicy::default(),
+            seed_queue: queue::SeedQueue::new(0),
+            download: Arc::new(RateGate::default()),
+            upload: Arc::new(RateGate::default()),
+            network: super::super::transport::direct(),
+        };
         let old = job.cancel.clone();
         let jobs: Jobs = Arc::new(Mutex::new(BTreeMap::from([(id.clone(), job)])));
         assert!(select_announce(&config, &jobs, &mut None).is_none());
         // Even an uncancelled old verifier must not publish into a replacement generation.
         jobs.lock().unwrap().get_mut(&id).unwrap().cancel = Arc::new(AtomicBool::new(false));
-        assert!(verify(&config, &jobs, &old, &id).is_err());
+        assert!(verify((&config, &jobs, &old, &id), &[0; 20], &policy).is_err());
         assert!(!jobs.lock().unwrap()[&id].status.ready);
         let current = jobs.lock().unwrap()[&id].cancel.clone();
-        verify(&config, &jobs, &current, &id).unwrap();
+        verify((&config, &jobs, &current, &id), &[0; 20], &policy).unwrap();
         assert!(select_seed_dht(&config, &jobs, &mut None).is_none());
         let task = select_announce(&config, &jobs, &mut None).unwrap();
         retire_proof(jobs.lock().unwrap().get_mut(&id).unwrap());

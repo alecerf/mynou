@@ -32,6 +32,7 @@ const SETTING_GROUPS = [
     ['downloads.max_peers', 'Peers per download', 'number', { zero: 'No limit', hint: 'More peers, faster downloads. Empty for no limit: as many as the swarm offers and memory allows.' }],
     ['downloads.download_limit_bps', 'Download speed limit', 'number', { scale: MB, unit: 'MB/s', zero: 'No limit' }],
     ['downloads.upload_limit_bps', 'Upload speed limit', 'number', { scale: MB, unit: 'MB/s', zero: 'No limit' }],
+    ['downloads.cross_seed_missing_bytes', 'Cross-seed extras', 'number', { scale: MB, unit: 'MB', zero: 'None', hint: 'A cross-seed may download the small files it lacks, such as an .nfo or a sample, up to this much. Video is never downloaded.' }],
   ]],
   ['services', 'Plex', 'Your server and its watchlist.', [
     ['plex.server', 'Server', 'plex'],

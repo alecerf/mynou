@@ -84,8 +84,115 @@ impl Run {
 /// Lowercase alphanumeric words of a release or torrent name, without a
 /// trailing video extension, so separators and case never decide a match.
 pub(crate) fn normalize(name: &str) -> String {
-    let name = name.trim();
-    let stem = match name.rsplit_once('.') {
+    strip_video_extension(name.trim())
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|word| !word.is_empty())
+        .map(str::to_lowercase)
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// The series words, season and, for a single episode, episode of a release
+/// or torrent name; `None` when it names no season or several.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Numbered {
+    pub(crate) series: String,
+    pub(crate) season: u32,
+    pub(crate) episode: Option<u32>,
+}
+
+fn season_word(word: &str) -> Option<u32> {
+    let digits = word.strip_prefix('s')?;
+    (!digits.is_empty() && digits.len() <= 4 && digits.bytes().all(|b| b.is_ascii_digit()))
+        .then(|| digits.parse().ok())
+        .flatten()
+}
+
+/// A word that numbers an episode or a season.
+fn numbering_word(word: &str) -> bool {
+    crate::numbering::episode_marker(word).is_some()
+        || season_word(word).is_some()
+        || word
+            .strip_prefix('e')
+            .is_some_and(|rest| !rest.is_empty() && rest.bytes().all(|b| b.is_ascii_digit()))
+        || (word.starts_with('s')
+            && word.as_bytes().get(1).is_some_and(u8::is_ascii_digit)
+            && word.contains('e'))
+}
+
+/// Words of a name, in their original case, and where its numbering starts.
+fn numbered_words(name: &str) -> Option<(Vec<&str>, usize, Numbered)> {
+    let stem = strip_video_extension(name.trim());
+    let original: Vec<&str> = stem
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|word| !word.is_empty())
+        .collect();
+    let words = crate::selection::tokens(stem);
+    if words.len() != original.len() {
+        return None;
+    }
+    let at = words
+        .iter()
+        .position(|word| numbering_word(word) || matches!(word.as_str(), "season" | "saison"))?;
+    let (season, episode, consumed) =
+        if let Some(number) = crate::numbering::episode_marker(&words[at]) {
+            (number.season, Some(number.episode), 1)
+        } else if let Some(season) = season_word(&words[at]) {
+            (season, None, 1)
+        } else {
+            (
+                crate::numbering::decimal_token(words.get(at + 1)?)?,
+                None,
+                2,
+            )
+        };
+    // Another number after it: several episodes or seasons.
+    if words[at + consumed..]
+        .iter()
+        .any(|word| numbering_word(word) || matches!(word.as_str(), "season" | "saison"))
+    {
+        return None;
+    }
+    let mut series = &words[..at];
+    // A year is often left out of one name and kept in another.
+    if series.len() > 1
+        && series
+            .last()
+            .and_then(|word| crate::numbering::decimal_token(word))
+            .is_some_and(|year| (1888..=2200).contains(&year))
+    {
+        series = &series[..series.len() - 1];
+    }
+    if series.is_empty() {
+        return None;
+    }
+    Some((
+        original,
+        at,
+        Numbered {
+            series: series.join(" "),
+            season,
+            episode,
+        },
+    ))
+}
+
+pub(crate) fn numbered(name: &str) -> Option<Numbered> {
+    numbered_words(name).map(|(_, _, numbered)| numbered)
+}
+
+/// A text search for every release of a season pack's season, its single
+/// episodes included: the pack's title words and `S01`.
+pub(crate) fn season_query(name: &str) -> Option<String> {
+    let (words, at, numbered) = numbered_words(name)?;
+    if numbered.episode.is_some() {
+        return None;
+    }
+    Some(format!("{} S{:02}", words[..at].join(" "), numbered.season))
+}
+
+fn strip_video_extension(name: &str) -> &str {
+    match name.rsplit_once('.') {
         Some((stem, extension))
             if VIDEO_EXTENSIONS
                 .iter()
@@ -94,24 +201,23 @@ pub(crate) fn normalize(name: &str) -> String {
             stem
         }
         _ => name,
-    };
-    stem.split(|c: char| !c.is_alphanumeric())
-        .filter(|word| !word.is_empty())
-        .map(str::to_lowercase)
-        .collect::<Vec<_>>()
-        .join(" ")
+    }
 }
 
-/// Original source indices for each candidate file, in candidate order. Equal
-/// lengths are required; file names, then paths below the root, break ties.
-/// Anything still ambiguous is refused rather than guessed.
+/// Original source indices for each candidate file, in candidate order, or
+/// `None` for a missing small file to download. Equal lengths are required;
+/// file names, then paths below the root, break ties. Anything still
+/// ambiguous is refused rather than guessed. Video is never missing, at least
+/// one file is reused and the missing files hold at most `limit` bytes.
 pub(crate) fn map_files(
     source: &ReuseSource,
     candidate: &CandidateLayout,
-) -> std::result::Result<Vec<usize>, &'static str> {
+    limit: u64,
+) -> std::result::Result<Vec<Option<usize>>, &'static str> {
     let below_root = |path: &Path| path.components().skip(1).collect::<std::path::PathBuf>();
     let mut used = BTreeSet::new();
     let mut mapping = Vec::with_capacity(candidate.files.len());
+    let mut missing = 0_u64;
     for (path, length) in &candidate.files {
         let sized: Vec<_> = source
             .files
@@ -119,6 +225,11 @@ pub(crate) fn map_files(
             .filter(|file| file.2 == *length && !used.contains(&file.0))
             .collect();
         let pick = match sized.as_slice() {
+            [] if crate::torrent::downloadable_extra(path) => {
+                missing = missing.saturating_add(*length);
+                mapping.push(None);
+                continue;
+            }
             [] => return Err("layout_mismatch"),
             [only] => *only,
             _ => {
@@ -142,10 +253,13 @@ pub(crate) fn map_files(
             }
         };
         used.insert(pick.0);
-        mapping.push(pick.0);
+        mapping.push(Some(pick.0));
     }
-    if mapping.is_empty() {
+    if !mapping.iter().any(Option::is_some) {
         return Err("layout_mismatch");
+    }
+    if missing > limit {
+        return Err("too_much_missing");
     }
     Ok(mapping)
 }
@@ -153,6 +267,8 @@ pub(crate) fn map_files(
 /// Completed transfers grouped by normalized name.
 struct Catalog {
     by_name: BTreeMap<String, Vec<ReuseSource>>,
+    /// Season packs by series words and season: their normalized names and IDs.
+    packs: BTreeMap<(String, u32), Vec<(String, String)>>,
     /// Newest first, so recent completions are searched before older ones.
     order: Vec<(String, String)>,
     truncated: bool,
@@ -256,6 +372,7 @@ impl Engine {
         let client = self.native_client()?;
         let mut catalog = Catalog {
             by_name: BTreeMap::new(),
+            packs: BTreeMap::new(),
             order: Vec::new(),
             truncated: false,
         };
@@ -277,6 +394,13 @@ impl Engine {
                     continue;
                 }
                 catalog.order.push((source.id.clone(), name.clone()));
+                if let Some(pack) = numbered(&source.name).filter(|n| n.episode.is_none()) {
+                    catalog
+                        .packs
+                        .entry((pack.series, pack.season))
+                        .or_default()
+                        .push((name.clone(), source.id.clone()));
+                }
                 catalog.by_name.entry(name).or_default().push(source);
             }
             match next {
@@ -446,7 +570,8 @@ impl Engine {
         "ok"
     }
 
-    /// Searches by name for completed transfers this source has not searched.
+    /// Searches by name for completed transfers this source has not searched,
+    /// and a season pack's season for its single episodes.
     fn cross_seed_searches(
         &self,
         cx: &mut Context,
@@ -468,66 +593,70 @@ impl Engine {
             if !target.ready || target.paused {
                 continue;
             }
-            let pending = match lock(&self.cross_seed_store)
-                .and_then(|mut store| store.pending(&cx.indexer, transfer))
-            {
-                Ok(pending) => pending,
-                Err(_) => return "storage_failed",
-            };
-            if pending.is_none() && !cx.run.force {
-                let last = match lock(&self.cross_seed_store)
-                    .and_then(|mut store| store.searched(&cx.indexer, transfer))
+            let mut queries = vec![(
+                transfer.clone(),
+                strip_video_extension(&target.name).replace(['.', '_'], " "),
+            )];
+            if let Some(query) = season_query(&target.name) {
+                queries.push((format!("{transfer}#season"), query));
+            }
+            for (key, query) in queries {
+                let pending = match lock(&self.cross_seed_store)
+                    .and_then(|mut store| store.pending(&cx.indexer, &key))
                 {
-                    Ok(last) => last,
+                    Ok(pending) => pending,
                     Err(_) => return "storage_failed",
                 };
-                if last.is_some_and(|at| interval.is_none_or(|secs| now < at.saturating_add(secs)))
-                {
-                    continue;
+                if pending.is_none() && !cx.run.force {
+                    let last = match lock(&self.cross_seed_store)
+                        .and_then(|mut store| store.searched(&cx.indexer, &key))
+                    {
+                        Ok(last) => last,
+                        Err(_) => return "storage_failed",
+                    };
+                    if last
+                        .is_some_and(|at| interval.is_none_or(|secs| now < at.saturating_add(secs)))
+                    {
+                        continue;
+                    }
                 }
-            }
-            if searches == MAX_SEARCHES {
-                return "pending";
-            }
-            searches += 1;
-            let offers = if let Some(offers) = pending {
-                offers
-            } else {
-                if !self.space(cx) {
+                if searches == MAX_SEARCHES {
                     return "pending";
                 }
-                let query = target
-                    .name
-                    .rsplit_once('.')
-                    .filter(|(_, ext)| VIDEO_EXTENSIONS.iter().any(|k| ext.eq_ignore_ascii_case(k)))
-                    .map_or(target.name.as_str(), |(stem, _)| stem)
-                    .replace(['.', '_'], " ");
-                cx.last_request = Some(Instant::now());
-                tally.searches += 1;
-                match integrations::offers_before(
-                    cx.source,
-                    Some(&query),
-                    Instant::now() + REQUEST_BUDGET,
-                ) {
-                    Ok(offers) => offers,
-                    Err(code) => return code,
+                searches += 1;
+                let offers = if let Some(offers) = pending {
+                    offers
+                } else {
+                    if !self.space(cx) {
+                        return "pending";
+                    }
+                    cx.last_request = Some(Instant::now());
+                    tally.searches += 1;
+                    match integrations::offers_before(
+                        cx.source,
+                        Some(&query),
+                        Instant::now() + REQUEST_BUDGET,
+                    ) {
+                        Ok(offers) => offers,
+                        Err(code) => return code,
+                    }
+                };
+                let only = BTreeSet::from([transfer.as_str()]);
+                let (pending, stopped) = unfinished_offers(offers, |offer| {
+                    let verdict = self.cross_seed_offer(cx, catalog, offer, Some(&only));
+                    tally.offers += 1;
+                    self.cross_seed_record(cx, verdict, batch, tally)
+                });
+                let unfinished = !pending.is_empty();
+                if !cx.run.dry_run {
+                    batch.finish_search(&cx.indexer, &key, pending, now);
                 }
-            };
-            let only = BTreeSet::from([transfer.as_str()]);
-            let (pending, stopped) = unfinished_offers(offers, |offer| {
-                let verdict = self.cross_seed_offer(cx, catalog, offer, Some(&only));
-                tally.offers += 1;
-                self.cross_seed_record(cx, verdict, batch, tally)
-            });
-            let unfinished = !pending.is_empty();
-            if !cx.run.dry_run {
-                batch.finish_search(&cx.indexer, transfer, pending, now);
-            }
-            if stopped {
-                return "stopped";
-            }
-            if unfinished {
-                return "pending";
+                if stopped {
+                    return "stopped";
+                }
+                if unfinished {
+                    return "pending";
+                }
             }
         }
         "ok"
@@ -622,16 +751,29 @@ impl Engine {
             source: source.map(str::to_owned),
             candidate: candidate.map(str::to_owned),
         };
-        let Some(group) = catalog.by_name.get(&normalize(&offer.title)) else {
+        // The same release by name, and a single episode by its local
+        // season pack, whose matching file it may reuse.
+        let named = catalog.by_name.get(&normalize(&offer.title));
+        let packs = numbered(&offer.title)
+            .filter(|n| n.episode.is_some())
+            .and_then(|n| catalog.packs.get(&(n.series, n.season)));
+        let mut matches: Vec<(&ReuseSource, bool)> =
+            named.into_iter().flatten().map(|s| (s, false)).collect();
+        for (name, id) in packs.into_iter().flatten() {
+            if let Some(pack) = catalog
+                .by_name
+                .get(name)
+                .and_then(|group| group.iter().find(|s| &s.id == id))
+                && !matches.iter().any(|(s, _)| s.id == pack.id)
+            {
+                matches.push((pack, true));
+            }
+        }
+        matches.retain(|(s, _)| only.is_none_or(|only| only.contains(s.id.as_str())));
+        let Some((first, _)) = matches.first() else {
             return Verdict::Unmatched;
         };
-        let matches: Vec<&ReuseSource> = group
-            .iter()
-            .filter(|s| only.is_none_or(|only| only.contains(s.id.as_str())))
-            .collect();
-        let Some(first) = matches.first() else {
-            return Verdict::Unmatched;
-        };
+        let limit = self.config.cross_seed_missing_bytes;
         let Ok(client) = self.native_client() else {
             return Verdict::SourceFailed;
         };
@@ -640,13 +782,31 @@ impl Engine {
         {
             return done("skipped", "already_present", Some(&first.id), Some(hash));
         }
-        let largest = matches.iter().map(|s| s.total).max().unwrap_or(0);
-        if offer.size.is_some_and(|size| size > largest) {
+        // An episode is one file of its pack, plus small extras.
+        let largest = matches
+            .iter()
+            .map(|(s, episode)| {
+                if *episode {
+                    s.files.iter().map(|file| file.2).max().unwrap_or(0)
+                } else {
+                    s.total
+                }
+            })
+            .max()
+            .unwrap_or(0);
+        if offer
+            .size
+            .is_some_and(|size| size > largest.saturating_add(limit))
+        {
             return done("skipped", "size_mismatch", Some(&first.id), None);
         }
-        let usable: Vec<&&ReuseSource> = matches.iter().filter(|s| s.ready && !s.paused).collect();
+        let usable: Vec<&ReuseSource> = matches
+            .iter()
+            .map(|(s, _)| *s)
+            .filter(|s| s.ready && !s.paused)
+            .collect();
         if usable.is_empty() {
-            if matches.iter().all(|s| s.paused) {
+            if matches.iter().all(|(s, _)| s.paused) {
                 return done("skipped", "source_paused", Some(&first.id), None);
             }
             // Retained seeds verify again when they rotate into the active window.
@@ -686,10 +846,10 @@ impl Engine {
         }
         let mut reason = "layout_mismatch";
         for source in usable {
-            let mapping = match map_files(source, &layout) {
+            let mapping = match map_files(source, &layout, limit) {
                 Ok(mapping) => mapping,
                 Err(why) => {
-                    if why == "ambiguous_layout" {
+                    if why != "layout_mismatch" {
                         reason = why;
                     }
                     continue;
@@ -707,6 +867,7 @@ impl Engine {
             let request = CrossSeedRequest {
                 metadata,
                 mapping: Some(mapping),
+                missing_limit: limit,
             };
             return match client.cross_seed(&source.id, &request) {
                 Ok(_) => done(

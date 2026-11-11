@@ -1,5 +1,5 @@
 //! Discovery matching, mapping, requests and storage.
-use super::{Run, map_files, normalize, store};
+use super::{Numbered, Run, map_files, normalize, numbered, season_query, store};
 use crate::{
     json::{self, Value},
     torrent::{CandidateLayout, ReuseSource},
@@ -51,32 +51,112 @@ fn mapping_uses_lengths_then_names_then_paths_and_refuses_guesses() {
     let src = source(&[("Show/a.mkv", 10), ("Show/b.nfo", 3), ("Show/c.srt", 3)]);
     // Renamed root, reordered files and a subset of the source.
     assert_eq!(
-        map_files(&src, &layout(&[("Other/c.srt", 3), ("Other/a.mkv", 10)])),
-        Ok(vec![5, 1])
+        map_files(&src, &layout(&[("Other/c.srt", 3), ("Other/a.mkv", 10)]), 0),
+        Ok(vec![Some(5), Some(1)])
     );
     assert_eq!(
-        map_files(&src, &layout(&[("Other/a.mkv", 11)])),
+        map_files(&src, &layout(&[("Other/a.mkv", 11)]), 0),
         Err("layout_mismatch")
     );
     // Two equal lengths without a distinguishing name.
     assert_eq!(
-        map_files(&src, &layout(&[("Other/x.txt", 3)])),
+        map_files(&src, &layout(&[("Other/x.txt", 3)]), 0),
         Err("ambiguous_layout")
     );
     // One source file can back only one candidate file.
     assert_eq!(
-        map_files(&src, &layout(&[("Other/a.mkv", 10), ("Other/z.mkv", 10)])),
+        map_files(
+            &src,
+            &layout(&[("Other/a.mkv", 10), ("Other/z.mkv", 10)]),
+            0
+        ),
         Err("layout_mismatch")
     );
     let nested = source(&[("Show/s1/e.mkv", 4), ("Show/s2/e.mkv", 4)]);
     assert_eq!(
         map_files(
             &nested,
-            &layout(&[("Pack/s2/e.mkv", 4), ("Pack/s1/e.mkv", 4)])
+            &layout(&[("Pack/s2/e.mkv", 4), ("Pack/s1/e.mkv", 4)]),
+            0
         ),
-        Ok(vec![3, 1])
+        Ok(vec![Some(3), Some(1)])
     );
-    assert_eq!(map_files(&src, &layout(&[])), Err("layout_mismatch"));
+    assert_eq!(map_files(&src, &layout(&[]), 0), Err("layout_mismatch"));
+}
+
+#[test]
+fn missing_small_files_are_downloaded_within_the_bound_but_never_video() {
+    let src = source(&[("Show/a.mkv", 10)]);
+    let candidate = layout(&[
+        ("Other/a.mkv", 10),
+        ("Other/a.nfo", 5),
+        ("Other/Sample/a-sample.mkv", 3),
+    ]);
+    assert_eq!(
+        map_files(&src, &candidate, 8),
+        Ok(vec![Some(1), None, None])
+    );
+    assert_eq!(map_files(&src, &candidate, 7), Err("too_much_missing"));
+    // Without the bound nothing is missing: the old exact matching.
+    assert_eq!(map_files(&src, &candidate, 0), Err("too_much_missing"));
+    // A missing video, even small, is never downloaded.
+    assert_eq!(
+        map_files(
+            &src,
+            &layout(&[("Other/a.mkv", 10), ("Other/b.mkv", 1)]),
+            100
+        ),
+        Err("layout_mismatch")
+    );
+    // Something must be reused.
+    assert_eq!(
+        map_files(&src, &layout(&[("Other/a.nfo", 5)]), 100),
+        Err("layout_mismatch")
+    );
+}
+
+#[test]
+fn episodes_and_season_packs_parse_with_the_episode_markers() {
+    let episode = |series: &str, season, episode| {
+        Some(Numbered {
+            series: series.into(),
+            season,
+            episode,
+        })
+    };
+    assert_eq!(
+        numbered("Show.Name.S01E02.1080p.WEB-GRP.mkv"),
+        episode("show name", 1, Some(2))
+    );
+    assert_eq!(
+        numbered("Show Name 1x02 HDTV"),
+        episode("show name", 1, Some(2))
+    );
+    // A year kept in one name and dropped in the other still matches.
+    assert_eq!(
+        numbered("Show.Name.2019.S01.1080p.WEB-GRP"),
+        episode("show name", 1, None)
+    );
+    assert_eq!(
+        numbered("Show Name Season 2 1080p"),
+        episode("show name", 2, None)
+    );
+    assert_eq!(numbered("Série.Saison.3.FRENCH"), episode("serie", 3, None));
+    for several in [
+        "Show.S01E01E02.1080p",
+        "Show.S01E01-E02.1080p",
+        "Show.S01-S02.1080p",
+        "Show.S01.S01E03",
+        "S01E01.1080p",
+        "Movie.2020.1080p.BluRay",
+    ] {
+        assert_eq!(numbered(several), None, "{several}");
+    }
+    assert_eq!(
+        season_query("Show.Name.2019.S01.1080p.WEB-GRP").as_deref(),
+        Some("Show Name 2019 S01")
+    );
+    assert_eq!(season_query("Show.Name.S01E02.1080p.WEB-GRP"), None);
 }
 
 #[test]
