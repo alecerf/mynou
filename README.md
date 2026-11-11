@@ -115,7 +115,12 @@ mynou serve
 ```
 
 Its data goes to `~/Library/Application Support/Mynou`, created on first
-start; use `--dir DIR` or `MYNOU_HOME` for another place.
+start; use `--dir DIR` or `MYNOU_HOME` for another place. It listens on
+`127.0.0.1:8787` unless **Settings → Network** says otherwise; `--host` and
+`--port` replace that address for one run, such as
+`mynou serve --host 0.0.0.0 --port 9090`. Listening on the network
+(`0.0.0.0`) needs a password, or **No password on the local network**, set
+first in **Settings → Network**.
 
 **2. Open <http://127.0.0.1:8787/>.** There is no account or sign-in on your
 Mac.

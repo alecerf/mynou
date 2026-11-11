@@ -266,6 +266,7 @@ impl Api {
                 let settings = self.engine.take_pending_settings().map(|mut config| {
                     // The listener stays bound until the next start.
                     config.listen = previous.listen.clone();
+                    config.listen_override = previous.listen_override;
                     config
                 });
                 let operator = self.engine.vpn.as_ref().filter(|v| !v.changed()).cloned();
@@ -690,6 +691,7 @@ fn network_access(
         value.insert("password_set", gate.access.is_set());
         value.insert("from_this_mac", local);
         value.insert("listen", engine.config.listen.as_str());
+        value.insert("listen_from_start", engine.config.listen_override.is_some());
         value.insert(
             "local_name",
             access::local_name().map_or(Value::Null, |name| Value::String(format!("{name}.local"))),

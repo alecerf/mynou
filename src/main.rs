@@ -17,13 +17,16 @@ use std::{
 
 const HELP: &str = "Mynou — media automation using Rust std only
 
-  serve [--dir DIR]
+  serve [--dir DIR] [--host IP] [--port PORT]
   service --action install|status|start|stop|uninstall --dir /absolute/data-directory
           [--label org.mynou.automation]
   update [--dir DIR]   (installs the latest release now; Mynou also does it once a day)
   version
 
 DIR is the data directory: --dir, else MYNOU_HOME, else ~/Library/Application Support/Mynou.
+--host and --port replace the address of Settings, Network for this run only (127.0.0.1:8787
+by default). --host 0.0.0.0 opens Mynou to the network: it then needs a password, or no
+password on the local network, set in Settings, Network.
 Run `mynou serve`, then open the web interface and set Mynou up there.
 ";
 struct Args {
@@ -52,7 +55,8 @@ impl Args {
         }
         let allowed: &[&str] = match command.as_str() {
             "service" => &["dir", "help", "action", "label"],
-            "serve" | "service-run" | "update" => &["dir", "help"],
+            "serve" => &["dir", "help", "host", "port"],
+            "service-run" | "update" => &["dir", "help"],
             "help" | "--help" | "version" | "--version" => &[],
             _ => return Err(format!("Unknown command: {command}")),
         };
@@ -236,11 +240,17 @@ fn execute(args: Args) -> Result<()> {
     } else if args.command == "serve" && path.is_dir() {
         start_logs(&path, true);
     }
-    let (config, online) = if args.command == "serve" || supervised {
+    let (mut config, online) = if args.command == "serve" || supervised {
         (config::load(&path)?, false)
     } else {
         context(&path)?
     };
+    if let Some(value) = config::ListenOverride::parse(
+        args.options.get("host").map(String::as_str),
+        args.options.get("port").map(String::as_str),
+    )? {
+        config.override_listen(value)?;
+    }
     if args.command == "service" {
         output(&mynou::service::manage(
             args.value("label", "org.mynou.automation"),
