@@ -155,7 +155,7 @@ fn intent_survives_import_revoke_enable_and_explicit_disable_without_network_io(
         drop(engine);
         let intent = Intent::decode(&profile::read_private_text(&path).unwrap()).unwrap();
         assert!(intent.mode == mode);
-        assert!(intent.profile.is_some());
+        assert_eq!(intent.profiles.len(), 1);
     }
     let engine = Engine::open_for_management(config).unwrap();
     assert_eq!(state(&engine.vpn_status()), "disabled");
@@ -915,8 +915,11 @@ fn forwarding_intent_takes_the_profile_dns_as_gateway_and_survives_other_control
         let intent = Intent::decode(&text).unwrap();
         assert_eq!(intent.forwarding, enabled, "{action}");
         let operator = Operator::load(&config.store_dir, false);
-        let gateway = operator.state.lock().unwrap().gateway;
-        assert_eq!(gateway, enabled.then(|| Ipv4Addr::new(10, 23, 0, 1)));
+        let gateways = operator.state.lock().unwrap().gateways.clone();
+        assert_eq!(
+            gateways,
+            Vec::from_iter(enabled.then(|| Ipv4Addr::new(10, 23, 0, 1)))
+        );
     }
     // Without the running service the lease is not attempted; forwarding is
     // reported apart from the tunnel state and never names the gateway.
@@ -948,7 +951,7 @@ fn forwarded_port_is_listened_on_in_the_tunnel_then_renewed_changed_and_lost() {
     {
         // The fixture's tunnel gateway and DNS server is 10.7.0.1.
         let mut state = operator.state.lock().unwrap();
-        state.gateway = Some(Ipv4Addr::new(10, 7, 0, 1));
+        state.gateways = vec![Ipv4Addr::new(10, 7, 0, 1)];
         state.driver = Some(pair.client.clone());
     }
     let open = || {
@@ -1037,8 +1040,11 @@ pub(crate) fn load_operator(config: &crate::config::Config, driver: HttpTunnel) 
     let operator = Operator::load(&config.store_dir, false);
     {
         let mut state = operator.state.lock().unwrap();
-        state.gateway = Some(Ipv4Addr::new(10, 7, 0, 1));
+        state.gateways = vec![Ipv4Addr::new(10, 7, 0, 1)];
         state.driver = Some(driver);
     }
     operator
 }
+
+#[path = "failover_tests.rs"]
+mod failover;

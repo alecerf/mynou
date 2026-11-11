@@ -239,6 +239,7 @@ impl Engine {
                     .collect(),
             ),
         );
+        health.insert("vpn", self.vpn_failover());
         value.insert("health", health);
 
         if let Err(error) = self.read_plex() {

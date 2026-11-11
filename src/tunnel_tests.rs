@@ -884,7 +884,7 @@ fn reconnection_backs_off_boundedly_and_can_be_cancelled() {
     let mut last = None;
     for _ in 0..2_000 {
         let status = world.client.status();
-        if status.state == TunnelState::Blocked {
+        if status.reason == Some(Reason::Exhausted) {
             break;
         }
         if let Some(at) = status.retry_at
@@ -895,15 +895,21 @@ fn reconnection_backs_off_boundedly_and_can_be_cancelled() {
         }
         world.advance(Duration::from_secs(1));
     }
+    // The only profile used its attempts: the runtime rests, then tries again.
     let status = world.client.status();
-    assert_eq!(status.state, TunnelState::Blocked);
+    assert_eq!(status.state, TunnelState::Reconnecting);
     assert_eq!(status.reason, Some(Reason::Exhausted));
+    assert_eq!(
+        status.retry_at.unwrap() - world.clock.now(),
+        Duration::from_secs(5 * 60)
+    );
     assert_eq!(
         delays,
         [2, 4, 4].map(Duration::from_secs).to_vec(),
         "{delays:?}"
     );
     assert_eq!(world.client.stats().generations, 4);
+    assert!(world.client.switches().is_empty());
 
     world.relay.quiesce();
     let seen = world.relay.seen.len();
@@ -1194,7 +1200,7 @@ fn clock_and_entropy_failures_revoke_without_fallback() {
         world.relay.step();
     }
     world.relay.quiesce();
-    assert_eq!(tunnel.status().state, TunnelState::Blocked);
+    assert_eq!(tunnel.status().state, TunnelState::Reconnecting);
     assert_eq!(tunnel.status().reason, Some(Reason::Exhausted));
     assert_eq!(world.relay.seen.len(), seen);
     stream.fail(false);
@@ -1607,3 +1613,6 @@ fn a_scheduled_reconnection_starts_its_generation_with_a_moving_clock() {
     assert_eq!(status.generation, Some(2));
     assert_eq!(client.stats().generations, 2);
 }
+
+#[path = "tunnel_failover_tests.rs"]
+mod failover;
