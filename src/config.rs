@@ -13,6 +13,10 @@ use std::sync::{Arc, RwLock};
 pub struct ListenOverride {
     pub host: Option<std::net::IpAddr>,
     pub port: Option<u16>,
+    /// Set at startup when the run's address reaches the network and no
+    /// password exists: computers on the local network come in without one,
+    /// as with Settings, Network's switch, for this run.
+    pub opens_local_network: bool,
 }
 
 impl ListenOverride {
@@ -38,7 +42,11 @@ impl ListenOverride {
                     .ok_or_else(|| format!("--port takes a number from 1 to 65535, not {text}"))
             })
             .transpose()?;
-        Ok((host.is_some() || port.is_some()).then_some(Self { host, port }))
+        Ok((host.is_some() || port.is_some()).then_some(Self {
+            host,
+            port,
+            opens_local_network: false,
+        }))
     }
 
     /// `listen` with the parts this override replaces.
@@ -63,6 +71,19 @@ impl Config {
         self.listen = value.apply(&self.listen)?;
         self.listen_override = Some(value);
         Ok(())
+    }
+
+    /// Without a password, `--host` on the network lets computers on the
+    /// local network in without one for this run; anything else still needs
+    /// a password, so it stays out. With a password, nothing changes.
+    pub fn open_local_network_without_password(&mut self, password_set: bool) {
+        if let Some(value) = &mut self.listen_override
+            && !password_set
+            && !crate::access::loopback(&self.listen)
+        {
+            value.opens_local_network = true;
+            self.local_network_open = true;
+        }
     }
 }
 

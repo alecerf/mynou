@@ -25,8 +25,8 @@ const HELP: &str = "Mynou — media automation using Rust std only
 
 DIR is the data directory: --dir, else MYNOU_HOME, else ~/Library/Application Support/Mynou.
 --host and --port replace the address of Settings, Network for this run only (127.0.0.1:8787
-by default). --host 0.0.0.0 opens Mynou to the network: it then needs a password, or no
-password on the local network, set in Settings, Network.
+by default). With --host 0.0.0.0 and no password set, computers on your local network open
+Mynou without one; other networks cannot. A password set in Settings, Network keeps applying.
 Run `mynou serve`, then open the web interface and set Mynou up there.
 ";
 struct Args {
@@ -304,6 +304,7 @@ fn execute(args: Args) -> Result<()> {
     // back here as well.
     let access = mynou::access::stored(&config.store_dir)
         .map_err(|error| roll_back(&path, supervised, error))?;
+    config.open_local_network_without_password(access.is_some());
     let startup = mynou::server::Startup::bind(
         &config,
         std::sync::Arc::new(mynou::access::Access::new(access)),

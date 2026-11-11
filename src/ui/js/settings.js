@@ -387,7 +387,7 @@ function networkRows() {
   const address = where ? `${location.protocol}//${where}${active === '80' ? '' : `:${active}`}` : null;
   const open = Boolean(getPath(settings.document, 'access.local_network_open'));
   const started = access.listen_from_start
-    ? `Started with --host or --port, Mynou listens on ${access.listen} until it starts without them. ` : '';
+    ? `Started with --host or --port, Mynou listens on ${access.listen} until it starts without them${access.local_network_open_from_start ? ', and computers on your local network open it without a password' : ''}. ` : '';
   const state = started + (settings.report.restart_required ? 'Restart Mynou to apply the change.'
     : exposed(access.listen) ? (address ? `From another computer, open ${address}.` : 'Other computers can open Mynou.')
     : 'Only this Mac can open Mynou.');
