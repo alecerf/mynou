@@ -1104,7 +1104,21 @@ fn same_device(file: &File, directory: &Path) -> Result<bool> {
 /// also finds the data volume behind firmlinks such as /Users.
 fn on_apfs(file: &File) -> Result<bool> {
     let device = file.metadata().map_err(|error| error.to_string())?.dev();
-    let Ok(output) = std::process::Command::new("/sbin/mount").output() else {
+    let child = {
+        // Until it execs, the child holds every descriptor of this process,
+        // import locks included: a test build waits for no lock meanwhile
+        // (see `try_lock_file`).
+        #[cfg(test)]
+        let _spawning = crate::store::SPAWNING
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        std::process::Command::new("/sbin/mount")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+    };
+    let Ok(output) = child.and_then(std::process::Child::wait_with_output) else {
         return Ok(false);
     };
     if !output.status.success() {
