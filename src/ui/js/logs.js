@@ -3,6 +3,7 @@ import { $, h, icon, reconcile } from './dom.js';
 import { act, copyText, skeleton, toast } from './components.js';
 import { link } from './link.js';
 import { views, currentView, currentParam, setCurrentView } from './store.js';
+import { replaceAddress } from './router.js';
 
 // Logs: what the service writes to its own log, newest first. While the page
 // is open it follows the log: the socket sends every new record, and the page
@@ -533,7 +534,7 @@ function setLevel(level) {
   // The level stays in the address, for a reload or a link.
   const param = level === 'info' ? '' : level;
   const hash = param ? `#logs/${param}` : '#logs';
-  if (location.hash !== hash) history.replaceState(null, '', hash);
+  if (location.hash !== hash) replaceAddress(hash);
   setCurrentView('logs', param);
 }
 

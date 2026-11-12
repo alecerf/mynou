@@ -26,9 +26,9 @@ function show(hash) {
   let param = '';
   try { param = decodeURIComponent(rest.join('/')); } catch { /* a malformed hash shows the view itself */ }
   // Series now live in the library; old links land on that tab.
-  if (name === 'series') { libraryFilter.kind = 'series'; history.replaceState(null, '', '#library'); name = 'library'; }
+  if (name === 'series') { libraryFilter.kind = 'series'; replaceAddress('#library'); name = 'library'; }
   // Source states now live beside their settings.
-  if (name === 'sources') { history.replaceState(null, '', '#settings'); name = 'settings'; }
+  if (name === 'sources') { replaceAddress('#settings'); name = 'settings'; }
   if (!views[name]) name = 'dashboard';
   const from = currentView();
   const moved = from !== name;
@@ -55,4 +55,48 @@ function show(hash) {
 // Every view in the order it is reached, for titles and the direction of a move.
 const ORDER = [...VIEWS.slice(0, -1), REQUEST_VIEW, STORAGE_VIEW, LOGS_VIEW, VIEWS.at(-1)];
 
-export const route = () => show(location.hash.slice(1));
+// Safari keeps a plain-HTTP page of another machine in an Enhanced Security
+// process, and loads the whole page again in a new process for every fragment
+// navigation that reaches its navigation policy. One the page intercepts never
+// does: links, `location.hash`, going back and the address bar all arrive as
+// the `navigate` event of the Navigation API, and the view changes in place.
+
+let shown = null;   // the address the view on screen was shown for
+
+export function route() {
+  shown = location.hash;
+  show(location.hash.slice(1));
+}
+
+/** Shows the view of the address, unless it is on screen already. */
+export function follow() {
+  if (location.hash !== shown) route();
+}
+
+/** Puts `hash` in the address for the view on screen, without showing it again. */
+export function replaceAddress(hash) {
+  shown = hash;
+  history.replaceState(null, '', hash);
+}
+
+/** A view, or what an old link to one now opens; anything else may be an
+    element of the page, such as the target of the skip link. */
+const isView = (id) => { const base = id.split('/')[0]; return !base || Boolean(views[base]) || base === 'series' || base === 'sources'; };
+
+export function followAddress() {
+  // A browser without the Navigation API, and an address the browser changed
+  // itself, which the page may not intercept.
+  addEventListener('hashchange', follow);
+  if (!('navigation' in window)) return;
+  navigation.addEventListener('navigate', (event) => {
+    if (!event.hashChange || !event.canIntercept || event.downloadRequest !== null) return;
+    const id = new URL(event.destination.url).hash.slice(1);
+    const target = isView(id) ? null : document.getElementById(id);
+    if (target) {
+      if (event.cancelable) { event.preventDefault(); target.focus(); }
+      return;
+    }
+    // Focus and scrolling stay as the view leaves them.
+    event.intercept({ focusReset: 'manual', scroll: 'manual', handler: async () => follow() });
+  });
+}

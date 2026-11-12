@@ -10,7 +10,7 @@ import { setupCats, linkMood } from './js/cat.js';
 import { link } from './js/link.js';
 import { data, views, currentView, jobsTail, transfersTail, libraryTail, resetTail, refreshTail, pageMembership, sampleTransfers, itemsOf } from './js/store.js';
 import { refreshJobSearch } from './js/jobs.js';
-import { VIEWS, LOGS_VIEW, route } from './js/router.js';
+import { VIEWS, LOGS_VIEW, route, followAddress } from './js/router.js';
 import { setupSession, connect } from './js/session.js';
 import './js/dashboard.js';
 import './js/transfers.js';
@@ -92,7 +92,7 @@ function setup() {
   setupCats();
   Motion.fadeOnScroll($('.welcome'), 22);
   setupSession();
-  addEventListener('hashchange', route);
+  followAddress();
   // The first page builds itself once (see the motion layer); later ones
   // rise in whole (Motion.enter).
   document.documentElement.dataset.boot = '';

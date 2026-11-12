@@ -7,6 +7,7 @@ import { data, views, itemsOf, currentParam, currentView } from './store.js';
 import { INDEXER_ERRORS, plexError, indexerReports } from './sources.js';
 import { signOut } from './session.js';
 import { qualityGroups, readQuality, forgetProfiles, qualityEdits } from './quality.js';
+import { follow } from './router.js';
 
 // The settings document keeps every field; the groups below edit the common
 // ones in place and leave the others untouched. Saving sends the whole document,
@@ -729,9 +730,9 @@ async function bringIntoView(target, problem = null) {
   clearSearch();
   const page = pageOf(target);
   if (page && page !== currentPage()) {
-    const arrived = new Promise((resolve) => { addEventListener('hashchange', resolve, { once: true }); setTimeout(resolve, 400); });
     location.hash = `#settings/${page}`;
-    await arrived;
+    // Shown at once, before the hashchange of a browser without the Navigation API.
+    follow();
   }
   for (let details = target.closest('details'); details; details = details.parentElement.closest('details')) details.open = true;
   if (problem) { target._touched = true; setProblem(target, problem); }
